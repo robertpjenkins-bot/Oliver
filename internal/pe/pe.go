@@ -5,6 +5,7 @@ package pe
 import (
 	"bytes"
 	"debug/pe"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,6 +74,21 @@ type Info struct {
 
 	Installer   Installer `json:"installer,omitempty"`
 	IsInstaller bool      `json:"is_installer"`
+
+	// ExecutionLevel is the privilege the embedded manifest asks Windows for:
+	// asInvoker, highestAvailable or requireAdministrator.
+	ExecutionLevel string `json:"execution_level,omitempty"`
+	// RequiresAdmin reports that the program demands elevation. Wine has no
+	// real UAC: it reports the user as an administrator, but the process still
+	// runs with ordinary Linux permissions.
+	RequiresAdmin bool `json:"requires_admin"`
+
+	// Packer names the executable compressor wrapping the real program, if any.
+	Packer string `json:"packer,omitempty"`
+	// Packed reports that the real code is compressed. The import table and
+	// header version fields then describe the packer stub, not the program, so
+	// anything derived from them is unreliable.
+	Packed bool `json:"packed"`
 
 	Imports      []string `json:"imports,omitempty"`
 	GraphicsAPIs []string `json:"graphics_apis,omitempty"`
@@ -189,9 +205,7 @@ func Inspect(path string) (*Info, error) {
 		info.DotNET = true
 	}
 
-	if libs, err := pf.ImportedLibraries(); err == nil {
-		info.Imports = normalizeImports(libs)
-	}
+	info.Imports = normalizeImports(importedLibraries(pf))
 	// A .NET Core app is a native apphost that pulls in hostfxr, and ships a
 	// runtimeconfig.json beside it. .NET Framework apps do neither.
 	for _, imp := range info.Imports {
@@ -209,7 +223,163 @@ func Inspect(path string) (*Info, error) {
 	info.Installer, info.IsInstaller = detectInstaller(abs, info.Name, f)
 	info.LikelyGame, info.GameHints = detectGame(abs, info)
 
+	info.Packer, info.Packed = detectPacker(pf, info)
+	info.ExecutionLevel, info.RequiresAdmin = detectExecutionLevel(pf, f)
+	if info.Packed {
+		info.Warnings = append(info.Warnings,
+			"compressed with "+info.Packer+": the imports and target version describe the packer, not the program itself")
+	}
+
 	return info, nil
+}
+
+// packerSections map a section name to the packer that creates it. Packers
+// rename sections, which is the cheapest reliable way to spot them.
+var packerSections = map[string]string{
+	"UPX0": "UPX", "UPX1": "UPX", "UPX2": "UPX",
+	".aspack": "ASPack", ".adata": "ASPack",
+	".petite": "Petite",
+	"MPRESS1": "MPRESS", "MPRESS2": "MPRESS",
+	".themida": "Themida", ".winlice": "Themida",
+	"MEW": "MEW", ".neolit": "NeoLite",
+}
+
+// detectPacker identifies an executable compressor around the real program.
+func detectPacker(pf *pe.File, info *Info) (string, bool) {
+	for _, sec := range pf.Sections {
+		if packer, ok := packerSections[strings.TrimRight(sec.Name, "\x00")]; ok {
+			return packer, true
+		}
+	}
+	return "", false
+}
+
+// importedLibraries reads the DLL names from the PE import directory.
+//
+// debug/pe.ImportedLibraries is a documented stub that always returns nothing,
+// so the table has to be walked directly. Without this, nothing that depends
+// on a program's imports — the Direct3D and gamepad detection above — can work.
+func importedLibraries(pf *pe.File) []string {
+	dirs := dataDirectories(pf)
+	// Index 1 is IMAGE_DIRECTORY_ENTRY_IMPORT.
+	if len(dirs) < 2 || dirs[1].VirtualAddress == 0 {
+		return nil
+	}
+
+	const descriptorSize = 20 // sizeof(IMAGE_IMPORT_DESCRIPTOR)
+	data, base, ok := sectionDataForRVA(pf, dirs[1].VirtualAddress)
+	if !ok {
+		return nil
+	}
+
+	var libs []string
+	for off := int(dirs[1].VirtualAddress - base); off+descriptorSize <= len(data); off += descriptorSize {
+		originalFirstThunk := binary.LittleEndian.Uint32(data[off:])
+		nameRVA := binary.LittleEndian.Uint32(data[off+12:])
+		firstThunk := binary.LittleEndian.Uint32(data[off+16:])
+		// The array ends with an all-zero descriptor.
+		if originalFirstThunk == 0 && nameRVA == 0 && firstThunk == 0 {
+			break
+		}
+		if nameRVA == 0 {
+			continue
+		}
+		if name := stringAtRVA(pf, nameRVA); name != "" {
+			libs = append(libs, name)
+		}
+		// Guard against a malformed table pointing at a huge region.
+		if len(libs) > 1024 {
+			break
+		}
+	}
+	return libs
+}
+
+func dataDirectories(pf *pe.File) []pe.DataDirectory {
+	switch oh := pf.OptionalHeader.(type) {
+	case *pe.OptionalHeader32:
+		return oh.DataDirectory[:]
+	case *pe.OptionalHeader64:
+		return oh.DataDirectory[:]
+	}
+	return nil
+}
+
+// sectionDataForRVA returns the raw bytes of the section containing an RVA,
+// along with that section's virtual address.
+func sectionDataForRVA(pf *pe.File, rva uint32) (data []byte, base uint32, ok bool) {
+	for _, sec := range pf.Sections {
+		size := sec.VirtualSize
+		if size == 0 {
+			size = sec.Size
+		}
+		if rva < sec.VirtualAddress || rva >= sec.VirtualAddress+size {
+			continue
+		}
+		b, err := sec.Data()
+		if err != nil {
+			return nil, 0, false
+		}
+		return b, sec.VirtualAddress, true
+	}
+	return nil, 0, false
+}
+
+// stringAtRVA reads a NUL-terminated string from anywhere in the image.
+func stringAtRVA(pf *pe.File, rva uint32) string {
+	data, base, ok := sectionDataForRVA(pf, rva)
+	if !ok {
+		return ""
+	}
+	off := int(rva - base)
+	if off < 0 || off >= len(data) {
+		return ""
+	}
+	end := off
+	for end < len(data) && data[end] != 0 {
+		end++
+	}
+	if end-off > 256 {
+		return "" // not a plausible DLL name
+	}
+	return string(data[off:end])
+}
+
+// executionLevel matches the privilege request in an application manifest.
+// The attribute frequently sits on its own line, so the pattern must span
+// newlines between the element name and the attribute.
+var executionLevel = regexp.MustCompile(`(?i)requestedExecutionLevel[^>]*level\s*=\s*"([^"]+)"`)
+
+// detectExecutionLevel reads the manifest embedded in the executable's
+// resources, falling back to a bounded scan of the file for odd layouts.
+func detectExecutionLevel(pf *pe.File, f *os.File) (string, bool) {
+	if rsrc := pf.Section(".rsrc"); rsrc != nil {
+		if data, err := rsrc.Data(); err == nil {
+			if m := executionLevel.FindSubmatch(data); m != nil {
+				return normaliseLevel(string(m[1]))
+			}
+		}
+	}
+
+	const window = 2 << 20
+	buf := make([]byte, window)
+	if n, _ := f.ReadAt(buf, 0); n > 0 {
+		if m := executionLevel.FindSubmatch(buf[:n]); m != nil {
+			return normaliseLevel(string(m[1]))
+		}
+	}
+	return "", false
+}
+
+// normaliseLevel reports whether a manifest level demands more privilege than
+// an ordinary user process gets.
+func normaliseLevel(level string) (string, bool) {
+	level = strings.TrimSpace(level)
+	switch strings.ToLower(level) {
+	case "requireadministrator", "highestavailable":
+		return level, true
+	}
+	return level, false
 }
 
 func minorSubsystem(oh any) uint16 {
@@ -256,6 +426,8 @@ func windowsVersion(major, minor uint16) string {
 		return "winxp"
 	case major == 5:
 		return "win2k"
+	case major == 4:
+		return "nt40"
 	}
 	return ""
 }

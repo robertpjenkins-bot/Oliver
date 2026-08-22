@@ -281,3 +281,138 @@ func TestInspectRealBinary(t *testing.T) {
 		}
 	}
 }
+
+// TestImportTableIsActuallyParsed guards a real defect: debug/pe's
+// ImportedLibraries is a stub that always returns nothing, so relying on it
+// silently disabled every import-based signal.
+func TestImportTableIsActuallyParsed(t *testing.T) {
+	dir := t.TempDir()
+	path := buildPE(t, dir, "Game.exe", petest.Options{
+		Machine: petest.MachineAMD64, PE32Plus: true, Subsystem: petest.SubsystemGUI,
+		Imports: []string{"KERNEL32.dll", "d3d11.dll", "DXGI.dll", "xinput1_4.dll", "user32.dll"},
+	})
+
+	got, err := Inspect(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Imports) != 5 {
+		t.Fatalf("Imports = %v, want 5 entries", got.Imports)
+	}
+	// Names must be lower-cased so matching is case-insensitive.
+	for _, want := range []string{"kernel32.dll", "d3d11.dll", "dxgi.dll"} {
+		var found bool
+		for _, imp := range got.Imports {
+			if imp == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing import %q in %v", want, got.Imports)
+		}
+	}
+
+	apis := map[string]bool{}
+	for _, a := range got.GraphicsAPIs {
+		apis[a] = true
+	}
+	for _, want := range []string{"Direct3D 11", "DXGI", "XInput"} {
+		if !apis[want] {
+			t.Errorf("graphics API %q not detected from imports, got %v", want, got.GraphicsAPIs)
+		}
+	}
+
+	// Direct3D in the import table is on its own enough to call it a game.
+	if !got.LikelyGame {
+		t.Errorf("expected a Direct3D importer to be classified as a game, hints=%v", got.GameHints)
+	}
+}
+
+func TestNoGraphicsAPIsForAnOrdinaryProgram(t *testing.T) {
+	dir := t.TempDir()
+	path := buildPE(t, dir, "Tool.exe", petest.Options{
+		Machine: petest.MachineAMD64, PE32Plus: true, Subsystem: petest.SubsystemConsole,
+		Imports: []string{"KERNEL32.dll", "msvcrt.dll"},
+	})
+	got, err := Inspect(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.GraphicsAPIs) != 0 || got.LikelyGame {
+		t.Errorf("ordinary program misclassified: apis=%v game=%v", got.GraphicsAPIs, got.LikelyGame)
+	}
+}
+
+func TestPackerDetectionFromSectionNames(t *testing.T) {
+	dir := t.TempDir()
+
+	packed := buildPE(t, dir, "packed.exe", petest.Options{
+		Machine: petest.MachineI386, FirstSectionName: "UPX0",
+		Imports: []string{"KERNEL32.dll"},
+	})
+	got, err := Inspect(packed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Packed || got.Packer != "UPX" {
+		t.Errorf("Packer = %q packed=%v, want UPX", got.Packer, got.Packed)
+	}
+	if len(got.Warnings) == 0 {
+		t.Error("a packed binary should warn that header-derived facts are unreliable")
+	}
+
+	// An ordinary binary must not be flagged. This previously regressed when
+	// an empty import table was treated as evidence of packing.
+	plain := buildPE(t, dir, "plain.exe", petest.Options{
+		Machine: petest.MachineI386, Imports: []string{"KERNEL32.dll"},
+	})
+	got, err = Inspect(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Packed {
+		t.Errorf("ordinary binary wrongly reported as packed (%q)", got.Packer)
+	}
+}
+
+func TestManifestExecutionLevel(t *testing.T) {
+	dir := t.TempDir()
+
+	// The level attribute usually sits on its own line, as it does in real
+	// manifests, so the pattern has to span the newline.
+	admin := buildPE(t, dir, "elevated.exe", petest.Options{
+		Machine: petest.MachineI386,
+		Manifest: `<trustInfo><security><requestedPrivileges>
+        <requestedExecutionLevel
+          level="requireAdministrator"
+          uiAccess="false"/>
+        </requestedPrivileges></security></trustInfo>`,
+	})
+	got, err := Inspect(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.RequiresAdmin || got.ExecutionLevel != "requireAdministrator" {
+		t.Errorf("ExecutionLevel = %q admin=%v, want requireAdministrator", got.ExecutionLevel, got.RequiresAdmin)
+	}
+
+	normal := buildPE(t, dir, "normal.exe", petest.Options{
+		Machine:  petest.MachineI386,
+		Manifest: `<requestedExecutionLevel level="asInvoker" uiAccess="false"/>`,
+	})
+	got, err = Inspect(normal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RequiresAdmin {
+		t.Errorf("asInvoker must not be reported as requiring administrator")
+	}
+	if got.ExecutionLevel != "asInvoker" {
+		t.Errorf("ExecutionLevel = %q, want asInvoker", got.ExecutionLevel)
+	}
+
+	none := buildPE(t, dir, "none.exe", petest.Options{Machine: petest.MachineI386})
+	if got, _ := Inspect(none); got.RequiresAdmin || got.ExecutionLevel != "" {
+		t.Errorf("a binary with no manifest should report no execution level, got %q", got.ExecutionLevel)
+	}
+}

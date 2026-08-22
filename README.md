@@ -60,6 +60,29 @@ That last case is the one that costs people an afternoon: the newest Wine on
 the system is 64-bit only, and half the installers in the world are still
 32-bit.
 
+**It tells you when a program cannot work at all.** Some Windows software
+needs raw block devices, kernel drivers or real administrative privilege —
+things no compatibility layer can hand a translated process. Oliver reads the
+embedded manifest and recognises these tools, and says so before the launch
+rather than letting them fail in a way that looks like a bug in the runner:
+
+```console
+$ oliver info rufus-3.8.exe
+  privileges   requireAdministrator
+  compressed   UPX
+
+WILL NOT WORK: Rufus needs hardware access that no compatibility layer provides
+  Rufus writes boot records to raw USB devices. That needs direct access to
+  physical drives and the Windows storage ioctls, neither of which a
+  translated Windows process gets, so the device list stays empty and most
+  controls stay disabled.
+  Use a native writer instead: Ventoy, GNOME Disks, KDE ISO Image Writer,
+  Fedora Media Writer, or `dd`.
+```
+
+It still launches the program if you ask it to — the warning is information,
+not a refusal.
+
 **It keeps programs out of your home directory.** Wine points a prefix's
 Documents, Desktop and Downloads at your real ones. Oliver replaces those links
 with ordinary folders, so an installer cannot scribble on your files, and

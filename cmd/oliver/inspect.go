@@ -2,11 +2,62 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/robertpjenkins-bot/oliver/internal/backend"
+	"github.com/robertpjenkins-bot/oliver/internal/compat"
 	"github.com/robertpjenkins-bot/oliver/internal/pe"
 )
+
+// printCaveats reports known limitations, worst first.
+func (a *app) printCaveats(caveats []compat.Caveat) {
+	if len(caveats) == 0 {
+		return
+	}
+	u := a.ui
+	sort.SliceStable(caveats, func(i, j int) bool {
+		return caveats[i].Severity > caveats[j].Severity
+	})
+	for _, c := range caveats {
+		u.Printf("")
+		switch c.Severity {
+		case compat.Blocking:
+			u.Printf("%s %s", u.Red("WILL NOT WORK:"), u.Bold(c.Title))
+		case compat.Degraded:
+			u.Printf("%s %s", u.Yellow("LIMITED:"), u.Bold(c.Title))
+		default:
+			u.Printf("%s %s", u.Dim("note:"), c.Title)
+		}
+		for _, line := range wrap(c.Detail, 76) {
+			u.Printf("  %s", line)
+		}
+		if c.Workaround != "" {
+			for _, line := range wrap(c.Workaround, 76) {
+				u.Printf("  %s", u.Cyan(line))
+			}
+		}
+	}
+}
+
+// wrap breaks text into lines no longer than width.
+func wrap(text string, width int) []string {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return nil
+	}
+	var lines []string
+	line := words[0]
+	for _, w := range words[1:] {
+		if len(line)+1+len(w) > width {
+			lines = append(lines, line)
+			line = w
+			continue
+		}
+		line += " " + w
+	}
+	return append(lines, line)
+}
 
 const infoSynopsis = `oliver info <program.exe>
 
@@ -64,9 +115,17 @@ func (a *app) cmdInfo(args []string) error {
 			u.Printf("    %s %s", u.Dim("·"), u.Dim(h))
 		}
 	}
+	if info.RequiresAdmin {
+		u.Printf("  %s %s", u.Dim(field("privileges")), info.ExecutionLevel)
+	}
+	if info.Packed {
+		u.Printf("  %s %s", u.Dim(field("compressed")), info.Packer)
+	}
 	for _, w := range info.Warnings {
 		u.Printf("  %s %s", u.Yellow("!"), w)
 	}
+
+	a.printCaveats(compat.Check(info))
 
 	// Close the loop: knowing what it is only helps if you know what will run it.
 	scanner := backend.NewScanner()

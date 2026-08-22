@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/robertpjenkins-bot/oliver/internal/backend"
+	"github.com/robertpjenkins-bot/oliver/internal/compat"
 	"github.com/robertpjenkins-bot/oliver/internal/pe"
 	"github.com/robertpjenkins-bot/oliver/internal/prefix"
 	"github.com/robertpjenkins-bot/oliver/internal/runner"
@@ -91,6 +92,7 @@ func (a *app) cmdRun(args []string) error {
 			"executable": res.info,
 			"backend":    res.candidate.Backend,
 			"reasons":    res.candidate.Reasons,
+			"caveats":    compat.Check(res.info),
 			"prefix":     res.prefix.Dir,
 			"plan":       plan,
 		})
@@ -108,6 +110,17 @@ func (a *app) cmdRun(args []string) error {
 		a.ui.Printf("%s %s", a.ui.Dim("#"), a.ui.Dim(plan.Launch.Desc))
 		a.ui.Printf("%s", plan.Launch.Pretty())
 		return nil
+	}
+
+	// Say what is known to be broken before launching, not after it fails in a
+	// way that looks like the runner's fault.
+	if caveats := compat.Check(res.info); len(caveats) > 0 {
+		a.printCaveats(caveats)
+		if compat.Worst(caveats) == compat.Blocking {
+			a.ui.Printf("")
+			a.ui.Printf("%s", a.ui.Dim("Launching anyway, since you asked. Press Ctrl-C to stop."))
+		}
+		a.ui.Printf("")
 	}
 
 	a.ui.Info("%s %s  %s", a.ui.Green("→"), res.info.Name, a.ui.Dim("via "+res.candidate.Backend.String()))

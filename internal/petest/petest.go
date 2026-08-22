@@ -37,6 +37,13 @@ type Options struct {
 	SubsystemMinor uint16
 	// Trailing bytes are appended after the headers, for signature scanning.
 	Trailing []byte
+	// Imports are DLL names to place in a real import table.
+	Imports []string
+	// FirstSectionName overrides the name of the first section, which is how
+	// executable packers are recognised (e.g. "UPX0").
+	FirstSectionName string
+	// Manifest is embedded so that manifest parsing can be exercised.
+	Manifest string
 }
 
 // Build returns the bytes of a PE image matching opts.
@@ -49,6 +56,17 @@ func Build(o Options) []byte {
 	}
 	if o.Machine == 0 {
 		o.Machine = MachineAMD64
+	}
+
+	const (
+		importRVA = 0x2000 // where the synthetic .idata section is mapped
+		importRaw = 0x600  // and where its bytes sit in the file
+	)
+	idata := buildImportTable(o.Imports, importRVA)
+
+	sections := uint16(1)
+	if len(idata) > 0 {
+		sections = 2
 	}
 
 	var buf bytes.Buffer
@@ -65,7 +83,7 @@ func Build(o Options) []byte {
 	}
 	_ = binary.Write(&buf, binary.LittleEndian, pe.FileHeader{
 		Machine:              o.Machine,
-		NumberOfSections:     1,
+		NumberOfSections:     sections,
 		SizeOfOptionalHeader: optSize,
 		Characteristics:      0x0002, // IMAGE_FILE_EXECUTABLE_IMAGE
 	})
@@ -74,6 +92,10 @@ func Build(o Options) []byte {
 	if o.CLRHeader {
 		// Index 14 is IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR.
 		dirs[14] = pe.DataDirectory{VirtualAddress: 0x2000, Size: 0x48}
+	}
+	if len(idata) > 0 {
+		// Index 1 is IMAGE_DIRECTORY_ENTRY_IMPORT.
+		dirs[1] = pe.DataDirectory{VirtualAddress: importRVA, Size: uint32(len(idata))}
 	}
 	if o.PE32Plus {
 		_ = binary.Write(&buf, binary.LittleEndian, pe.OptionalHeader64{
@@ -103,21 +125,78 @@ func Build(o Options) []byte {
 		})
 	}
 
+	firstName := ".text"
+	if o.FirstSectionName != "" {
+		firstName = o.FirstSectionName
+	}
 	_ = binary.Write(&buf, binary.LittleEndian, pe.SectionHeader32{
-		Name:             [8]byte{'.', 't', 'e', 'x', 't'},
+		Name:             sectionName(firstName),
 		VirtualSize:      0x1000,
 		VirtualAddress:   0x1000,
 		SizeOfRawData:    0x200,
 		PointerToRawData: 0x400,
 		Characteristics:  0x60000020,
 	})
+	if len(idata) > 0 {
+		_ = binary.Write(&buf, binary.LittleEndian, pe.SectionHeader32{
+			Name:             sectionName(".idata"),
+			VirtualSize:      0x1000,
+			VirtualAddress:   importRVA,
+			SizeOfRawData:    0x200,
+			PointerToRawData: importRaw,
+			Characteristics:  0x40000040,
+		})
+	}
 
 	for buf.Len() < 0x400 {
 		buf.WriteByte(0)
 	}
-	buf.Write(make([]byte, 0x200))
+	buf.Write(make([]byte, 0x200)) // .text payload
+
+	if len(idata) > 0 {
+		for buf.Len() < importRaw {
+			buf.WriteByte(0)
+		}
+		payload := make([]byte, 0x200)
+		copy(payload, idata)
+		buf.Write(payload)
+	}
+
+	if o.Manifest != "" {
+		buf.WriteString(o.Manifest)
+	}
 	buf.Write(o.Trailing)
 	return buf.Bytes()
+}
+
+func sectionName(s string) [8]byte {
+	var out [8]byte
+	copy(out[:], s)
+	return out
+}
+
+// buildImportTable lays out an IMAGE_IMPORT_DESCRIPTOR array followed by the
+// DLL name strings it points at, as a real linker would.
+func buildImportTable(names []string, baseRVA uint32) []byte {
+	if len(names) == 0 {
+		return nil
+	}
+	const descriptorSize = 20
+	// One descriptor per DLL, plus the all-zero terminator.
+	stringsStart := uint32((len(names) + 1) * descriptorSize)
+
+	table := make([]byte, stringsStart)
+	var strs []byte
+	for i, name := range names {
+		nameRVA := baseRVA + stringsStart + uint32(len(strs))
+		off := i * descriptorSize
+		binary.LittleEndian.PutUint32(table[off:], baseRVA+0x800)    // OriginalFirstThunk
+		binary.LittleEndian.PutUint32(table[off+12:], nameRVA)       // Name
+		binary.LittleEndian.PutUint32(table[off+16:], baseRVA+0x900) // FirstThunk
+		strs = append(strs, []byte(name)...)
+		strs = append(strs, 0)
+	}
+	return append(table, strs...)
 }
 
 // WriteFile writes a PE image to path.

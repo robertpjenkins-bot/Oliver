@@ -211,6 +211,11 @@ func resolveWinVer(o Options) string {
 	case "", "none", "off":
 		return ""
 	case "auto":
+		if o.Info.Packed {
+			// The header belongs to the packer stub, not the program, so its
+			// target version says nothing about what the program expects.
+			return ""
+		}
 		// Only worth overriding when the program targets something older than
 		// the modern default; claiming to be newer than the program expects is
 		// what causes "unsupported Windows version" dialogs.
