@@ -25,14 +25,16 @@ const (
 	Note Severity = iota
 	// Degraded means it will run with reduced function.
 	Degraded
-	// Blocking means the program's main purpose cannot work here.
+	// Blocking means the program's main purpose cannot work here. It usually
+	// still launches, which is why the wording matters: saying "will not work"
+	// invites the reply "but it opened fine".
 	Blocking
 )
 
 func (s Severity) String() string {
 	switch s {
 	case Blocking:
-		return "will not work"
+		return "cannot do its job"
 	case Degraded:
 		return "limited"
 	}
@@ -41,11 +43,14 @@ func (s Severity) String() string {
 
 // Caveat is one known limitation.
 type Caveat struct {
-	Severity   Severity `json:"-"`
-	Level      string   `json:"severity"`
-	Title      string   `json:"title"`
-	Detail     string   `json:"detail"`
-	Workaround string   `json:"workaround,omitempty"`
+	Severity Severity `json:"-"`
+	Level    string   `json:"severity"`
+	Title    string   `json:"title"`
+	// Symptom describes what the user will observe, so they can tell this
+	// diagnosis apart from an unrelated fault.
+	Symptom    string `json:"symptom,omitempty"`
+	Detail     string `json:"detail"`
+	Workaround string `json:"workaround,omitempty"`
 }
 
 // need describes what a known program requires that a compatibility layer
@@ -57,6 +62,7 @@ type need struct {
 	match    *regexp.Regexp
 	program  string
 	severity Severity
+	symptom  string
 	detail   string
 	instead  string
 }
@@ -78,11 +84,17 @@ func versioned(base string) *regexp.Regexp {
 var knownPrograms = []need{
 	{
 		match: versioned("rufus"), program: "Rufus", severity: Blocking,
-		detail: "Rufus writes boot records to raw USB devices. That needs direct access to " +
-			"physical drives and the Windows storage ioctls, neither of which a translated " +
-			"Windows process gets, so the device list stays empty and most controls stay disabled.",
-		instead: "Use a native writer instead: Ventoy, GNOME Disks, KDE ISO Image Writer, " +
-			"Fedora Media Writer, or `dd`. Running Rufus under Wine is unsupported upstream.",
+		symptom: "Rufus opens and the window works. The Device list stays empty, and because " +
+			"everything below it depends on a selected device, START and the partition, file " +
+			"system, cluster size and volume label controls stay greyed out. Selecting an ISO " +
+			"still works, which is why it looks like it is almost working.",
+		detail: "Rufus enumerates drives through setupapi and writes boot records to raw " +
+			"physical devices. A translated Windows process gets neither real device " +
+			"enumeration nor the Windows storage ioctls, so no device is ever found.",
+		instead: "Mapping the drive into the prefix with a dosdevices symlink does not help " +
+			"here: that exposes a drive letter, not the device enumeration Rufus uses. Use a " +
+			"native writer instead — Ventoy, GNOME Disks, KDE ISO Image Writer, Fedora Media " +
+			"Writer, or `dd`. Running Rufus under Wine is unsupported upstream.",
 	},
 	{
 		match: versioned("win32diskimager"), program: "Win32 Disk Imager", severity: Blocking,
@@ -144,6 +156,7 @@ func Check(info *pe.Info) []Caveat {
 		out = append(out, Caveat{
 			Severity:   matched.severity,
 			Title:      fmt.Sprintf("%s needs hardware access that no compatibility layer provides", matched.program),
+			Symptom:    matched.symptom,
 			Detail:     matched.detail,
 			Workaround: matched.instead,
 		})

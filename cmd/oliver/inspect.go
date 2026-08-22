@@ -23,11 +23,17 @@ func (a *app) printCaveats(caveats []compat.Caveat) {
 		u.Printf("")
 		switch c.Severity {
 		case compat.Blocking:
-			u.Printf("%s %s", u.Red("WILL NOT WORK:"), u.Bold(c.Title))
+			u.Printf("%s %s", u.Red("CANNOT DO ITS JOB:"), u.Bold(c.Title))
 		case compat.Degraded:
 			u.Printf("%s %s", u.Yellow("LIMITED:"), u.Bold(c.Title))
 		default:
 			u.Printf("%s %s", u.Dim("note:"), c.Title)
+		}
+		if c.Symptom != "" {
+			for _, line := range wrap("What you will see: "+c.Symptom, 76) {
+				u.Printf("  %s", line)
+			}
+			u.Printf("")
 		}
 		for _, line := range wrap(c.Detail, 76) {
 			u.Printf("  %s", line)

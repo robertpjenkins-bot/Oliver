@@ -14,11 +14,16 @@ func TestKnownHardwareToolIsFlaggedAsBlocking(t *testing.T) {
 		if Worst(got) != Blocking {
 			t.Errorf("%s: severity = %v, want Blocking", name, Worst(got))
 		}
-		if len(got) == 0 || !strings.Contains(got[0].Detail, "raw USB") {
+		if len(got) == 0 || !strings.Contains(got[0].Detail, "setupapi") {
 			t.Errorf("%s: expected an explanation of the device-access problem, got %+v", name, got)
 		}
 		if got[0].Workaround == "" {
 			t.Errorf("%s: a blocking caveat must suggest an alternative", name)
+		}
+		// These programs do launch, so the caveat has to describe what the
+		// user will actually observe rather than implying nothing happens.
+		if got[0].Symptom == "" {
+			t.Errorf("%s: a blocking caveat must describe the symptom", name)
 		}
 	}
 }
@@ -171,5 +176,27 @@ func TestNamePatternsAreAnchoredButAllowVersions(t *testing.T) {
 		if matched != c.want {
 			t.Errorf("%q matched=%v, want %v", c.name, matched, c.want)
 		}
+	}
+}
+
+func TestBlockingWordingDoesNotClaimTheProgramFailsToStart(t *testing.T) {
+	// Most of these programs open a window and respond to some controls. A
+	// label of "will not work" gets contradicted by the first person who runs
+	// one, and then the real warning stops being believed.
+	if got := Blocking.String(); strings.Contains(got, "will not work") {
+		t.Errorf("Blocking.String() = %q, which overstates what happens", got)
+	}
+
+	c := Check(&pe.Info{Name: "rufus-3.10.exe", Kind: pe.KindPE})
+	if len(c) == 0 {
+		t.Fatal("expected a caveat")
+	}
+	if !strings.Contains(c[0].Symptom, "opens") {
+		t.Errorf("the symptom should say the program opens: %q", c[0].Symptom)
+	}
+	// The commonly suggested dosdevices workaround does not help here, and
+	// saying so saves the user trying it.
+	if !strings.Contains(c[0].Workaround, "dosdevices") {
+		t.Errorf("the caveat should head off the dosdevices suggestion: %q", c[0].Workaround)
 	}
 }
