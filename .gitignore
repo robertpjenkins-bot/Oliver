@@ -1,0 +1,4 @@
+/dist/
+*.AppImage
+*.AppDir/
+coverage.out

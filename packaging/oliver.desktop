@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Oliver
+GenericName=Windows Program Runner
+Comment=Run Windows programs with the best runtime installed on this system
+Exec=oliver run %f
+TryExec=oliver
+Icon=oliver
+Terminal=false
+Categories=System;Emulator;Utility;
+MimeType=application/x-ms-dos-executable;application/x-msdownload;application/vnd.microsoft.portable-executable;application/x-msi;
+Keywords=wine;proton;windows;exe;msi;runner;

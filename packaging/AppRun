@@ -1,0 +1,36 @@
+#!/bin/sh
+# AppRun is the AppImage entry point.
+#
+# It exists to make one behaviour work: dragging a .exe onto the AppImage, or
+# double-clicking a .exe once Oliver is registered as its handler, must run
+# that program rather than print a usage message.
+set -eu
+
+HERE="$(dirname "$(readlink -f "${0}")")"
+export PATH="${HERE}/usr/bin:${PATH}"
+
+BIN="${HERE}/usr/bin/oliver"
+
+# With no arguments, an AppImage is usually launched from a desktop menu where
+# there is no terminal to read. Show what the user can do with it instead.
+if [ "$#" -eq 0 ]; then
+	if [ -t 1 ]; then
+		exec "${BIN}" help
+	fi
+	exec "${BIN}" desktop-welcome
+fi
+
+# A bare path as the first argument is a program to run: this is what a file
+# manager passes when opening an .exe with Oliver.
+case "$1" in
+	-*) exec "${BIN}" "$@" ;;
+esac
+if [ -e "$1" ] && [ ! -d "$1" ]; then
+	case "$1" in
+		*.exe|*.EXE|*.msi|*.MSI|*.bat|*.BAT|*.cmd|*.CMD)
+			exec "${BIN}" run "$@"
+			;;
+	esac
+fi
+
+exec "${BIN}" "$@"
