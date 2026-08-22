@@ -10,8 +10,10 @@ package compat
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/robertpjenkins-bot/oliver/internal/pe"
@@ -41,6 +43,42 @@ func (s Severity) String() string {
 	return "note"
 }
 
+// Alternative is a native Linux tool that does the job properly.
+type Alternative struct {
+	Name string `json:"name"`
+	// Command is the executable to look for on PATH. Empty when the tool is
+	// not normally installed system-wide, such as one run from an extracted
+	// download.
+	Command   string `json:"command,omitempty"`
+	Note      string `json:"note,omitempty"`
+	Installed bool   `json:"installed"`
+}
+
+// lookPath is a variable so tests can describe a system without touching the
+// real one.
+var lookPath = exec.LookPath
+
+// resolve marks the alternatives that are present on this machine.
+func resolve(in []Alternative) []Alternative {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]Alternative, len(in))
+	copy(out, in)
+	for i := range out {
+		if out[i].Command == "" {
+			continue
+		}
+		_, err := lookPath(out[i].Command)
+		out[i].Installed = err == nil
+	}
+	// Installed tools first: the point is to end on something runnable now.
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Installed && !out[j].Installed
+	})
+	return out
+}
+
 // Caveat is one known limitation.
 type Caveat struct {
 	Severity Severity `json:"-"`
@@ -51,6 +89,9 @@ type Caveat struct {
 	Symptom    string `json:"symptom,omitempty"`
 	Detail     string `json:"detail"`
 	Workaround string `json:"workaround,omitempty"`
+	// Alternatives are native tools that do the same job, with those present
+	// on this system marked.
+	Alternatives []Alternative `json:"alternatives,omitempty"`
 }
 
 // need describes what a known program requires that a compatibility layer
@@ -59,12 +100,13 @@ type need struct {
 	// match is a regular expression tested against the lower-cased executable
 	// name without its extension. Patterns are anchored at the start so that
 	// an unrelated program merely containing a known name is not caught.
-	match    *regexp.Regexp
-	program  string
-	severity Severity
-	symptom  string
-	detail   string
-	instead  string
+	match        *regexp.Regexp
+	program      string
+	severity     Severity
+	symptom      string
+	detail       string
+	instead      string
+	alternatives []Alternative
 }
 
 // versioned builds a pattern matching a program name on its own or followed by
@@ -95,41 +137,88 @@ var knownPrograms = []need{
 			"here: that exposes a drive letter, not the device enumeration Rufus uses. Use a " +
 			"native writer instead — Ventoy, GNOME Disks, KDE ISO Image Writer, Fedora Media " +
 			"Writer, or `dd`. Running Rufus under Wine is unsupported upstream.",
+		alternatives: []Alternative{
+			{Name: "Ventoy", Note: "copy ISOs onto the stick and pick one at boot; handles Windows ISOs"},
+			{Name: "GNOME Disks", Command: "gnome-disks", Note: "Restore Disk Image from the menu"},
+			{Name: "KDE ISO Image Writer", Command: "isoimagewriter"},
+			{Name: "Fedora Media Writer", Command: "mediawriter"},
+			{Name: "balenaEtcher", Command: "balena-etcher"},
+			{Name: "dd", Command: "dd", Note: "for a single Linux ISO; check the device name first"},
+		},
 	},
 	{
 		match: versioned("win32diskimager"), program: "Win32 Disk Imager", severity: Blocking,
 		detail:  "It reads and writes raw disk images to physical devices, which requires block-device access.",
 		instead: "Use GNOME Disks, or `dd` with the device path.",
+		alternatives: []Alternative{
+			{Name: "Ventoy", Note: "copy ISOs onto the stick and pick one at boot; handles Windows ISOs"},
+			{Name: "GNOME Disks", Command: "gnome-disks", Note: "Restore Disk Image from the menu"},
+			{Name: "KDE ISO Image Writer", Command: "isoimagewriter"},
+			{Name: "Fedora Media Writer", Command: "mediawriter"},
+			{Name: "balenaEtcher", Command: "balena-etcher"},
+			{Name: "dd", Command: "dd", Note: "for a single Linux ISO; check the device name first"},
+		},
 	},
 	{
 		match: versioned("balenaetcher"), program: "balenaEtcher", severity: Blocking,
 		detail:  "It writes images directly to removable devices.",
 		instead: "balenaEtcher ships a native Linux build; use that.",
+		alternatives: []Alternative{
+			{Name: "Ventoy", Note: "copy ISOs onto the stick and pick one at boot; handles Windows ISOs"},
+			{Name: "GNOME Disks", Command: "gnome-disks", Note: "Restore Disk Image from the menu"},
+			{Name: "KDE ISO Image Writer", Command: "isoimagewriter"},
+			{Name: "Fedora Media Writer", Command: "mediawriter"},
+			{Name: "balenaEtcher", Command: "balena-etcher"},
+			{Name: "dd", Command: "dd", Note: "for a single Linux ISO; check the device name first"},
+		},
 	},
 	{
 		match: regexp.MustCompile(`^cpu-?z(?:[-_. ].*)?$`), program: "CPU-Z", severity: Blocking,
 		detail:  "It loads a kernel driver to read hardware registers. Wine cannot load Windows kernel drivers.",
 		instead: "Use `lscpu`, `hwinfo` or CPU-X.",
+		alternatives: []Alternative{
+			{Name: "lscpu", Command: "lscpu"},
+			{Name: "CPU-X", Command: "cpu-x", Note: "the closest equivalent, with the same layout"},
+			{Name: "hwinfo", Command: "hwinfo"},
+			{Name: "inxi", Command: "inxi", Note: "`inxi -Fxz` for a full summary"},
+		},
 	},
 	{
 		match: regexp.MustCompile(`^hwmonitor`), program: "HWMonitor", severity: Blocking,
 		detail:  "It reads sensors through a kernel driver, which Wine cannot load.",
 		instead: "Use `lm-sensors`, `psensor` or Mission Center.",
+		alternatives: []Alternative{
+			{Name: "lm-sensors", Command: "sensors", Note: "run `sudo sensors-detect` once first"},
+			{Name: "psensor", Command: "psensor"},
+			{Name: "Mission Center", Command: "missioncenter"},
+		},
 	},
 	{
 		match: regexp.MustCompile(`^crystaldiskinfo`), program: "CrystalDiskInfo", severity: Blocking,
 		detail:  "It queries drive SMART data through direct device access.",
 		instead: "Use `smartctl` from smartmontools, or GNOME Disks.",
+		alternatives: []Alternative{
+			{Name: "smartctl", Command: "smartctl", Note: "`sudo smartctl -a /dev/sda`"},
+			{Name: "GNOME Disks", Command: "gnome-disks", Note: "SMART Data from the menu"},
+		},
 	},
 	{
 		match: regexp.MustCompile(`^daemon[-_. ]?tools`), program: "DAEMON Tools", severity: Blocking,
 		detail:  "It creates virtual drives using a kernel driver.",
 		instead: "Mount the image directly: `mount -o loop`, or use fuseiso.",
+		alternatives: []Alternative{
+			{Name: "mount", Command: "mount", Note: "`sudo mount -o loop image.iso /mnt`"},
+			{Name: "fuseiso", Command: "fuseiso", Note: "mounts without root"},
+		},
 	},
 	{
 		match: regexp.MustCompile(`^aida64`), program: "AIDA64", severity: Degraded,
 		detail:  "Hardware probing goes through a kernel driver, so most sensor and low-level pages stay empty.",
 		instead: "Use `inxi -Fxz` or hwinfo for the same information.",
+		alternatives: []Alternative{
+			{Name: "inxi", Command: "inxi", Note: "`inxi -Fxz`"},
+			{Name: "hwinfo", Command: "hwinfo"},
+		},
 	},
 }
 
@@ -154,11 +243,12 @@ func Check(info *pe.Info) []Caveat {
 	}
 	if matched != nil {
 		out = append(out, Caveat{
-			Severity:   matched.severity,
-			Title:      fmt.Sprintf("%s needs hardware access that no compatibility layer provides", matched.program),
-			Symptom:    matched.symptom,
-			Detail:     matched.detail,
-			Workaround: matched.instead,
+			Severity:     matched.severity,
+			Title:        fmt.Sprintf("%s needs hardware access that no compatibility layer provides", matched.program),
+			Symptom:      matched.symptom,
+			Detail:       matched.detail,
+			Workaround:   matched.instead,
+			Alternatives: resolve(matched.alternatives),
 		})
 	}
 

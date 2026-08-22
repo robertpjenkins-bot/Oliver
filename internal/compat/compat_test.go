@@ -1,6 +1,7 @@
 package compat
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -198,5 +199,105 @@ func TestBlockingWordingDoesNotClaimTheProgramFailsToStart(t *testing.T) {
 	// saying so saves the user trying it.
 	if !strings.Contains(c[0].Workaround, "dosdevices") {
 		t.Errorf("the caveat should head off the dosdevices suggestion: %q", c[0].Workaround)
+	}
+}
+
+// withInstalled makes lookPath report exactly the given commands as present.
+func withInstalled(t *testing.T, present ...string) {
+	t.Helper()
+	set := map[string]bool{}
+	for _, p := range present {
+		set[p] = true
+	}
+	original := lookPath
+	lookPath = func(name string) (string, error) {
+		if set[name] {
+			return "/usr/bin/" + name, nil
+		}
+		return "", errors.New("not found")
+	}
+	t.Cleanup(func() { lookPath = original })
+}
+
+func TestInstalledAlternativesAreMarkedAndListedFirst(t *testing.T) {
+	withInstalled(t, "gnome-disks", "dd")
+
+	got := Check(&pe.Info{Name: "rufus-3.10.exe", Kind: pe.KindPE})
+	if len(got) == 0 {
+		t.Fatal("expected a caveat")
+	}
+	alts := got[0].Alternatives
+	if len(alts) == 0 {
+		t.Fatal("expected native alternatives to be offered")
+	}
+
+	// Everything installed must sort ahead of everything that is not, so the
+	// advice ends on something the user can run now.
+	var seenMissing bool
+	installed := map[string]bool{}
+	for _, a := range alts {
+		if a.Installed {
+			if seenMissing {
+				t.Errorf("%s is installed but listed after a missing tool", a.Name)
+			}
+			installed[a.Command] = true
+		} else {
+			seenMissing = true
+		}
+	}
+	if !installed["gnome-disks"] || !installed["dd"] {
+		t.Errorf("expected gnome-disks and dd to be marked installed, got %+v", alts)
+	}
+	for _, a := range alts {
+		if a.Command == "isoimagewriter" && a.Installed {
+			t.Error("isoimagewriter is not installed and must not be marked as such")
+		}
+	}
+}
+
+func TestAlternativesWithoutACommandAreNeverMarkedInstalled(t *testing.T) {
+	// Ventoy is run from an extracted download, so there is nothing on PATH to
+	// find. It must be offered without ever claiming to be present.
+	withInstalled(t) // nothing installed
+	got := Check(&pe.Info{Name: "rufus.exe", Kind: pe.KindPE})
+	var found bool
+	for _, a := range got[0].Alternatives {
+		if a.Name == "Ventoy" {
+			found = true
+			if a.Installed {
+				t.Error("Ventoy has no command to detect and must not be reported as installed")
+			}
+		}
+	}
+	if !found {
+		t.Error("Ventoy should be offered for a USB writer")
+	}
+}
+
+func TestAlternativesAreOfferedForEachKnownProgram(t *testing.T) {
+	withInstalled(t)
+	for _, name := range []string{"rufus.exe", "cpuz.exe", "hwmonitor.exe", "crystaldiskinfo.exe", "daemontools.exe", "aida64.exe"} {
+		got := Check(&pe.Info{Name: name, Kind: pe.KindPE})
+		if len(got) == 0 {
+			t.Errorf("%s: no caveat", name)
+			continue
+		}
+		if len(got[0].Alternatives) == 0 {
+			t.Errorf("%s: no alternatives offered", name)
+		}
+	}
+}
+
+func TestResolveDoesNotMutateTheSharedTable(t *testing.T) {
+	// The caveat tables are package-level, so resolving must copy rather than
+	// write detection results back into them.
+	withInstalled(t, "dd")
+	_ = Check(&pe.Info{Name: "rufus.exe", Kind: pe.KindPE})
+
+	withInstalled(t) // now nothing is installed
+	for _, a := range Check(&pe.Info{Name: "rufus.exe", Kind: pe.KindPE})[0].Alternatives {
+		if a.Installed {
+			t.Errorf("%s reported installed from a previous run's state", a.Name)
+		}
 	}
 }

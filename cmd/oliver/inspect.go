@@ -43,6 +43,59 @@ func (a *app) printCaveats(caveats []compat.Caveat) {
 				u.Printf("  %s", u.Cyan(line))
 			}
 		}
+		a.printAlternatives(c.Alternatives)
+	}
+}
+
+// printAlternatives lists native tools that do the same job, marking the ones
+// already installed so the advice ends in something runnable now.
+func (a *app) printAlternatives(alts []compat.Alternative) {
+	if len(alts) == 0 {
+		return
+	}
+	u := a.ui
+	var installed int
+	for _, alt := range alts {
+		if alt.Installed {
+			installed++
+		}
+	}
+
+	u.Printf("")
+	if installed > 0 {
+		u.Printf("  %s", u.Bold("Already installed on this system:"))
+	} else {
+		u.Printf("  %s", u.Bold("Native tools that do this properly:"))
+	}
+
+	width := 0
+	for _, alt := range alts {
+		if len(alt.Name) > width {
+			width = len(alt.Name)
+		}
+	}
+	for _, alt := range alts {
+		mark, name := "  ", u.Dim(pad(alt.Name, width))
+		if alt.Installed {
+			mark, name = u.Green("✓ "), u.Bold(pad(alt.Name, width))
+		}
+		line := "    " + mark + name
+		switch {
+		case alt.Installed && alt.Command != "":
+			line += "  " + u.Dim(alt.Command)
+		case alt.Command == "":
+			line += "  " + u.Dim("download")
+		default:
+			line += "  " + u.Dim("not installed")
+		}
+		u.Printf("%s", line)
+		if alt.Note != "" {
+			// Align the note under the tool name, wrapping with a hanging indent.
+			indent := strings.Repeat(" ", width+8)
+			for _, l := range wrap(alt.Note, 72-width) {
+				u.Printf("%s%s", indent, u.Dim(l))
+			}
+		}
 	}
 }
 
