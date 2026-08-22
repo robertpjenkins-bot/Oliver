@@ -63,13 +63,15 @@ the system is 64-bit only, and half the installers in the world are still
 **It tells you when a program cannot work at all.** Some Windows software
 needs raw block devices, kernel drivers or real administrative privilege —
 things no compatibility layer can hand a translated process. Oliver reads the
-embedded manifest and recognises these tools, and says so before the launch
+embedded manifest and version resource, recognises these tools by the identity
+they declare rather than by their file name, and says so before the launch
 rather than letting them fail in a way that looks like a bug in the runner:
 
 ```console
-$ oliver info rufus-3.8.exe
-  privileges   requireAdministrator
-  compressed   UPX
+$ oliver info downloaded_file.exe
+  identifies as Rufus 3.10.1647 (Akeo Consulting)
+  privileges    requireAdministrator
+  compressed    UPX
 
 WILL NOT WORK: Rufus needs hardware access that no compatibility layer provides
   Rufus writes boot records to raw USB devices. That needs direct access to

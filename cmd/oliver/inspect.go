@@ -86,6 +86,10 @@ func (a *app) cmdInfo(args []string) error {
 	u := a.ui
 	u.Printf("%s", u.Bold(info.Name))
 	u.Printf("  %s %s", u.Dim(field("path")), info.Path)
+	if id := info.VersionInfo.Describe(); id != "" {
+		// What the file says it is, which need not match what it is called.
+		u.Printf("  %s %s", u.Dim(field("identifies as")), u.Bold(id))
+	}
 	u.Printf("  %s %s", u.Dim(field("type")), describeKind(info))
 	u.Printf("  %s %s", u.Dim(field("size")), humanBytes(info.Size))
 
@@ -148,7 +152,7 @@ func (a *app) cmdInfo(args []string) error {
 }
 
 // field pads an info label so every value starts in the same column.
-func field(name string) string { return pad(name, 12) }
+func field(name string) string { return pad(name, 13) }
 
 func describeKind(i *pe.Info) string {
 	switch i.Kind {

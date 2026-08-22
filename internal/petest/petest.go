@@ -9,6 +9,8 @@ import (
 	"debug/pe"
 	"encoding/binary"
 	"os"
+	"sort"
+	"unicode/utf16"
 )
 
 // Machine identifiers, re-exported so callers need not import debug/pe.
@@ -44,6 +46,9 @@ type Options struct {
 	FirstSectionName string
 	// Manifest is embedded so that manifest parsing can be exercised.
 	Manifest string
+	// VersionStrings are VS_VERSIONINFO entries (e.g. "ProductName": "Rufus"),
+	// encoded as UTF-16 key/value pairs in a .rsrc section.
+	VersionStrings map[string]string
 }
 
 // Build returns the bytes of a PE image matching opts.
@@ -64,9 +69,18 @@ func Build(o Options) []byte {
 	)
 	idata := buildImportTable(o.Imports, importRVA)
 
+	const (
+		rsrcRVA = 0x3000
+		rsrcRaw = 0x800
+	)
+	rsrc := buildVersionResource(o.VersionStrings)
+
 	sections := uint16(1)
 	if len(idata) > 0 {
-		sections = 2
+		sections++
+	}
+	if len(rsrc) > 0 {
+		sections++
 	}
 
 	var buf bytes.Buffer
@@ -148,6 +162,17 @@ func Build(o Options) []byte {
 		})
 	}
 
+	if len(rsrc) > 0 {
+		_ = binary.Write(&buf, binary.LittleEndian, pe.SectionHeader32{
+			Name:             sectionName(".rsrc"),
+			VirtualSize:      0x1000,
+			VirtualAddress:   rsrcRVA,
+			SizeOfRawData:    0x400,
+			PointerToRawData: rsrcRaw,
+			Characteristics:  0x40000040,
+		})
+	}
+
 	for buf.Len() < 0x400 {
 		buf.WriteByte(0)
 	}
@@ -162,11 +187,59 @@ func Build(o Options) []byte {
 		buf.Write(payload)
 	}
 
+	if len(rsrc) > 0 {
+		for buf.Len() < rsrcRaw {
+			buf.WriteByte(0)
+		}
+		payload := make([]byte, 0x400)
+		copy(payload, rsrc)
+		buf.Write(payload)
+	}
+
 	if o.Manifest != "" {
 		buf.WriteString(o.Manifest)
 	}
 	buf.Write(o.Trailing)
 	return buf.Bytes()
+}
+
+// buildVersionResource encodes key/value pairs the way a VS_VERSIONINFO string
+// table stores them: a UTF-16 key, NUL, padding to a 4-byte boundary, then a
+// UTF-16 value.
+func buildVersionResource(strs map[string]string) []byte {
+	if len(strs) == 0 {
+		return nil
+	}
+	// Sorted so the fixture is byte-for-byte reproducible.
+	keys := make([]string, 0, len(strs))
+	for k := range strs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var out []byte
+	for _, k := range keys {
+		out = append(out, utf16LE(k)...)
+		out = append(out, 0, 0) // key terminator
+		for len(out)%4 != 0 {
+			out = append(out, 0)
+		}
+		out = append(out, utf16LE(strs[k])...)
+		out = append(out, 0, 0) // value terminator
+		for len(out)%4 != 0 {
+			out = append(out, 0)
+		}
+	}
+	return out
+}
+
+func utf16LE(s string) []byte {
+	units := utf16.Encode([]rune(s))
+	out := make([]byte, 0, len(units)*2)
+	for _, u := range units {
+		out = append(out, byte(u), byte(u>>8))
+	}
+	return out
 }
 
 func sectionName(s string) [8]byte {

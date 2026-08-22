@@ -83,6 +83,10 @@ type Info struct {
 	// runs with ordinary Linux permissions.
 	RequiresAdmin bool `json:"requires_admin"`
 
+	// VersionInfo is the identity the program declares about itself, which
+	// survives renaming and packing.
+	VersionInfo VersionInfo `json:"version_info,omitempty"`
+
 	// Packer names the executable compressor wrapping the real program, if any.
 	Packer string `json:"packer,omitempty"`
 	// Packed reports that the real code is compressed. The import table and
@@ -223,6 +227,7 @@ func Inspect(path string) (*Info, error) {
 	info.Installer, info.IsInstaller = detectInstaller(abs, info.Name, f)
 	info.LikelyGame, info.GameHints = detectGame(abs, info)
 
+	info.VersionInfo = readVersionInfo(pf)
 	info.Packer, info.Packed = detectPacker(pf, info)
 	info.ExecutionLevel, info.RequiresAdmin = detectExecutionLevel(pf, f)
 	if info.Packed {

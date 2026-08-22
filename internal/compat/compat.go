@@ -62,10 +62,14 @@ type need struct {
 }
 
 // versioned builds a pattern matching a program name on its own or followed by
-// a version, which is how these tools are usually distributed: "rufus.exe",
-// "rufus-3.8.exe", "rufus_4.5p.exe".
+// anything that does not begin with a letter.
+//
+// That covers every way these tools actually arrive — "rufus.exe",
+// "rufus-3.10.exe", "rufus3.10.exe", "rufus-3.10 (1).exe" from a second
+// download — while still refusing a genuinely different program whose name
+// merely starts the same way, such as "rufusclone-tool.exe".
 func versioned(base string) *regexp.Regexp {
-	return regexp.MustCompile(`^` + regexp.QuoteMeta(base) + `(?:[-_. ]?v?[0-9][0-9a-z._-]*)?$`)
+	return regexp.MustCompile(`^` + regexp.QuoteMeta(base) + `(?:[^a-z].*)?$`)
 }
 
 // knownPrograms lists software whose core function depends on hardware access
@@ -124,11 +128,15 @@ func Check(info *pe.Info) []Caveat {
 		return nil
 	}
 
-	stem := strings.ToLower(strings.TrimSuffix(info.Name, filepath.Ext(info.Name)))
 	var matched *need
-	for i := range knownPrograms {
-		if knownPrograms[i].match.MatchString(stem) {
-			matched = &knownPrograms[i]
+	for _, candidate := range identities(info) {
+		for i := range knownPrograms {
+			if knownPrograms[i].match.MatchString(candidate) {
+				matched = &knownPrograms[i]
+				break
+			}
+		}
+		if matched != nil {
 			break
 		}
 	}
@@ -174,6 +182,34 @@ func Check(info *pe.Info) []Caveat {
 	for i := range out {
 		out[i].Level = out[i].Severity.String()
 	}
+	return out
+}
+
+// identities lists the names a program is known by, most trustworthy first.
+//
+// The file on disk can be called anything, so the executable's own version
+// resource is consulted first: it survives renaming, the suffix a browser adds
+// to a repeated download, and executable packing.
+func identities(info *pe.Info) []string {
+	var out []string
+	add := func(s string) {
+		s = strings.ToLower(strings.TrimSpace(s))
+		s = strings.TrimSuffix(s, filepath.Ext(s))
+		if s == "" {
+			return
+		}
+		for _, existing := range out {
+			if existing == s {
+				return
+			}
+		}
+		out = append(out, s)
+	}
+
+	add(info.VersionInfo.ProductName)
+	add(info.VersionInfo.OriginalFilename)
+	add(info.VersionInfo.FileDescription)
+	add(info.Name)
 	return out
 }
 

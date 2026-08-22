@@ -23,6 +23,38 @@ func TestKnownHardwareToolIsFlaggedAsBlocking(t *testing.T) {
 	}
 }
 
+func TestRenamedProgramIsStillRecognisedByItsVersionResource(t *testing.T) {
+	// The file on disk can be called anything: a browser's "(1)" suffix, a
+	// download manager's hash prefix, or a deliberate rename. What the
+	// executable says about itself is what matters.
+	for _, name := range []string{
+		"totally-innocent.exe",
+		"117e7b59-rufus3.10.exe",
+		"rufus-3.10 (1).exe",
+		"downloaded_file.exe",
+	} {
+		got := Check(&pe.Info{
+			Name: name, Kind: pe.KindPE, Arch: pe.ArchX86,
+			VersionInfo: pe.VersionInfo{ProductName: "Rufus", OriginalFilename: "rufus-3.10.exe"},
+		})
+		if Worst(got) != Blocking {
+			t.Errorf("%s: severity = %v, want Blocking", name, Worst(got))
+		}
+	}
+}
+
+func TestVersionSuffixesInFileNamesStillMatch(t *testing.T) {
+	// With no version resource the file name is all there is to go on.
+	for _, name := range []string{
+		"rufus.exe", "rufus-3.10.exe", "rufus3.10.exe",
+		"rufus-3.10 (1).exe", "rufus_4.5p.exe", "rufus-4.9_x64.exe",
+	} {
+		if Worst(Check(&pe.Info{Name: name, Kind: pe.KindPE})) != Blocking {
+			t.Errorf("%s was not recognised", name)
+		}
+	}
+}
+
 func TestUnrelatedProgramsAreNotFlagged(t *testing.T) {
 	// The match is anchored: a name that merely contains a known program's
 	// name must not trigger it.
@@ -30,6 +62,16 @@ func TestUnrelatedProgramsAreNotFlagged(t *testing.T) {
 		if got := Check(&pe.Info{Name: name, Kind: pe.KindPE}); len(got) != 0 {
 			t.Errorf("%s wrongly flagged: %+v", name, got)
 		}
+	}
+
+	// A different program whose version resource says so must not be caught
+	// just because someone named the file rufus.exe.
+	got := Check(&pe.Info{
+		Name: "rufusclone.exe", Kind: pe.KindPE,
+		VersionInfo: pe.VersionInfo{ProductName: "Notepad++"},
+	})
+	if len(got) != 0 {
+		t.Errorf("unrelated program flagged: %+v", got)
 	}
 }
 
