@@ -85,6 +85,25 @@ WILL NOT WORK: Rufus needs hardware access that no compatibility layer provides
 It still launches the program if you ask it to — the warning is information,
 not a refusal.
 
+**You can hand a program one real disk, deliberately.** Windows disk utilities
+expect to open drives directly, and a prefix has access to none by default —
+which is why they show an empty device list. `oliver device` exposes exactly
+one drive and nothing else:
+
+```console
+$ oliver device list
+DEVICE         SIZE      TYPE       ACCESS      MODEL          IN USE BY
+/dev/nvme0n1   477.0 GB  fixed      read/write  SSD 980        the running system (/, /boot/efi)
+/dev/sda       28.6 GB   removable  read/write  SanDisk Ultra
+
+$ oliver device attach my-prefix /dev/sda
+```
+
+It refuses to attach the disk the running system lives on, warns when the
+device is fixed rather than removable or still has filesystems mounted, and
+tells you plainly when you lack the permissions to write to it — since mapping
+a device cannot grant access your user does not have.
+
 **It keeps programs out of your home directory.** Wine points a prefix's
 Documents, Desktop and Downloads at your real ones. Oliver replaces those links
 with ordinary folders, so an installer cannot scribble on your files, and

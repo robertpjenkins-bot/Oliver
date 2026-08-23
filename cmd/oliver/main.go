@@ -40,6 +40,7 @@ COMMANDS
   why          explain how every installed runtime scores for a program
   backends     list the compatibility runtimes found on this system
   prefix       list, inspect and remove the Windows environments Oliver made
+  device       show this machine's drives, and expose one to a program
   doctor       check this system and report what is missing
   desktop      register Oliver so .exe files open with a double-click
   config       show or create the configuration file
@@ -116,6 +117,8 @@ func run(args []string) error {
 		return a.cmdBackends(rest)
 	case "prefix", "prefixes":
 		return a.cmdPrefix(rest)
+	case "device", "devices", "drives":
+		return a.cmdDevice(rest)
 	case "doctor":
 		return a.cmdDoctor(rest)
 	case "desktop":
