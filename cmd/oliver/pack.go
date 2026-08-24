@@ -113,23 +113,31 @@ func (a *app) cmdPack(args []string) error {
 	}
 	u.Info("· bundled %s", info.Name)
 
-	appRun := appRunFor(slug, info.Name)
+	appRun := appRunFor(slug, info.Name, appName)
 	if info.IsInstaller && *launches != "" {
-		appRun = installerAppRunFor(slug, info.Name, *launches)
+		appRun = installerAppRunFor(slug, info.Name, *launches, appName)
 	}
 	if err := os.WriteFile(filepath.Join(appDir, "AppRun"), []byte(appRun), 0o755); err != nil {
 		return err
 	}
+	if err := os.WriteFile(filepath.Join(appDir, "usr", "bin", slug), []byte(appRun), 0o755); err != nil {
+		return err
+	}
 
+	// Exec must name something that resolves on PATH. "AppRun" does not: it is
+	// a file inside the AppDir, so any desktop entry using it fails with
+	// "could not find AppRun" the moment it is used outside the mount. The
+	// launcher is therefore also installed as usr/bin/<slug>, which AppRun
+	// puts on PATH.
 	desktop := fmt.Sprintf(`[Desktop Entry]
 Type=Application
 Name=%s
 Comment=Windows program packaged with Oliver
-Exec=AppRun %%U
+Exec=%s %%U
 Icon=%s
 Terminal=false
 Categories=Utility;
-`, appName, slug)
+`, appName, slug, slug)
 	for _, p := range []string{
 		filepath.Join(appDir, slug+".desktop"),
 		filepath.Join(appDir, "usr", "share", "applications", slug+".desktop"),
@@ -228,12 +236,44 @@ func oliverBinary() (string, error) {
 // programs write next to their own executable. And the prefix is named
 // explicitly, because the mount path changes on every launch and a
 // path-derived name would build a fresh Windows environment every time.
-func appRunFor(slug, exeName string) string {
+func appRunFor(slug, exeName, appName string) string {
 	return fmt.Sprintf(`#!/bin/sh
 set -eu
 
 HERE="$(dirname "$(readlink -f "${0}")")"
 OLIVER="${HERE}/usr/bin/oliver"
+export PATH="${HERE}/usr/bin:${PATH}"
+
+# Adding this application to the desktop menu has to record where the AppImage
+# actually is: a menu entry pointing at anything inside the mount breaks as
+# soon as the AppImage is closed.
+if [ "${1:-}" = "--install" ] || [ "${1:-}" = "--uninstall" ]; then
+	APPS="${XDG_DATA_HOME:-${HOME}/.local/share}/applications"
+	ICONS="${XDG_DATA_HOME:-${HOME}/.local/share}/icons/hicolor/scalable/apps"
+	ENTRY="${APPS}/%[1]s.desktop"
+	if [ "${1}" = "--uninstall" ]; then
+		rm -f "${ENTRY}" "${ICONS}/%[1]s.svg"
+		echo "Removed %[4]s from your application menu."
+	else
+		SELF="${APPIMAGE:-$(readlink -f "${0}")}"
+		mkdir -p "${APPS}" "${ICONS}"
+		[ -f "${HERE}/%[1]s.svg" ] && cp "${HERE}/%[1]s.svg" "${ICONS}/%[1]s.svg" || true
+		cat > "${ENTRY}" <<DESKTOP_ENTRY
+[Desktop Entry]
+Type=Application
+Name=%[4]s
+Comment=Windows program packaged with Oliver
+Exec="${SELF}" %%U
+TryExec=${SELF}
+Icon=%[1]s
+Terminal=false
+Categories=Utility;
+DESKTOP_ENTRY
+		echo "Added %[4]s to your application menu."
+	fi
+	command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "${APPS}" || true
+	exit 0
+fi
 
 DATA="${XDG_DATA_HOME:-${HOME}/.local/share}/oliver/packed/%[1]s"
 PAYLOAD="${HERE}/usr/share/oliver/payload"
@@ -246,7 +286,7 @@ if [ ! -d "${DATA}" ]; then
 fi
 
 exec "${OLIVER}" run --prefix %[1]s "${DATA}/%[2]s" "$@"
-`, slug, exeName)
+`, slug, exeName, "", appName)
 }
 
 // installerAppRunFor builds the launcher for a packed installer.
@@ -254,12 +294,44 @@ exec "${OLIVER}" run --prefix %[1]s "${DATA}/%[2]s" "$@"
 // The installer runs once, into the AppImage's own Windows environment; every
 // later launch starts the program it installed. Without this an installer
 // packed as an AppImage would simply reinstall itself on every open.
-func installerAppRunFor(slug, installerName, launches string) string {
+func installerAppRunFor(slug, installerName, launches, appName string) string {
 	return fmt.Sprintf(`#!/bin/sh
 set -eu
 
 HERE="$(dirname "$(readlink -f "${0}")")"
 OLIVER="${HERE}/usr/bin/oliver"
+export PATH="${HERE}/usr/bin:${PATH}"
+
+# Adding this application to the desktop menu has to record where the AppImage
+# actually is: a menu entry pointing at anything inside the mount breaks as
+# soon as the AppImage is closed.
+if [ "${1:-}" = "--install" ] || [ "${1:-}" = "--uninstall" ]; then
+	APPS="${XDG_DATA_HOME:-${HOME}/.local/share}/applications"
+	ICONS="${XDG_DATA_HOME:-${HOME}/.local/share}/icons/hicolor/scalable/apps"
+	ENTRY="${APPS}/%[1]s.desktop"
+	if [ "${1}" = "--uninstall" ]; then
+		rm -f "${ENTRY}" "${ICONS}/%[1]s.svg"
+		echo "Removed %[4]s from your application menu."
+	else
+		SELF="${APPIMAGE:-$(readlink -f "${0}")}"
+		mkdir -p "${APPS}" "${ICONS}"
+		[ -f "${HERE}/%[1]s.svg" ] && cp "${HERE}/%[1]s.svg" "${ICONS}/%[1]s.svg" || true
+		cat > "${ENTRY}" <<DESKTOP_ENTRY
+[Desktop Entry]
+Type=Application
+Name=%[4]s
+Comment=Windows program packaged with Oliver
+Exec="${SELF}" %%U
+TryExec=${SELF}
+Icon=%[1]s
+Terminal=false
+Categories=Utility;
+DESKTOP_ENTRY
+		echo "Added %[4]s to your application menu."
+	fi
+	command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "${APPS}" || true
+	exit 0
+fi
 
 DATA="${XDG_DATA_HOME:-${HOME}/.local/share}/oliver/packed/%[1]s"
 STAMP="${DATA}/.installed"
@@ -286,7 +358,7 @@ if [ -z "${TARGET}" ]; then
 fi
 
 exec "${OLIVER}" run --prefix %[1]s "${TARGET}" "$@"
-`, slug, installerName, launches)
+`, slug, installerName, launches, appName)
 }
 
 // findAppImageTool locates appimagetool, which turns an AppDir into a file.

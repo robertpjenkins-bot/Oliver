@@ -389,6 +389,24 @@ func TestPackBuildsARunnableAppDir(t *testing.T) {
 	if !strings.Contains(string(desktop), "Name=Demo App") {
 		t.Errorf("desktop entry should use the product name:\n%s", desktop)
 	}
+	// Exec must name something that resolves. "AppRun" is a file inside the
+	// AppDir, so an entry using it fails with "could not find AppRun" as soon
+	// as it is used outside the mount.
+	if strings.Contains(string(desktop), "Exec=AppRun") {
+		t.Errorf("Exec must not point at AppRun:\n%s", desktop)
+	}
+	if !strings.Contains(string(desktop), "Exec=demo-app") {
+		t.Errorf("Exec should name the bundled launcher:\n%s", desktop)
+	}
+	// ...and that launcher has to exist on the AppImage's PATH.
+	launcher := filepath.Join(appDir, "usr", "bin", "demo-app")
+	st, err := os.Stat(launcher)
+	if err != nil {
+		t.Fatalf("usr/bin/demo-app missing, so Exec would not resolve: %v", err)
+	}
+	if st.Mode().Perm()&0o111 == 0 {
+		t.Error("the bundled launcher must be executable")
+	}
 
 	apprun, err := os.ReadFile(filepath.Join(appDir, "AppRun"))
 	if err != nil {
@@ -576,5 +594,35 @@ func TestCaptureTextRedirectsCommandOutput(t *testing.T) {
 	// Colour must be off, since the text goes into a dialog, not a terminal.
 	if strings.Contains(got, "\x1b[") {
 		t.Errorf("captured text should carry no escape codes:\n%q", got)
+	}
+}
+
+func TestPackedLauncherCanRegisterItselfWithAnAbsolutePath(t *testing.T) {
+	s := newSystem(t)
+	prog := s.program("Thing.exe", petest.Options{Machine: petest.MachineAMD64, PE32Plus: true},
+		"home", "user", "apps")
+
+	outDir := t.TempDir()
+	t.Setenv("APPIMAGETOOL", "")
+	t.Setenv("PATH", filepath.Join(outDir, "nothing"))
+	if _, err := s.run("pack", prog, "-name", "Thing", "-o", filepath.Join(outDir, "t.AppImage"), "-appdir"); err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+
+	script, err := os.ReadFile(filepath.Join(outDir, "t.AppDir", "AppRun"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(script)
+	if !strings.Contains(got, "--install") || !strings.Contains(got, "--uninstall") {
+		t.Errorf("the packed launcher should be able to add itself to the menu:\n%s", got)
+	}
+	// The entry it writes must record where the AppImage is, not a path inside
+	// the mount, which disappears when the AppImage closes.
+	if !strings.Contains(got, "${APPIMAGE:-$(readlink -f \"${0}\")}") {
+		t.Errorf("self-registration must use the AppImage's own path:\n%s", got)
+	}
+	if !strings.Contains(got, `export PATH="${HERE}/usr/bin:${PATH}"`) {
+		t.Errorf("usr/bin must be on PATH so Exec resolves:\n%s", got)
 	}
 }

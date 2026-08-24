@@ -152,6 +152,10 @@ launch and starts the installed program every time after:
 $ oliver pack Setup.msi -launches TheProgram.exe -name "The Program"
 ```
 
+To add a packed program to your application menu, run it once with
+`--install`; the entry it writes records where the AppImage actually is, so it
+keeps working. `--uninstall` removes it again.
+
 Packing does not change whether a program works. If it fails under Wine, it
 fails the same way packed.
 
