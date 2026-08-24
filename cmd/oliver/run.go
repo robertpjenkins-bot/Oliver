@@ -147,16 +147,51 @@ func (a *app) cmdRun(args []string) error {
 		a.ui.Warn("could not record prefix metadata: %v", err)
 	}
 
-	err = runner.Execute(plan, res.prefix, a.ui.Info)
+	logPath := runner.LogPathFor(res.prefix.Name)
+	result, err := runner.Execute(plan, res.prefix, logPath, a.ui.Info)
 	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
+			a.reportFailure(res, result)
 			// The program ran and chose to fail. That is not Oliver's error.
 			return &exitError{code: ee.ExitCode(), err: err}
 		}
 		return fmt.Errorf("launching %s: %w", res.info.Name, err)
 	}
 	return nil
+}
+
+// reportFailure explains a program that died on startup. Launched from a file
+// manager this is otherwise invisible: a spinner appears, then nothing.
+func (a *app) reportFailure(res *resolution, result *runner.Result) {
+	if result == nil {
+		return
+	}
+	u := a.ui
+
+	if result.Vanished {
+		u.Warn("%s started and exited after %s — it failed during startup, it did not run",
+			res.info.Name, result.Duration.Round(time.Millisecond))
+	}
+
+	lines := runner.Diagnose(result.LogPath, 12)
+	if len(lines) > 0 {
+		u.Info("")
+		u.Info("%s", u.Bold("Last output before it stopped:"))
+		for _, l := range lines {
+			u.Info("  %s", u.Dim(l))
+		}
+	}
+	u.Info("")
+	u.Info("%s", u.Dim("full log: "+result.LogPath))
+	u.Info("%s", u.Dim("see it again with: oliver log"))
+
+	// With no terminal attached the above went nowhere the user will look.
+	if !u.Interactive {
+		body := fmt.Sprintf("%s failed to start.\n\n%s\n\nFull log:\n%s",
+			res.info.Name, strings.Join(lines, "\n"), result.LogPath)
+		dialogError("Oliver could not run "+res.info.Name, body)
+	}
 }
 
 // resolution is everything needed to launch, after config, flags and ranking

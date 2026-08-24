@@ -42,6 +42,7 @@ COMMANDS
   prefix       list, inspect and remove the Windows environments Oliver made
   device       show this machine's drives, and expose one to a program
   doctor       check this system and report what is missing
+  log          show the output of the last program that ran
   desktop      register Oliver so .exe files open with a double-click
   config       show or create the configuration file
   version      print the version
@@ -121,6 +122,8 @@ func run(args []string) error {
 		return a.cmdDevice(rest)
 	case "doctor":
 		return a.cmdDoctor(rest)
+	case "log", "logs":
+		return a.cmdLog(rest)
 	case "desktop":
 		return a.cmdDesktop(rest)
 	case "desktop-welcome":

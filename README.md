@@ -116,6 +116,20 @@ while two unrelated programs never disturb each other's settings.
 **Nothing happens behind your back.** `--dry-run` prints the exact commands and
 environment, ready to paste into a shell.
 
+**A failed launch leaves evidence.** A program started from a file manager has
+no terminal, so when it dies on startup all you see is a spinner that flashes
+and disappears. Every run is recorded instead:
+
+```console
+$ oliver log -problems
+err:module:import_dll Library MSVCP140.dll not found
+wine: failed to initialise the prefix
+```
+
+`oliver log` prints the whole thing, `-list` shows past runs. When a run fails
+without a terminal attached, the same summary is raised as a desktop dialog
+rather than vanishing.
+
 ## Install
 
 Download the AppImage, make it executable, and register it with your desktop:

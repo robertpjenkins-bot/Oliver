@@ -4,11 +4,13 @@ package runner
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/robertpjenkins-bot/oliver/internal/backend"
 	"github.com/robertpjenkins-bot/oliver/internal/pe"
@@ -86,6 +88,8 @@ type Options struct {
 type Plan struct {
 	Setup  []Step `json:"setup,omitempty"`
 	Launch Step   `json:"launch"`
+	// Program is the full path of what is being launched.
+	Program string `json:"program"`
 	// NewPrefix reports that the prefix did not exist and will be created.
 	NewPrefix bool   `json:"new_prefix"`
 	WineArch  string `json:"wine_arch,omitempty"`
@@ -105,7 +109,7 @@ func Build(o Options) (*Plan, error) {
 		return nil, fmt.Errorf("no prefix selected")
 	}
 
-	plan := &Plan{NewPrefix: !o.Prefix.Exists()}
+	plan := &Plan{Program: o.Info.Path, NewPrefix: !o.Prefix.Exists()}
 
 	// A prefix's architecture is fixed when it is created. A 32-bit-only
 	// prefix is the reliable way to run a 32-bit program, but it can never be
@@ -316,20 +320,60 @@ func buildEnv(o Options, plan *Plan) []string {
 	return out
 }
 
-// Execute runs a plan, streaming output to the caller's terminal.
-func Execute(plan *Plan, p *prefix.Prefix, log func(string, ...any)) error {
+// Result describes how a run ended.
+type Result struct {
+	// LogPath is where this run's output was recorded.
+	LogPath string
+	// Duration is how long the program ran for.
+	Duration time.Duration
+	// ExitCode is the program's status, or -1 if it never started.
+	ExitCode int
+	// Vanished reports a program that started and exited almost immediately
+	// without being asked to. From a file manager this looks like a spinner
+	// that flashes and disappears, with nothing to show for it.
+	Vanished bool
+}
+
+// Execute runs a plan, streaming output to the caller's terminal and recording
+// everything to a log.
+func Execute(plan *Plan, p *prefix.Prefix, logPath string, log func(string, ...any)) (*Result, error) {
 	if err := p.Prepare(); err != nil {
-		return fmt.Errorf("preparing prefix: %w", err)
+		return nil, fmt.Errorf("preparing prefix: %w", err)
+	}
+
+	res := &Result{LogPath: logPath, ExitCode: -1}
+
+	var logFile *os.File
+	if logPath != "" {
+		f, err := openLog(logPath, plan, plan.Program)
+		if err != nil {
+			log("  (could not open the log: %v)", err)
+		} else {
+			logFile = f
+			defer logFile.Close()
+		}
+	}
+
+	// Everything the program and Wine print goes to the terminal and the log
+	// alike, so a run started from a menu is still diagnosable afterwards.
+	out := io.Writer(os.Stdout)
+	errOut := io.Writer(os.Stderr)
+	if logFile != nil {
+		out = io.MultiWriter(os.Stdout, logFile)
+		errOut = io.MultiWriter(os.Stderr, logFile)
 	}
 
 	for _, step := range plan.Setup {
 		log("· %s", step.Desc)
-		if err := runStep(step); err != nil {
+		if err := runStep(step, errOut); err != nil {
 			if step.Optional {
 				log("  (skipped: %v)", err)
+				if logFile != nil {
+					fmt.Fprintf(logFile, "[oliver] optional step %q failed: %v\n", step.Desc, err)
+				}
 				continue
 			}
-			return fmt.Errorf("%s: %w", step.Desc, err)
+			return res, fmt.Errorf("%s: %w", step.Desc, err)
 		}
 	}
 
@@ -347,17 +391,32 @@ func Execute(plan *Plan, p *prefix.Prefix, log func(string, ...any)) error {
 	cmd.Env = mergeEnv(os.Environ(), plan.Launch.Env)
 	cmd.Dir = plan.Launch.Dir
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	cmd.Stdout = out
+	cmd.Stderr = errOut
+
+	started := time.Now()
+	err := cmd.Run()
+	res.Duration = time.Since(started)
+	res.ExitCode = cmd.ProcessState.ExitCode()
+
+	// A graphical program that is gone in under a couple of seconds did not
+	// run: it failed during startup. Worth naming, because from the desktop it
+	// is indistinguishable from nothing having happened at all.
+	res.Vanished = res.Duration < 2*time.Second && res.ExitCode != 0
+
+	if logFile != nil {
+		fmt.Fprintf(logFile, "\n[oliver] exited with status %d after %s\n", res.ExitCode, res.Duration.Round(time.Millisecond))
+	}
+	return res, err
 }
 
-func runStep(s Step) error {
+func runStep(s Step, errOut io.Writer) error {
 	cmd := exec.Command(s.Argv[0], s.Argv[1:]...)
 	cmd.Env = mergeEnv(os.Environ(), s.Env)
 	cmd.Dir = s.Dir
-	cmd.Stdout = os.Stderr // setup chatter must not pollute the program's stdout
-	cmd.Stderr = os.Stderr
+	// Setup chatter must not pollute the program's own stdout.
+	cmd.Stdout = errOut
+	cmd.Stderr = errOut
 	return cmd.Run()
 }
 
