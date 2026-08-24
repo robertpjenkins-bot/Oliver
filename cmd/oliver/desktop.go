@@ -6,6 +6,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/robertpjenkins-bot/oliver/internal/compat"
+	"github.com/robertpjenkins-bot/oliver/internal/pe"
 )
 
 // exeMimeTypes are the MIME types desktops use for Windows programs. Different
@@ -56,11 +59,19 @@ func (a *app) cmdDesktop(args []string) error {
 	}
 }
 
-// cmdDesktopWelcome runs when the AppImage is opened with no arguments from a
-// desktop menu, where there is no terminal to print help into. It offers the
-// one thing that is worth doing at that moment: connecting Oliver to the file
-// manager so .exe files can be double-clicked.
+// cmdDesktopWelcome runs when Oliver is opened with no arguments from a
+// desktop, where there is no terminal to print help into.
+//
+// Someone who double-clicks expects to be able to do something. Telling them
+// to open a terminal is a dead end, particularly on a machine whose whole
+// point is that you do not need one.
 func (a *app) cmdDesktopWelcome(args []string) error {
+	kit, ok := findDialogKit()
+	if !ok {
+		fmt.Fprint(os.Stdout, usage)
+		return nil
+	}
+
 	registered := false
 	if p := desktopFilePath(); p != "" {
 		if _, err := os.Stat(p); err == nil {
@@ -68,52 +79,147 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 		}
 	}
 
-	if registered {
-		dialogInfo("Oliver is ready",
-			"Oliver is already set up.\n\nRight-click a .exe file and choose Open With → Oliver, or run `oliver` in a terminal.")
+	choices := []menuChoice{
+		{ID: "run", Label: "Run a Windows program", Note: "choose an .exe or .msi to launch"},
+		{ID: "pack", Label: "Package a program as an AppImage", Note: "make it launchable like any other app"},
+		{ID: "doctor", Label: "Check this system", Note: "what is installed and what is missing"},
+		{ID: "log", Label: "Show the last run", Note: "why something failed to start"},
+	}
+	if !registered {
+		choices = append([]menuChoice{
+			{ID: "setup", Label: "Set up double-click for .exe files", Note: "recommended"},
+		}, choices...)
+	}
+
+	choice, ok := kit.menu("Oliver", "What would you like to do?", choices)
+	if !ok || choice == "" {
 		return nil
 	}
 
-	if !dialogConfirm("Set up Oliver",
-		"Register Oliver so you can open Windows programs by double-clicking them?") {
-		return nil
+	switch choice {
+	case "setup":
+		if err := a.desktopInstall(true); err != nil {
+			kit.errorBox("Setup failed", fmtErr(err))
+			return err
+		}
+		kit.info("Oliver is ready", "You can now open .exe and .msi files from your file manager.")
+	case "run":
+		return a.guiRun(kit)
+	case "pack":
+		return a.guiPack(kit)
+	case "doctor":
+		kit.showText("Oliver - system check", a.captureText(func() { _ = a.cmdDoctor(nil) }))
+	case "log":
+		body := a.captureText(func() { _ = a.cmdLog(nil) })
+		if strings.TrimSpace(body) == "" {
+			body = "No runs have been recorded yet."
+		}
+		kit.showText("Oliver - last run", body)
 	}
-	if err := a.desktopInstall(true); err != nil {
-		dialogError("Setup failed", err.Error())
-		return err
-	}
-	dialogInfo("Oliver is ready", "You can now open .exe and .msi files from your file manager.")
 	return nil
 }
 
-// dialogConfirm asks a yes/no question on the desktop. With no dialog tool
-// available it declines, since silently changing the user's file associations
-// without asking would be worse than doing nothing.
-func dialogConfirm(title, body string) bool {
-	if bin, err := exec.LookPath("zenity"); err == nil {
-		return exec.Command(bin, "--question", "--title", title, "--text", body).Run() == nil
+// guiRun picks a program and launches it.
+func (a *app) guiRun(kit dialogKit) error {
+	path, ok := kit.openFile("Choose a Windows program", "Windows programs", windowsProgramPatterns)
+	if !ok || path == "" {
+		return nil
 	}
-	if bin, err := exec.LookPath("kdialog"); err == nil {
-		return exec.Command(bin, "--yesno", body, "--title", title).Run() == nil
+
+	// Say up front when a program is known not to work here, rather than
+	// letting it fail in a way that looks like Oliver's fault.
+	if info, err := pe.Inspect(path); err == nil {
+		if caveats := compat.Check(info); compat.Worst(caveats) == compat.Blocking {
+			c := caveats[0]
+			body := c.Title
+			if c.Symptom != "" {
+				body += "\n\n" + c.Symptom
+			}
+			if c.Workaround != "" {
+				body += "\n\n" + c.Workaround
+			}
+			if !kit.confirm("This program cannot do its job here", body+"\n\nTry it anyway?") {
+				return nil
+			}
+		}
 	}
-	return false
+
+	// A failed launch raises its own dialog, so nothing more is needed here.
+	_ = a.cmdRun([]string{path})
+	return nil
 }
 
-func dialogInfo(title, body string) {
-	if bin, err := exec.LookPath("zenity"); err == nil {
-		_ = exec.Command(bin, "--info", "--title", title, "--text", body).Run()
-		return
+// guiPack wraps a program into an AppImage.
+func (a *app) guiPack(kit dialogKit) error {
+	path, ok := kit.openFile("Choose a Windows program to package", "Windows programs", windowsProgramPatterns)
+	if !ok || path == "" {
+		return nil
 	}
-	if bin, err := exec.LookPath("kdialog"); err == nil {
-		_ = exec.Command(bin, "--msgbox", body, "--title", title).Run()
-		return
+
+	info, err := pe.Inspect(path)
+	if err != nil {
+		kit.errorBox("Cannot package this file", fmtErr(err))
+		return nil
 	}
-	fmt.Fprintf(os.Stderr, "%s\n%s\n", title, body)
+
+	name := info.VersionInfo.ProductName
+	if name == "" {
+		name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	}
+	name, ok = kit.entry("Package as AppImage", "Name for the application:", name)
+	if !ok || name == "" {
+		return nil
+	}
+
+	args := []string{path, "-name", name}
+
+	// An installer packaged as-is would reinstall itself on every launch, so
+	// ask what it installs.
+	if info.IsInstaller {
+		target, ok := kit.entry("Package as AppImage",
+			"This is an installer. Which program does it install? "+
+				"(the .exe name, for example MinecraftLauncher.exe)", "")
+		if !ok {
+			return nil
+		}
+		if target != "" {
+			args = append(args, "-launches", target)
+		}
+	}
+
+	home, _ := os.UserHomeDir()
+	out := filepath.Join(home, "Desktop", name+"-x86_64.AppImage")
+	if st, err := os.Stat(filepath.Dir(out)); err != nil || !st.IsDir() {
+		out = filepath.Join(home, name+"-x86_64.AppImage")
+	}
+	args = append(args, "-o", out)
+
+	var packErr error
+	text := a.captureText(func() { packErr = a.cmdPack(args) })
+	if packErr != nil {
+		kit.errorBox("Packaging failed", fmtErr(packErr)+"\n\n"+text)
+		return nil
+	}
+	kit.info("Packaged", name+" was saved to:\n"+out)
+	return nil
 }
 
+// captureText runs a command with its output redirected into a string, so a
+// terminal-shaped report can be shown in a dialog.
+func (a *app) captureText(fn func()) string {
+	var buf strings.Builder
+	prevOut, prevErr, prevColor := a.ui.Out, a.ui.Err, a.ui.Color
+	a.ui.Out, a.ui.Err, a.ui.Color = &buf, &buf, false
+	defer func() { a.ui.Out, a.ui.Err, a.ui.Color = prevOut, prevErr, prevColor }()
+	fn()
+	return buf.String()
+}
+
+// dialogError reports a failure on the desktop, for callers outside the
+// welcome flow.
 func dialogError(title, body string) {
-	if bin, err := exec.LookPath("zenity"); err == nil {
-		_ = exec.Command(bin, "--error", "--title", title, "--text", body).Run()
+	if kit, ok := findDialogKit(); ok {
+		kit.errorBox(title, body)
 		return
 	}
 	fmt.Fprintf(os.Stderr, "%s: %s\n", title, body)

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/robertpjenkins-bot/oliver/internal/config"
 	"github.com/robertpjenkins-bot/oliver/internal/petest"
 	"github.com/robertpjenkins-bot/oliver/internal/ui"
 )
@@ -547,5 +548,33 @@ func TestWhichFindsInstalledProgramsAndSkipsUninstallers(t *testing.T) {
 	}
 	if _, err := s.run("which", "TheApp.exe"); err == nil {
 		t.Error("expected an error when no prefix is given")
+	}
+}
+
+func TestWelcomeFallsBackToUsageWithoutADialogTool(t *testing.T) {
+	s := newSystem(t)
+	// No zenity or kdialog on PATH: the welcome flow must still not fail.
+	t.Setenv("PATH", s.path("usr", "bin"))
+	if _, err := s.run("desktop-welcome"); err != nil {
+		t.Errorf("desktop-welcome should degrade gracefully, got %v", err)
+	}
+}
+
+func TestCaptureTextRedirectsCommandOutput(t *testing.T) {
+	s := newSystem(t)
+	a := &app{ui: newUI()}
+	cfg, err := config.Load(s.path("home", "user", ".config", "oliver", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.cfg = cfg
+
+	got := a.captureText(func() { _ = a.cmdDoctor(nil) })
+	if !strings.Contains(got, "compatibility runtime") {
+		t.Errorf("captured text missing the report:\n%s", got)
+	}
+	// Colour must be off, since the text goes into a dialog, not a terminal.
+	if strings.Contains(got, "\x1b[") {
+		t.Errorf("captured text should carry no escape codes:\n%q", got)
 	}
 }
