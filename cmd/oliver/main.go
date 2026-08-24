@@ -44,6 +44,7 @@ COMMANDS
   doctor       check this system and report what is missing
   log          show the output of the last program that ran
   pack         wrap a Windows program into an AppImage
+  which        find an installed program inside a Windows environment
   desktop      register Oliver so .exe files open with a double-click
   config       show or create the configuration file
   version      print the version
@@ -127,6 +128,8 @@ func run(args []string) error {
 		return a.cmdLog(rest)
 	case "pack":
 		return a.cmdPack(rest)
+	case "which":
+		return a.cmdWhich(rest)
 	case "desktop":
 		return a.cmdDesktop(rest)
 	case "desktop-welcome":

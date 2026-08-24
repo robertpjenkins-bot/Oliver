@@ -443,3 +443,109 @@ func TestFlagsAreAcceptedAfterPositionalArguments(t *testing.T) {
 		t.Errorf("the -o path after the positional was ignored: %v", err)
 	}
 }
+
+func TestPackedInstallerInstallsOnceThenLaunchesTheProgram(t *testing.T) {
+	s := newSystem(t)
+	// An MSI, as most Windows software is distributed.
+	msi := s.path("home", "user", "Setup.msi")
+	body := append([]byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}, make([]byte, 512)...)
+	if err := os.WriteFile(msi, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outDir := t.TempDir()
+	t.Setenv("APPIMAGETOOL", "")
+	t.Setenv("PATH", filepath.Join(outDir, "nothing"))
+	out := filepath.Join(outDir, "app.AppImage")
+
+	if _, err := s.run("pack", msi, "-launches", "TheApp.exe", "-name", "The App", "-o", out, "-appdir"); err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+
+	script, err := os.ReadFile(filepath.Join(outDir, "app.AppDir", "AppRun"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(script)
+	// The installer must run once, guarded by a marker.
+	if !strings.Contains(got, ".installed") {
+		t.Errorf("AppRun must not reinstall on every launch:\n%s", got)
+	}
+	if !strings.Contains(got, "Setup.msi") {
+		t.Errorf("AppRun should run the installer:\n%s", got)
+	}
+	// Later launches must start the installed program, located in the prefix.
+	if !strings.Contains(got, "which --prefix the-app TheApp.exe") {
+		t.Errorf("AppRun should locate the installed program:\n%s", got)
+	}
+}
+
+func TestPackWarnsWhenAnInstallerHasNoFollowUpProgram(t *testing.T) {
+	s := newSystem(t)
+	msi := s.path("home", "user", "Setup.msi")
+	body := append([]byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}, make([]byte, 512)...)
+	if err := os.WriteFile(msi, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outDir := t.TempDir()
+	t.Setenv("APPIMAGETOOL", "")
+	t.Setenv("PATH", filepath.Join(outDir, "nothing"))
+
+	// Packing an installer with no -launches still works, but the AppRun then
+	// simply runs the installer, so the user is told.
+	if _, err := s.run("pack", msi, "-o", filepath.Join(outDir, "app.AppImage"), "-appdir"); err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	script, err := os.ReadFile(filepath.Join(outDir, "app.AppDir", "AppRun"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(script), ".installed") {
+		t.Error("without -launches the AppRun should not pretend to install once")
+	}
+}
+
+func TestWhichFindsInstalledProgramsAndSkipsUninstallers(t *testing.T) {
+	s := newSystem(t)
+	prefixRoot := t.TempDir()
+	t.Setenv("OLIVER_PREFIX_ROOT", prefixRoot)
+
+	drive := filepath.Join(prefixRoot, "demo", "pfx", "drive_c", "Program Files", "Demo")
+	if err := os.MkdirAll(drive, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"TheApp.exe", "unins000.exe"} {
+		if err := petest.WriteFile(filepath.Join(drive, name), petest.Options{Machine: petest.MachineAMD64, PE32Plus: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A stale copy somewhere less likely than Program Files.
+	temp := filepath.Join(prefixRoot, "demo", "pfx", "drive_c", "windows", "temp")
+	if err := os.MkdirAll(temp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := petest.WriteFile(filepath.Join(temp, "TheApp.exe"), petest.Options{Machine: petest.MachineAMD64, PE32Plus: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := s.run("which", "-p", "demo", "TheApp.exe")
+	if err != nil {
+		t.Fatalf("which: %v", err)
+	}
+	if !strings.Contains(out, filepath.Join("Program Files", "Demo", "TheApp.exe")) {
+		t.Errorf("expected the Program Files copy to win:\n%s", out)
+	}
+
+	// The uninstaller shares the directory but is never the thing to launch.
+	if out, _ := s.run("which", "-p", "demo", "unins000.exe"); strings.Contains(out, "unins000") {
+		t.Errorf("uninstallers must not be returned:\n%s", out)
+	}
+
+	if _, err := s.run("which", "-p", "demo", "Absent.exe"); err == nil {
+		t.Error("expected an error for a program that is not installed")
+	}
+	if _, err := s.run("which", "TheApp.exe"); err == nil {
+		t.Error("expected an error when no prefix is given")
+	}
+}

@@ -32,6 +32,7 @@ func (a *app) cmdPack(args []string) error {
 	name := fs.String("name", "", "application name (default: taken from the executable)")
 	iconPath := fs.String("icon", "", "PNG or SVG icon to use")
 	payloadDir := fs.String("dir", "", "also bundle this directory, for programs that need their files alongside")
+	launches := fs.String("launches", "", "for an installer: the program to run once it has installed, e.g. MinecraftLauncher.exe")
 	appDirOnly := fs.Bool("appdir", false, "build the AppDir but do not package it")
 	if err := parseFlagsAnywhere(fs, args); err != nil {
 		return err
@@ -57,6 +58,18 @@ func (a *app) cmdPack(args []string) error {
 	slug := strings.ToLower(strings.Trim(packableName.ReplaceAllString(appName, "-"), "-"))
 	if slug == "" {
 		slug = "windows-app"
+	}
+
+	// Packing an installer without saying what it installs produces an
+	// AppImage that reinstalls the program every time it is opened, which is
+	// almost never what someone means by packaging an application.
+	if info.IsInstaller && *launches == "" {
+		u := a.ui
+		u.Warn("%s is an installer (%s)", info.Name, info.Installer)
+		u.Info("%s", u.Dim("Packed as-is, the AppImage will run the installer on every launch."))
+		u.Info("%s", u.Dim("Use -launches to name the program it installs, for example:"))
+		u.Info("%s", u.Dim(fmt.Sprintf("  oliver pack %s -launches TheProgram.exe", info.Name)))
+		u.Info("")
 	}
 
 	self, err := oliverBinary()
@@ -100,7 +113,11 @@ func (a *app) cmdPack(args []string) error {
 	}
 	u.Info("· bundled %s", info.Name)
 
-	if err := os.WriteFile(filepath.Join(appDir, "AppRun"), []byte(appRunFor(slug, info.Name)), 0o755); err != nil {
+	appRun := appRunFor(slug, info.Name)
+	if info.IsInstaller && *launches != "" {
+		appRun = installerAppRunFor(slug, info.Name, *launches)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "AppRun"), []byte(appRun), 0o755); err != nil {
 		return err
 	}
 
@@ -230,6 +247,46 @@ fi
 
 exec "${OLIVER}" run --prefix %[1]s "${DATA}/%[2]s" "$@"
 `, slug, exeName)
+}
+
+// installerAppRunFor builds the launcher for a packed installer.
+//
+// The installer runs once, into the AppImage's own Windows environment; every
+// later launch starts the program it installed. Without this an installer
+// packed as an AppImage would simply reinstall itself on every open.
+func installerAppRunFor(slug, installerName, launches string) string {
+	return fmt.Sprintf(`#!/bin/sh
+set -eu
+
+HERE="$(dirname "$(readlink -f "${0}")")"
+OLIVER="${HERE}/usr/bin/oliver"
+
+DATA="${XDG_DATA_HOME:-${HOME}/.local/share}/oliver/packed/%[1]s"
+STAMP="${DATA}/.installed"
+PAYLOAD="${HERE}/usr/share/oliver/payload"
+
+if [ ! -d "${DATA}" ]; then
+	mkdir -p "${DATA}"
+	cp -a "${PAYLOAD}/." "${DATA}/"
+fi
+
+# First launch: install into this AppImage's own Windows environment.
+if [ ! -f "${STAMP}" ]; then
+	echo "Installing %[2]s. This happens only once." >&2
+	"${OLIVER}" run --prefix %[1]s "${DATA}/%[2]s" "$@"
+	touch "${STAMP}"
+fi
+
+# Every launch after that: start the installed program.
+TARGET="$("${OLIVER}" which --prefix %[1]s %[3]s 2>/dev/null || true)"
+if [ -z "${TARGET}" ]; then
+	echo "Installed, but %[3]s was not found in the Windows environment." >&2
+	echo "List what is there with: ${OLIVER} which --prefix %[1]s %[3]s --all" >&2
+	exit 1
+fi
+
+exec "${OLIVER}" run --prefix %[1]s "${TARGET}" "$@"
+`, slug, installerName, launches)
 }
 
 // findAppImageTool locates appimagetool, which turns an AppDir into a file.

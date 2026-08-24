@@ -144,6 +144,14 @@ improves as the host improves. The program gets a stable prefix and a writable
 copy of itself, so an AppImage's read-only mount and changing mount path do not
 break programs that keep files next to their own executable.
 
+Most Windows software ships as an installer rather than as the program itself.
+Say what the installer produces, and the AppImage installs once on first
+launch and starts the installed program every time after:
+
+```console
+$ oliver pack Setup.msi -launches TheProgram.exe -name "The Program"
+```
+
 Packing does not change whether a program works. If it fails under Wine, it
 fails the same way packed.
 
