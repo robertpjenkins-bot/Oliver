@@ -29,7 +29,7 @@ func (a *app) cmdDevice(args []string) error {
 	asJSON := fs.Bool("json", false, "print as JSON")
 	letter := fs.String("letter", "", "drive letter to use (default: the first free one)")
 	force := fs.Bool("f", false, "skip the confirmation prompt")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsAnywhere(fs, args); err != nil {
 		return err
 	}
 

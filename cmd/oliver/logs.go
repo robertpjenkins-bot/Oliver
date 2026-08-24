@@ -21,7 +21,7 @@ func (a *app) cmdLog(args []string) error {
 	list := fs.Bool("list", false, "list recorded runs instead of printing one")
 	tail := fs.Int("n", 0, "print only the last n lines")
 	problems := fs.Bool("problems", false, "print only the lines that look like errors")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsAnywhere(fs, args); err != nil {
 		return err
 	}
 

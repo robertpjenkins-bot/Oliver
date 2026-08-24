@@ -43,6 +43,7 @@ COMMANDS
   device       show this machine's drives, and expose one to a program
   doctor       check this system and report what is missing
   log          show the output of the last program that ran
+  pack         wrap a Windows program into an AppImage
   desktop      register Oliver so .exe files open with a double-click
   config       show or create the configuration file
   version      print the version
@@ -124,6 +125,8 @@ func run(args []string) error {
 		return a.cmdDoctor(rest)
 	case "log", "logs":
 		return a.cmdLog(rest)
+	case "pack":
+		return a.cmdPack(rest)
 	case "desktop":
 		return a.cmdDesktop(rest)
 	case "desktop-welcome":
@@ -152,6 +155,54 @@ func looksLikeProgram(arg string) bool {
 		return true
 	}
 	return false
+}
+
+// parseFlagsAnywhere parses flags that appear after positional arguments too.
+//
+// Go's flag package stops at the first non-flag argument, so `oliver pack
+// app.exe -o out` would silently ignore -o. That is the order people naturally
+// type. Commands that forward trailing arguments to the Windows program —
+// `run` above all — must not use this, since there the trailing flags belong
+// to the program.
+func parseFlagsAnywhere(fs *flag.FlagSet, args []string) error {
+	var flags, positional []string
+	defined := map[string]bool{}
+	fs.VisitAll(func(f *flag.Flag) { defined[f.Name] = true })
+
+	// A flag that takes a value may be written as "-o out" or "-o=out"; only
+	// the first form consumes the next argument.
+	takesValue := func(name string) bool {
+		f := fs.Lookup(name)
+		if f == nil {
+			return false
+		}
+		// Boolean flags are the ones that do not consume a following value.
+		bf, ok := f.Value.(interface{ IsBoolFlag() bool })
+		return !ok || !bf.IsBoolFlag()
+	}
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			positional = append(positional, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			positional = append(positional, arg)
+			continue
+		}
+		name := strings.TrimLeft(arg, "-")
+		value := ""
+		if idx := strings.IndexByte(name, '='); idx >= 0 {
+			name, value = name[:idx], name[idx:]
+		}
+		flags = append(flags, arg)
+		if value == "" && takesValue(name) && i+1 < len(args) {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+	return fs.Parse(append(flags, positional...))
 }
 
 // newFlagSet builds a flag set that prints a command-specific usage block.

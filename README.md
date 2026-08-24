@@ -130,6 +130,23 @@ wine: failed to initialise the prefix
 without a terminal attached, the same summary is raised as a desktop dialog
 rather than vanishing.
 
+**It can wrap a program into an AppImage.** For software with no Linux build
+at all, `oliver pack` produces a single file that runs it anywhere:
+
+```console
+$ oliver pack ~/Downloads/SomeApp.exe
+✓ built SomeApp-x86_64.AppImage
+```
+
+The result carries the program and Oliver — not a copy of Wine. On each machine
+it uses whichever runtime is installed there, so it stays a few megabytes and
+improves as the host improves. The program gets a stable prefix and a writable
+copy of itself, so an AppImage's read-only mount and changing mount path do not
+break programs that keep files next to their own executable.
+
+Packing does not change whether a program works. If it fails under Wine, it
+fails the same way packed.
+
 ## Install
 
 Download the AppImage, make it executable, and register it with your desktop:

@@ -20,7 +20,7 @@ func (a *app) cmdBackends(args []string) error {
 	fs := a.newFlagSet("backends", backendsSynopsis)
 	asJSON := fs.Bool("json", false, "print the list as JSON")
 	verbose := fs.Bool("v", false, "show install paths and notes")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsAnywhere(fs, args); err != nil {
 		return err
 	}
 
@@ -85,7 +85,7 @@ func (a *app) cmdPrefix(args []string) error {
 	fs := a.newFlagSet("prefix", prefixSynopsis)
 	asJSON := fs.Bool("json", false, "print as JSON")
 	force := fs.Bool("f", false, "remove without confirmation")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsAnywhere(fs, args); err != nil {
 		return err
 	}
 
@@ -186,7 +186,7 @@ Shows where the configuration file lives, or writes a starter one.`
 
 func (a *app) cmdConfig(args []string) error {
 	fs := a.newFlagSet("config", configSynopsis)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlagsAnywhere(fs, args); err != nil {
 		return err
 	}
 	sub := "show"

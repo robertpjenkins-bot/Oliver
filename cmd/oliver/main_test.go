@@ -349,3 +349,97 @@ func TestQuoteExecEscapesAwkwardPaths(t *testing.T) {
 		t.Errorf("a path with spaces must be quoted, got %s", got)
 	}
 }
+
+func TestPackBuildsARunnableAppDir(t *testing.T) {
+	s := newSystem(t)
+	prog := s.program("DemoApp.exe", petest.Options{
+		Machine: petest.MachineAMD64, PE32Plus: true,
+		VersionStrings: map[string]string{"ProductName": "Demo App"},
+	}, "home", "user", "apps")
+
+	outDir := t.TempDir()
+	out := filepath.Join(outDir, "demo.AppImage")
+	// Without appimagetool the AppDir is still produced, which is the part
+	// worth testing: packaging it is one external command.
+	t.Setenv("APPIMAGETOOL", "")
+	t.Setenv("PATH", filepath.Join(outDir, "nothing"))
+
+	if _, err := s.run("pack", prog, "-o", out, "-appdir"); err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+
+	appDir := filepath.Join(outDir, "demo.AppDir")
+	for _, want := range []string{
+		"AppRun",
+		"usr/bin/oliver",
+		"usr/share/oliver/payload/DemoApp.exe",
+		"demo-app.desktop",
+	} {
+		if _, err := os.Stat(filepath.Join(appDir, want)); err != nil {
+			t.Errorf("packed AppDir missing %s: %v", want, err)
+		}
+	}
+
+	// The name comes from the version resource, not the file name.
+	desktop, err := os.ReadFile(filepath.Join(appDir, "demo-app.desktop"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(desktop), "Name=Demo App") {
+		t.Errorf("desktop entry should use the product name:\n%s", desktop)
+	}
+
+	apprun, err := os.ReadFile(filepath.Join(appDir, "AppRun"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(apprun)
+	// An AppImage mounts at a new path every launch, so a path-derived prefix
+	// name would rebuild the Windows environment on every run.
+	if !strings.Contains(script, "--prefix demo-app") {
+		t.Errorf("AppRun must pin the prefix name:\n%s", script)
+	}
+	// It is also read-only, so the program needs a writable copy of itself.
+	if !strings.Contains(script, "oliver/packed/demo-app") {
+		t.Errorf("AppRun must copy the payload somewhere writable:\n%s", script)
+	}
+
+	info, err := os.Stat(filepath.Join(appDir, "AppRun"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Error("AppRun must be executable")
+	}
+}
+
+func TestPackRejectsSomethingThatIsNotAProgram(t *testing.T) {
+	s := newSystem(t)
+	notExe := s.write("hello", "home", "user", "notes.txt")
+	if _, err := s.run("pack", notExe); err == nil {
+		t.Fatal("expected pack to reject a non-executable")
+	}
+	if _, err := s.run("pack"); err == nil {
+		t.Fatal("expected pack to require a program")
+	}
+}
+
+func TestFlagsAreAcceptedAfterPositionalArguments(t *testing.T) {
+	// `oliver pack app.exe -o out` is the order people type; Go's flag package
+	// would otherwise stop at the first positional and ignore -o entirely.
+	s := newSystem(t)
+	prog := s.program("Thing.exe", petest.Options{Machine: petest.MachineAMD64, PE32Plus: true},
+		"home", "user", "apps")
+
+	outDir := t.TempDir()
+	out := filepath.Join(outDir, "chosen.AppImage")
+	t.Setenv("APPIMAGETOOL", "")
+	t.Setenv("PATH", filepath.Join(outDir, "nothing"))
+
+	if _, err := s.run("pack", prog, "-o", out, "-appdir"); err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "chosen.AppDir")); err != nil {
+		t.Errorf("the -o path after the positional was ignored: %v", err)
+	}
+}
