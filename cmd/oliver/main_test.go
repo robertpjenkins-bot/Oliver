@@ -626,3 +626,49 @@ func TestPackedLauncherCanRegisterItselfWithAnAbsolutePath(t *testing.T) {
 		t.Errorf("usr/bin must be on PATH so Exec resolves:\n%s", got)
 	}
 }
+
+func TestSlugForDropsWindowsExtensions(t *testing.T) {
+	// A name typed with its extension must not become an icon called
+	// "thing.exe" or a desktop file named after a file type.
+	cases := map[string]string{
+		"Minecraft Launcher":    "minecraft-launcher",
+		"MinecraftLauncher.exe": "minecraftlauncher",
+		"Setup.MSI":             "setup",
+		"Weird  Name!!":         "weird-name",
+		"":                      "windows-app",
+	}
+	for in, want := range cases {
+		if got := slugFor(in); got != want {
+			t.Errorf("slugFor(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestInstallMenuEntryRecordsAnAbsolutePath(t *testing.T) {
+	s := newSystem(t)
+	appImage := s.path("home", "user", "Apps", "Thing-x86_64.AppImage")
+	if err := os.MkdirAll(filepath.Dir(appImage), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(appImage, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := installMenuEntry("Thing", "thing", appImage, []byte("<svg/>")); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dataHome(), "applications", "thing.desktop"))
+	if err != nil {
+		t.Fatalf("entry not written: %v", err)
+	}
+	entry := string(data)
+	if !strings.Contains(entry, "Exec="+appImage) {
+		t.Errorf("Exec must be the AppImage's absolute path:\n%s", entry)
+	}
+	if strings.Contains(entry, "Exec=AppRun") {
+		t.Errorf("Exec must never be AppRun:\n%s", entry)
+	}
+	if _, err := os.Stat(filepath.Join(dataHome(), "icons", "hicolor", "scalable", "apps", "thing.svg")); err != nil {
+		t.Errorf("icon not installed: %v", err)
+	}
+}

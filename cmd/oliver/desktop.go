@@ -200,8 +200,35 @@ func (a *app) guiPack(kit dialogKit) error {
 		kit.errorBox("Packaging failed", fmtErr(packErr)+"\n\n"+text)
 		return nil
 	}
-	kit.info("Packaged", name+" was saved to:\n"+out)
+	// Offer to add it to the menu now. Leaving this to the user means they
+	// meet the bundled desktop entry first, which cannot work on its own.
+	if kit.confirm("Packaged", name+" was saved to:\n"+out+"\n\nAdd it to your application menu?") {
+		if err := installMenuEntry(name, slugFor(name), out, []byte(iconSVG)); err != nil {
+			kit.errorBox("Could not add it to the menu", fmtErr(err))
+		} else {
+			kit.info("Added", name+" is now in your application menu.")
+		}
+	} else {
+		kit.info("Packaged", name+" was saved to:\n"+out)
+	}
 	return nil
+}
+
+// slugFor derives the identifier used for desktop files and icons. A name
+// carrying a Windows extension is trimmed, so "Thing.exe" does not become an
+// icon called "thing.exe".
+func slugFor(name string) string {
+	for _, ext := range []string{".exe", ".msi", ".bat", ".cmd"} {
+		if strings.HasSuffix(strings.ToLower(name), ext) {
+			name = name[:len(name)-len(ext)]
+			break
+		}
+	}
+	s := strings.ToLower(strings.Trim(packableName.ReplaceAllString(name, "-"), "-"))
+	if s == "" {
+		return "windows-app"
+	}
+	return s
 }
 
 // captureText runs a command with its output redirected into a string, so a
@@ -213,6 +240,45 @@ func (a *app) captureText(fn func()) string {
 	defer func() { a.ui.Out, a.ui.Err, a.ui.Color = prevOut, prevErr, prevColor }()
 	fn()
 	return buf.String()
+}
+
+// installMenuEntry adds an application to the desktop menu.
+//
+// The entry records an absolute path, because nothing inside an AppImage
+// survives it closing: an entry pointing into the mount is the cause of
+// "could not find" errors when it is later clicked.
+func installMenuEntry(name, slug, execPath string, icon []byte) error {
+	apps := filepath.Join(dataHome(), "applications")
+	if err := os.MkdirAll(apps, 0o755); err != nil {
+		return err
+	}
+
+	if len(icon) > 0 {
+		iconDir := filepath.Join(dataHome(), "icons", "hicolor", "scalable", "apps")
+		if err := os.MkdirAll(iconDir, 0o755); err == nil {
+			_ = os.WriteFile(filepath.Join(iconDir, slug+".svg"), icon, 0o644)
+		}
+	}
+
+	entry := fmt.Sprintf(`[Desktop Entry]
+Type=Application
+Name=%s
+Comment=Windows program packaged with Oliver
+Exec=%s %%U
+TryExec=%s
+Icon=%s
+Terminal=false
+Categories=Utility;
+`, name, quoteExec(execPath), execPath, slug)
+
+	path := filepath.Join(apps, slug+".desktop")
+	if err := os.WriteFile(path, []byte(entry), 0o644); err != nil {
+		return err
+	}
+	if _, err := exec.LookPath("update-desktop-database"); err == nil {
+		_ = exec.Command("update-desktop-database", apps).Run()
+	}
+	return nil
 }
 
 // dialogError reports a failure on the desktop, for callers outside the

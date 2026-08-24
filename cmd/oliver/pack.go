@@ -55,10 +55,7 @@ func (a *app) cmdPack(args []string) error {
 	if appName == "" {
 		appName = strings.TrimSuffix(info.Name, filepath.Ext(info.Name))
 	}
-	slug := strings.ToLower(strings.Trim(packableName.ReplaceAllString(appName, "-"), "-"))
-	if slug == "" {
-		slug = "windows-app"
-	}
+	slug := slugFor(appName)
 
 	// Packing an installer without saying what it installs produces an
 	// AppImage that reinstalls the program every time it is opened, which is
@@ -209,6 +206,10 @@ Categories=Utility;
 	}
 
 	u.Info("%s built %s", u.Green("✓"), output)
+	u.Info("")
+	u.Info("%s", u.Bold("To add it to your application menu:"))
+	u.Info("  %s --install", shellQuoteArg(output))
+	u.Info("%s", u.Dim("Do not use the .desktop file inside the AppImage: it cannot work on its own."))
 	if info.RequiresAdmin || info.Packed {
 		u.Info("%s", u.Dim("run `oliver info` on the program for anything that might stop it working"))
 	}
@@ -383,6 +384,14 @@ func findAppImageTool() (string, error) {
 	}
 	return "", fmt.Errorf("appimagetool not found: install it, or set APPIMAGETOOL to a copy " +
 		"(https://github.com/AppImage/appimagetool/releases)")
+}
+
+// shellQuoteArg quotes a path for display as a runnable command.
+func shellQuoteArg(p string) string {
+	if !strings.ContainsAny(p, " \t'\"\\") {
+		return p
+	}
+	return "'" + strings.ReplaceAll(p, "'", `'\''`) + "'"
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {
