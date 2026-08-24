@@ -205,6 +205,36 @@ func TestProtonNeverGetsWineArchOrWineboot(t *testing.T) {
 	}
 }
 
+// TestNewProtonPrefixIsBuiltBeforeTheProgramRuns covers the second half of the
+// isolation guarantee. Proton creates its prefix during launch, so without an
+// explicit build step the home directories are only isolated after the program
+// has already had a run with access to them.
+func TestNewProtonPrefixIsBuiltBeforeTheProgramRuns(t *testing.T) {
+	plan, err := Build(Options{Info: info(pe.KindPE, pe.ArchX64), Backend: protonBackend(true), Prefix: testPrefix(t, false)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Setup) == 0 {
+		t.Fatal("a new Proton prefix needs a build step before launch")
+	}
+	first := strings.Join(plan.Setup[0].Argv, " ")
+	if !strings.Contains(first, "umu-run") || !strings.Contains(first, "cmd /c exit") {
+		t.Errorf("setup step = %q, want a trivial command through Proton", first)
+	}
+	if !plan.Setup[0].Optional {
+		t.Error("failing to pre-build the prefix must not abort the launch")
+	}
+
+	// An existing prefix needs no build step at all.
+	plan, err = Build(Options{Info: info(pe.KindPE, pe.ArchX64), Backend: protonBackend(true), Prefix: testPrefix(t, true)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Setup) != 0 {
+		t.Errorf("an existing Proton prefix needs no setup, got %+v", plan.Setup)
+	}
+}
+
 func TestMenuBuilderIsAlwaysDisabledAndMonoOnlyWhenUnused(t *testing.T) {
 	plan, _ := Build(Options{Info: info(pe.KindPE, pe.ArchX64), Backend: wineBackend(), Prefix: testPrefix(t, true)})
 	ov := envOf(plan.Launch)["WINEDLLOVERRIDES"]
@@ -356,6 +386,69 @@ func TestBuildRejectsIncompleteOptions(t *testing.T) {
 	} {
 		if _, err := Build(o); err == nil {
 			t.Errorf("expected an error for incomplete options %+v", o)
+		}
+	}
+}
+
+// TestNonExecutableTargetsAreHandledForEveryBackend guards a real defect: the
+// Proton path returned before the check for targets that are not executables,
+// so an MSI was handed to Proton as if it were a program. On a machine with no
+// system Wine — a Steam Deck, for instance — that is every installer.
+func TestNonExecutableTargetsAreHandledForEveryBackend(t *testing.T) {
+	msi := info(pe.KindMSI, pe.ArchUnknown)
+	msi.Path, msi.Name = "/games/demo/Installer.msi", "Installer.msi"
+
+	bat := info(pe.KindBatch, pe.ArchUnknown)
+	bat.Path, bat.Name = "/games/demo/run.bat", "run.bat"
+
+	cases := []struct {
+		name    string
+		backend *backend.Backend
+		info    *pe.Info
+		want    string
+	}{
+		{"msi via umu", protonBackend(true), msi, "/usr/bin/umu-run msiexec /i /games/demo/Installer.msi"},
+		{"msi via proton", protonBackend(false), msi, "/steam/GE-Proton9-20/proton run msiexec /i /games/demo/Installer.msi"},
+		{"msi via wine", wineBackend(), msi, "/usr/bin/wine msiexec /i /games/demo/Installer.msi"},
+		{"batch via umu", protonBackend(true), bat, "/usr/bin/umu-run cmd /c /games/demo/run.bat"},
+		{"batch via proton", protonBackend(false), bat, "/steam/GE-Proton9-20/proton run cmd /c /games/demo/run.bat"},
+		{"batch via wine", wineBackend(), bat, "/usr/bin/wine cmd /c /games/demo/run.bat"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			plan, err := Build(Options{Info: c.info, Backend: c.backend, Prefix: testPrefix(t, true)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(plan.Launch.Argv, " "); got != c.want {
+				t.Errorf("argv = %q\n    want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestProgramArgumentsFollowTheInstallerCommand(t *testing.T) {
+	msi := info(pe.KindMSI, pe.ArchUnknown)
+	msi.Path, msi.Name = "/games/demo/Installer.msi", "Installer.msi"
+	plan, err := Build(Options{
+		Info: msi, Backend: protonBackend(true), Prefix: testPrefix(t, true),
+		Args: []string{"/quiet"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "/usr/bin/umu-run msiexec /i /games/demo/Installer.msi /quiet"
+	if got := strings.Join(plan.Launch.Argv, " "); got != want {
+		t.Errorf("argv = %q, want %q", got, want)
+	}
+}
+
+func TestDOSBinaryIsRefusedForProtonToo(t *testing.T) {
+	// The refusal used to live only on the Wine path.
+	for _, b := range []*backend.Backend{protonBackend(true), protonBackend(false), wineBackend()} {
+		_, err := Build(Options{Info: info(pe.KindDOS, pe.ArchUnknown), Backend: b, Prefix: testPrefix(t, true)})
+		if err == nil {
+			t.Errorf("%s: expected a DOS binary to be refused", b.ID)
 		}
 	}
 }

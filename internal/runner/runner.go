@@ -129,15 +129,27 @@ func Build(o Options) (*Plan, error) {
 		workDir = filepath.Dir(o.Info.Path)
 	}
 
-	if plan.NewPrefix && o.Backend.Kind != backend.KindProton {
-		// Initialise the prefix explicitly so the sandbox and Windows version
-		// can be applied before the program ever runs.
-		boot := append(wineArgv(o.Backend), "wineboot", "--init")
+	if plan.NewPrefix {
+		// Build the prefix before the program runs, so it can be isolated from
+		// the real home directory first. Proton would otherwise create it
+		// during launch, which is too late: the program would already be able
+		// to reach the user's own files on its very first run.
+		var boot []string
+		desc := "create the Wine prefix"
+		if o.Backend.Kind == backend.KindProton {
+			boot = append(protonArgv(o.Backend), "cmd", "/c", "exit")
+			desc = "create the Proton prefix"
+		} else {
+			boot = append(wineArgv(o.Backend), "wineboot", "--init")
+		}
 		plan.Setup = append(plan.Setup, Step{
-			Desc: "create the Wine prefix",
+			Desc: desc,
 			Argv: boot,
 			Env:  env,
 			Dir:  workDir,
+			// A failure here is not fatal: the launch below creates the prefix
+			// anyway, just without the isolation pass.
+			Optional: o.Backend.Kind == backend.KindProton,
 		})
 	}
 	if plan.WinVer != "" && o.Backend.Kind != backend.KindProton {
@@ -178,31 +190,49 @@ func wineArgv(b *backend.Backend) []string {
 	}
 }
 
+// protonArgv is the command prefix that runs something inside Proton.
+func protonArgv(b *backend.Backend) []string {
+	if len(b.Launcher) > 0 {
+		return append([]string{}, b.Launcher...)
+	}
+	return []string{b.Exec, "run"}
+}
+
 // launchCommand builds the argv that starts the target program.
+//
+// What to run inside Windows is decided first and separately from which
+// runtime family runs it. Not every target is an executable — an MSI is data
+// for the installer, a batch file is input to the command interpreter — and
+// that is true whether Wine or Proton is doing the work.
 func launchCommand(o Options) ([]string, error) {
-	target := o.Info.Path
+	windowsArgs, err := windowsCommand(o)
+	if err != nil {
+		return nil, err
+	}
+	windowsArgs = append(windowsArgs, o.Args...)
 
 	if o.Backend.Kind == backend.KindProton {
-		if len(o.Backend.Launcher) > 0 {
-			// umu-run takes the executable directly and sets up the Steam
-			// runtime container itself.
-			return append(append(append([]string{}, o.Backend.Launcher...), target), o.Args...), nil
-		}
-		// Without umu, Proton's own entry point is the next best thing.
-		return append([]string{o.Backend.Exec, "run", target}, o.Args...), nil
+		// umu-run sets up the Steam runtime container and runs what it is
+		// given inside it; without umu, Proton's own entry point does.
+		return append(protonArgv(o.Backend), windowsArgs...), nil
 	}
+	return append(wineArgv(o.Backend), windowsArgs...), nil
+}
 
-	argv := wineArgv(o.Backend)
+// windowsCommand returns the command as Windows itself would express it.
+func windowsCommand(o Options) ([]string, error) {
+	target := o.Info.Path
 	switch o.Info.Kind {
 	case pe.KindMSI:
-		// An MSI is data, not a program: it has to be handed to the installer.
-		return append(append(argv, "msiexec", "/i", target), o.Args...), nil
+		// An MSI is a database, not a program. Executing it directly fails
+		// with a format error; it has to go through the Windows installer.
+		return []string{"msiexec", "/i", target}, nil
 	case pe.KindBatch:
-		return append(append(argv, "cmd", "/c", target), o.Args...), nil
+		return []string{"cmd", "/c", target}, nil
 	case pe.KindDOS:
-		return nil, fmt.Errorf("%s is a 16-bit DOS program; Wine cannot run it (try DOSBox)", o.Info.Name)
+		return nil, fmt.Errorf("%s is a 16-bit DOS program; neither Wine nor Proton can run it (try DOSBox)", o.Info.Name)
 	}
-	return append(append(argv, target), o.Args...), nil
+	return []string{target}, nil
 }
 
 // resolveWinVer decides which Windows version the prefix should report.

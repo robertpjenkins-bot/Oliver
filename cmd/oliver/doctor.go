@@ -46,6 +46,7 @@ func (a *app) cmdDoctor(args []string) error {
 
 	checks := []check{
 		checkRuntimes(backends),
+		checkPlainWine(backends),
 		check32Bit(backends),
 		checkProtonSupport(backends),
 		checkGraphics(),
@@ -124,6 +125,29 @@ func checkRuntimes(bs []*backend.Backend) check {
 		Name:   "compatibility runtime",
 		Status: statusOK,
 		Result: fmt.Sprintf("%d found (%s)", len(bs), strings.Join(parts, ", ")),
+	}
+}
+
+// checkPlainWine reports a Proton-only system. Proton is built to launch
+// games from Steam; installers and ordinary desktop applications work far more
+// reliably under plain Wine, and a machine with none is a common cause of
+// programs that will not start.
+func checkPlainWine(bs []*backend.Backend) check {
+	for _, b := range bs {
+		if b.Kind == backend.KindWine || b.Kind == backend.KindCrossOver {
+			return check{Name: "plain Wine", Status: statusOK, Result: "available (" + b.Name + ")"}
+		}
+	}
+	if len(bs) == 0 {
+		return check{Name: "plain Wine", Status: statusFail, Result: "no runtime installed"}
+	}
+	return check{
+		Name:   "plain Wine",
+		Status: statusWarn,
+		Result: "none: only Proton is installed",
+		Advice: "installers and desktop applications will go through Proton, which is built for " +
+			"launching games from Steam and is less reliable for anything else. Install Wine, or " +
+			"install Bottles from Discover and let it download a Wine runner — Oliver will find it.",
 	}
 }
 
