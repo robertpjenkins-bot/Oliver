@@ -346,8 +346,12 @@ fi
 # First launch: install into this AppImage's own Windows environment.
 if [ ! -f "${STAMP}" ]; then
 	echo "Installing %[2]s. This happens only once." >&2
-	"${OLIVER}" run --prefix %[1]s "${DATA}/%[2]s" "$@"
-	touch "${STAMP}"
+	# Installers routinely report a non-zero status after succeeding, so the
+	# proof of success is that the program appeared, not the exit code.
+	"${OLIVER}" run --prefix %[1]s "${DATA}/%[2]s" "$@" || true
+	if "${OLIVER}" which --prefix %[1]s %[3]s >/dev/null 2>&1; then
+		touch "${STAMP}"
+	fi
 fi
 
 # Every launch after that: start the installed program.

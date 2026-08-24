@@ -41,6 +41,8 @@ func (a *app) cmdDesktop(args []string) error {
 	}
 
 	switch sub {
+	case "clean":
+		return a.desktopClean()
 	case "install":
 		return a.desktopInstall(*setDefault)
 	case "uninstall", "remove":
@@ -55,7 +57,7 @@ func (a *app) cmdDesktop(args []string) error {
 		a.ui.Printf("%s", a.ui.Dim("launcher: "+selfPath()))
 		return nil
 	default:
-		return fmt.Errorf("unknown subcommand %q (want install, uninstall or status)", sub)
+		return fmt.Errorf("unknown subcommand %q (want install, uninstall, status or clean)", sub)
 	}
 }
 
@@ -84,6 +86,7 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 		{ID: "pack", Label: "Package a program as an AppImage", Note: "make it launchable like any other app"},
 		{ID: "doctor", Label: "Check this system", Note: "what is installed and what is missing"},
 		{ID: "log", Label: "Show the last run", Note: "why something failed to start"},
+		{ID: "clean", Label: "Fix broken menu entries", Note: "remove launcher icons that no longer work"},
 	}
 	if !registered {
 		choices = append([]menuChoice{
@@ -109,6 +112,11 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 		return a.guiPack(kit)
 	case "doctor":
 		kit.showText("Oliver - system check", a.captureText(func() { _ = a.cmdDoctor(nil) }))
+	case "clean":
+		// The prompt inside desktopClean needs a terminal, so decide here and
+		// report what happened in a dialog.
+		report := a.captureText(func() { _ = a.desktopCleanForce(kit) })
+		kit.showText("Oliver - menu entries", report)
 	case "log":
 		body := a.captureText(func() { _ = a.cmdLog(nil) })
 		if strings.TrimSpace(body) == "" {
@@ -240,6 +248,215 @@ func (a *app) captureText(fn func()) string {
 	defer func() { a.ui.Out, a.ui.Err, a.ui.Color = prevOut, prevErr, prevColor }()
 	fn()
 	return buf.String()
+}
+
+// desktopCleanForce runs the cleanup from the desktop menu, asking through a
+// dialog rather than a terminal prompt.
+func (a *app) desktopCleanForce(kit dialogKit) error {
+	broken := findBrokenEntries()
+	if len(broken) == 0 {
+		a.ui.Printf("Every menu entry points at something that exists.")
+		return nil
+	}
+	var ours []brokenEntry
+	for _, b := range broken {
+		a.ui.Printf("%s\n  runs %s\n  problem: %s", b.Name, b.Command, b.Reason)
+		if b.Ours {
+			ours = append(ours, b)
+		} else {
+			a.ui.Printf("  left alone: not created by Oliver")
+		}
+		a.ui.Printf("")
+	}
+	if len(ours) == 0 {
+		a.ui.Printf("None of these were created by Oliver, so nothing was removed.")
+		return nil
+	}
+	if !kit.confirm("Fix broken menu entries",
+		fmt.Sprintf("%d launcher entries no longer work. Remove them?", len(ours))) {
+		a.ui.Printf("Nothing was removed.")
+		return nil
+	}
+	for _, b := range ours {
+		if err := os.Remove(b.Path); err != nil {
+			a.ui.Printf("could not remove %s: %v", b.Path, err)
+			continue
+		}
+		a.ui.Printf("removed %s", filepath.Base(b.Path))
+	}
+	if _, err := exec.LookPath("update-desktop-database"); err == nil {
+		_ = exec.Command("update-desktop-database", filepath.Join(dataHome(), "applications")).Run()
+	}
+	return nil
+}
+
+// findBrokenEntries lists menu entries whose command cannot be run.
+func findBrokenEntries() []brokenEntry {
+	apps := filepath.Join(dataHome(), "applications")
+	entries, err := os.ReadDir(apps)
+	if err != nil {
+		return nil
+	}
+	var broken []brokenEntry
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".desktop") {
+			continue
+		}
+		if b, bad := inspectEntry(filepath.Join(apps, e.Name())); bad {
+			broken = append(broken, b)
+		}
+	}
+	return broken
+}
+
+// brokenEntry is a desktop menu entry whose command cannot be run.
+type brokenEntry struct {
+	Path    string
+	Name    string
+	Command string
+	Reason  string
+	// Ours reports an entry Oliver created, which is safe to remove.
+	Ours bool
+}
+
+// desktopClean finds menu entries that cannot launch anything.
+//
+// An entry left behind by an earlier packaging attempt keeps its icon in the
+// launcher and keeps failing, however many times the application is repacked:
+// each new package writes a new entry rather than repairing the old one.
+func (a *app) desktopClean() error {
+	apps := filepath.Join(dataHome(), "applications")
+	entries, err := os.ReadDir(apps)
+	if err != nil {
+		if os.IsNotExist(err) {
+			a.ui.Printf("No application menu entries to check.")
+			return nil
+		}
+		return err
+	}
+
+	_ = entries
+	broken := findBrokenEntries()
+
+	u := a.ui
+	if len(broken) == 0 {
+		u.Printf("%s", u.Green("Every menu entry points at something that exists."))
+		return nil
+	}
+
+	u.Printf("%s", u.Bold("Menu entries that cannot launch anything:"))
+	u.Printf("")
+	var removable int
+	for _, b := range broken {
+		u.Printf("  %s", u.Bold(b.Name))
+		u.Printf("    %s %s", u.Dim("runs   "), b.Command)
+		u.Printf("    %s %s", u.Dim("problem"), u.Red(b.Reason))
+		u.Printf("    %s %s", u.Dim("file   "), b.Path)
+		if b.Ours {
+			removable++
+		} else {
+			u.Printf("    %s", u.Dim("not created by Oliver, so left alone"))
+		}
+		u.Printf("")
+	}
+
+	if removable == 0 {
+		u.Printf("%s", u.Dim("None of these were created by Oliver, so nothing was removed."))
+		return nil
+	}
+	if !u.Confirm(fmt.Sprintf("Remove %d entry/entries Oliver created?", removable), true) {
+		u.Info("nothing removed")
+		return nil
+	}
+	for _, b := range broken {
+		if !b.Ours {
+			continue
+		}
+		if err := os.Remove(b.Path); err != nil {
+			u.Warn("could not remove %s: %v", b.Path, err)
+			continue
+		}
+		u.Info("removed %s", filepath.Base(b.Path))
+	}
+	if _, err := exec.LookPath("update-desktop-database"); err == nil {
+		_ = exec.Command("update-desktop-database", apps).Run()
+	}
+	return nil
+}
+
+// inspectEntry reports whether a desktop entry's command can actually be run.
+func inspectEntry(path string) (brokenEntry, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return brokenEntry{}, false
+	}
+	text := string(data)
+
+	b := brokenEntry{Path: path, Name: filepath.Base(path)}
+	// Oliver stamps what it writes, so its own entries can be told apart from
+	// everything else in the menu.
+	b.Ours = strings.Contains(text, "packaged with Oliver") ||
+		strings.Contains(text, "Comment=Run Windows programs with the best runtime")
+
+	for _, line := range strings.Split(text, "\n") {
+		switch {
+		case strings.HasPrefix(line, "Name=") && b.Name == filepath.Base(path):
+			b.Name = strings.TrimPrefix(line, "Name=")
+		case strings.HasPrefix(line, "Exec="):
+			b.Command = strings.TrimSpace(strings.TrimPrefix(line, "Exec="))
+		}
+	}
+	if b.Command == "" {
+		return brokenEntry{}, false
+	}
+
+	program := execProgram(b.Command)
+	switch {
+	case program == "":
+		return brokenEntry{}, false
+	case program == "AppRun":
+		// The AppDir convention, which only resolves inside an AppImage.
+		b.Reason = "points at AppRun, which exists only inside an AppImage"
+		b.Ours = true
+		return b, true
+	case strings.ContainsRune(program, '/'):
+		if _, err := os.Stat(program); err != nil {
+			b.Reason = "the file it runs no longer exists"
+			return b, true
+		}
+	default:
+		if _, err := exec.LookPath(program); err != nil {
+			b.Reason = "no program called " + program + " is installed"
+			return b, true
+		}
+	}
+	return brokenEntry{}, false
+}
+
+// execProgram extracts the program from a desktop Exec line, dropping the
+// quoting and the field codes the specification allows.
+func execProgram(exec string) string {
+	exec = strings.TrimSpace(exec)
+	if exec == "" {
+		return ""
+	}
+	if exec[0] == '"' || exec[0] == '\'' {
+		quote := exec[0]
+		if end := strings.IndexByte(exec[1:], quote); end >= 0 {
+			return exec[1 : end+1]
+		}
+	}
+	first := strings.Fields(exec)[0]
+	// env-style prefixes name no program of their own.
+	if first == "env" || strings.Contains(first, "=") {
+		for _, f := range strings.Fields(exec)[1:] {
+			if !strings.Contains(f, "=") {
+				return f
+			}
+		}
+		return ""
+	}
+	return first
 }
 
 // installMenuEntry adds an application to the desktop menu.

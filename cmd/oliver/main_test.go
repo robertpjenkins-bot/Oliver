@@ -672,3 +672,90 @@ func TestInstallMenuEntryRecordsAnAbsolutePath(t *testing.T) {
 		t.Errorf("icon not installed: %v", err)
 	}
 }
+
+func TestDesktopCleanFindsEntriesThatCannotLaunch(t *testing.T) {
+	s := newSystem(t)
+	apps := s.mkdir("home", "user", ".local", "share", "applications")
+
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(apps, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The entry an early packed AppImage left behind.
+	write("stale.desktop", "[Desktop Entry]\nType=Application\nName=Minecraft Installer\n"+
+		"Comment=Windows program packaged with Oliver\nExec=AppRun %U\n")
+	// One pointing at an AppImage that has been renamed or deleted.
+	write("gone.desktop", "[Desktop Entry]\nType=Application\nName=Gone\n"+
+		"Comment=Windows program packaged with Oliver\nExec=\"/nowhere/App-x86_64.AppImage\" %U\n")
+	// Someone else's broken entry: reported, never touched.
+	write("theirs.desktop", "[Desktop Entry]\nType=Application\nName=Theirs\nExec=/nowhere/else %U\n")
+	// A healthy entry.
+	write("fine.desktop", "[Desktop Entry]\nType=Application\nName=Fine\nExec=/bin/sh %U\n")
+
+	broken := findBrokenEntries()
+	byName := map[string]brokenEntry{}
+	for _, b := range broken {
+		byName[b.Name] = b
+	}
+	if len(broken) != 3 {
+		t.Fatalf("found %d broken entries, want 3: %+v", len(broken), broken)
+	}
+	if b := byName["Minecraft Installer"]; !b.Ours || !strings.Contains(b.Reason, "AppRun") {
+		t.Errorf("the AppRun entry should be recognised as ours: %+v", b)
+	}
+	if b := byName["Gone"]; !b.Ours || !strings.Contains(b.Reason, "no longer exists") {
+		t.Errorf("a dangling AppImage path should be flagged: %+v", b)
+	}
+	if b := byName["Theirs"]; b.Ours {
+		t.Errorf("an unrelated entry must never be marked removable: %+v", b)
+	}
+	if _, ok := byName["Fine"]; ok {
+		t.Error("a working entry must not be reported as broken")
+	}
+}
+
+func TestExecProgramHandlesQuotingAndFieldCodes(t *testing.T) {
+	cases := map[string]string{
+		`AppRun %U`:                       "AppRun",
+		`"/home/deck/My App.AppImage" %U`: "/home/deck/My App.AppImage",
+		`/bin/sh -c "thing" %f`:           "/bin/sh",
+		`env FOO=1 /bin/sh %U`:            "/bin/sh",
+		``:                                "",
+	}
+	for in, want := range cases {
+		if got := execProgram(in); got != want {
+			t.Errorf("execProgram(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestPackedInstallerStampsOnEvidenceNotExitCode(t *testing.T) {
+	s := newSystem(t)
+	msi := s.path("home", "user", "Setup.msi")
+	body := append([]byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}, make([]byte, 512)...)
+	if err := os.WriteFile(msi, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outDir := t.TempDir()
+	t.Setenv("APPIMAGETOOL", "")
+	t.Setenv("PATH", filepath.Join(outDir, "nothing"))
+	if _, err := s.run("pack", msi, "-launches", "TheApp.exe", "-name", "App",
+		"-o", filepath.Join(outDir, "a.AppImage"), "-appdir"); err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	script, err := os.ReadFile(filepath.Join(outDir, "a.AppDir", "AppRun"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(script)
+	// Installers commonly report failure after succeeding, so the launcher
+	// must not treat a non-zero status as fatal.
+	if !strings.Contains(got, `"$@" || true`) {
+		t.Errorf("the installer's exit status must not abort the launcher:\n%s", got)
+	}
+	// ...and must confirm success by looking for the program.
+	if !strings.Contains(got, "which --prefix app TheApp.exe >/dev/null") {
+		t.Errorf("success should be confirmed by finding the program:\n%s", got)
+	}
+}
