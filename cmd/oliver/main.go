@@ -43,6 +43,7 @@ COMMANDS
   device       show this machine's drives, and expose one to a program
   doctor       check this system and report what is missing
   log          show the output of the last program that ran
+  report       write everything needed to diagnose a problem to one file
   pack         wrap a Windows program into an AppImage
   which        find an installed program inside a Windows environment
   desktop      register Oliver so .exe files open with a double-click
@@ -126,6 +127,8 @@ func run(args []string) error {
 		return a.cmdDoctor(rest)
 	case "log", "logs":
 		return a.cmdLog(rest)
+	case "report":
+		return a.cmdReport(rest)
 	case "pack":
 		return a.cmdPack(rest)
 	case "which":

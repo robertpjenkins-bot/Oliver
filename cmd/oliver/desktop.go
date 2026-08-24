@@ -87,6 +87,7 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 		{ID: "doctor", Label: "Check this system", Note: "what is installed and what is missing"},
 		{ID: "log", Label: "Show the last run", Note: "why something failed to start"},
 		{ID: "clean", Label: "Fix broken menu entries", Note: "remove launcher icons that no longer work"},
+		{ID: "report", Label: "Save a diagnostic report", Note: "one file describing everything, saved to your desktop"},
 	}
 	if !registered {
 		choices = append([]menuChoice{
@@ -117,6 +118,14 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 		// report what happened in a dialog.
 		report := a.captureText(func() { _ = a.desktopCleanForce(kit) })
 		kit.showText("Oliver - menu entries", report)
+	case "report":
+		var err error
+		msg := a.captureText(func() { err = a.cmdReport(nil) })
+		if err != nil {
+			kit.errorBox("Could not save the report", fmtErr(err))
+		} else {
+			kit.info("Report saved", strings.TrimSpace(msg)+"\n\nYou can attach this file when asking for help.")
+		}
 	case "log":
 		body := a.captureText(func() { _ = a.cmdLog(nil) })
 		if strings.TrimSpace(body) == "" {
@@ -290,20 +299,52 @@ func (a *app) desktopCleanForce(kit dialogKit) error {
 	return nil
 }
 
-// findBrokenEntries lists menu entries whose command cannot be run.
-func findBrokenEntries() []brokenEntry {
-	apps := filepath.Join(dataHome(), "applications")
-	entries, err := os.ReadDir(apps)
-	if err != nil {
-		return nil
+// entryDirs are the places a launcher icon can live.
+//
+// The applications directory is the menu, but a desktop shortcut is a
+// .desktop file sitting in the desktop folder itself, and on KDE that is
+// where an icon the user made by hand ends up. Cleanup that skips it leaves
+// exactly the icon they are clicking.
+func entryDirs() []string {
+	dirs := []string{filepath.Join(dataHome(), "applications")}
+	if d := os.Getenv("XDG_DESKTOP_DIR"); d != "" {
+		dirs = append(dirs, d)
 	}
-	var broken []brokenEntry
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".desktop") {
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, "Desktop"))
+	}
+
+	seen := map[string]bool{}
+	var out []string
+	for _, d := range dirs {
+		real := d
+		if r, err := filepath.EvalSymlinks(d); err == nil {
+			real = r
+		}
+		if seen[real] {
 			continue
 		}
-		if b, bad := inspectEntry(filepath.Join(apps, e.Name())); bad {
-			broken = append(broken, b)
+		seen[real] = true
+		out = append(out, d)
+	}
+	return out
+}
+
+// findBrokenEntries lists launcher entries whose command cannot be run.
+func findBrokenEntries() []brokenEntry {
+	var broken []brokenEntry
+	for _, dir := range entryDirs() {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".desktop") {
+				continue
+			}
+			if b, bad := inspectEntry(filepath.Join(dir, e.Name())); bad {
+				broken = append(broken, b)
+			}
 		}
 	}
 	return broken
@@ -325,17 +366,6 @@ type brokenEntry struct {
 // launcher and keeps failing, however many times the application is repacked:
 // each new package writes a new entry rather than repairing the old one.
 func (a *app) desktopClean() error {
-	apps := filepath.Join(dataHome(), "applications")
-	entries, err := os.ReadDir(apps)
-	if err != nil {
-		if os.IsNotExist(err) {
-			a.ui.Printf("No application menu entries to check.")
-			return nil
-		}
-		return err
-	}
-
-	_ = entries
 	broken := findBrokenEntries()
 
 	u := a.ui
@@ -344,7 +374,7 @@ func (a *app) desktopClean() error {
 		return nil
 	}
 
-	u.Printf("%s", u.Bold("Menu entries that cannot launch anything:"))
+	u.Printf("%s", u.Bold("Launcher entries that cannot start anything:"))
 	u.Printf("")
 	var removable int
 	for _, b := range broken {
@@ -379,7 +409,7 @@ func (a *app) desktopClean() error {
 		u.Info("removed %s", filepath.Base(b.Path))
 	}
 	if _, err := exec.LookPath("update-desktop-database"); err == nil {
-		_ = exec.Command("update-desktop-database", apps).Run()
+		_ = exec.Command("update-desktop-database", filepath.Join(dataHome(), "applications")).Run()
 	}
 	return nil
 }

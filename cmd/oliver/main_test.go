@@ -810,3 +810,94 @@ func TestCleanCatchesAHarvestedBundledEntry(t *testing.T) {
 		t.Errorf("the reason should name the missing program: %q", broken[0].Reason)
 	}
 }
+
+func TestCleanupAlsoScansTheDesktopFolder(t *testing.T) {
+	// A shortcut the user made, or one a desktop environment created, is a
+	// .desktop file in the desktop folder — not in the applications menu.
+	// Cleanup that only looked at the menu left exactly that icon in place.
+	s := newSystem(t)
+	desktop := s.mkdir("home", "user", "Desktop")
+	entry := filepath.Join(desktop, "packed-app.desktop")
+	body := "[Desktop Entry]\nType=Application\nName=Packed App\n" +
+		"Comment=Windows program packaged with Oliver\nExec=packed-app %U\n"
+	if err := os.WriteFile(entry, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	broken := findBrokenEntries()
+	if len(broken) != 1 {
+		t.Fatalf("a broken desktop shortcut was not found: %+v", broken)
+	}
+	if broken[0].Path != entry {
+		t.Errorf("found %s, want the desktop shortcut %s", broken[0].Path, entry)
+	}
+	if !broken[0].Ours {
+		t.Error("an entry carrying Oliver's stamp should be removable")
+	}
+}
+
+func TestEntryDirsCoversMenuAndDesktopWithoutDuplicates(t *testing.T) {
+	s := newSystem(t)
+	dirs := entryDirs()
+	if len(dirs) < 2 {
+		t.Fatalf("entryDirs = %v, want the menu and the desktop", dirs)
+	}
+	seen := map[string]bool{}
+	for _, d := range dirs {
+		if seen[d] {
+			t.Errorf("%s listed twice", d)
+		}
+		seen[d] = true
+	}
+	wantMenu := s.path("home", "user", ".local", "share", "applications")
+	if !seen[wantMenu] {
+		t.Errorf("the applications menu is missing from %v", dirs)
+	}
+
+	// An explicitly configured desktop directory must be honoured.
+	custom := s.mkdir("home", "user", "Skrivbord")
+	t.Setenv("XDG_DESKTOP_DIR", custom)
+	found := false
+	for _, d := range entryDirs() {
+		if d == custom {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("XDG_DESKTOP_DIR was ignored: %v", entryDirs())
+	}
+}
+
+func TestReportGathersWhatIsNeededToDiagnose(t *testing.T) {
+	s := newSystem(t)
+	out := filepath.Join(t.TempDir(), "report.txt")
+
+	// A broken shortcut that the report must call out.
+	desktop := s.mkdir("home", "user", "Desktop")
+	if err := os.WriteFile(filepath.Join(desktop, "bad.desktop"),
+		[]byte("[Desktop Entry]\nType=Application\nName=Bad\nExec=nonexistent-thing %U\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.run("report", "-o", out); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		"system check",
+		"runtimes found",
+		"launcher entries",
+		"windows environments",
+		"last run",
+		"BROKEN",            // the faulty shortcut is identified
+		"nonexistent-thing", // and named
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("report missing %q", want)
+		}
+	}
+}
