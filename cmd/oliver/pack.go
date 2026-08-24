@@ -126,6 +126,15 @@ func (a *app) cmdPack(args []string) error {
 	// "could not find AppRun" the moment it is used outside the mount. The
 	// launcher is therefore also installed as usr/bin/<slug>, which AppRun
 	// puts on PATH.
+	// An AppImage must contain a desktop entry, but that entry can never work
+	// on its own: its Exec cannot name a path, because no path inside the
+	// AppImage survives the AppImage closing. Desktop environments that
+	// harvest it into the applications menu therefore produce an icon that
+	// fails with "could not find <name>" every time it is clicked.
+	//
+	// NoDisplay keeps the harvested copy out of menus, so the only visible
+	// entry is the one written at install time, which records where the
+	// AppImage actually is.
 	desktop := fmt.Sprintf(`[Desktop Entry]
 Type=Application
 Name=%s
@@ -134,6 +143,7 @@ Exec=%s %%U
 Icon=%s
 Terminal=false
 Categories=Utility;
+NoDisplay=true
 `, appName, slug, slug)
 	for _, p := range []string{
 		filepath.Join(appDir, slug+".desktop"),

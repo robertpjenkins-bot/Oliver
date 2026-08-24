@@ -398,6 +398,13 @@ func TestPackBuildsARunnableAppDir(t *testing.T) {
 	if !strings.Contains(string(desktop), "Exec=demo-app") {
 		t.Errorf("Exec should name the bundled launcher:\n%s", desktop)
 	}
+	// The bundled entry cannot work outside the AppImage whatever Exec says,
+	// because no path inside one survives it closing. Desktop environments
+	// that harvest it into the menu would otherwise produce an icon that
+	// fails every time it is clicked.
+	if !strings.Contains(string(desktop), "NoDisplay=true") {
+		t.Errorf("the bundled entry must be hidden from menus:\n%s", desktop)
+	}
 	// ...and that launcher has to exist on the AppImage's PATH.
 	launcher := filepath.Join(appDir, "usr", "bin", "demo-app")
 	st, err := os.Stat(launcher)
@@ -757,5 +764,49 @@ func TestPackedInstallerStampsOnEvidenceNotExitCode(t *testing.T) {
 	// ...and must confirm success by looking for the program.
 	if !strings.Contains(got, "which --prefix app TheApp.exe >/dev/null") {
 		t.Errorf("success should be confirmed by finding the program:\n%s", got)
+	}
+}
+
+func TestRegisteredEntryIsVisibleUnlikeTheBundledOne(t *testing.T) {
+	// The entry written at install time is the one meant to be seen: it
+	// records a real path, so it must not inherit the bundled entry's hiding.
+	s := newSystem(t)
+	appImage := s.path("home", "user", "Thing-x86_64.AppImage")
+	if err := os.WriteFile(appImage, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := installMenuEntry("Thing", "thing", appImage, nil); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dataHome(), "applications", "thing.desktop"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "NoDisplay") {
+		t.Errorf("the installed entry must be visible:\n%s", data)
+	}
+}
+
+func TestCleanCatchesAHarvestedBundledEntry(t *testing.T) {
+	// What a desktop environment copies out of an AppImage: Oliver's stamp,
+	// and an Exec naming something that exists only inside the mount.
+	s := newSystem(t)
+	apps := s.mkdir("home", "user", ".local", "share", "applications")
+	entry := filepath.Join(apps, "minecraft-launcher.desktop")
+	body := "[Desktop Entry]\nType=Application\nName=Minecraft Launcher\n" +
+		"Comment=Windows program packaged with Oliver\nExec=minecraft-launcher %U\n"
+	if err := os.WriteFile(entry, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	broken := findBrokenEntries()
+	if len(broken) != 1 {
+		t.Fatalf("expected the harvested entry to be flagged, got %+v", broken)
+	}
+	if !broken[0].Ours {
+		t.Error("an entry carrying Oliver's stamp should be removable")
+	}
+	if !strings.Contains(broken[0].Reason, "minecraft-launcher") {
+		t.Errorf("the reason should name the missing program: %q", broken[0].Reason)
 	}
 }
