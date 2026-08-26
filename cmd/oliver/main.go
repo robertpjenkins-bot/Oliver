@@ -45,6 +45,7 @@ COMMANDS
   log          show the output of the last program that ran
   report       write everything needed to diagnose a problem to one file
   pack         wrap a Windows program into an AppImage
+  vm           run Windows itself in a VirtualBox machine
   which        find an installed program inside a Windows environment
   desktop      register Oliver so .exe files open with a double-click
   config       show or create the configuration file
@@ -131,6 +132,8 @@ func run(args []string) error {
 		return a.cmdReport(rest)
 	case "pack":
 		return a.cmdPack(rest)
+	case "vm", "vms", "windows":
+		return a.cmdVM(rest)
 	case "which":
 		return a.cmdWhich(rest)
 	case "desktop":

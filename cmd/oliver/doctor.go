@@ -10,6 +10,7 @@ import (
 
 	"github.com/robertpjenkins-bot/oliver/internal/backend"
 	"github.com/robertpjenkins-bot/oliver/internal/prefix"
+	"github.com/robertpjenkins-bot/oliver/internal/vbox"
 )
 
 const doctorSynopsis = `oliver doctor
@@ -52,6 +53,7 @@ func (a *app) cmdDoctor(args []string) error {
 		checkGraphics(),
 		checkPrefixRoot(a),
 		checkDesktopIntegration(),
+		checkVirtualBox(),
 		checkArch(),
 	}
 
@@ -100,6 +102,34 @@ func pad(s string, n int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", n-len(s))
+}
+
+// checkVirtualBox reports on the machinery behind `oliver vm`. It is a note
+// rather than a failure: most programs never need a real Windows, and the ones
+// that do say so themselves.
+func checkVirtualBox() check {
+	m, err := vbox.Find()
+	if err != nil {
+		return check{
+			Name:   "virtualbox",
+			Status: statusWarn,
+			Result: "not installed",
+			Advice: "only needed for `oliver vm`, which runs Windows itself for software no runtime can translate",
+		}
+	}
+	if !vbox.KernelModuleLoaded() {
+		return check{
+			Name:   "virtualbox",
+			Status: statusWarn,
+			Result: fmt.Sprintf("%s installed, but its kernel driver is not loaded", m.Version()),
+			Advice: "run `sudo modprobe vboxdrv`, or `sudo /sbin/vboxconfig` to rebuild it; no machine can start until it loads",
+		}
+	}
+	return check{
+		Name:   "virtualbox",
+		Status: statusOK,
+		Result: fmt.Sprintf("%s, kernel driver loaded", m.Version()),
+	}
 }
 
 func checkRuntimes(bs []*backend.Backend) check {

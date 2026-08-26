@@ -159,6 +159,78 @@ keeps working. `--uninstall` removes it again.
 Packing does not change whether a program works. If it fails under Wine, it
 fails the same way packed.
 
+**When nothing can translate it, run the real thing.** Some software cannot
+work under any compatibility layer, and `oliver info` says so rather than
+letting it fail like a bug. For those, `oliver vm` puts Windows itself in a
+VirtualBox machine — and before it creates anything, it asks the four things
+that are genuinely yours to decide:
+
+```console
+$ oliver vm
+Setting up Windows in VirtualBox.
+Nothing is created until you have seen the whole plan.
+
+  this machine has 16 GB of memory and 8 processors
+
+Windows installer image (.iso): ~/Downloads/Win11_23H2_English_x64.iso
+  ✓ Windows 11 installer (5.4 GB, label CCCOMA_X64FRE_EN-US_DV9, bootable)
+Where to keep the machine [/home/u/VirtualBox VMs]:
+  412 GB free there
+Memory for Windows [8 GB]:
+Processors [4]:
+Disk size for Windows [128 GB]:
+
+Windows 11 in a VirtualBox machine called "Windows"
+  memory      8 GB of this machine's 16 GB
+  processors  4 of 8
+  disk        128 GB, growing as Windows fills it rather than taken now
+  installer   /home/u/Downloads/Win11_23H2_English_x64.iso
+  location    /home/u/VirtualBox VMs/Windows
+  firmware    EFI, Secure Boot and a TPM 2.0, which Windows 11 refuses to install without
+  virtualbox  7.0
+
+Create this machine? [Y/n]
+```
+
+Every suggested answer comes from the machine it will run on: half the memory
+but never the last 2 GB, half the processors, and a disk that fits the space
+actually free where you chose to put it. Nothing is reserved up front — the
+disk grows as Windows fills it — so the size you pick is a ceiling, not a
+withdrawal.
+
+It reads the installer image rather than trusting its name, the same way it
+reads a PE header rather than a file extension. That is what catches the
+half-finished download, the extracted folder repacked without a boot record,
+and the Linux ISO in the Downloads folder with a hopeful name — each of which
+otherwise shows up as a virtual machine booting to a black screen.
+
+Knowing which Windows the image holds is what makes the machine bootable:
+Windows 11 refuses to install without EFI, Secure Boot and a TPM 2.0, and says
+so only after the download, the setup and the first reboot. Oliver sets all
+three, and puts the disk ahead of the DVD in the boot order so the installer
+runs while the disk is empty and never again afterwards.
+
+After the first run there are no more questions — `oliver vm` starts it:
+
+```console
+$ oliver vm
+starting Windows
+```
+
+| Command | Effect |
+| --- | --- |
+| `oliver vm` | start Windows, setting it up the first time |
+| `oliver vm setup -iso <file>` | set it up without starting it |
+| `oliver vm status` | what the machine is, and what it is doing |
+| `oliver vm stop` | ask Windows to shut down (`-f` pulls the power) |
+| `oliver vm list` | every machine Oliver has made |
+| `oliver vm remove` | delete a machine and its disk |
+
+Any answer can be a flag instead — `-ram 8G`, `-disk 128G`, `-cpus 4`,
+`-iso <file>`, `-dir <folder>`, `-name <machine>` — which is also how a machine
+is set up from a script, where there is nobody to ask. `-n` prints the exact
+VBoxManage commands and stops.
+
 ## Install
 
 Download the AppImage, make it executable, and register it with your desktop:
@@ -191,6 +263,7 @@ oliver run <program.exe> [arguments...]   run it, choosing a runtime for you
 oliver info <program.exe>                 what it is and what it needs
 oliver why <program.exe>                  how every runtime scored, and why
 oliver backends                           what is installed on this machine
+oliver vm                                 run Windows itself, in VirtualBox
 oliver prefix list                        the Windows environments Oliver made
 oliver doctor                             what is missing, and how to fix it
 oliver desktop install                    open .exe files by double-clicking
@@ -266,6 +339,14 @@ Prefixes are laid out the way Steam lays them out: the environment directory
 holds a `pfx` subdirectory that is the real `WINEPREFIX`. Wine and Proton
 therefore agree on where a prefix lives, and you can move a program between
 them without rebuilding its environment.
+
+`oliver vm` needs VirtualBox, and only that command does. Its kernel driver
+has to be loaded before any machine can start, which is what breaks after a
+kernel update on a system with Secure Boot; `oliver doctor` reports both the
+version installed and whether the driver is there. The machines Oliver makes
+are ordinary VirtualBox machines — they appear in VirtualBox's own window and
+can be managed there, and Oliver keeps only a small record of how each one was
+set up.
 
 [umu-launcher]: https://github.com/Open-Wine-Components/umu-launcher
 

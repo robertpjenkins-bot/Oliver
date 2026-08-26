@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -13,13 +14,17 @@ import (
 
 // UI writes program output.
 type UI struct {
-	Out   io.Writer
-	Err   io.Writer
+	Out io.Writer
+	Err io.Writer
+	// In is where answers to prompts are read from.
+	In    io.Reader
 	Color bool
 	// Interactive reports whether a terminal is attached. When it is not,
 	// errors are shown as desktop notifications instead of vanishing.
 	Interactive bool
 	Quiet       bool
+
+	reader *bufio.Reader
 }
 
 // New builds a UI for the current process.
@@ -33,6 +38,7 @@ func New() *UI {
 	return &UI{
 		Out:         os.Stdout,
 		Err:         os.Stderr,
+		In:          os.Stdin,
 		Color:       colorOK,
 		Interactive: isTerminal(os.Stderr),
 	}
@@ -206,6 +212,44 @@ func pad(s string, width int, last bool) string {
 	return s
 }
 
+// readLine reads one answer from the input, or reports that there is none.
+//
+// The reader is kept on the UI so a sequence of prompts does not lose
+// characters that an earlier one buffered but did not consume.
+func (u *UI) readLine() (string, bool) {
+	if u.In == nil {
+		u.In = os.Stdin
+	}
+	if u.reader == nil {
+		u.reader = bufio.NewReader(u.In)
+	}
+	line, err := u.reader.ReadString('\n')
+	if line == "" && err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(line), true
+}
+
+// Ask puts a question with a suggested answer and returns what was typed, or
+// the suggestion when the answer is empty. Without a terminal — a run from a
+// file manager, or a script — it returns the suggestion without asking, since
+// a prompt nobody can see would simply hang.
+func (u *UI) Ask(question, def string) string {
+	if !u.Interactive {
+		return def
+	}
+	if def != "" {
+		fmt.Fprintf(u.Err, "%s [%s]: ", question, def)
+	} else {
+		fmt.Fprintf(u.Err, "%s: ", question)
+	}
+	answer, ok := u.readLine()
+	if !ok || answer == "" {
+		return def
+	}
+	return answer
+}
+
 // Confirm asks a yes/no question. Without a terminal it returns the default.
 func (u *UI) Confirm(question string, def bool) bool {
 	if !u.Interactive {
@@ -216,11 +260,11 @@ func (u *UI) Confirm(question string, def bool) bool {
 		hint = "[Y/n]"
 	}
 	fmt.Fprintf(u.Err, "%s %s ", question, hint)
-	var answer string
-	if _, err := fmt.Fscanln(os.Stdin, &answer); err != nil {
+	answer, ok := u.readLine()
+	if !ok {
 		return def
 	}
-	switch strings.ToLower(strings.TrimSpace(answer)) {
+	switch strings.ToLower(answer) {
 	case "y", "yes":
 		return true
 	case "n", "no":

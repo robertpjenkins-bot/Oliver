@@ -45,6 +45,15 @@ func (a *app) printCaveats(caveats []compat.Caveat) {
 		}
 		a.printAlternatives(c.Alternatives)
 	}
+
+	// A program that no runtime can translate is exactly what the virtual
+	// machine is for, so say so once rather than leaving it as a dead end.
+	if compat.Worst(caveats) == compat.Blocking {
+		u.Printf("")
+		for _, line := range wrap("If no native tool will do, a real Windows will: `oliver vm` sets one up in VirtualBox, where the guest can be given actual USB devices and disks.", 76) {
+			u.Printf("  %s", u.Dim(line))
+		}
+	}
 }
 
 // printAlternatives lists native tools that do the same job, marking the ones
