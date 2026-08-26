@@ -84,6 +84,7 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 	choices := []menuChoice{
 		{ID: "run", Label: "Run a Windows program", Note: "choose an .exe or .msi to launch"},
 		{ID: "pack", Label: "Package a program as an AppImage", Note: "make it launchable like any other app"},
+		{ID: "vm", Label: "Set up Windows in a virtual machine", Note: "for software no compatibility runtime can run"},
 		{ID: "doctor", Label: "Check this system", Note: "what is installed and what is missing"},
 		{ID: "log", Label: "Show the last run", Note: "why something failed to start"},
 		{ID: "clean", Label: "Fix broken menu entries", Note: "remove launcher icons that no longer work"},
@@ -111,6 +112,8 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 		return a.guiRun(kit)
 	case "pack":
 		return a.guiPack(kit)
+	case "vm":
+		return a.guiVM(kit)
 	case "doctor":
 		kit.showText("Oliver - system check", a.captureText(func() { _ = a.cmdDoctor(nil) }))
 	case "clean":
@@ -293,9 +296,7 @@ func (a *app) desktopCleanForce(kit dialogKit) error {
 		}
 		a.ui.Printf("removed %s", filepath.Base(b.Path))
 	}
-	if _, err := exec.LookPath("update-desktop-database"); err == nil {
-		_ = exec.Command("update-desktop-database", filepath.Join(dataHome(), "applications")).Run()
-	}
+	updateDesktopDatabase()
 	return nil
 }
 
@@ -408,9 +409,7 @@ func (a *app) desktopClean() error {
 		}
 		u.Info("removed %s", filepath.Base(b.Path))
 	}
-	if _, err := exec.LookPath("update-desktop-database"); err == nil {
-		_ = exec.Command("update-desktop-database", filepath.Join(dataHome(), "applications")).Run()
-	}
+	updateDesktopDatabase()
 	return nil
 }
 
@@ -522,10 +521,21 @@ Categories=Utility;
 	if err := os.WriteFile(path, []byte(entry), 0o644); err != nil {
 		return err
 	}
-	if _, err := exec.LookPath("update-desktop-database"); err == nil {
-		_ = exec.Command("update-desktop-database", apps).Run()
-	}
+	updateDesktopDatabase()
 	return nil
+}
+
+// updateDesktopDatabase refreshes the desktop's cache of application entries,
+// so a launcher that was just written appears without a logout. It is harmless
+// where the tool is absent, since those desktops watch the directory instead.
+func updateDesktopDatabase() {
+	if dataHome() == "" {
+		return
+	}
+	if _, err := exec.LookPath("update-desktop-database"); err != nil {
+		return
+	}
+	_ = exec.Command("update-desktop-database", filepath.Join(dataHome(), "applications")).Run()
 }
 
 // dialogError reports a failure on the desktop, for callers outside the
@@ -621,10 +631,7 @@ NoDisplay=false
 	}
 	a.ui.Info("installed %s", path)
 
-	// Refresh the desktop's MIME cache; harmless when the tool is absent.
-	if _, err := exec.LookPath("update-desktop-database"); err == nil {
-		_ = exec.Command("update-desktop-database", filepath.Dir(path)).Run()
-	}
+	updateDesktopDatabase()
 
 	if setDefault {
 		if _, err := exec.LookPath("xdg-mime"); err != nil {
@@ -659,9 +666,7 @@ func (a *app) desktopUninstall() error {
 	if removed == 0 {
 		a.ui.Info("nothing to remove")
 	}
-	if _, err := exec.LookPath("update-desktop-database"); err == nil {
-		_ = exec.Command("update-desktop-database", filepath.Join(dataHome(), "applications")).Run()
-	}
+	updateDesktopDatabase()
 	return nil
 }
 

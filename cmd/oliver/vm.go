@@ -11,7 +11,7 @@ import (
 	"github.com/robertpjenkins-bot/oliver/internal/vbox"
 )
 
-const vmSynopsis = `oliver vm [start|setup|status|stop|list|remove] [flags]
+const vmSynopsis = `oliver vm [start|setup|status|stop|list|remove|desktop] [flags]
 
 Runs Windows itself, in a VirtualBox machine, for the software that cannot be
 translated — anything wanting kernel drivers, raw disks or real Windows
@@ -23,6 +23,10 @@ services, which "oliver info" flags before you waste an evening on it.
   oliver vm stop                ask Windows to shut down
   oliver vm list                the machines Oliver has made
   oliver vm remove              delete a machine and its disk
+  oliver vm desktop             add or remove its applications-menu entry
+
+Setting a machine up also puts it in your applications menu, so Windows starts
+with a click like anything else installed. Pass -no-desktop to skip that.
 
 The first run asks four things — how much memory and disk Windows gets, which
 installer image to boot, and where to keep it all — suggests an answer to each
@@ -40,13 +44,17 @@ type vmOptions struct {
 	cpus    int
 	release string
 
-	headless bool
-	dryRun   bool
-	yes      bool
-	force    bool
-	noStart  bool
-	keep     bool
-	asJSON   bool
+	headless  bool
+	dryRun    bool
+	yes       bool
+	force     bool
+	noStart   bool
+	keep      bool
+	noDesktop bool
+	// fromDesktop marks a run started by a menu launcher rather than typed,
+	// where questions have to be asked in dialogs or not at all.
+	fromDesktop bool
+	asJSON      bool
 }
 
 func (a *app) cmdVM(args []string) error {
@@ -65,6 +73,11 @@ func (a *app) cmdVM(args []string) error {
 	fs.BoolVar(&o.yes, "y", false, "do not ask for confirmation")
 	fs.BoolVar(&o.force, "f", false, "carry on despite problems that can be overridden")
 	fs.BoolVar(&o.noStart, "no-start", false, "set the machine up but do not start it")
+	fs.BoolVar(&o.noDesktop, "no-desktop", false, "do not add the machine to your applications menu")
+	// Not advertised: the applications-menu launcher passes this so a machine
+	// that no longer exists offers to be set up again rather than failing at a
+	// user who has no terminal to read the failure in.
+	fs.BoolVar(&o.fromDesktop, "from-desktop", false, "")
 	fs.BoolVar(&o.keep, "keep-files", false, "remove: unregister the machine but keep its files")
 	fs.BoolVar(&o.asJSON, "json", false, "print as JSON")
 	if err := parseFlagsAnywhere(fs, args); err != nil {
@@ -98,6 +111,8 @@ func (a *app) cmdVM(args []string) error {
 		return a.vmList(o)
 	case "remove", "delete", "rm":
 		return a.vmRemove(o)
+	case "desktop", "menu":
+		return a.vmDesktop(o, rest)
 	default:
 		return fmt.Errorf("unknown subcommand %q (want start, setup, status, stop, list or remove)", sub)
 	}
@@ -129,7 +144,13 @@ func (a *app) vmStart(o vmOptions) error {
 		return err
 	}
 	if !known {
-		// The first run is the one that asks the questions.
+		// The first run is the one that asks the questions — in dialogs when
+		// there is no terminal to ask in.
+		if o.fromDesktop && !a.ui.Interactive {
+			if kit, ok := findDialogKit(); ok {
+				return a.guiVM(kit)
+			}
+		}
 		return a.vmSetup(o)
 	}
 
@@ -238,6 +259,16 @@ func (a *app) vmSetup(o vmOptions) error {
 		return err
 	}
 	a.ui.Info("%s %s is ready at %s", a.ui.Green("✓"), spec.Name, spec.MachineDir())
+
+	// A machine that can only be started from a terminal is not much of an
+	// application, so it goes in the menu unless the user says otherwise.
+	if !o.noDesktop {
+		if _, err := installVMEntry(spec); err != nil {
+			a.ui.Warn("could not add %s to your applications menu: %v", spec.Name, err)
+		} else {
+			a.ui.Info("%s %s is in your applications menu", a.ui.Green("✓"), spec.Name)
+		}
+	}
 
 	if o.noStart {
 		a.ui.Info("start it with: oliver vm")
@@ -512,6 +543,11 @@ func (a *app) vmStatus(o vmOptions) error {
 	u.Printf("  %-11s %s", u.Dim("location"), record.Spec.MachineDir())
 	u.Printf("  %-11s %s", u.Dim("installer"), record.Spec.ISO)
 	u.Printf("  %-11s %s", u.Dim("created"), record.Created.Format("2006-01-02 15:04"))
+	if _, err := os.Stat(vmEntryPath(o.name)); err == nil {
+		u.Printf("  %-11s %s", u.Dim("menu"), "in your applications menu")
+	} else {
+		u.Printf("  %-11s %s", u.Dim("menu"), "not in your applications menu (`oliver vm desktop install` adds it)")
+	}
 	if record.Starts == 0 {
 		u.Printf("  %-11s %s", u.Dim("started"), "never")
 	} else {
@@ -559,6 +595,7 @@ func (a *app) vmRemove(o vmOptions) error {
 		if err := m.Forget(o.name); err != nil {
 			return err
 		}
+		removeVMEntry(o.name)
 		a.ui.Info("forgot %s, which VirtualBox no longer had", o.name)
 		return nil
 	}
@@ -573,6 +610,9 @@ func (a *app) vmRemove(o vmOptions) error {
 	}
 	if err := m.Remove(o.name, o.keep); err != nil {
 		return err
+	}
+	if removeVMEntry(o.name) {
+		a.ui.Info("took %s out of your applications menu", o.name)
 	}
 	a.ui.Info("%s removed %s", a.ui.Green("✓"), o.name)
 	return nil
@@ -617,3 +657,225 @@ func shellish(s string) string {
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
+
+// A machine that only starts from a terminal is not much of an application.
+// Setting one up therefore writes a launcher for it, so Windows appears in the
+// applications menu beside everything else and starts with one click.
+
+// vmEntrySlug names a machine's launcher file and its icon. The prefix keeps
+// Oliver's machines together and out of the way of anything else installed.
+func vmEntrySlug(name string) string { return "oliver-vm-" + slugFor(name) }
+
+func vmEntryPath(name string) string {
+	d := dataHome()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "applications", vmEntrySlug(name)+".desktop")
+}
+
+func vmIconFile(name string) string {
+	d := dataHome()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "icons", "hicolor", "scalable", "apps", vmEntrySlug(name)+".svg")
+}
+
+// installVMEntry writes the launcher and its icon, returning where it went.
+//
+// The Exec line names the machine explicitly rather than relying on the
+// default, so a second machine gets its own working entry — and it records the
+// launcher's real path, which is the only durable one when Oliver is an
+// AppImage that the user may move.
+func installVMEntry(spec vbox.Spec) (string, error) {
+	path := vmEntryPath(spec.Name)
+	if path == "" {
+		return "", fmt.Errorf("cannot determine your home directory")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
+	if icon := vmIconFile(spec.Name); icon != "" {
+		if err := os.MkdirAll(filepath.Dir(icon), 0o755); err == nil {
+			_ = os.WriteFile(icon, []byte(vmIconSVG), 0o644)
+		}
+	}
+
+	launcher := selfPath()
+	release := vbox.ReleaseOrDefault(spec.Release).Name
+	entry := fmt.Sprintf(`[Desktop Entry]
+Type=Application
+Name=%s
+GenericName=%s virtual machine
+Comment=Start %s in VirtualBox, set up by Oliver
+Exec=%s vm --from-desktop -name %s
+TryExec=%s
+Icon=%s
+Terminal=false
+StartupNotify=false
+Categories=System;Emulator;
+Keywords=Windows;VirtualBox;virtual machine;VM;
+`, spec.Name, release, release, quoteExec(launcher), quoteExec(spec.Name), launcher, vmEntrySlug(spec.Name))
+
+	if err := os.WriteFile(path, []byte(entry), 0o644); err != nil {
+		return "", err
+	}
+	updateDesktopDatabase()
+	return path, nil
+}
+
+// removeVMEntry takes the launcher away again, reporting whether there was one.
+func removeVMEntry(name string) bool {
+	var removed bool
+	for _, p := range []string{vmEntryPath(name), vmIconFile(name)} {
+		if p == "" {
+			continue
+		}
+		if err := os.Remove(p); err == nil {
+			removed = true
+		}
+	}
+	if removed {
+		updateDesktopDatabase()
+	}
+	return removed
+}
+
+// vmDesktop adds or removes a machine's launcher after the fact.
+func (a *app) vmDesktop(o vmOptions, args []string) error {
+	m, err := a.vmManager()
+	if err != nil {
+		return err
+	}
+	record, known, err := m.Load(o.name)
+	if err != nil {
+		return err
+	}
+	if !known {
+		return fmt.Errorf("no machine called %q yet; create one with `oliver vm setup -iso <windows.iso>`", o.name)
+	}
+
+	sub := "install"
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "install", "add":
+		path, err := installVMEntry(record.Spec)
+		if err != nil {
+			return err
+		}
+		a.ui.Info("%s %s is in your applications menu", a.ui.Green("✓"), record.Spec.Name)
+		a.ui.Info("%s", a.ui.Dim(path))
+		return nil
+	case "uninstall", "remove", "rm":
+		if !removeVMEntry(o.name) {
+			a.ui.Info("%s was not in your applications menu", o.name)
+			return nil
+		}
+		a.ui.Info("removed %s from your applications menu", o.name)
+		return nil
+	case "status":
+		path := vmEntryPath(o.name)
+		if _, err := os.Stat(path); err != nil {
+			a.ui.Printf("%s is not in your applications menu.", o.name)
+			return nil
+		}
+		a.ui.Printf("%s", path)
+		return nil
+	default:
+		return fmt.Errorf("unknown subcommand %q (want install, uninstall or status)", sub)
+	}
+}
+
+// guiVM sets a machine up through desktop dialogs, for someone who opened
+// Oliver from a menu and has no terminal to be asked the questions in.
+//
+// It gathers the same four answers and then hands them to the ordinary setup,
+// so the checks, the plan and the machine that comes out are identical.
+func (a *app) guiVM(kit dialogKit) error {
+	m, err := a.vmManager()
+	if err != nil {
+		kit.errorBox("VirtualBox is needed for this", fmtErr(err))
+		return nil
+	}
+
+	// A machine that already exists just starts.
+	if _, known, _ := m.Load(vbox.DefaultName); known {
+		if err := a.vmBoot(m, vmOptions{name: vbox.DefaultName}); err != nil {
+			kit.errorBox("Windows could not start", fmtErr(err))
+		}
+		return nil
+	}
+
+	iso, ok := kit.openFile("Choose the Windows installer", "Windows installer images", []string{"*.iso", "*.ISO"})
+	if !ok || iso == "" {
+		return nil
+	}
+	dir, ok := kit.openDir("Where should Windows be kept?", vbox.DefaultVMDir())
+	if !ok || dir == "" {
+		return nil
+	}
+
+	host := vbox.ProbeHost()
+	suggestion := host.Recommend(vbox.ReleaseOrDefault(vbox.DetectRelease(iso, "")), dir)
+	ram, ok := kit.entry("Memory for Windows",
+		fmt.Sprintf("How much memory should Windows get?\nThis machine has %s in total.", vbox.FormatMB(host.RAMMB)),
+		vbox.FormatMB(suggestion.RAMMB))
+	if !ok {
+		return nil
+	}
+	disk, ok := kit.entry("Disk size for Windows",
+		fmt.Sprintf("How large should the Windows disk be?\nIt grows as Windows fills it, so this is a limit rather than space taken now.\n%d GB is free where you chose to keep it.", vbox.FreeGB(dir)),
+		fmt.Sprintf("%d GB", suggestion.DiskGB))
+	if !ok {
+		return nil
+	}
+
+	o := vmOptions{name: vbox.DefaultName, iso: iso, dir: dir, ram: ram, disk: disk, yes: true}
+
+	// Show what would be built, with everything wrong with it, before asking.
+	spec, err := a.vmAsk(m, o)
+	if err != nil {
+		kit.errorBox("Windows could not be set up", fmtErr(err))
+		return nil
+	}
+	problems := spec.Check(host)
+	summary := a.captureText(func() { a.printVMSummary(m, spec, host, problems) })
+	if vbox.Fatal(problems, false) {
+		kit.errorBox("This machine cannot be built", strings.TrimSpace(summary))
+		return nil
+	}
+	if !kit.confirm("Set up Windows?", strings.TrimSpace(summary)) {
+		return nil
+	}
+
+	var setupErr error
+	report := a.captureText(func() { setupErr = a.vmSetup(o) })
+	if setupErr != nil {
+		kit.errorBox("Windows could not be set up", strings.TrimSpace(report+"\n\n"+fmtErr(setupErr)))
+		return nil
+	}
+	kit.info("Windows is starting",
+		"Windows is installing in the VirtualBox window. It restarts itself a few times; that is normal.\n\n"+
+			"It is now in your applications menu, and starts from there whenever you want it.")
+	return nil
+}
+
+// vmIconSVG is the launcher icon: a machine within a machine, which is all a
+// virtual machine is. It is kept inline so the binary stays self-contained.
+const vmIconSVG = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a90d9"/>
+      <stop offset="1" stop-color="#2a5d8f"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="24" fill="url(#g)"/>
+  <rect x="28" y="34" width="72" height="52" rx="6" fill="#fff" opacity=".95"/>
+  <path d="M64 34v52M28 60h72" stroke="#2a5d8f" stroke-width="5"/>
+  <path d="M50 96h28M58 86v10M70 86v10" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity=".75"/>
+</svg>
+`

@@ -217,6 +217,13 @@ $ oliver vm
 starting Windows
 ```
 
+Setting a machine up also puts it in your applications menu, with its own
+launcher and icon, so Windows starts with a click like anything else you have
+installed. Clicking it has no terminal to ask questions in, so it asks in
+desktop dialogs instead — the same four questions, the same checks, the same
+machine at the end. Deleting the machine takes its launcher away with it, and
+`-no-desktop` skips the menu entirely.
+
 | Command | Effect |
 | --- | --- |
 | `oliver vm` | start Windows, setting it up the first time |
@@ -225,6 +232,7 @@ starting Windows
 | `oliver vm stop` | ask Windows to shut down (`-f` pulls the power) |
 | `oliver vm list` | every machine Oliver has made |
 | `oliver vm remove` | delete a machine and its disk |
+| `oliver vm desktop` | add or remove its applications-menu entry |
 
 Any answer can be a flag instead — `-ram 8G`, `-disk 128G`, `-cpus 4`,
 `-iso <file>`, `-dir <folder>`, `-name <machine>` — which is also how a machine

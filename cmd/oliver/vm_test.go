@@ -63,6 +63,24 @@ func vboxCalls(t *testing.T, log string) string {
 	return string(data)
 }
 
+// dialogs installs a stand-in for zenity that answers the setup questions,
+// so the path taken by someone who never opens a terminal can be walked.
+func (s *system) dialogs(t *testing.T, iso, dir string) {
+	t.Helper()
+	script := "#!/bin/sh\n" +
+		"case \"$*\" in\n" +
+		"  *--directory*) echo '" + dir + "' ;;\n" +
+		"  *--file-selection*) echo '" + iso + "' ;;\n" +
+		"  *'Memory for Windows'*) echo '4G' ;;\n" +
+		"  *'Disk size for Windows'*) echo '64 GB' ;;\n" +
+		"esac\n" +
+		"exit 0\n"
+	p := s.write(script, "usr", "bin", "zenity")
+	if err := os.Chmod(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // answer drives a command that asks questions, returning everything the user
 // would have seen — prompts included, since those go to stderr.
 func (s *system) answer(answers string, args ...string) (string, error) {
@@ -319,6 +337,166 @@ func TestVMRejectsAWindowsItDoesNotKnow(t *testing.T) {
 	_, err := s.run("vm", "setup", "-iso", iso, "-release", "vista", "-y")
 	if err == nil || !strings.Contains(err.Error(), "win11") {
 		t.Errorf("err = %v; want the list of releases Oliver knows", err)
+	}
+}
+
+// A machine that can only be started by typing a command is not much of an
+// application, so setting one up should leave something to click.
+func TestVMSetupPutsTheMachineInTheApplicationsMenu(t *testing.T) {
+	s := newSystem(t)
+	s.virtualbox(t)
+	iso := s.installer("Win11_23H2_English_x64.iso")
+
+	out, err := s.run("vm", "setup", "-iso", iso, "-dir", s.path("home", "user", "Machines"), "-y")
+	if err != nil {
+		t.Fatalf("vm setup: %v\n%s", err, out)
+	}
+
+	data, err := os.ReadFile(vmEntryPath("Windows"))
+	if err != nil {
+		t.Fatalf("no launcher was written: %v", err)
+	}
+	entry := string(data)
+	for _, want := range []string{
+		"[Desktop Entry]",
+		"Type=Application",
+		"Name=Windows",
+		"vm --from-desktop -name Windows", // the launcher names the machine it starts
+		"Icon=oliver-vm-windows",
+		"Terminal=false",
+	} {
+		if !strings.Contains(entry, want) {
+			t.Errorf("launcher missing %q:\n%s", want, entry)
+		}
+	}
+	// An entry whose command cannot be found is worse than none, which is what
+	// `oliver desktop clean` exists to sweep up.
+	if broken, bad := inspectEntry(vmEntryPath("Windows")); bad {
+		t.Errorf("the launcher cannot start anything: %s", broken.Reason)
+	}
+	if _, err := os.Stat(vmIconFile("Windows")); err != nil {
+		t.Errorf("no icon was installed: %v", err)
+	}
+}
+
+func TestVMSetupLeavesTheMenuAloneWhenAsked(t *testing.T) {
+	s := newSystem(t)
+	s.virtualbox(t)
+	iso := s.installer("Win10_22H2_English_x64.iso")
+
+	if _, err := s.run("vm", "setup", "-iso", iso, "-dir", s.path("home", "user", "Machines"),
+		"-no-desktop", "-y"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(vmEntryPath("Windows")); !os.IsNotExist(err) {
+		t.Error("-no-desktop should leave the applications menu alone")
+	}
+
+	// It can still be added afterwards.
+	if _, err := s.run("vm", "desktop", "install"); err != nil {
+		t.Fatalf("vm desktop install: %v", err)
+	}
+	if _, err := os.Stat(vmEntryPath("Windows")); err != nil {
+		t.Errorf("the launcher should have been added: %v", err)
+	}
+}
+
+// A launcher for a machine that no longer exists is exactly the broken menu
+// entry Oliver otherwise goes out of its way to clean up.
+func TestVMRemoveTakesTheLauncherWithIt(t *testing.T) {
+	s := newSystem(t)
+	s.virtualbox(t)
+	iso := s.installer("Win10_22H2_English_x64.iso")
+	if _, err := s.run("vm", "setup", "-iso", iso, "-dir", s.path("home", "user", "Machines"), "-y"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(vmEntryPath("Windows")); err != nil {
+		t.Fatalf("no launcher to remove: %v", err)
+	}
+
+	if _, err := s.run("vm", "remove", "-y"); err != nil {
+		t.Fatalf("vm remove: %v", err)
+	}
+	if _, err := os.Stat(vmEntryPath("Windows")); !os.IsNotExist(err) {
+		t.Error("the launcher outlived the machine")
+	}
+	if _, err := os.Stat(vmIconFile("Windows")); !os.IsNotExist(err) {
+		t.Error("the icon outlived the machine")
+	}
+}
+
+// Two machines must not share one launcher, or starting the second would start
+// the first.
+func TestEachMachineGetsItsOwnLauncher(t *testing.T) {
+	s := newSystem(t)
+	s.virtualbox(t)
+	iso := s.installer("Win10_22H2_English_x64.iso")
+	if _, err := s.run("vm", "setup", "-iso", iso, "-dir", s.path("home", "user", "Machines"),
+		"-name", "Windows for tax", "-y"); err != nil {
+		t.Fatal(err)
+	}
+
+	path := vmEntryPath("Windows for tax")
+	if filepath.Base(path) != "oliver-vm-windows-for-tax.desktop" {
+		t.Errorf("launcher file = %q; want a name derived from the machine", filepath.Base(path))
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("no launcher: %v", err)
+	}
+	if !strings.Contains(string(data), `vm --from-desktop -name "Windows for tax"`) {
+		t.Errorf("a machine name with spaces must survive the Exec line:\n%s", data)
+	}
+}
+
+// Clicking the launcher is the whole point of writing one, and a click gives
+// no terminal to ask questions in — so the questions become dialogs.
+func TestVMLauncherWithoutATerminalAsksInDialogs(t *testing.T) {
+	s := newSystem(t)
+	log := s.virtualbox(t)
+	iso := s.installer("Win10_22H2_English_x64.iso")
+	where := s.path("home", "user", "Machines")
+	s.dialogs(t, iso, where)
+
+	// s.run leaves the UI non-interactive, which is what a click looks like.
+	if out, err := s.run("vm", "--from-desktop"); err != nil {
+		t.Fatalf("vm --from-desktop: %v\n%s", err, out)
+	}
+
+	record := loadRecord(t, "Windows")
+	if record.Spec.RAMMB != 4096 || record.Spec.DiskGB != 64 || record.Spec.Dir != where {
+		t.Errorf("the dialogs' answers were not used: %+v", record.Spec)
+	}
+	if record.Spec.ISO != iso {
+		t.Errorf("installer = %q; want the one chosen in the dialog", record.Spec.ISO)
+	}
+	calls := vboxCalls(t, log)
+	if !strings.Contains(calls, "createvm") || !strings.Contains(calls, "startvm Windows") {
+		t.Errorf("the machine should have been built and started:\n%s", calls)
+	}
+}
+
+// Clicking the launcher of a machine that already exists must start it, not
+// begin setting up another one.
+func TestVMLauncherStartsAnExistingMachine(t *testing.T) {
+	s := newSystem(t)
+	log := s.virtualbox(t)
+	iso := s.installer("Win10_22H2_English_x64.iso")
+	s.dialogs(t, iso, s.path("home", "user", "Machines"))
+	if _, err := s.run("vm", "setup", "-iso", iso, "-dir", s.path("home", "user", "Machines"), "-y"); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Truncate(log, 0)
+
+	if _, err := s.run("vm", "--from-desktop"); err != nil {
+		t.Fatalf("vm --from-desktop: %v", err)
+	}
+	calls := vboxCalls(t, log)
+	if strings.Contains(calls, "createvm") {
+		t.Errorf("a second machine should not have been built:\n%s", calls)
+	}
+	if !strings.Contains(calls, "startvm Windows") {
+		t.Errorf("the machine should have been started:\n%s", calls)
 	}
 }
 

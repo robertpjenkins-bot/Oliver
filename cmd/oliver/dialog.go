@@ -80,6 +80,16 @@ func (d dialogKit) openFile(title, label string, patterns []string) (string, boo
 	}
 }
 
+// openDir asks for a folder, starting from one suggested.
+func (d dialogKit) openDir(title, start string) (string, bool) {
+	switch d.kind {
+	case "zenity":
+		return d.output("--file-selection", "--directory", "--title", title, "--filename", start+"/")
+	default:
+		return d.output("--title", title, "--getexistingdirectory", start)
+	}
+}
+
 // entry asks for a line of text.
 func (d dialogKit) entry(title, prompt, initial string) (string, bool) {
 	switch d.kind {
