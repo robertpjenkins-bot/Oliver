@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>__TITLE__</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: #07070d; color: #d7d7e4;
+    font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    overflow: hidden;
+  }
+  #wrap {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  canvas {
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    background: #000; border-radius: 4px;
+    box-shadow: 0 0 0 1px #2a2a3d, 0 18px 50px rgba(0,0,0,.6);
+    max-width: 100%; max-height: calc(100vh - 80px);
+  }
+  header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .14em; text-transform: uppercase; color: #f2e9c7; }
+  p { margin: 0; color: #7b7b95; font-size: 12px; }
+  footer { color: #55556c; font-size: 11px; text-align: center; }
+  button {
+    font: inherit; font-size: 12px; color: #cfcfe4; background: #191926;
+    border: 1px solid #33334a; border-radius: 4px; padding: 3px 10px; cursor: pointer;
+  }
+  button:hover { background: #22223a; }
+  @media (max-width: 480px) { footer { display: none; } }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <h1>__NAME__</h1>
+    <p>__TAGLINE__</p>
+    <button id="full">fullscreen</button>
+  </header>
+  <canvas id="screen"></canvas>
+  <footer>arrows or WASD move &middot; space jumps &middot; X fires &middot; P pauses &middot; made with Oliver Studio</footer>
+</div>
+<script>
+__ENGINE__
+</script>
+<script>
+var GAME = __GAME__;
+(function () {
+  var canvas = document.getElementById('screen');
+  // The game is drawn at its own small resolution and scaled by whole numbers
+  // only: a retro game at 2.5x has visibly uneven pixels.
+  function fit() {
+    var pad = 96;
+    var sx = Math.floor((window.innerWidth - 16) / GAME.screen.width);
+    var sy = Math.floor((window.innerHeight - pad) / GAME.screen.height);
+    var scale = Math.max(1, Math.min(sx, sy, 8));
+    canvas.style.width = (GAME.screen.width * scale) + 'px';
+    canvas.style.height = (GAME.screen.height * scale) + 'px';
+  }
+  fit();
+  window.addEventListener('resize', fit);
+  document.getElementById('full').addEventListener('click', function () {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  });
+  OliverEngine.start(canvas, GAME, { scale: 2 });
+})();
+</script>
+</body>
+</html>
