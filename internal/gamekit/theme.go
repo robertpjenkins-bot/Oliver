@@ -169,6 +169,13 @@ var themes = []theme{
 // one picked from the description's own hash — so an unthemed prompt still
 // gets a coherent game, and gets the same one every time.
 func pickTheme(prompt string, r *rand.Rand) theme {
+	t, _ := pickThemeNamed(prompt, r)
+	return t
+}
+
+// pickThemeNamed also reports whether the description actually named a look,
+// so a caller with a better idea than chance can use it.
+func pickThemeNamed(prompt string, r *rand.Rand) (theme, bool) {
 	words := strings.Fields(strings.ToLower(prompt))
 	best, bestScore := -1, 0
 	for i, t := range themes {
@@ -189,32 +196,38 @@ func pickTheme(prompt string, r *rand.Rand) theme {
 		}
 	}
 	if best >= 0 {
-		return themes[best]
+		return themes[best], true
 	}
-	return themes[r.Intn(len(themes))]
+	return themes[r.Intn(len(themes))], false
 }
 
 // genres the designer can build. Each one is a different game entirely: its
 // own physics, its own level shape, its own rules.
 const (
 	GenrePlatformer = "platformer"
-	GenreTopDown    = "topdown"
-	GenreShooter    = "shooter"
-	GenreMaze       = "maze"
-	GenreBreakout   = "breakout"
-	GenreRunner     = "runner"
+	// GenreMetroidvania is a map rather than a set of levels: abilities you
+	// find open doors you have already walked past, so the way forward is
+	// usually the way back.
+	GenreMetroidvania = "metroidvania"
+	GenreTopDown      = "topdown"
+	GenreShooter      = "shooter"
+	GenreMaze         = "maze"
+	GenreBreakout     = "breakout"
+	GenreRunner       = "runner"
 )
 
 // Genres lists what the designer can make, for the studio's menus.
-var Genres = []string{GenrePlatformer, GenreTopDown, GenreShooter, GenreMaze, GenreBreakout, GenreRunner}
+var Genres = []string{GenrePlatformer, GenreMetroidvania, GenreTopDown, GenreShooter, GenreMaze, GenreBreakout, GenreRunner}
 
 var genreWords = map[string][]string{
 	GenrePlatformer: {"platformer", "platform", "jump", "jumping", "mario", "sonic", "side-scroller", "sidescroller", "run and jump"},
-	GenreTopDown:    {"top-down", "topdown", "adventure", "zelda", "rpg", "overhead", "explore", "dungeon crawler", "roguelike"},
-	GenreShooter:    {"shooter", "shmup", "shoot", "space invaders", "galaga", "bullet", "spaceship", "blast", "asteroids"},
-	GenreMaze:       {"maze", "pacman", "pac-man", "labyrinth", "pellet", "chase"},
-	GenreBreakout:   {"breakout", "brick", "arkanoid", "paddle", "pong", "bat and ball", "ball"},
-	GenreRunner:     {"runner", "endless", "auto-run", "autorun", "flappy", "dodge", "obstacle"},
+	GenreMetroidvania: {"metroidvania", "metroid", "castlevania", "samus", "exploration", "interconnected",
+		"backtracking", "upgrades", "power-ups", "abilities", "hollow knight", "ori", "open map"},
+	GenreTopDown:  {"top-down", "topdown", "adventure", "zelda", "rpg", "overhead", "explore", "dungeon crawler", "roguelike"},
+	GenreShooter:  {"shooter", "shmup", "shoot", "space invaders", "galaga", "bullet", "spaceship", "blast", "asteroids"},
+	GenreMaze:     {"maze", "pacman", "pac-man", "labyrinth", "pellet", "chase"},
+	GenreBreakout: {"breakout", "brick", "arkanoid", "paddle", "pong", "bat and ball", "ball"},
+	GenreRunner:   {"runner", "endless", "auto-run", "autorun", "flappy", "dodge", "obstacle"},
 }
 
 // detectGenre reads the description for what kind of game was asked for.

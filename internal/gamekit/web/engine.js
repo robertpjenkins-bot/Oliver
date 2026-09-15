@@ -330,7 +330,10 @@
     if (tx < 0 || tx >= this.width) return true;
     if (ty < 0) return false;
     if (ty >= this.height) return false;
-    return this.kindAt(tx, ty) === 'solid' || this.kindAt(tx, ty) === 'breakable';
+    var kind = this.kindAt(tx, ty);
+    // A door is a wall until it is opened, and a locked tile is a wall until a
+    // rule turns it into an exit.
+    return kind === 'solid' || kind === 'breakable' || kind === 'door' || kind === 'locked';
   };
 
   LevelState.prototype.platformAt = function (tx, ty) {
@@ -351,6 +354,22 @@
       if (this.tiles[ch].kind === kind) return ch;
     }
     return null;
+  };
+
+  // openRun clears every tile joined to this one that is the same kind of
+  // tile, so a door of any size opens as one thing.
+  LevelState.prototype.openRun = function (tx, ty) {
+    var want = this.rows[ty] && this.rows[ty][tx];
+    if (!want || want === '.') return;
+    var queue = [[tx, ty]];
+    while (queue.length) {
+      var cell = queue.pop();
+      var x = cell[0], y = cell[1];
+      if (y < 0 || y >= this.rows.length || x < 0 || x >= this.rows[y].length) continue;
+      if (this.rows[y][x] !== want) continue;
+      this.setTile(x, y, '.');
+      queue.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+    }
   };
 
   // openExit turns every locked tile in the level into a working exit. It
@@ -428,6 +447,10 @@
     this.score = 0;
     this.lives = game.settings.lives || 3;
     this.vars = {};
+    // What the player has found. Abilities belong to the game rather than to
+    // the level, which is the whole point of them: a door you could not open
+    // an hour ago is a reason to come back here.
+    this.inventory = {};
     this.messages = [];
     this.firedOnce = {};
     this.camera = { x: 0, y: 0 };
@@ -588,7 +611,9 @@
           } else {
             e.vy += this.gravityOf(e) * dt;
             if (input.tapped('jump') && (e.grounded || e.coyote > 0)) {
-              e.vy = -(e.proto.jump || 330);
+              // A high jump found halfway through a game has to reach places
+              // the ordinary one cannot, or it is not worth finding.
+              e.vy = -(e.proto.jump || 330) * (isPlayer && this.has('highjump') ? 1.5 : 1);
               e.coyote = 0;
               this.audio.play('jump');
             }
@@ -744,6 +769,10 @@
           if (e.y + e.h - delta <= top + 1) { solid = true; oneWay = true; }
         }
         if (!solid) continue;
+        if (this.level.kindAt(tx, ty) === 'door' && this.openDoor(tx, ty, e)) {
+          if (e.kind === 'projectile' || e.behavior === 'projectile') this.destroy(e);
+          continue;
+        }
         if (axis === 0) {
           if (delta > 0) e.x = tx * tile - e.w; else e.x = (tx + 1) * tile;
           e.vx = e.behavior === 'bounce' ? -e.vx : 0;
@@ -767,6 +796,34 @@
         return;
       }
     }
+  };
+
+  // openDoor opens a tile the player has the key for. Doors that want missiles
+  // are opened by shooting them, which is why the projectile counts as the
+  // player: it is the player's shot.
+  Engine.prototype.openDoor = function (tx, ty, by) {
+    var def = this.level.at(tx, ty);
+    if (!def || def.kind !== 'door') return false;
+    var mine = by === this.player || by.owner === 'player';
+    if (!mine) return false;
+    var needs = def.needs || '';
+    var byShot = by.kind === 'projectile' || by.behavior === 'projectile';
+    if (needs === 'missiles' && !byShot) return false; // shoot it, do not walk into it
+    if (!this.has(needs)) {
+      if (by === this.player && !this.doorTold) {
+        this.doorTold = true;
+        var self = this;
+        setTimeout(function () { self.doorTold = false; }, 2000);
+        this.messages.push({ text: 'Locked — you need the ' + (def.name || needs), t: 2 });
+      }
+      return false;
+    }
+    // The whole door opens, not the tile that was hit: a hole shot through
+    // one square of a seven-square door is not what anybody meant.
+    this.level.openRun(tx, ty);
+    this.audio.play('break');
+    this.messages.push({ text: (def.name || 'The door') + ' opens', t: 2 });
+    return true;
   };
 
   Engine.prototype.breakTile = function (tx, ty, by) {
@@ -795,6 +852,8 @@
   Engine.prototype.shoot = function (e, dt) {
     var f = e.proto.fires;
     if (!f || !f.object) return;
+    // A weapon can be something the player finds rather than starts with.
+    if (e.proto.firesNeeds && !this.has(e.proto.firesNeeds)) return;
     // The cooldown runs down for everything that shoots; only what starts a
     // shot differs — a key for the player, the clock for everyone else.
     if (e.cooldown > 0) e.cooldown -= dt;
@@ -919,11 +978,28 @@
   Engine.prototype.collect = function (e) {
     this.score += e.proto.points || 10;
     this.audio.play(e.proto.sound || 'coin');
+    // Picking something up can hand the player an ability that lasts the rest
+    // of the game, which is what an exploration map is built out of.
+    if (e.proto.grants) this.grant(e.proto.grants, e.proto.announce || e.proto.name);
     e.alive = false;
     this.runRules({ event: 'collect', a: e.id });
     this.runRules({ event: 'destroy', a: e.id });
     this.checkCounts(e.id);
     this.checkScore();
+  };
+
+  // grant hands the player an ability and says so. An ability nobody is told
+  // about is a bug report waiting to happen.
+  Engine.prototype.grant = function (name, announce) {
+    if (!name || this.inventory[name]) return;
+    this.inventory[name] = true;
+    this.audio.play('win');
+    this.messages.push({ text: announce || name, t: 3 });
+    this.runRules({ event: 'grant', a: name });
+  };
+
+  Engine.prototype.has = function (name) {
+    return !name || this.inventory[name] === true;
   };
 
   Engine.prototype.damage = function (e, amount, by) {
@@ -1008,6 +1084,7 @@
     this.score = 0;
     this.lives = this.game.settings.lives || 3;
     this.vars = {};
+    this.inventory = {};
     this.state = 'playing';
     this.loadLevel(this.game.settings.startLevel || this.game.levels[0].id);
     this.audio.music(this.level.def.music);
@@ -1072,6 +1149,7 @@
       case 'collect':
       case 'destroy':
       case 'tile':
+      case 'grant':
         return !when.a || when.a === ev.a;
       case 'count':
         return when.a === ev.a;
@@ -1118,6 +1196,7 @@
         case 'lose': this.lives = 0; this.killPlayer(); break;
         case 'message': this.messages.push({ text: a.text || '', t: a.value || 2.5 }); break;
         case 'sound': this.audio.play(a.target); break;
+        case 'grant': this.grant(a.target, a.text); break;
         case 'setvar': this.vars[a.target] = a.value || 0; break;
         case 'addvar': this.vars[a.target] = (this.vars[a.target] || 0) + (a.value || 0); break;
         case 'speed':
@@ -1310,6 +1389,12 @@
     if (this.timeLeft > 0) {
       var t = 'TIME ' + Math.ceil(this.timeLeft);
       this.text(g, t, Math.round((this.game.screen.width - textWidth(t)) / 2), y, pal[6] || '#fd5');
+    }
+    var found = [];
+    for (var item in this.inventory) if (this.inventory[item]) found.push(item);
+    if (found.length) {
+      var label = found.join(' ');
+      this.text(g, label, this.game.screen.width - textWidth(label) - 4, y + 8, pal[9] || '#7fd');
     }
     for (var m = 0; m < this.messages.length; m++) {
       this.textCentred(g, this.messages[m].text, this.game.screen.height - 20 - m * 8, pal[6] || '#fd5');

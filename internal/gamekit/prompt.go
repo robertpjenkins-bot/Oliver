@@ -18,7 +18,8 @@ SHAPE
   format   always %q
   name     short, memorable, no subtitle
   tagline  five or six words
-  genre    one of: platformer, topdown, shooter, maze, breakout, runner
+  genre    one of: platformer, metroidvania, topdown, shooter, maze, breakout,
+           runner
   screen   { width, height, tile, scale } — use 256x224, tile 16, scale 3
   palette  exactly 16 "#rrggbb" colours, in this order:
              0 outline (near black)   1 lightest   2 shade    3 mid light
@@ -40,7 +41,8 @@ SPRITES
 OBJECTS
 
   { id, name, sprite, kind, behavior, speed, jump, health, damage, points,
-    solid, collect, stompable, fragile, range, drops, sound, fires }
+    solid, collect, stompable, fragile, range, drops, sound, fires,
+    grants, announce, firesNeeds }
 
   kind      player enemy item hazard block projectile goal decor npc
   behavior  platformer topdown ship paddle patrol chase flee float fall
@@ -51,14 +53,26 @@ OBJECTS
   moves 80-120, an enemy 30-60. A platformer player jumps 320-360 against
   gravity 900.
 
+  grants is what picking the object up gives the player, and it lasts for the
+  whole game: "highjump" (jumps half as high again), "missiles" (needed by
+  doors that want missiles), or the name of a key such as "key-blue". announce
+  is the line shown when it is picked up. firesNeeds withholds an object's
+  weapon until the player has that ability, so a gun can be found rather than
+  issued.
+
+  An exploration game is built out of those three fields and nothing else: an
+  ability somewhere on the map, a door that wants it, and something worth
+  reaching behind the door.
+
 LEVELS
 
   { id, name, width, height, tiles, map, spawns, background, next, intro,
     scroll }
 
   tiles maps a character to a sprite and a kind: solid, platform (one way, from
-  above), hazard, exit, locked (a door a rule opens), breakable, checkpoint,
-  water, ladder, empty. map is an array of "height" strings, each exactly
+  above), hazard, exit, locked (a door a rule opens), door (a door that opens
+  for whatever its "needs" field names — walk into it with the key, or shoot it
+  when it needs missiles), breakable, checkpoint, water, ladder, empty. map is an array of "height" strings, each exactly
   "width" characters. spawns place objects in TILE coordinates.
 
   next names the level that follows, or "win" for the last one.
@@ -68,9 +82,9 @@ RULES
 
   { id, name, level, once, when, do }
   when.event   start collide collect destroy tile key timer score count
-               health levelclear
+               health grant levelclear
   do[].action  score spawn destroy goto win lose message sound health lives
-               setvar addvar speed shake teleport openexit
+               grant setvar addvar speed shake teleport openexit
 
   Rules are the game's objective. The engine already knows that spikes hurt,
   that doors lead on and that items are collected; rules are for what makes
@@ -89,6 +103,12 @@ WHAT MAKES IT PLAYABLE
     and jump 340 a player crosses about four tiles, so never dig more than three.
   - Every platform must be reachable from the one before: at most three tiles up.
   - Every level needs a way to finish: an exit tile, a goal object, or a rule.
+  - A door that needs something must have that something somewhere the player
+    can already reach, in the same area. A locked way on with no key in the
+    world is a game that cannot be finished, and it looks fine until it is
+    played.
+  - A gated climb must be out of reach of an ordinary jump and within reach of
+    the boosted one: five tiles is right at gravity 900 and jump 340.
   - Every id referred to must exist. A spawn naming an object that is not
     defined is the most common way a design arrives broken.
 

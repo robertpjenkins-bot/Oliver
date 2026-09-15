@@ -130,6 +130,7 @@ func (a *app) studioNew(args []string) error {
 
 	u := a.ui
 	s := studio.New(*dir)
+	u.Info("%s", u.Dim(gamekit.Read(prompt).String()))
 	u.Info("designing…")
 	g, note, err := s.Assistant.Create(context.Background(), prompt)
 	if err != nil {

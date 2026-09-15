@@ -146,6 +146,16 @@ type Object struct {
 	Fires *Fire  `json:"fires,omitempty"`
 	Drops string `json:"drops,omitempty"`
 	Sound string `json:"sound,omitempty"` // played when it is destroyed or collected
+
+	// Grants is what picking this up gives the player, and it is what makes a
+	// game an exploration rather than a corridor: "highjump", "missiles", or
+	// the name of a key. Abilities last for the whole game, not the level.
+	Grants string `json:"grants,omitempty"`
+	// Announce is shown when it is picked up, so an ability explains itself.
+	Announce string `json:"announce,omitempty"`
+	// FiresNeeds withholds this object's weapon until the player has that
+	// ability, so a gun can be found rather than issued.
+	FiresNeeds string `json:"firesNeeds,omitempty"`
 }
 
 // Fire describes an object that shoots.
@@ -172,6 +182,10 @@ const (
 	// TileLocked looks like a door and does nothing until a rule opens it,
 	// which is how "collect everything, then leave" works without code.
 	TileLocked = "locked"
+	// TileDoor is shut until the player has what its Needs field names. It is
+	// what turns a map into an exploration: a door you cannot open yet is a
+	// reason to go and find out what opens it.
+	TileDoor = "door"
 )
 
 // TileDef gives a character in a level map its appearance and behaviour.
@@ -180,6 +194,10 @@ type TileDef struct {
 	Sprite string `json:"sprite,omitempty"`
 	Kind   string `json:"kind"`
 	Name   string `json:"name,omitempty"`
+	// Needs names the ability or key that opens this tile, for kind "door".
+	// A door needing "missiles" is opened by shooting it; anything else is
+	// opened by walking into it while carrying the thing.
+	Needs string `json:"needs,omitempty"`
 }
 
 // Level is one screen or scrolling area.
@@ -204,6 +222,9 @@ type Level struct {
 	Scroll string `json:"scroll,omitempty"`
 }
 
+// mapText joins a level's rows, for asking whether a tile is used at all.
+func (l Level) mapText() string { return strings.Join(l.Map, "") }
+
 // Spawn places an object in a level, in tile coordinates.
 type Spawn struct {
 	Object string  `json:"object"`
@@ -224,6 +245,7 @@ const (
 	OnScore     = "score"      // the score reaches a value
 	OnCount     = "count"      // no instances of an object remain
 	OnHealth    = "health"     // the player's health reaches a value
+	OnGrant     = "grant"      // the player is given an ability or a key
 	OnLevelDone = "levelclear" // the level's exit is reached
 )
 

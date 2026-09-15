@@ -545,3 +545,69 @@ func flagArt(size, pole, cloth int) *art {
 	a.outline()
 	return a
 }
+
+// powerArt draws an upgrade: a glowing orb with a chevron inside it. Upgrades
+// have to read as different from coins at a glance, because picking one up is
+// the most important thing that happens in an exploration game.
+func powerArt(size, core, glow, shell int) []*art {
+	frames := make([]*art, 0, 2)
+	for f := 0; f < 2; f++ {
+		a := newArt(size, size)
+		c := float64(size)/2 - 0.5
+		r := float64(size)/2 - 2
+		for y := 0; y < size; y++ {
+			for x := 0; x < size; x++ {
+				dx, dy := float64(x)-c, float64(y)-c
+				d := dx*dx + dy*dy
+				if d > r*r {
+					continue
+				}
+				if d > (r-1.6)*(r-1.6) {
+					a.set(x, y, shell)
+				} else {
+					a.set(x, y, core)
+				}
+			}
+		}
+		// a chevron pointing up, brighter on the second frame
+		mid := size / 2
+		colour := glow
+		if f == 1 {
+			colour = cLight
+		}
+		for i := 0; i < size/4; i++ {
+			a.set(mid-1-i, mid+i-1, colour)
+			a.set(mid+i, mid+i-1, colour)
+		}
+		a.outline()
+		frames = append(frames, a)
+	}
+	return frames
+}
+
+// keyArt draws a keycard: the other half of a locked door.
+func keyArt(size, body, stripe int) *art {
+	a := newArt(size, size)
+	w, h := size-4, size-7
+	x, y := 2, (size-h)/2
+	a.rect(x, y, w, h, body)
+	a.rect(x, y+1, w, 2, stripe)
+	a.rect(x+w-4, y+h-3, 3, 2, stripe)
+	a.outline()
+	return a
+}
+
+// gateArt draws a locked door: a heavy frame with a coloured light on it, so
+// which key it wants is visible from across the room.
+func gateArt(size, frame, panel, light int) *art {
+	a := newArt(size, size)
+	a.rect(0, 0, size, size, frame)
+	a.rect(2, 1, size-4, size-2, panel)
+	for y := 1; y < size-1; y += 3 {
+		a.rect(2, y, size-4, 1, frame)
+	}
+	c := size / 2
+	a.rect(c-2, c-2, 4, 4, light)
+	a.rect(c-1, c-1, 2, 2, cLight)
+	return a
+}

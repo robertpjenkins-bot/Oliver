@@ -15,6 +15,85 @@ type designContext struct {
 	rand   *rand.Rand
 	name   string
 	levels int
+	// ref is the game the description named, when it named one. It is what
+	// stops "a Metroid game" becoming a generic platformer.
+	ref reference
+}
+
+// newDesignContext reads a description: what kind of game it asks for, what it
+// should look like, and which of the engine's features the answer needs.
+//
+// A named game is the strongest signal there is. Somebody who writes "like
+// Metroid" has said more in one word than a paragraph of adjectives, and the
+// designer is only as good as its willingness to hear it.
+func newDesignContext(prompt string) designContext {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		prompt = "a retro platformer"
+	}
+	r := rand.New(rand.NewSource(seedOf(prompt)))
+	d := designContext{
+		prompt: prompt,
+		genre:  detectGenre(prompt),
+		rand:   r,
+		levels: 3,
+	}
+	ref, named := matchReference(prompt)
+	if named {
+		d.ref = ref
+		d.genre = ref.Genre
+	}
+	// A theme named in the description wins; otherwise the reference's own
+	// setting is better than a random one. The reference's name is taken out
+	// of the description first, so "castlevania but underwater" is underwater:
+	// the name of the game being referred to is not a description of its look.
+	th, themed := pickThemeNamed(withoutNames(prompt, d.ref.Names), r)
+	if !themed && d.ref.Theme != "" {
+		for _, candidate := range themes {
+			if candidate.Name == d.ref.Theme {
+				th = candidate
+				break
+			}
+		}
+	}
+	d.theme = th
+	if strings.Contains(strings.ToLower(prompt), "long") {
+		d.levels = 5
+	}
+	d.name = d.gameName()
+	return d
+}
+
+// withoutNames removes the words that named a reference, so they cannot be
+// read a second time as something else.
+func withoutNames(prompt string, names []string) string {
+	out := strings.ToLower(prompt)
+	for _, n := range names {
+		out = strings.ReplaceAll(out, n, " ")
+	}
+	return out
+}
+
+// feature reports whether the game being described needs one of the engine's
+// optional mechanics, either because the reference implies it or because the
+// description asks for it outright.
+func (d designContext) feature(name string) bool {
+	switch name {
+	case "weapon":
+		return d.ref.Weapon || d.wants("shoot", "gun", "blast", "laser", "weapon", "missile", "fire at", "arrow")
+	case "abilities":
+		return d.ref.Abilities || d.genre == GenreMetroidvania ||
+			d.wants("upgrade", "ability", "abilities", "power-up", "powerup", "unlock")
+	case "keys":
+		return d.ref.Keys || d.wants("key", "keycard", "locked door", "unlock")
+	case "stomp":
+		return d.ref.Stomp || d.wants("stomp", "jump on", "bounce on")
+	case "boss":
+		return d.ref.Boss || d.wants("boss", "final enemy", "guardian")
+	case "fast":
+		return d.ref.Fast || d.wants("fast", "speed", "quick")
+	}
+	return false
 }
 
 // Design turns a description of a game into a game.
@@ -26,22 +105,7 @@ type designContext struct {
 // ordinary project data, which means anything it decides can be taken apart in
 // the editor afterwards.
 func Design(prompt string) *Game {
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		prompt = "a retro platformer"
-	}
-	r := rand.New(rand.NewSource(seedOf(prompt)))
-	d := designContext{
-		prompt: prompt,
-		genre:  detectGenre(prompt),
-		theme:  pickTheme(prompt, r),
-		rand:   r,
-		levels: 3,
-	}
-	if strings.Contains(strings.ToLower(prompt), "long") {
-		d.levels = 5
-	}
-	d.name = d.gameName()
+	d := newDesignContext(prompt)
 
 	g := New(d.name)
 	g.Genre = d.genre
@@ -49,6 +113,7 @@ func Design(prompt string) *Game {
 	g.Author = "Oliver Studio"
 	g.Palette = append([]string(nil), d.theme.Palette...)
 	g.Tagline = d.tagline()
+	g.Prompt = d.prompt
 
 	d.addSprites(g)
 	d.addObjects(g)
@@ -81,6 +146,8 @@ func (d designContext) gameName() string {
 
 func genreNoun(genre string) string {
 	switch genre {
+	case GenreMetroidvania:
+		return "Descent"
 	case GenreShooter:
 		return "Squadron"
 	case GenreMaze:
@@ -98,6 +165,8 @@ func genreNoun(genre string) string {
 
 func (d designContext) tagline() string {
 	switch d.genre {
+	case GenreMetroidvania:
+		return "Find what opens the way"
 	case GenreShooter:
 		return "Clear every wave"
 	case GenreMaze:
@@ -117,6 +186,30 @@ func (d designContext) levelName(idx int) string {
 	place := d.theme.Place[idx%len(d.theme.Place)]
 	adj := d.theme.Adjective[(idx+1)%len(d.theme.Adjective)]
 	return fmt.Sprintf("%s %s", adj, place)
+}
+
+// Each area past the first is locked by a keycard found in that same area, so
+// the abilities from earlier areas stay useful without making later ones free.
+var gateColours = []string{"blue", "red", "green", "gold", "violet"}
+
+// gateKey is what opens the door in an area: the first one is opened by the
+// weapon found there, the rest by that area's keycard.
+func (d designContext) gateKey(idx int) string {
+	if idx == 0 {
+		return "missiles"
+	}
+	return "key-" + gateColours[(idx-1)%len(gateColours)]
+}
+
+func (d designContext) gateName(idx int) string {
+	if idx == 0 {
+		return "missile door"
+	}
+	return gateColours[(idx-1)%len(gateColours)] + " door"
+}
+
+func (d designContext) keyObject(idx int) string {
+	return "key-" + gateColours[(idx-1)%len(gateColours)]
 }
 
 func (d designContext) levelIntro(idx int) string {
@@ -197,6 +290,12 @@ func (d designContext) addSprites(g *Game) {
 	g.Sprites = append(g.Sprites, sprite("tile-spike", 0, spikeArt(tile, cMid, cLight)))
 	g.Sprites = append(g.Sprites, sprite("tile-door", 0, doorArt(tile, cBrown, cShade, cGold)))
 	g.Sprites = append(g.Sprites, sprite("tile-water", 0, waterArt(tile, cBlue, cSky, r)...))
+	g.Sprites = append(g.Sprites, sprite("power-jump", 4, powerArt(tile, cGreen, cLight, cDeep)...))
+	g.Sprites = append(g.Sprites, sprite("power-missile", 4, powerArt(tile, cHot, cLight, cWarm)...))
+	g.Sprites = append(g.Sprites, sprite("tile-gate", 0, gateArt(tile, cShade, cMid, cHot)))
+	for i, colour := range []int{cSky, cHot, cGreen, cGold, cPurple} {
+		g.Sprites = append(g.Sprites, sprite("key-"+gateColours[i], 0, keyArt(tile, colour, cLight)))
+	}
 	g.Sprites = append(g.Sprites, sprite("decor", 0, bushArt(tile, cDeep, cShade, r)))
 	g.Sprites = append(g.Sprites, sprite("star", 0, starArt(tile, cSky, r)))
 }
@@ -225,15 +324,18 @@ func (d designContext) addObjects(g *Game) {
 		player.Health = 1
 	}
 	// A description that asks for shooting gets shooting, whatever the genre.
-	if d.wants("shoot", "gun", "blast", "laser", "fire", "weapon") && player.Fires == nil {
+	if d.feature("weapon") && player.Fires == nil {
 		player.Fires = &Fire{Object: "bullet", Every: 0.28, Speed: 240, Aim: "forward", Sound: "shoot"}
+	}
+	if d.feature("fast") {
+		player.Speed *= 1.25
 	}
 	g.Objects = append(g.Objects, player)
 
 	enemy := Object{
 		ID: "enemy", Name: d.theme.Enemy, Sprite: "enemy", Kind: KindEnemy,
 		Behavior: BehaviorPatrol, Speed: 36, Health: 1, Damage: 1, Points: 25,
-		Stompable: d.genre == GenrePlatformer || d.genre == GenreRunner,
+		Stompable: d.feature("stomp") || d.genre == GenrePlatformer || d.genre == GenreRunner,
 		Sound:     "hit",
 	}
 	if d.genre == GenreTopDown {
@@ -267,6 +369,49 @@ func (d designContext) addObjects(g *Game) {
 			Behavior: BehaviorProjectile, Speed: 120, Damage: 1},
 	)
 
+	if d.genre == GenreTopDown && d.feature("keys") {
+		g.Objects = append(g.Objects, Object{
+			ID: "key-blue", Name: "Blue keycard", Sprite: "key-blue", Kind: KindItem,
+			Behavior: BehaviorStatic, Collect: true, Points: 50, Sound: "win",
+			Grants: "key-blue", Announce: "THE KEY - NOW FIND THE DOOR",
+		})
+	}
+
+	if d.genre == GenreMetroidvania {
+		// The player arrives with something to shoot with. An explorer who
+		// cannot answer the first enemy they meet spends the game walking
+		// back to where they died; the upgrade is what the doors want, not
+		// the gun itself.
+		g.Objects[0].Fires = &Fire{Object: "bullet", Every: 0.22, Speed: 280, Aim: "forward", Sound: "shoot"}
+		g.Objects[0].Jump = 340
+		// An exploration game is long, and a player with three hits in them
+		// spends it walking back to where they were.
+		g.Objects[0].Health = 5
+		g.Objects = append(g.Objects,
+			Object{ID: "power-jump", Name: "High jump", Sprite: "power-jump", Kind: KindItem,
+				Behavior: BehaviorStatic, Collect: true, Points: 100, Sound: "win",
+				Grants: "highjump", Announce: "HIGH JUMP - REACH WHAT YOU COULD NOT"},
+			Object{ID: "power-missile", Name: "Missiles", Sprite: "power-missile", Kind: KindItem,
+				Behavior: BehaviorStatic, Collect: true, Points: 100, Sound: "win",
+				Grants: "missiles", Announce: "MISSILES - NOW SHOOT THE SEALED DOOR"},
+			Object{ID: "boss", Name: "Guardian", Sprite: "boss", Kind: KindEnemy,
+				Behavior: BehaviorFloat, Speed: 42, Health: 10, Damage: 1, Points: 1000,
+				Range: 260, Sound: "hit",
+				Fires: &Fire{Object: "enemy-bullet", Every: 1.3, Speed: 150, Aim: "player", Sound: "shoot"}},
+		)
+		a, b := creatureArt(g.Screen.Tile*2, cHot, cBright, d.rand, true)
+		g.Sprites = append(g.Sprites, sprite("boss", 5, a, b))
+		for i := 1; i < d.levels; i++ {
+			colour := gateColours[(i-1)%len(gateColours)]
+			g.Objects = append(g.Objects, Object{
+				ID: "key-" + colour, Name: strings.ToUpper(colour[:1]) + colour[1:] + " keycard",
+				Sprite: "key-" + colour, Kind: KindItem, Behavior: BehaviorStatic,
+				Collect: true, Points: 50, Sound: "win",
+				Grants: "key-" + colour, Announce: strings.ToUpper(colour) + " KEYCARD",
+			})
+		}
+	}
+
 	if d.genre == GenreBreakout {
 		g.Objects = append(g.Objects,
 			Object{ID: "ball", Name: "Ball", Sprite: "ball", Kind: KindProjectile,
@@ -296,6 +441,8 @@ func (d designContext) addLevels(g *Game) {
 	for i := 0; i < d.levels; i++ {
 		var lv Level
 		switch d.genre {
+		case GenreMetroidvania:
+			lv = buildMetroidvania(i, d.rand, d)
 		case GenreTopDown:
 			lv = buildTopDown(i, d.rand, d)
 		case GenreShooter:
@@ -335,14 +482,49 @@ func (d designContext) addRules(g *Game) {
 			},
 		})
 	case GenreTopDown:
+		if d.feature("keys") {
+			g.Rules = append(g.Rules, Rule{
+				ID:   "found-the-key",
+				Name: "The key opens the door",
+				When: Trigger{Event: OnGrant, A: "key-blue"},
+				Once: true,
+				Do: []Action{
+					{Action: DoOpenExit, Text: "The door unlocks"},
+					{Action: DoScore, Value: 200},
+				},
+			})
+		} else {
+			g.Rules = append(g.Rules, Rule{
+				ID:   "clear-treasure",
+				Name: "Collect everything to unlock the door",
+				When: Trigger{Event: OnCount, A: "coin", Value: 0},
+				Once: true,
+				Do: []Action{
+					{Action: DoOpenExit, Text: "The door unlocks"},
+					{Action: DoScore, Value: 200},
+				},
+			})
+		}
+	case GenreMetroidvania:
+		last := g.Levels[len(g.Levels)-1]
 		g.Rules = append(g.Rules, Rule{
-			ID:   "clear-treasure",
-			Name: "Collect everything to unlock the door",
-			When: Trigger{Event: OnCount, A: "coin", Value: 0},
-			Once: true,
+			ID:    "guardian-down",
+			Name:  "The guardian is beaten",
+			Level: last.ID,
+			When:  Trigger{Event: OnDestroy, A: "boss"},
+			Once:  true,
 			Do: []Action{
-				{Action: DoOpenExit, Text: "The door unlocks"},
-				{Action: DoScore, Value: 200},
+				{Action: DoScore, Value: 1000},
+				{Action: DoMessage, Text: "The guardian falls", Value: 3},
+				{Action: DoWin},
+			},
+		})
+		g.Rules = append(g.Rules, Rule{
+			ID:   "map-hint",
+			Name: "Say where to go at the start",
+			When: Trigger{Event: OnStart},
+			Do: []Action{
+				{Action: DoMessage, Text: "Find a way up, then work back", Value: 3},
 			},
 		})
 	case GenreShooter:
@@ -407,6 +589,12 @@ func (d designContext) addRules(g *Game) {
 		})
 	}
 
+	// A reference that implies something at the end of it gets something at
+	// the end of it. The exploration maps build their own.
+	if d.feature("boss") && d.genre != GenreMetroidvania && g.Object("boss") == nil {
+		addBoss(g, d.rand)
+	}
+
 	// Common to every game: a word of warning when the player is nearly out
 	// of health, and a bonus for finishing a level quickly.
 	g.Rules = append(g.Rules, Rule{
@@ -457,6 +645,11 @@ func (d designContext) addSettings(g *Game) {
 	case GenreTopDown, GenreMaze:
 		g.Settings.Hint = "ARROWS MOVE"
 		g.Settings.Gravity = 0
+	case GenreMetroidvania:
+		g.Settings.Hint = "ARROWS MOVE   SPACE JUMPS   X FIRES WHEN YOU FIND A WEAPON"
+		g.Settings.Gravity = 900
+		g.Settings.Lives = 4
+		g.Settings.Ending = "The way out is clear"
 	case GenreRunner:
 		g.Settings.Hint = "SPACE JUMPS   DO NOT FALL BEHIND"
 		g.Settings.Gravity = 900

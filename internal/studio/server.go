@@ -105,6 +105,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/status", s.guard(s.status))
 	mux.HandleFunc("/api/games", s.guard(s.games))
 	mux.HandleFunc("/api/game", s.guard(s.game))
+	mux.HandleFunc("/api/read", s.guard(s.read))
 	mux.HandleFunc("/api/design", s.guard(s.design))
 	mux.HandleFunc("/api/assist", s.guard(s.assist))
 	mux.HandleFunc("/api/export", s.guard(s.export))
@@ -320,6 +321,24 @@ func (s *Server) game(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// read says how a description will be understood, without building anything.
+// Somebody typing "a Metroid game" should be able to see that the studio knows
+// what that is before they wait for a game to come back.
+func (s *Server) read(w http.ResponseWriter, r *http.Request) {
+	prompt := r.URL.Query().Get("prompt")
+	if prompt == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"says": ""})
+		return
+	}
+	i := gamekit.Read(prompt)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"says":      i.String(),
+		"genre":     i.Genre,
+		"theme":     i.Theme,
+		"reference": i.Reference,
+	})
+}
+
 func (s *Server) design(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Prompt string `json:"prompt"`
@@ -343,7 +362,10 @@ func (s *Server) design(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log("made %s (%s)", g.Name, note)
-	writeJSON(w, http.StatusOK, map[string]any{"name": name, "game": g, "note": note})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name": name, "game": g, "note": note,
+		"read": gamekit.Read(req.Prompt).String(),
+	})
 }
 
 func (s *Server) assist(w http.ResponseWriter, r *http.Request) {

@@ -188,6 +188,21 @@
     );
   }
 
+  // Say how the description is being read while it is being written. "It did
+  // not know what a Metroid game is" should be something you find out before
+  // you wait for a game, not after playing one.
+  var readTimer = null;
+  $('prompt').addEventListener('input', function () {
+    var text = this.value.trim();
+    clearTimeout(readTimer);
+    if (!text) { $('designnote').textContent = ''; return; }
+    readTimer = setTimeout(function () {
+      api('/api/read?prompt=' + encodeURIComponent(text))
+        .then(function (res) { $('designnote').textContent = res.says || ''; })
+        .catch(function () {});
+    }, 350);
+  });
+
   $('design').addEventListener('click', function () {
     var prompt = $('prompt').value.trim();
     if (!prompt) { status('describe the game you want first', 'warn'); return; }
@@ -202,6 +217,7 @@
         sel.tile = (G.levels[0] && G.levels[0].tiles[0] && G.levels[0].tiles[0].char) || '#';
         renderAll();
         refreshGameList();
+        if (res.read) logEntry('understood', res.read);
         logEntry(res.note, G.name + ' — ' + (G.tagline || '') + ' · ' +
           G.levels.length + ' levels, ' + G.objects.length + ' objects');
         status('made ' + G.name);
@@ -779,9 +795,9 @@
   // ----------------------------------------------------------------- rules
 
   var EVENTS = ['start', 'collide', 'collect', 'destroy', 'tile', 'key', 'timer',
-    'score', 'count', 'health', 'levelclear'];
+    'score', 'count', 'health', 'grant', 'levelclear'];
   var ACTIONS = ['score', 'spawn', 'destroy', 'goto', 'win', 'lose', 'message', 'sound',
-    'health', 'lives', 'setvar', 'addvar', 'speed', 'shake', 'teleport', 'openexit'];
+    'health', 'lives', 'grant', 'setvar', 'addvar', 'speed', 'shake', 'teleport', 'openexit'];
 
   function renderRules() {
     var list = $('rulelist');
@@ -872,7 +888,7 @@
     form.appendChild(field('name', 'text', G.name, function (v) { G.name = v; markDirty(); }));
     form.appendChild(field('tagline', 'text', G.tagline || '', function (v) { G.tagline = v; markDirty(true); }));
     form.appendChild(field('author', 'text', G.author || '', function (v) { G.author = v; markDirty(); }));
-    form.appendChild(select_('genre', ['platformer', 'topdown', 'shooter', 'maze', 'breakout', 'runner'],
+    form.appendChild(select_('genre', ['platformer', 'metroidvania', 'topdown', 'shooter', 'maze', 'breakout', 'runner'],
       G.genre, function (v) { G.genre = v; markDirty(true); }));
 
     form.appendChild(el('h3', { text: 'screen' }));

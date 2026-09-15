@@ -257,6 +257,12 @@ func buildTopDown(idx int, r *rand.Rand, d designContext) Level {
 	start := rooms[0]
 	end := rooms[len(rooms)-1]
 	g.set(end.x+end.w/2, end.y+end.h/2, chLocked)
+	// Where the key lives, when this game locks its door with one: never in
+	// the room the door is in, and never in the room the player starts in.
+	keyRoom := rooms[len(rooms)/2]
+	if len(rooms) > 2 && &keyRoom == &end {
+		keyRoom = rooms[1]
+	}
 
 	lv := Level{
 		ID:         fmt.Sprintf("level%d", idx+1),
@@ -272,6 +278,13 @@ func buildTopDown(idx int, r *rand.Rand, d designContext) Level {
 	}
 	lv.Gravity = 0
 	lv.Spawns = append(lv.Spawns, Spawn{Object: "player", X: float64(start.x + 1), Y: float64(start.y + 1)})
+	if d.feature("keys") {
+		lv.Spawns = append(lv.Spawns, Spawn{
+			Object: "key-blue",
+			X:      float64(keyRoom.x + keyRoom.w/2),
+			Y:      float64(keyRoom.y + keyRoom.h/2),
+		})
+	}
 
 	for i, rm := range rooms {
 		if i == 0 {
@@ -520,4 +533,178 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ------------------------------------------------------------ metroidvania
+
+// Tile characters particular to an exploration map.
+const (
+	chGate = 'G' // a door that needs something
+)
+
+// buildMetroidvania builds a map you explore rather than a level you cross.
+//
+// The shape is deliberate rather than random, because the thing that makes
+// this kind of game work — a door you cannot open yet, an ability that later
+// opens it, a route back through everything you have already been — is exactly
+// the thing a random layout gets wrong. The route is built in:
+//
+//	start ─► lower corridor, collecting ─► the ability ─► the shaft
+//	                                                        │
+//	  boss ◄── the door the ability opens ◄── upper corridor ◄┘
+//
+// The shaft's ledges are spaced further apart than an ordinary jump can reach
+// and closer than the high jump can, so the ability is the only way up and the
+// map cannot be finished out of order. Everything else — where the enemies
+// are, how the rooms are decorated, how long the corridors run — is generated.
+func buildMetroidvania(idx int, r *rand.Rand, d designContext) Level {
+	w, h := 84+idx*12, 24
+	g := newGrid(w, h, chGround)
+
+	lowFloor := h - 3 // the surface the player walks on down here
+	lowCeil := h - 9  // headroom of the lower corridor
+	upFloor := 10     // the surface of the upper corridor
+	upCeil := 3       //
+	shaftX := w - 9   // where the two corridors meet
+	shaftW := 6
+	step := 5 // ledge spacing: too far for a plain jump, within a high jump
+
+	g.fillRect(1, lowCeil, w-2, lowFloor-lowCeil, chEmpty)
+	g.fillRect(1, upCeil, w-2, upFloor-upCeil, chEmpty)
+	g.fillRect(shaftX, upCeil, shaftW, lowFloor-upCeil, chEmpty)
+
+	// The shaft opens into the upper corridor through two columns at one side;
+	// the rest of that floor is closed. Without it the climb ends in mid-air
+	// over a hole the width of the shaft, and stepping off the last ledge in
+	// any direction drops the player all the way back down.
+	g.fillRect(shaftX+2, upFloor, shaftW-2, 1, chGround)
+
+	// Ledges up the shaft, under the opening, so the climb arrives where the
+	// way on is. They are the gate: too far apart for an ordinary jump.
+	for y := lowFloor - step; y > upFloor; y -= step {
+		g.fillRect(shaftX, y, 3, 1, chPlatform)
+	}
+
+	// Somewhere to stand at the top of the shaft, and spikes along the lower
+	// corridor so the walk there is not free.
+	//
+	// The spikes lie on the floor rather than at the bottom of a pit dug
+	// through it. A hazard tile is not solid, so a pit with spikes in it is
+	// not a hazard at all — it is a hole in the world that the player falls
+	// through and dies in, over and over, a few seconds apart. Spikes you can
+	// jump over are the thing that was meant.
+	g.fillRect(shaftX, upFloor-1, 3, 1, chPlatform)
+	// Spaced out far enough that walking into one is a mistake rather than a
+	// toll: a corridor that costs health every few seconds is not a corridor
+	// anyone explores.
+	spacing := 16 + r.Intn(8)
+	for x := 16; x < shaftX-6; x += spacing {
+		g.fillRect(x, lowFloor-1, 1+r.Intn(2), 1, chSpike)
+	}
+
+	// The door, and the room behind it at the far end of the upper corridor.
+	// It fills the corridor from floor to ceiling: a door that can be jumped
+	// over is a decoration, not a gate.
+	gateX := 9
+	g.fillRect(gateX, upCeil, 1, upFloor-upCeil, chGate)
+	g.fillRect(1, upCeil, gateX-1, upFloor-upCeil, chEmpty)
+
+	lv := Level{
+		ID:     fmt.Sprintf("area%d", idx+1),
+		Name:   d.levelName(idx),
+		Width:  w,
+		Height: h,
+		Tiles: append(tileSet("tile-ground", "tile-platform", "tile-spike", "tile-door", ""),
+			TileDef{
+				Char:   string(chGate),
+				Sprite: "tile-gate",
+				Kind:   TileDoor,
+				Name:   d.gateName(idx),
+				Needs:  d.gateKey(idx),
+			}),
+		Map:        g.strings(),
+		Background: d.theme.Sky,
+		Intro:      d.levelIntro(idx),
+		Music:      fmt.Sprintf("%s-%d", d.theme.Name, idx),
+	}
+	lv.Spawns = append(lv.Spawns, Spawn{Object: "player", X: 3, Y: float64(lowFloor - 1)})
+
+	// The ability that opens the way up sits in the lower corridor, before the
+	// shaft, where the player cannot miss it on the way past.
+	if idx == 0 {
+		lv.Spawns = append(lv.Spawns,
+			Spawn{Object: "power-jump", X: float64(clearOfHazards(g, shaftX-12, lowFloor)), Y: float64(lowFloor - 1)},
+			// On the floor, not a tile above it: a sprite resting exactly one
+			// tile up never quite touches a player walking past, and an
+			// upgrade the game depends on is not the place to find that out.
+			Spawn{Object: "power-missile", X: float64(shaftX - 6), Y: float64(upFloor - 1)},
+		)
+	} else {
+		lv.Spawns = append(lv.Spawns, Spawn{
+			Object: d.keyObject(idx),
+			X:      float64(clearOfHazards(g, shaftX/2+r.Intn(8), lowFloor)),
+			Y:      float64(lowFloor - 1),
+		})
+	}
+
+	// What is behind the door: the way on, or the thing at the end of it all.
+	if idx == d.levels-1 {
+		lv.Spawns = append(lv.Spawns, Spawn{Object: "boss", X: 4, Y: float64(upFloor - 3)})
+		lv.Next = "win"
+	} else {
+		g.set(3, upFloor-1, chExit)
+		lv.Map = g.strings()
+	}
+
+	// Everything else that makes it a game rather than a diagram.
+	for x := 8; x < shaftX-2; x += 5 + r.Intn(5) {
+		if g.at(x, lowFloor) != chGround {
+			continue
+		}
+		if r.Intn(100) < 55 {
+			lv.Spawns = append(lv.Spawns, Spawn{Object: "coin", X: float64(x), Y: float64(lowFloor - 1)})
+		} else {
+			lv.Spawns = append(lv.Spawns, Spawn{Object: "enemy", X: float64(x), Y: float64(lowFloor - 1), Dir: dirOf(r)})
+		}
+	}
+	for x := gateX + 3; x < shaftX-1; x += 6 + r.Intn(5) {
+		switch r.Intn(3) {
+		case 0:
+			lv.Spawns = append(lv.Spawns, Spawn{Object: "flyer", X: float64(x), Y: float64(upCeil + 2), Dir: dirOf(r)})
+		case 1:
+			lv.Spawns = append(lv.Spawns, Spawn{Object: "enemy", X: float64(x), Y: float64(upFloor - 1), Dir: dirOf(r)})
+		default:
+			lv.Spawns = append(lv.Spawns, Spawn{Object: "coin", X: float64(x), Y: float64(upFloor - 1)})
+		}
+	}
+	return lv
+}
+
+// clearOfHazards finds a place on the floor near x with nothing sharp within a
+// couple of tiles of it.
+//
+// A player meeting spikes jumps them, and an item sitting among the spikes is
+// an item they sail straight over — which is fine for a coin and fatal for the
+// key to the door at the end of the level.
+func clearOfHazards(g *grid, x, floorRow int) int {
+	clear := func(at int) bool {
+		if g.at(at, floorRow) != chGround {
+			return false
+		}
+		for dx := -2; dx <= 2; dx++ {
+			if g.at(at+dx, floorRow-1) != chEmpty {
+				return false
+			}
+		}
+		return true
+	}
+	for offset := 0; offset < g.w; offset++ {
+		if at := x - offset; at > 2 && clear(at) {
+			return at
+		}
+		if at := x + offset; at < g.w-3 && clear(at) {
+			return at
+		}
+	}
+	return x
 }

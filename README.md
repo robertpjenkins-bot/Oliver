@@ -282,10 +282,35 @@ Instructions work on a finished game too — *make it harder*, *add a boss*, *ad
 another level*, *give the player a gun*, *repaint it as ice*, *call it Midnight
 Run*.
 
-**Six kinds of game.** Platformer, top-down adventure, shooter, maze chase,
-bat-and-ball and endless runner. Each has its own physics, its own camera and
-its own kind of level; the generated layouts are checked to be finishable —
-no gap wider than the jump, no exit nobody can reach.
+**It knows what you are asking for.** Name a game and it hears you:
+
+```console
+$ oliver studio new "a metroid style game on an alien planet"
+read as metroid — an exploration game: one connected map, abilities that open
+doors you have already walked past, and a guardian at the end, space, with a
+weapon, abilities that open the map up, locked doors, a boss
+```
+
+Metroid, Castlevania, Mario, Zelda, Pac-Man, Space Invaders, Mega Man and a
+couple of dozen others each map to a genre, a look and the mechanics that make
+them feel like themselves. The studio says how it read the description before
+it builds anything, so a misunderstanding costs a sentence rather than a game.
+
+**Seven kinds of game.** Platformer, exploration (metroidvania), top-down
+adventure, shooter, maze chase, bat-and-ball and endless runner. Each has its
+own physics, its own camera and its own kind of level.
+
+An exploration map is built as a route: the corridor out, the ability lying on
+it, a climb spaced too far apart for an ordinary jump, and the way back along
+the corridor above to a door that wants the weapon found up there. The ability
+opens the climb, the climb reaches the weapon, the weapon opens the door — so
+the map can only be finished in the order it was designed in.
+
+**The layouts are checked, not hoped for.** No gap wider than the jump, no
+climb an ability cannot make, no locked door whose key is behind it, no hole to
+fall out of the world through, and nothing to collect that a player jumping a
+hazard would sail over. A bot plays the first area of every generated
+exploration map in the test suite and has to finish it carrying both upgrades.
 
 **Everything is data.** A game is one JSON file: the pixels of every sprite as
 rows of text, the levels as rows of characters, the logic as *when this, do
