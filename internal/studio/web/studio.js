@@ -934,6 +934,15 @@
     if (saveTimer) { navigator.sendBeacon && save(); }
   });
 
+  // The studio stops itself when nothing has used it for a while, which is how
+  // a window opened from a desktop icon ends when the window does. This says
+  // the window is still open.
+  setInterval(function () {
+    api('/api/status').catch(function () {
+      status('the studio has stopped — start it again to keep working', 'err');
+    });
+  }, 20000);
+
   api('/api/status').then(function (info) {
     var badge = $('assistant');
     badge.textContent = info.online ? info.assistant : 'offline designer';

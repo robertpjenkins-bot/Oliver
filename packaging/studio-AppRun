@@ -1,0 +1,67 @@
+#!/bin/sh
+# AppRun for the Oliver Studio AppImage.
+#
+# Opening this file makes a game. That is the whole point of packaging the
+# studio separately: the binary inside can also run Windows programs, but
+# nobody who downloaded a game maker wants a Windows program runner when they
+# double-click it.
+set -eu
+
+HERE="$(dirname "$(readlink -f "${0}")")"
+export PATH="${HERE}/usr/bin:${PATH}"
+
+BIN="${HERE}/usr/bin/oliver"
+
+# Adding the studio to the applications menu has to record where the AppImage
+# actually is: an entry pointing inside the mount stops working the moment the
+# AppImage closes.
+if [ "${1:-}" = "--install" ] || [ "${1:-}" = "--uninstall" ]; then
+	APPS="${XDG_DATA_HOME:-${HOME}/.local/share}/applications"
+	ICONS="${XDG_DATA_HOME:-${HOME}/.local/share}/icons/hicolor/scalable/apps"
+	ENTRY="${APPS}/oliver-studio.desktop"
+	if [ "${1}" = "--uninstall" ]; then
+		rm -f "${ENTRY}" "${ICONS}/oliver-studio.svg"
+		echo "Removed Oliver Studio from your application menu."
+	else
+		SELF="${APPIMAGE:-$(readlink -f "${0}")}"
+		mkdir -p "${APPS}" "${ICONS}"
+		[ -f "${HERE}/oliver-studio.svg" ] && cp "${HERE}/oliver-studio.svg" "${ICONS}/oliver-studio.svg" || true
+		cat > "${ENTRY}" <<DESKTOP_ENTRY
+[Desktop Entry]
+Type=Application
+Name=Oliver Studio
+GenericName=Retro Game Maker
+Comment=Make retro video games and export them to HTML or an AppImage
+Exec="${SELF}"
+TryExec=${SELF}
+Icon=oliver-studio
+Terminal=false
+Categories=Development;Game;
+DESKTOP_ENTRY
+		echo "Added Oliver Studio to your application menu."
+	fi
+	command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "${APPS}" || true
+	exit 0
+fi
+
+# No arguments is the double-click case: open the studio.
+if [ "$#" -eq 0 ]; then
+	exec "${BIN}" studio
+fi
+
+# A game dropped on the icon is played rather than edited.
+if [ -e "$1" ] && [ ! -d "$1" ]; then
+	case "$1" in
+		*.html|*.HTML|*.game.json|*.GAME.JSON)
+			exec "${BIN}" play "$@"
+			;;
+	esac
+fi
+
+# A flag belongs to the studio; anything else is one of Oliver's own commands,
+# so this package stays a complete Oliver for anyone who wants the rest of it.
+case "$1" in
+	-*) exec "${BIN}" studio "$@" ;;
+esac
+
+exec "${BIN}" "$@"

@@ -4,6 +4,11 @@
 # The result is a single self-contained file that runs on any x86-64 Linux with
 # a 2.6+ kernel: the binary is statically linked with no libc dependency, so
 # there is no glibc-version floor to trip over.
+#
+# One binary, two packages. FLAVOUR=studio builds the same program as Oliver
+# Studio: its own name, its own icon, and a launcher that opens the game maker
+# when the file is double-clicked. Somebody who downloaded a game maker should
+# get a game maker when they open it, not a menu about Windows programs.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,8 +17,24 @@ root="$(cd "${here}/.." && pwd)"
 ARCH="${ARCH:-x86_64}"
 VERSION="${VERSION:-$(git -C "${root}" describe --tags --always --dirty 2>/dev/null || echo dev)}"
 OUTDIR="${OUTDIR:-${root}/dist}"
-APPDIR="${OUTDIR}/Oliver.AppDir"
-OUTPUT="${OUTDIR}/Oliver-${VERSION}-${ARCH}.AppImage"
+FLAVOUR="${FLAVOUR:-oliver}"
+
+case "${FLAVOUR}" in
+	oliver)
+		app_name="Oliver"
+		slug="oliver"
+		apprun="AppRun"
+		;;
+	studio)
+		app_name="OliverStudio"
+		slug="oliver-studio"
+		apprun="studio-AppRun"
+		;;
+	*) echo "unknown flavour: ${FLAVOUR} (oliver or studio)" >&2; exit 1 ;;
+esac
+
+APPDIR="${OUTDIR}/${app_name}.AppDir"
+OUTPUT="${OUTDIR}/${app_name}-${VERSION}-${ARCH}.AppImage"
 
 # Map the AppImage architecture name onto Go's.
 case "${ARCH}" in
@@ -26,7 +47,7 @@ esac
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 
-say "building oliver ${VERSION} for ${ARCH}"
+say "building ${app_name} ${VERSION} for ${ARCH}"
 rm -rf "${APPDIR}"
 mkdir -p "${APPDIR}/usr/bin" \
          "${APPDIR}/usr/share/applications" \
@@ -41,11 +62,16 @@ CGO_ENABLED=0 GOOS=linux GOARCH="${goarch}" \
 		-o "${APPDIR}/usr/bin/oliver" \
 		"${root}/cmd/oliver"
 
-install -m 0755 "${here}/AppRun"          "${APPDIR}/AppRun"
-install -m 0644 "${here}/oliver.desktop"  "${APPDIR}/oliver.desktop"
-install -m 0644 "${here}/oliver.svg"      "${APPDIR}/oliver.svg"
-install -m 0644 "${here}/oliver.desktop"  "${APPDIR}/usr/share/applications/oliver.desktop"
-install -m 0644 "${here}/oliver.svg"      "${APPDIR}/usr/share/icons/hicolor/scalable/apps/oliver.svg"
+install -m 0755 "${here}/${apprun}"          "${APPDIR}/AppRun"
+install -m 0644 "${here}/${slug}.desktop"    "${APPDIR}/${slug}.desktop"
+install -m 0644 "${here}/${slug}.svg"        "${APPDIR}/${slug}.svg"
+install -m 0644 "${here}/${slug}.desktop"    "${APPDIR}/usr/share/applications/${slug}.desktop"
+install -m 0644 "${here}/${slug}.svg"        "${APPDIR}/usr/share/icons/hicolor/scalable/apps/${slug}.svg"
+
+# A desktop entry's Exec must name something that resolves on PATH: "AppRun" is
+# a file inside the mount, so an entry using it fails the moment the AppImage
+# closes. AppRun puts usr/bin on PATH, so the launcher lives there too.
+install -m 0755 "${here}/${apprun}"          "${APPDIR}/usr/bin/${slug}"
 if [ -f "${here}/oliver.appdata.xml" ]; then
 	install -m 0644 "${here}/oliver.appdata.xml" "${APPDIR}/usr/share/metainfo/oliver.appdata.xml"
 fi

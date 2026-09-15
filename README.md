@@ -194,11 +194,32 @@ reach Oliver from "Open With". Undo it with `desktop uninstall`.
 The AppImage is a single statically linked file with no dependencies — no
 glibc version to match, nothing to install.
 
+### The game maker
+
+The studio ships as its own AppImage, because opening a game maker should give
+you a game maker rather than a menu about Windows programs:
+
+```console
+$ chmod +x OliverStudio-x86_64.AppImage
+$ ./OliverStudio-x86_64.AppImage                  # double-clicking does this
+$ ./OliverStudio-x86_64.AppImage --install        # add it to your applications menu
+```
+
+Double-clicking it opens the editor in your browser; dropping a game on it
+plays that game. It is the same binary as Oliver inside, so every command in
+this README still works from it — `./OliverStudio-x86_64.AppImage info app.exe`
+is Oliver.
+
+Opened from a desktop icon there is no terminal to stop it in, so the studio
+stops itself once nothing has used it for fifteen minutes. `--idle-timeout`
+changes that, and `--idle-timeout 0` leaves it running.
+
 ### From source
 
 ```console
 $ make build        # ./dist/oliver
 $ make appimage     # ./dist/Oliver-<version>-x86_64.AppImage
+$ make studio       # ./dist/OliverStudio-<version>-x86_64.AppImage
 $ make check        # format, vet and test
 ```
 
@@ -248,6 +269,9 @@ Oliver Studio
 games in ~/.local/share/oliver/games
 http://127.0.0.1:41235/
 ```
+
+There is an AppImage of it that opens the editor when you double-click it — see
+[the game maker](#the-game-maker) above.
 
 **Describe it, then take it apart.** The assistant writes a complete, playable
 game from a sentence — one it picked a genre, a palette, a cast and a set of

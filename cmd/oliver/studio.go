@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/robertpjenkins-bot/oliver/internal/gamekit"
 	"github.com/robertpjenkins-bot/oliver/internal/studio"
@@ -64,6 +65,7 @@ func (a *app) studioServe(args []string) error {
 	addr := fs.String("addr", "127.0.0.1:0", "address to listen on")
 	dir := fs.String("dir", "", "folder holding the games (default: ~/.local/share/oliver/games)")
 	noOpen := fs.Bool("no-open", false, "do not open a browser")
+	idle := fs.Duration("idle-timeout", 0, "stop once nothing has used the studio for this long (0 keeps it running)")
 	if err := parseFlagsAnywhere(fs, args); err != nil {
 		return err
 	}
@@ -71,6 +73,14 @@ func (a *app) studioServe(args []string) error {
 	u := a.ui
 	s := studio.New(*dir)
 	s.Log = func(format string, args ...any) { u.Info("· "+format, args...) }
+
+	// Opened from a desktop icon there is no terminal to press Ctrl-C in, so
+	// the studio ends with the window it was opened for: the editor says it is
+	// still there every few seconds, and a studio nobody is using stops.
+	s.IdleTimeout = *idle
+	if s.IdleTimeout == 0 && !u.Interactive {
+		s.IdleTimeout = 15 * time.Minute
+	}
 
 	// Ctrl-C has to leave nothing behind: the studio owns a port and a browser
 	// tab, and both should end with the command.
@@ -92,6 +102,14 @@ func (a *app) studioServe(args []string) error {
 		}
 		if err := studio.OpenBrowser(url); err != nil {
 			u.Warn("%v", err)
+			// Without a terminal that warning goes nowhere, and the studio
+			// looks like a program that did nothing when it was opened.
+			if !u.Interactive {
+				if kit, ok := findDialogKit(); ok {
+					kit.info("Oliver Studio is running",
+						"Open this address in your browser to make a game:\n\n"+url)
+				}
+			}
 		}
 	})
 }

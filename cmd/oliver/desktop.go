@@ -82,6 +82,7 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 	}
 
 	choices := []menuChoice{
+		{ID: "studio", Label: "Make a video game", Note: "opens Oliver Studio, the game maker"},
 		{ID: "run", Label: "Run a Windows program", Note: "choose an .exe or .msi to launch"},
 		{ID: "pack", Label: "Package a program as an AppImage", Note: "make it launchable like any other app"},
 		{ID: "doctor", Label: "Check this system", Note: "what is installed and what is missing"},
@@ -107,6 +108,8 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 			return err
 		}
 		kit.info("Oliver is ready", "You can now open .exe and .msi files from your file manager.")
+	case "studio":
+		return a.cmdStudio(nil)
 	case "run":
 		return a.guiRun(kit)
 	case "pack":

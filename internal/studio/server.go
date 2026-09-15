@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/robertpjenkins-bot/oliver/internal/gamekit"
@@ -35,6 +36,14 @@ type Server struct {
 	// Log receives one line per interesting event, for the terminal the studio
 	// was started from.
 	Log func(format string, args ...any)
+	// IdleTimeout stops the studio once nothing has asked it for anything for
+	// this long. A studio opened from a desktop icon has no terminal to press
+	// Ctrl-C in, so without this it would outlive the window it was opened
+	// for and keep a port for the rest of the session. Zero leaves it running.
+	IdleTimeout time.Duration
+
+	mu       sync.Mutex
+	lastSeen time.Time
 }
 
 // DefaultDir is where games are kept: alongside everything else Oliver owns,
@@ -66,6 +75,23 @@ func New(dir string) *Server {
 	}
 }
 
+// touch records that somebody is still using the studio.
+func (s *Server) touch() {
+	s.mu.Lock()
+	s.lastSeen = time.Now()
+	s.mu.Unlock()
+}
+
+// idleFor reports how long the studio has gone unasked.
+func (s *Server) idleFor() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastSeen.IsZero() {
+		return 0
+	}
+	return time.Since(s.lastSeen)
+}
+
 // Handler returns the studio's HTTP routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -83,7 +109,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/assist", s.guard(s.assist))
 	mux.HandleFunc("/api/export", s.guard(s.export))
 	mux.HandleFunc("/play/", s.play)
-	return mux
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.touch()
+		mux.ServeHTTP(w, r)
+	})
 }
 
 // guard keeps other pages out.
@@ -420,8 +450,14 @@ func (s *Server) Serve(ctx context.Context, addr string, ready func(url string))
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	s.touch()
 	if ready != nil {
 		ready("http://" + ln.Addr().String() + "/")
+	}
+	ctx, stopIdle := context.WithCancel(ctx)
+	defer stopIdle()
+	if s.IdleTimeout > 0 {
+		go s.watchIdle(ctx, stopIdle)
 	}
 	go func() {
 		<-ctx.Done()
@@ -433,6 +469,26 @@ func (s *Server) Serve(ctx context.Context, addr string, ready func(url string))
 		return err
 	}
 	return nil
+}
+
+// watchIdle ends the studio once the window it was opened for has gone. The
+// editor asks for its status every few seconds while it is open, so "nothing
+// has arrived in minutes" means nobody is there.
+func (s *Server) watchIdle(ctx context.Context, stop func()) {
+	tick := time.NewTicker(s.IdleTimeout / 4)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			if s.idleFor() >= s.IdleTimeout {
+				s.Log("nothing has used the studio for %s; stopping", s.IdleTimeout)
+				stop()
+				return
+			}
+		}
+	}
 }
 
 // OpenBrowser asks the desktop to open a URL. A studio that starts and then

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Oliver Studio
+GenericName=Retro Game Maker
+Comment=Make retro video games and export them to HTML or an AppImage
+Exec=oliver-studio
+TryExec=oliver-studio
+Icon=oliver-studio
+Terminal=false
+Categories=Development;Game;
+Keywords=game;maker;retro;pixel;platformer;sprite;studio;
+NoDisplay=true

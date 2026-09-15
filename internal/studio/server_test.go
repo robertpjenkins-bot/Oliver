@@ -2,6 +2,7 @@ package studio
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/robertpjenkins-bot/oliver/internal/gamekit"
 )
@@ -192,5 +194,80 @@ func TestListReadsTheFolder(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("the saved game is missing from %+v", list)
+	}
+}
+
+// A studio opened from a desktop icon has no terminal to stop it, so it has to
+// stop itself once the window it was opened for has gone.
+func TestStudioStopsWhenNobodyIsUsingIt(t *testing.T) {
+	s := New(t.TempDir())
+	s.Assistant = &gamekit.Assistant{}
+	s.IdleTimeout = 200 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	addr := make(chan string, 1)
+	done := make(chan error, 1)
+	go func() { done <- s.Serve(ctx, "127.0.0.1:0", func(url string) { addr <- url }) }()
+
+	url := <-addr
+	// While the editor is open it says so, and the studio stays up.
+	deadline := time.Now().Add(700 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		req, _ := http.NewRequest(http.MethodGet, url+"api/status", nil)
+		req.Header.Set("X-Oliver-Studio", "1")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("the studio stopped while it was still in use: %v", err)
+		}
+		resp.Body.Close()
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serve: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the studio kept running after everyone had gone")
+	}
+}
+
+// Left to itself, the studio runs until it is stopped: somebody working in a
+// terminal should not lose their editor because they stopped to think.
+func TestStudioKeepsRunningWithoutAnIdleTimeout(t *testing.T) {
+	s := New(t.TempDir())
+	s.Assistant = &gamekit.Assistant{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	addr := make(chan string, 1)
+	done := make(chan error, 1)
+	go func() { done <- s.Serve(ctx, "127.0.0.1:0", func(url string) { addr <- url }) }()
+	url := <-addr
+
+	time.Sleep(300 * time.Millisecond)
+	select {
+	case <-done:
+		t.Fatal("the studio stopped on its own")
+	default:
+	}
+	req, _ := http.NewRequest(http.MethodGet, url+"api/status", nil)
+	req.Header.Set("X-Oliver-Studio", "1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("the studio is not answering: %v", err)
+	}
+	resp.Body.Close()
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serve: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the studio did not stop when it was told to")
 	}
 }

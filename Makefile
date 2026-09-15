@@ -45,15 +45,21 @@ check: ## Format check, vet and test
 appimage: ## Build the AppImage
 	./packaging/build-appimage.sh
 
+.PHONY: studio
+studio: ## Build the Oliver Studio AppImage (the game maker)
+	FLAVOUR=studio ./packaging/build-appimage.sh
+
 .PHONY: appdir
 appdir: ## Build the AppDir only, without packaging it
 	APPDIR_ONLY=1 ./packaging/build-appimage.sh
 
 .PHONY: release
-release: ## Build AppImages for every supported architecture
+release: ## Build every AppImage for every supported architecture
 	@for arch in x86_64 aarch64; do \
-		echo "--- $$arch ---"; \
-		ARCH=$$arch ./packaging/build-appimage.sh || exit 1; \
+		for flavour in oliver studio; do \
+			echo "--- $$flavour $$arch ---"; \
+			ARCH=$$arch FLAVOUR=$$flavour ./packaging/build-appimage.sh || exit 1; \
+		done; \
 	done
 
 .PHONY: clean
