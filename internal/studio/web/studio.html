@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Oliver Studio</title>
+<link rel="stylesheet" href="/studio.css">
+</head>
+<body>
+<header id="bar">
+  <span class="brand">Oliver <b>Studio</b></span>
+  <select id="gamelist" title="open a game"></select>
+  <span class="grow"></span>
+  <span id="assistant" class="badge">…</span>
+  <button id="save">save</button>
+  <button id="export">export html</button>
+  <button id="open" title="open the game in its own window">open</button>
+</header>
+
+<main>
+  <nav id="tabs">
+    <button data-tab="assistant" class="on">assistant</button>
+    <button data-tab="play">play</button>
+    <button data-tab="levels">levels</button>
+    <button data-tab="sprites">sprites</button>
+    <button data-tab="objects">objects</button>
+    <button data-tab="rules">rules</button>
+    <button data-tab="settings">settings</button>
+  </nav>
+
+  <section id="panel">
+    <div class="tabpage" id="tab-assistant">
+      <div class="column">
+        <h2>Describe a game</h2>
+        <textarea id="prompt" rows="3" placeholder="a haunted castle platformer where you collect candles and dodge ghosts"></textarea>
+        <div class="row">
+          <button id="design" class="primary">make the game</button>
+          <span id="designnote" class="note"></span>
+        </div>
+        <h2>Change this game</h2>
+        <div class="row">
+          <input id="instruction" placeholder="make it harder · add a boss · repaint it as ice · add another level">
+          <button id="apply">apply</button>
+        </div>
+        <div class="chips" id="suggestions"></div>
+        <div id="log" class="log"></div>
+      </div>
+    </div>
+
+    <div class="tabpage" id="tab-play" hidden>
+      <div class="playbar">
+        <button id="restart">restart</button>
+        <select id="playlevel"></select>
+        <span class="note">arrows move · space jumps · X fires · P pauses</span>
+      </div>
+      <div class="stage"><canvas id="screen"></canvas></div>
+    </div>
+
+    <div class="tabpage" id="tab-levels" hidden>
+      <div class="split">
+        <aside class="side">
+          <div class="listhead">levels <button id="addlevel" class="mini">+</button></div>
+          <ul id="levellist" class="list"></ul>
+          <div class="listhead">paint</div>
+          <ul id="tilepalette" class="palette"></ul>
+          <div class="listhead">place</div>
+          <ul id="objectpalette" class="palette"></ul>
+          <div id="levelprops" class="props"></div>
+        </aside>
+        <div class="canvaswrap">
+          <div class="hint">left click paints · right click erases · shift+drag scrolls</div>
+          <canvas id="levelcanvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabpage" id="tab-sprites" hidden>
+      <div class="split">
+        <aside class="side">
+          <div class="listhead">sprites <button id="addsprite" class="mini">+</button></div>
+          <ul id="spritelist" class="list"></ul>
+          <div class="listhead">colours</div>
+          <ul id="swatches" class="palette"></ul>
+          <div id="spriteprops" class="props"></div>
+        </aside>
+        <div class="canvaswrap">
+          <div class="hint">left click draws · right click erases</div>
+          <canvas id="spritecanvas"></canvas>
+          <div id="frames" class="frames"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabpage" id="tab-objects" hidden>
+      <div class="split">
+        <aside class="side">
+          <div class="listhead">objects <button id="addobject" class="mini">+</button></div>
+          <ul id="objectlist" class="list"></ul>
+        </aside>
+        <div class="form" id="objectform"></div>
+      </div>
+    </div>
+
+    <div class="tabpage" id="tab-rules" hidden>
+      <div class="split">
+        <aside class="side">
+          <div class="listhead">rules <button id="addrule" class="mini">+</button></div>
+          <ul id="rulelist" class="list"></ul>
+        </aside>
+        <div class="form" id="ruleform"></div>
+      </div>
+    </div>
+
+    <div class="tabpage" id="tab-settings" hidden>
+      <div class="form" id="settingsform"></div>
+    </div>
+  </section>
+</main>
+
+<footer id="status"><span id="statustext">ready</span></footer>
+
+<script src="/engine.js"></script>
+<script src="/studio.js"></script>
+</body>
+</html>
