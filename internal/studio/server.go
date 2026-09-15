@@ -183,18 +183,17 @@ func fail(w http.ResponseWriter, code int, format string, args ...any) {
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	current := s.assistant()
-	assistant := "offline designer"
-	if current.Available() {
-		assistant = current.Model
-	}
+	cli := gamekit.FindClaudeCode()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"dir":       s.Dir,
-		"assistant": assistant,
-		"online":    current.Available(),
-		"source":    current.Source(),
-		"model":     current.Model,
-		"models":    gamekit.Models,
-		"genres":    gamekit.Genres,
+		"dir":        s.Dir,
+		"assistant":  current.Describe(),
+		"online":     current.Available(),
+		"source":     current.Source(),
+		"model":      current.Model,
+		"models":     gamekit.Models,
+		"genres":     gamekit.Genres,
+		"claudeCode": cli.Available(),
+		"endpoint":   gamekit.LoadPreferences().BaseURL,
 	})
 }
 
@@ -208,6 +207,8 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Key        string `json:"key"`
 		Model      string `json:"model"`
+		Use        string `json:"use"`
+		URL        string `json:"url"`
 		Disconnect bool   `json:"disconnect"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -216,6 +217,12 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Disconnect {
+		prefs := gamekit.LoadPreferences()
+		prefs.Prefer = ""
+		if err := gamekit.SavePreferences(prefs); err != nil {
+			fail(w, http.StatusInternalServerError, "%v", err)
+			return
+		}
 		if err := gamekit.ForgetKey(); err != nil {
 			fail(w, http.StatusInternalServerError, "%v", err)
 			return
@@ -234,6 +241,49 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	if req.Model != "" {
 		prefs.Model = req.Model
 	}
+	if req.URL != "" {
+		checked, err := gamekit.CheckEndpoint(req.URL)
+		if err != nil {
+			fail(w, http.StatusBadRequest, "%v", err)
+			return
+		}
+		prefs.BaseURL = checked
+	}
+
+	// Designing through the Claude Code already installed here needs no key,
+	// which is the whole point of offering it.
+	if req.Use == "claude-code" {
+		cli := gamekit.FindClaudeCode()
+		if !cli.Available() {
+			fail(w, http.StatusBadRequest, "Claude Code is not installed on this machine")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+		version, err := cli.Version(ctx)
+		if err != nil {
+			fail(w, http.StatusBadRequest, "%v", err)
+			return
+		}
+		prefs.Prefer = "claude-code"
+		if err := gamekit.SavePreferences(prefs); err != nil {
+			fail(w, http.StatusInternalServerError, "%v", err)
+			return
+		}
+		connected := gamekit.NewAssistant()
+		s.setAssistant(connected)
+		s.Log("designing with %s", version)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"online": true,
+			"model":  version,
+			"source": connected.Source(),
+		})
+		return
+	}
+	if req.Use == "api" {
+		prefs.Prefer = "api"
+	}
+
 	candidate := gamekit.NewAssistant()
 	if req.Key != "" {
 		candidate.SetKey(strings.TrimSpace(req.Key))
@@ -241,8 +291,9 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	if req.Model != "" {
 		candidate.Model = req.Model
 	}
-	if !candidate.Available() {
-		fail(w, http.StatusBadRequest, "paste a key from console.anthropic.com, or run `ant auth login` first")
+	if !candidate.Credential.HasKey() {
+		fail(w, http.StatusBadRequest,
+			"paste a key from console.anthropic.com — or use the Claude Code on this machine, which needs no key")
 		return
 	}
 

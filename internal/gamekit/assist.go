@@ -52,6 +52,26 @@ type Assistant struct {
 	// Effort is how hard the model is asked to think. Designing a whole game
 	// is the kind of open-ended work that repays it.
 	Effort string
+	// CLI is the Claude Code installed on this machine, used when there is no
+	// key. It is the difference between "make a key first" and "make a game".
+	CLI *ClaudeCode
+	// Prefer says which route to take when a machine has both: "api" or
+	// "claude-code".
+	Prefer string
+}
+
+// usingCLI reports whether designs go through the command line rather than
+// the API. With no key, the command line is the only way to reach Claude, and
+// that is the point of it: nobody should have to make an API key to make a
+// game on a machine that is already signed in.
+func (a *Assistant) usingCLI() bool {
+	if a == nil || !a.CLI.Available() {
+		return false
+	}
+	if a.Prefer == "claude-code" {
+		return true
+	}
+	return !a.Credential.ok()
 }
 
 // APIKey reports the key in use, for tests and for callers that set one
@@ -65,6 +85,9 @@ func (a *Assistant) SetKey(key string) {
 func NewAssistant() *Assistant {
 	base := strings.TrimSuffix(os.Getenv("ANTHROPIC_BASE_URL"), "/")
 	if base == "" {
+		base = strings.TrimSuffix(LoadPreferences().BaseURL, "/")
+	}
+	if base == "" {
 		base = "https://api.anthropic.com"
 	}
 	prefs := LoadPreferences()
@@ -75,8 +98,14 @@ func NewAssistant() *Assistant {
 	if model == "" {
 		model = defaultModel
 	}
+	cli := FindClaudeCode()
+	if cli != nil && prefs.Model != "" {
+		cli.Model = prefs.Model
+	}
 	return &Assistant{
 		Credential: FindCredential(),
+		CLI:        cli,
+		Prefer:     prefs.Prefer,
 		Model:      model,
 		Endpoint:   base,
 		Effort:     "high",
@@ -91,12 +120,30 @@ func (a *Assistant) Source() string {
 	if a == nil {
 		return ""
 	}
+	if a.usingCLI() {
+		return "the Claude Code already installed here — no key needed"
+	}
 	return a.Credential.Source
 }
 
 // Available reports whether there is a key to use. The studio shows which
 // assistant is in use rather than pretending they are the same.
-func (a *Assistant) Available() bool { return a != nil && a.Credential.ok() }
+func (a *Assistant) Available() bool {
+	return a != nil && (a.Credential.ok() || a.CLI.Available())
+}
+
+// Describe names the designer in words, for the badge in the studio and the
+// line the command line prints when it starts.
+func (a *Assistant) Describe() string {
+	switch {
+	case a == nil || !a.Available():
+		return "the studio's own designer, offline"
+	case a.usingCLI():
+		return "Claude Code on this machine"
+	default:
+		return a.Model
+	}
+}
 
 // Create designs a new game from a description.
 //
@@ -107,7 +154,9 @@ func (a *Assistant) Create(ctx context.Context, prompt string) (*Game, string, e
 	if !a.Available() {
 		return local, "designed offline by Oliver Studio", nil
 	}
-	user := fmt.Sprintf(`Design a complete retro video game from this description:
+	user := conceptPrompt(local, prompt, Read(prompt))
+	if !a.usingCLI() {
+		user = fmt.Sprintf(`Design a complete retro video game from this description:
 
 %s
 
@@ -117,13 +166,14 @@ otherwise, and say so in the game's own words rather than arguing with it.
 Return the game by calling emit_game. If you would rather not draw the level
 maps yourself, leave "levels" out: the studio will generate levels in your
 genre, using your objects, laid out so they can always be finished.`,
-		prompt, Read(prompt))
+			prompt, Read(prompt))
+	}
 
 	game, err := a.ask(ctx, user, local)
 	if err != nil {
 		return local, "designed offline (" + err.Error() + ")", nil
 	}
-	return game, "designed by " + a.Model, nil
+	return game, "designed by " + a.Describe(), nil
 }
 
 // Edit changes an existing game from an instruction.
@@ -148,18 +198,41 @@ Keep everything the instruction does not ask you to change. Keep every id
 consistent: an object that spawns in a level must still exist, and a sprite an
 object names must still exist.`, current, instruction)
 
+	if a.usingCLI() {
+		// Without the tool, the same request is made in plain words, and the
+		// artwork and maps are left where they are rather than rewritten.
+		withoutArt := *g
+		withoutArt.Sprites, withoutArt.Levels = nil, nil
+		compact, jerr := json.MarshalIndent(withoutArt, "", "  ")
+		if jerr != nil {
+			return g, "", jerr
+		}
+		user = fmt.Sprintf(`Here is a game, without its artwork and maps:
+
+%s
+
+Change it as follows:
+
+%s
+
+Answer with ONE JSON object and nothing else — the whole changed game, in the
+same shape, still without "sprites" or "levels". Keep every id that is there
+now: the maps place objects by name. Keep everything the instruction does not
+ask you to change.`, compact, instruction)
+	}
+
 	edited, err := a.ask(ctx, user, g)
 	if err != nil {
 		notes := Refine(g, instruction)
 		return g, strings.Join(notes, "; ") + " (offline: " + err.Error() + ")", nil
 	}
-	return edited, "edited by " + a.Model, nil
+	return edited, "edited by " + a.Describe(), nil
 }
 
 // ask runs one request and validates what comes back. fallbackLevels supplies
 // the levels when the model leaves them out, which is the normal case.
 func (a *Assistant) ask(ctx context.Context, user string, fallback *Game) (*Game, error) {
-	raw, err := a.call(ctx, user)
+	raw, err := a.ask1(ctx, user)
 	if err != nil {
 		return nil, err
 	}
@@ -174,16 +247,10 @@ func (a *Assistant) ask(ctx context.Context, user string, fallback *Game) (*Game
 	// sent back in the same words a person would be given.
 	problems := append(g.Validate(), g.Playability()...)
 	for round := 0; round < 2 && len(problems) > 0; round++ {
-		repaired, rerr := a.call(ctx, fmt.Sprintf(
-			`The game you returned cannot be played yet:
-
-  %s
-
-Fix every one of those and return the whole corrected game by calling
-emit_game again. Keep everything that was already right.`,
-			strings.Join(problems, "\n  ")))
+		repaired, rerr := a.ask1(ctx, a.repairPrompt(g, problems))
 		if rerr != nil {
-			return nil, fmt.Errorf("the design had %d problems and could not be corrected: %s", len(problems), problems[0])
+			return nil, fmt.Errorf("the design had %d problems and could not be corrected: %s: %w",
+				len(problems), problems[0], rerr)
 		}
 		next, aerr := assembleGame(repaired, fallback)
 		if aerr != nil {
@@ -198,14 +265,53 @@ emit_game again. Keep everything that was already right.`,
 	return g, nil
 }
 
+// repairPrompt asks for a design to be corrected, and hands back the design.
+//
+// Every request is its own conversation — a fresh process for the command
+// line, a single message for the API — so "the game you returned has these
+// problems" refers to nothing at all. The game has to come back with the
+// complaint, or the second round is a model being told off for something it
+// cannot see. That is what happened to the first design this ever rejected.
+func (a *Assistant) repairPrompt(g *Game, problems []string) string {
+	// The artwork and the maps are the studio's, so they are left out: they
+	// are most of the document and none of the argument.
+	shown := *g
+	shown.Sprites, shown.Levels = nil, nil
+	body, err := json.MarshalIndent(shown, "", "  ")
+	if err != nil {
+		body = []byte("{}")
+	}
+	finish := "Answer with ONE JSON object and nothing else: the whole corrected game,\nin the same shape, still without \"sprites\" or \"levels\"."
+	if !a.usingCLI() {
+		finish = "Return the whole corrected game by calling emit_game again."
+	}
+	return fmt.Sprintf(`This game cannot be played yet:
+
+  %s
+
+Here it is, without its artwork and maps:
+
+%s
+
+Fix every one of those problems. Keep everything that was already right — the
+names, the writing, the colours, the rules that work. %s`,
+		strings.Join(problems, "\n  "), body, finish)
+}
+
 // assembleGame turns the model's JSON into a project, filling in the parts it
 // was told it could leave out.
 func assembleGame(raw []byte, fallback *Game) (*Game, error) {
+	repaired := repairTypes(raw)
 	var g Game
-	if err := json.Unmarshal(raw, &g); err != nil {
+	if err := json.Unmarshal(repaired, &g); err != nil {
 		return nil, fmt.Errorf("unreadable design: %w", err)
 	}
 	g.Format = Format
+	// A design that never mentions the score is not a design for a game
+	// without one. Anything the model left out keeps the studio's own answer,
+	// which for a plain false-by-default flag is the difference between a HUD
+	// and a blank corner.
+	inherit(&g, repaired, fallback)
 	if len(g.Palette) == 0 && fallback != nil {
 		g.Palette = fallback.Palette
 	}
@@ -221,14 +327,56 @@ func assembleGame(raw []byte, fallback *Game) (*Game, error) {
 	if len(g.Levels) == 0 && fallback != nil {
 		// Levels the model did not write are generated in its genre and with
 		// its objects, which is the arrangement that produces a game that is
-		// both well designed and guaranteed finishable.
+		// both well designed and guaranteed finishable. The names are its own.
 		g.Levels = generateLevelsFor(&g, fallback)
+		for i := range g.Levels {
+			if i < len(g.Areas) && strings.TrimSpace(g.Areas[i]) != "" {
+				g.Levels[i].Name = strings.TrimSpace(g.Areas[i])
+			}
+		}
 	}
 	if len(g.Rules) == 0 && fallback != nil {
 		g.Rules = fallback.Rules
 	}
 	g.Normalize()
 	return &g, nil
+}
+
+// inherit fills in the flags a design did not mention. A boolean that is
+// absent and a boolean that is false look the same once they are read, so the
+// only way to tell is to look at what actually arrived.
+func inherit(g *Game, raw []byte, fallback *Game) {
+	if fallback == nil {
+		return
+	}
+	var seen struct {
+		Settings map[string]json.RawMessage `json:"settings"`
+	}
+	if err := json.Unmarshal(raw, &seen); err != nil {
+		return
+	}
+	said := func(key string) bool { _, ok := seen.Settings[key]; return ok }
+	if !said("showScore") {
+		g.Settings.ShowScore = fallback.Settings.ShowScore
+	}
+	if !said("showLives") {
+		g.Settings.ShowLives = fallback.Settings.ShowLives
+	}
+	if !said("showTimer") {
+		g.Settings.ShowTimer = fallback.Settings.ShowTimer
+	}
+	if !said("respawn") && g.Settings.Respawn == "" {
+		g.Settings.Respawn = fallback.Settings.Respawn
+	}
+	if g.Settings.Hint == "" {
+		g.Settings.Hint = fallback.Settings.Hint
+	}
+	if g.Settings.Title == "" {
+		g.Settings.Title = strings.ToUpper(g.Name)
+	}
+	if g.Screen.Width == 0 {
+		g.Screen = fallback.Screen
+	}
 }
 
 // generateLevelsFor builds levels for a game whose design came from elsewhere,
@@ -309,6 +457,20 @@ type apiTool struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	InputSchema map[string]any `json:"input_schema"`
+}
+
+// ask1 sends one request by whichever route this assistant uses.
+//
+// The two routes ask for different things. The API is streamed and capped, so
+// it can be asked for a whole project, sprites and all. The command line is
+// one process that answers when it answers, so it is asked for the design and
+// the studio fills in the pixels and the maps — which takes it from eight
+// thousand tokens to about one, and from a quarter of an hour to a minute.
+func (a *Assistant) ask1(ctx context.Context, user string) ([]byte, error) {
+	if a.usingCLI() {
+		return a.CLI.Ask(ctx, user)
+	}
+	return a.call(ctx, user)
 }
 
 // call makes one request and returns the JSON the model produced.

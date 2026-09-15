@@ -105,3 +105,101 @@ func mentions(problems []string, want string) bool {
 	}
 	return false
 }
+
+// A rule that can never fire is worse than a missing one: the game was
+// described as having it. Every case here came back from a real design.
+func TestRulesThatCanNeverFireAreCaught(t *testing.T) {
+	base := func() *Game { return Design("a metroid style game") }
+
+	t.Run("waiting for the player to be collected", func(t *testing.T) {
+		g := base()
+		g.Rules = append(g.Rules, Rule{
+			Name: "Buoyancy grafted",
+			When: Trigger{Event: OnCollect, A: "player"},
+			Do:   []Action{{Action: DoMessage, Text: "you feel lighter"}},
+		})
+		if !mentions(g.Playability(), "waits for the player to be collected") {
+			t.Errorf("not caught: %v", g.Playability())
+		}
+	})
+
+	t.Run("waiting for something uncollectable", func(t *testing.T) {
+		g := base()
+		g.Rules = append(g.Rules, Rule{
+			Name: "Wall taken",
+			When: Trigger{Event: OnCollect, A: "enemy"},
+			Do:   []Action{{Action: DoScore, Value: 10}},
+		})
+		if !mentions(g.Playability(), "can be picked up") {
+			t.Errorf("not caught: %v", g.Playability())
+		}
+	})
+
+	t.Run("a level that does not exist", func(t *testing.T) {
+		g := base()
+		g.Rules = append(g.Rules, Rule{
+			Name: "Everywhere", Level: "level-nine",
+			When: Trigger{Event: OnStart},
+			Do:   []Action{{Action: DoMessage, Text: "hello"}},
+		})
+		if !mentions(g.Playability(), "which does not exist") {
+			t.Errorf("not caught: %v", g.Playability())
+		}
+	})
+
+	t.Run("a sound nothing defines", func(t *testing.T) {
+		g := base()
+		g.Rules = append(g.Rules, Rule{
+			Name: "Groan",
+			When: Trigger{Event: OnStart},
+			Do:   []Action{{Action: DoSound, Target: "s_groan"}},
+		})
+		if !mentions(g.Playability(), "does not define") {
+			t.Errorf("not caught: %v", g.Playability())
+		}
+	})
+
+	t.Run("going nowhere", func(t *testing.T) {
+		g := base()
+		g.Rules = append(g.Rules, Rule{
+			Name: "Onward",
+			When: Trigger{Event: OnStart},
+			Do:   []Action{{Action: DoGoto, Target: "area-nine"}},
+		})
+		if !mentions(g.Playability(), "not a level") {
+			t.Errorf("not caught: %v", g.Playability())
+		}
+	})
+
+	t.Run("waiting for an ability nothing gives", func(t *testing.T) {
+		g := base()
+		g.Rules = append(g.Rules, Rule{
+			Name: "Gills",
+			When: Trigger{Event: OnGrant, A: "gills"},
+			Do:   []Action{{Action: DoMessage, Text: "you can breathe"}},
+		})
+		if !mentions(g.Playability(), "nothing gives it") {
+			t.Errorf("not caught: %v", g.Playability())
+		}
+	})
+}
+
+// "all" is what somebody writes when they mean every level, and there is no
+// reason to lose the rule over it.
+func TestARuleForAllLevelsRunsEverywhere(t *testing.T) {
+	g := Design("a forest platformer")
+	g.Rules = append(g.Rules, Rule{
+		Name: "Everywhere", Level: "all",
+		When: Trigger{Event: OnStart},
+		Do:   []Action{{Action: DoMessage, Text: "hello"}},
+	})
+	g.Normalize()
+	for _, r := range g.Rules {
+		if r.Name == "Everywhere" && r.Level != "" {
+			t.Errorf(`level %q — "all" should mean everywhere`, r.Level)
+		}
+	}
+	if problems := g.Playability(); len(problems) > 0 {
+		t.Errorf("unexpected problems: %v", problems)
+	}
+}

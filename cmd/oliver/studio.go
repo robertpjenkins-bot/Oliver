@@ -129,6 +129,8 @@ func (a *app) studioServe(args []string) error {
 func (a *app) studioConnect(args []string) error {
 	fs := a.newFlagSet("studio connect", studioSynopsis)
 	model := fs.String("model", "", "which model to design with (default: claude-opus-5)")
+	use := fs.String("use", "", "how to reach Claude: claude-code (no key needed) or api")
+	endpoint := fs.String("url", "", "an API address to use instead of Anthropic's own, for a gateway or a proxy")
 	if err := parseFlagsAnywhere(fs, args); err != nil {
 		return err
 	}
@@ -141,6 +143,42 @@ func (a *app) studioConnect(args []string) error {
 	if *model != "" {
 		prefs.Model = *model
 	}
+	if *endpoint != "" {
+		// An address that is a web page rather than an API is the most likely
+		// thing to be pasted here, and saying so now saves a puzzling wait.
+		checked, err := gamekit.CheckEndpoint(*endpoint)
+		if err != nil {
+			return err
+		}
+		prefs.BaseURL = checked
+	}
+
+	// Designing through the Claude Code already on the machine needs no key at
+	// all, which is the whole reason to offer it.
+	switch *use {
+	case "claude-code", "cli", "code":
+		cli := gamekit.FindClaudeCode()
+		if !cli.Available() {
+			return fmt.Errorf("Claude Code is not installed on this machine — install it from claude.com/product/claude-code, or connect with a key instead")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		version, err := cli.Version(ctx)
+		if err != nil {
+			return err
+		}
+		prefs.Prefer = "claude-code"
+		if err := gamekit.SavePreferences(prefs); err != nil {
+			return err
+		}
+		u.Info("%s designing with %s — no key needed", u.Green("✓"), version)
+		return nil
+	case "api", "key":
+		prefs.Prefer = "api"
+	case "":
+	default:
+		return fmt.Errorf("--use takes claude-code or api")
+	}
 
 	// Save first only if there is something new to save; the check below uses
 	// whatever the machine can already offer otherwise.
@@ -151,10 +189,13 @@ func (a *app) studioConnect(args []string) error {
 	if prefs.Model != "" {
 		assistant.Model = prefs.Model
 	}
-	if !assistant.Available() {
-		u.Info("%s", u.Dim("No way to reach Claude was found on this machine."))
-		u.Info("%s", u.Dim("Either paste a key:   oliver studio connect sk-ant-..."))
-		u.Info("%s", u.Dim("or log in once:       ant auth login"))
+	if !assistant.Credential.HasKey() {
+		u.Info("%s", u.Dim("No key was found on this machine. Any of these works:"))
+		if gamekit.FindClaudeCode().Available() {
+			u.Info("%s", u.Dim("  oliver studio connect --use claude-code   (no key at all)"))
+		}
+		u.Info("%s", u.Dim("  oliver studio connect sk-ant-...          (a key from console.anthropic.com)"))
+		u.Info("%s", u.Dim("  ant auth login                           (sign in once, then connect)"))
 		return fmt.Errorf("nothing to connect with")
 	}
 
@@ -211,7 +252,10 @@ func (a *app) studioNew(args []string) error {
 	u := a.ui
 	s := studio.New(*dir)
 	u.Info("%s", u.Dim(gamekit.Read(prompt).String()))
-	u.Info("designing…")
+	u.Info("designing with %s…", s.Assistant.Describe())
+	if s.Assistant.Available() {
+		u.Info("%s", u.Dim("this takes a minute — the studio draws the artwork and builds the maps around what comes back"))
+	}
 	g, note, err := s.Assistant.Create(context.Background(), prompt)
 	if err != nil {
 		return err

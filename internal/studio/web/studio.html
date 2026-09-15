@@ -37,12 +37,23 @@
             The studio designs offline on its own. Give it a key and Claude does the
             designing instead — better games, and it understands what you ask for.
           </p>
+          <div class="row" id="clirow" hidden>
+            <button id="usecli" class="primary">use the Claude Code on this machine — no key</button>
+          </div>
           <div class="row">
             <input id="apikey" type="password" placeholder="sk-ant-… from console.anthropic.com" autocomplete="off">
             <select id="model"></select>
-            <button id="connectbtn" class="primary">connect</button>
+            <button id="connectbtn">connect with a key</button>
           </div>
-          <p class="note">The key is saved on this machine only, readable by you alone, and never leaves it except to talk to Anthropic.</p>
+          <details class="advanced">
+            <summary>somewhere else</summary>
+            <div class="row">
+              <input id="endpoint" placeholder="https://api.anthropic.com — or a gateway that speaks the same protocol">
+              <button id="setendpoint">use this address</button>
+            </div>
+            <p class="note">This is for an API address. claude.ai is the Claude you sign in to in a browser — nothing there answers a design request, so the button above is what to use instead.</p>
+          </details>
+          <p class="note">A key is saved on this machine only, readable by you alone, and never leaves it except to talk to Anthropic.</p>
         </div>
         <h2>Describe a game</h2>
         <textarea id="prompt" rows="3" placeholder="a haunted castle platformer where you collect candles and dodge ghosts"></textarea>

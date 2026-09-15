@@ -44,6 +44,10 @@ type Game struct {
 	Palette  []string `json:"palette"`
 	Settings Settings `json:"settings"`
 
+	// Areas names the levels when the studio is building them, so a game
+	// called Cathedral of Tides does not open in the Ancient Grove.
+	Areas []string `json:"areas,omitempty"`
+
 	Sprites []Sprite `json:"sprites"`
 	Objects []Object `json:"objects"`
 	Levels  []Level  `json:"levels"`
@@ -261,6 +265,7 @@ const (
 	DoSound    = "sound"
 	DoHealth   = "health"
 	DoLives    = "lives"
+	DoGrant    = "grant"
 	DoSetVar   = "setvar"
 	DoAddVar   = "addvar"
 	DoSpeed    = "speed"
@@ -447,6 +452,13 @@ func (g *Game) Normalize() {
 	for i := range g.Rules {
 		if g.Rules[i].ID == "" {
 			g.Rules[i].ID = fmt.Sprintf("rule%d", i+1)
+		}
+		// A rule with no level named runs everywhere, and "all" is what
+		// somebody writes when they mean that. Taking it at its meaning costs
+		// nothing and saves a rule that would otherwise never fire.
+		switch strings.ToLower(g.Rules[i].Level) {
+		case "all", "*", "any", "every":
+			g.Rules[i].Level = ""
 		}
 	}
 }

@@ -135,8 +135,123 @@ func (g *Game) Playability() []string {
 		}
 	}
 
+	problems = append(problems, g.ruleProblems()...)
 	sort.Strings(problems)
 	return dedupe(problems)
+}
+
+// builtinSounds are the names the engine plays without being told what they
+// are, so a rule naming one of them is not naming nothing.
+var builtinSounds = map[string]bool{
+	"jump": true, "coin": true, "hit": true, "shoot": true,
+	"win": true, "lose": true, "step": true, "break": true,
+}
+
+// ruleProblems finds rules that can never do anything.
+//
+// A rule that cannot fire is worse than a missing one: the game was described
+// as having it. The first design that came back from Claude Code had seven
+// rules waiting for the player to be collected — every message, every reward
+// for finding an upgrade, silently dead, in a game that otherwise looked
+// perfect.
+func (g *Game) ruleProblems() []string {
+	var problems []string
+
+	collectable := map[string]bool{}
+	spawned := map[string]bool{}
+	granted := map[string]bool{}
+	for _, lv := range g.Levels {
+		for _, sp := range lv.Spawns {
+			spawned[sp.Object] = true
+		}
+	}
+	for _, o := range g.Objects {
+		if o.Collect || o.Kind == KindItem {
+			collectable[o.ID] = true
+		}
+		if o.Grants != "" {
+			granted[o.Grants] = true
+		}
+	}
+	sounds := map[string]bool{}
+	for _, s := range g.Sounds {
+		sounds[s.ID] = true
+	}
+	levels := map[string]bool{"win": true}
+	for _, lv := range g.Levels {
+		levels[lv.ID] = true
+	}
+
+	name := func(r Rule, i int) string {
+		if r.Name != "" {
+			return r.Name
+		}
+		if r.ID != "" {
+			return r.ID
+		}
+		return fmt.Sprintf("rule %d", i+1)
+	}
+
+	for i, r := range g.Rules {
+		switch r.When.Event {
+		case OnCollect:
+			if r.When.A == "" {
+				break
+			}
+			if o := g.Object(r.When.A); o != nil && o.Kind == KindPlayer {
+				problems = append(problems, fmt.Sprintf(
+					"%q waits for the player to be collected, which never happens — name the thing being picked up instead",
+					name(r, i)))
+			} else if !collectable[r.When.A] {
+				problems = append(problems, fmt.Sprintf(
+					"%q waits for %q to be collected, and nothing of that name can be picked up",
+					name(r, i), r.When.A))
+			}
+		case OnDestroy:
+			if r.When.A != "" && g.Object(r.When.A) == nil {
+				problems = append(problems, fmt.Sprintf(
+					"%q waits for %q to be destroyed, and there is no such object", name(r, i), r.When.A))
+			}
+		case OnCount:
+			if r.When.A != "" && !spawned[r.When.A] {
+				problems = append(problems, fmt.Sprintf(
+					"%q waits until no %q are left, and no level has any", name(r, i), r.When.A))
+			}
+		case OnGrant:
+			if r.When.A != "" && !granted[r.When.A] {
+				problems = append(problems, fmt.Sprintf(
+					"%q waits for %q to be found, and nothing gives it", name(r, i), r.When.A))
+			}
+		}
+		if r.Level != "" && !levels[r.Level] {
+			problems = append(problems, fmt.Sprintf(
+				"%q only runs in level %q, which does not exist", name(r, i), r.Level))
+		}
+		for _, a := range r.Do {
+			switch a.Action {
+			case DoSpawn, DoDestroy:
+				if a.Target != "" && g.Object(a.Target) == nil {
+					problems = append(problems, fmt.Sprintf(
+						"%q %ss %q, and there is no such object", name(r, i), a.Action, a.Target))
+				}
+			case DoSound:
+				if a.Target != "" && !sounds[a.Target] && !builtinSounds[a.Target] {
+					problems = append(problems, fmt.Sprintf(
+						"%q plays the sound %q, which the game does not define", name(r, i), a.Target))
+				}
+			case DoGoto:
+				if a.Target != "" && !levels[a.Target] {
+					problems = append(problems, fmt.Sprintf(
+						"%q leads to %q, which is not a level", name(r, i), a.Target))
+				}
+			case DoGrant:
+				if a.Target == "" {
+					problems = append(problems, fmt.Sprintf("%q grants nothing in particular", name(r, i)))
+				}
+			}
+		}
+	}
+	return problems
 }
 
 // levelCanEnd reports whether a level has any way of being completed.

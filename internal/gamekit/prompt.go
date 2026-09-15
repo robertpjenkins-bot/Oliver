@@ -1,6 +1,9 @@
 package gamekit
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // What the assistant is told about the format it is writing.
 //
@@ -202,4 +205,94 @@ func gameSchema() map[string]any {
 		"rules":   arrayOf(rule),
 		"sounds":  arrayOf(sound),
 	}, "name", "genre", "palette", "sprites", "objects")
+}
+
+// conceptPrompt asks for the design of a game rather than the whole document.
+//
+// A finished project is about eight thousand tokens, and six of those are the
+// pixels of every sprite and the rows of every level — the two things the
+// studio already makes, and the two it can guarantee are playable. Asking a
+// model to write them as well is slow enough to look broken: the first run of
+// this through Claude Code was still going a quarter of an hour later.
+//
+// So the model is asked for the part that is judgement — what the game is,
+// what it is called, what it looks like, what its objects do and what its
+// rules reward — against a list of the sprites and objects the studio will
+// provide. It answers in about a thousand tokens, and the game it describes
+// is assembled around levels that are known to be finishable.
+func conceptPrompt(local *Game, description string, read Interpretation) string {
+	var sprites, objects []string
+	for _, s := range local.Sprites {
+		sprites = append(sprites, s.ID)
+	}
+	for _, o := range local.Objects {
+		objects = append(objects, fmt.Sprintf("%s (%s)", o.ID, o.Kind))
+	}
+
+	return fmt.Sprintf(`You design retro video games. Design one from this description:
+
+%s
+
+The studio reads that as: %s. Follow that reading unless the description says
+otherwise.
+
+Answer with ONE JSON object and nothing else — no explanation, no code fence:
+
+{
+  "name":     short and memorable, no subtitle
+  "tagline":  five or six words
+  "genre":    %s
+  "palette":  exactly 16 "#rrggbb" colours, in this order: 0 outline (near
+              black), 1 lightest, 2 shade, 3 mid light, 4 red, 5 orange,
+              6 yellow, 7 green, 8 deep green, 9 light blue, 10 blue,
+              11 purple, 12 pink, 13 brown, 14 gold, 15 background
+  "settings": { "gravity", "lives", "title", "hint", "ending", "respawn" }
+  "areas":    three names, one for each level the studio will build, in order
+  "objects":  [ { "id", "name", "sprite", "kind", "behavior", "speed", "jump",
+                  "health", "damage", "points", "range", "collect",
+                  "stompable", "grants", "announce",
+                  "fires": { "object", "every", "speed", "aim" } } ]
+  "rules":    [ { "id", "name", "level", "once",
+                  "when": { "event", "a", "b", "value" },
+                  "do": [ { "action", "target", "value", "text" } ] } ]
+
+  In a rule, "a" is the thing the event happened to, never the player:
+  { "event": "collect", "a": "power-jump" } fires when the player picks up the
+  high jump. { "event": "collect", "a": "player" } waits for the player to be
+  picked up, which never happens. Leave "level" out to run everywhere — there
+  is no level called "all". "grant" in "a" is the ability's name, and the
+  action "health" takes a number in "value", not a name in "target".
+  "sounds":   [ { "id", "wave", "freq", "to", "dur", "vol" } ]
+}
+
+Do NOT write "sprites" or "levels". The studio draws the artwork and builds
+the maps, laid out so they can always be finished, and it does that using
+exactly these names:
+
+  sprites: %s
+  objects: %s
+
+Keep those object ids — the levels place them by name — and change what they
+are: their names, their speeds, what they shoot, what they are worth, what
+picking them up grants. Keep the kinds sensible: one player, enemies that
+hurt, items that are collected.
+
+kinds       player enemy item hazard block projectile goal decor npc
+behaviours  platformer topdown ship paddle patrol chase flee float fall
+            bounce orbit projectile static
+events      start collide collect destroy tile key timer score count health
+            grant levelclear
+actions     score spawn destroy goto win lose message sound health lives
+            grant setvar addvar speed shake teleport openexit
+
+Speeds are pixels per second: a player moves 80-120, an enemy 30-60; a
+platformer player jumps 320-360 against gravity 900. grants gives the player
+something that lasts the whole game ("highjump", "missiles", "key-blue"), and
+a door that needs it is what makes a map an exploration.
+
+The rules are the game's objective. The engine already knows that spikes hurt,
+that doors lead on and that items are collected; write the rules that make
+this game itself.`,
+		description, read, strings.Join(Genres, ", "),
+		strings.Join(sprites, " "), strings.Join(objects, " "))
 }

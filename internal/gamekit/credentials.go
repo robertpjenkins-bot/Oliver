@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,10 @@ type Credential struct {
 
 func (c Credential) ok() bool { return c.Key != "" || c.Token != "" }
 
+// HasKey reports whether this credential can authenticate an API request, for
+// callers outside this package deciding what to offer somebody.
+func (c Credential) HasKey() bool { return c.ok() }
+
 // apply puts the credential on a request. An OAuth token is a different header
 // from an API key, not a different value in the same one — sending a bearer
 // token as x-api-key fails in a way that reads like a bad key.
@@ -72,6 +77,12 @@ func SettingsPath() string {
 type Preferences struct {
 	APIKey string `json:"api_key,omitempty"`
 	Model  string `json:"model,omitempty"`
+	// Prefer picks between the ways of reaching Claude when a machine has
+	// more than one: "api" or "claude-code".
+	Prefer string `json:"prefer,omitempty"`
+	// BaseURL points the studio at something other than Anthropic's own API,
+	// for a gateway or a proxy that speaks the same protocol.
+	BaseURL string `json:"base_url,omitempty"`
 }
 
 // LoadPreferences reads what the studio was told, returning an empty set when
@@ -212,4 +223,51 @@ func io_copy(dst *strings.Builder, src interface{ Read([]byte) (int, error) }, n
 		return read, nil
 	}
 	return read, err
+}
+
+// CheckEndpoint validates an address the studio has been pointed at.
+//
+// The mistake worth catching is a reasonable one: somebody pastes the address
+// of the Claude they use every day, which is a web page they sign in to, not
+// something a program can send a game design to. Saying that plainly — and
+// naming the thing that does work — is worth more than a connection error
+// twenty seconds later.
+func CheckEndpoint(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("%q is not an address: %w", raw, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("%q is not a web address", raw)
+	}
+	host := strings.ToLower(strings.TrimPrefix(u.Hostname(), "www."))
+
+	switch host {
+	case "claude.ai", "claude.com":
+		return "", fmt.Errorf(
+			"%s is the Claude you sign in to in a browser, not an address a program can send designs to.\n"+
+				"Nothing there answers a game-design request, so pointing the studio at it would only ever time out.\n\n"+
+				"For designing without a key, use the Claude already installed on this machine:\n"+
+				"  oliver studio connect --use claude-code\n"+
+				"or paste a key from console.anthropic.com into the studio", u.Host)
+	case "console.anthropic.com":
+		return "", fmt.Errorf(
+			"console.anthropic.com is where keys are made, not where requests go.\n" +
+				"Make a key there, then: oliver studio connect sk-ant-...")
+	}
+
+	// Anything else is taken at its word: a gateway or a proxy that speaks the
+	// same protocol is a legitimate thing to point at. The path is kept so an
+	// address like https://gateway.example.com/anthropic works, minus any
+	// trailing /v1, which the studio adds itself.
+	u.Path = strings.TrimSuffix(strings.TrimSuffix(strings.TrimRight(u.Path, "/"), "/v1/messages"), "/v1")
+	u.RawQuery, u.Fragment = "", ""
+	return strings.TrimSuffix(u.String(), "/"), nil
 }

@@ -345,10 +345,20 @@ menu with `--install`, and reopens in the studio with `--edit`.
 
 ### Designing with Claude
 
-There is nothing to install: Claude runs on Anthropic's machines, and the
-studio reaches it over the network with a credential. Giving it one takes a
-moment and can be done from inside the editor — the badge in the corner says
-which designer is in use, and clicking it opens the box to paste a key into.
+**Without a key.** If Claude Code is installed, the studio uses it — one
+button in the editor, or:
+
+```console
+$ oliver studio connect --use claude-code
+✓ designing with 2.1.273 (Claude Code) — no key needed
+```
+
+That is the whole setup. The design goes to the Claude you are already signed
+in to, and comes back as a game. It takes a minute or two, sometimes longer,
+because the studio would rather wait and check than hand over something that
+cannot be played.
+
+**With a key**, if you would rather, or if Claude Code is not installed:
 
 ```console
 $ oliver studio connect sk-ant-...      # or paste it into the editor
@@ -356,10 +366,16 @@ $ oliver studio connect sk-ant-...      # or paste it into the editor
 $ oliver studio disconnect              # back to designing offline
 ```
 
-Four places are looked in, most explicit first: the key given to the studio,
-`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and the login `ant auth login`
-already stores on the machine — so if you have signed in to Anthropic's tools
-once, the studio is already connected and needs no key at all.
+Five ways in are looked for, most explicit first: the key given to the studio,
+`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, the login `ant auth login` stores
+on the machine, and the Claude Code installed on it — so a machine already
+signed in to any of Anthropic's tools is already connected.
+
+**Somewhere else.** `--url` points the studio at an address that speaks the
+same protocol, for a gateway or a proxy. It is not where you put
+`https://claude.ai/code`: that is the Claude you sign in to in a browser, and
+nothing there answers a program's design request. The studio says so if you
+try, and points at the button above, which is what that link was reaching for.
 
 A key given to the studio is checked against the API before it is saved, so a
 typo is a message while you are still looking at the box. It is written to
@@ -367,12 +383,21 @@ typo is a message while you are still looking at the box. It is written to
 back out — the studio reports what it is connected to, never the credential.
 
 Connected, the designing is done by Claude Opus 5 with adaptive thinking (set
-another with the dropdown or `OLIVER_STUDIO_MODEL`). What comes back is
-treated as a proposal rather than an answer: it is parsed, normalised, checked
+another with the dropdown or `OLIVER_STUDIO_MODEL`). Through Claude Code the
+request is smaller on purpose: a finished project is about eight thousand
+tokens and six of those are the pixels of every sprite and the rows of every
+level — the two things the studio already draws and can guarantee are
+finishable. So the model is asked for the part that is judgement, and the
+studio builds the rest around it.
+
+What comes back is treated as a proposal rather than an answer: it is parsed, normalised, checked
 that it is a well-formed project *and* that it is a game somebody can finish —
 no gap wider than the jump, no key behind the door it opens, nothing to collect
-hanging out of reach — and anything wrong is sent back in those words for up to
-two rounds. A design that still cannot be played is dropped in favour of the
+hanging out of reach — and anything wrong is sent back in those words, along with the design itself,
+for up to two rounds. Rules are checked too: a rule waiting for the player to
+be collected, or naming a sound the game never defines, can never fire, and a
+game that promises something that never happens is worse than one that never
+promised it. A design that still cannot be played is dropped in favour of the
 local one. Nothing a model returns can produce a project the editor cannot open
 or the engine cannot play.
 

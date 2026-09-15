@@ -973,7 +973,16 @@
     $('connectnote').textContent = info.online
       ? 'Designing with ' + info.assistant + ', using ' + (info.source || 'a saved key') + '.'
       : 'The studio designs offline on its own. Give it a key and Claude does the designing instead — better games, and it understands what you ask for.';
-    $('connectbtn').textContent = info.online ? 'reconnect' : 'connect';
+    $('connectbtn').textContent = info.online ? 'use a key instead' : 'connect with a key';
+    // The machine may already have a Claude that needs no key at all.
+    $('clirow').hidden = !info.claudeCode;
+    if (info.claudeCode) {
+      $('usecli').textContent = info.source && info.source.indexOf('Claude Code') >= 0
+        ? 'designing with Claude Code on this machine'
+        : 'use the Claude Code on this machine — no key';
+      $('usecli').disabled = !!(info.source && info.source.indexOf('Claude Code') >= 0);
+    }
+    if (info.endpoint) $('endpoint').value = info.endpoint;
     var select = $('model');
     if (select && !select.options.length && info.models) {
       info.models.forEach(function (m) {
@@ -1009,7 +1018,11 @@
   }
 
   $('connectbtn').addEventListener('click', function () {
-    connect({ key: $('apikey').value.trim(), model: $('model').value });
+    connect({ key: $('apikey').value.trim(), model: $('model').value, use: 'api' });
+  });
+  $('usecli').addEventListener('click', function () { connect({ use: 'claude-code' }); });
+  $('setendpoint').addEventListener('click', function () {
+    connect({ url: $('endpoint').value.trim(), key: $('apikey').value.trim() });
   });
   $('apikey').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') connect({ key: this.value.trim(), model: $('model').value });

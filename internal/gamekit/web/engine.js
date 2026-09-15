@@ -1384,7 +1384,13 @@
       this.text(g, lives, this.game.screen.width - textWidth(lives) - 4, y, pal[1] || '#fff');
     }
     if (this.player && this.player.proto.health > 1) {
-      for (var i = 0; i < Math.max(0, this.player.hp); i++) this.heart(g, 4 + i * 8, y + 8, pal[4] || '#f55');
+      // A row of hearts is how a player reads three or five; past that it is a
+      // wall of pixels across the screen, so it becomes a number. A design can
+      // hand out twenty hit points and the HUD still fits.
+      var hp = Math.max(0, this.player.hp);
+      var hearts = Math.min(hp, 6);
+      for (var i = 0; i < hearts; i++) this.heart(g, 4 + i * 8, y + 8, pal[4] || '#f55');
+      if (hp > hearts) this.text(g, 'x' + hp, 4 + hearts * 8 + 2, y + 8, pal[4] || '#f55');
     }
     if (this.timeLeft > 0) {
       var t = 'TIME ' + Math.ceil(this.timeLeft);
@@ -1393,8 +1399,17 @@
     var found = [];
     for (var item in this.inventory) if (this.inventory[item]) found.push(item);
     if (found.length) {
+      // What has been found belongs under the lives, on its own line, where it
+      // cannot run into the health.
       var label = found.join(' ');
-      this.text(g, label, this.game.screen.width - textWidth(label) - 4, y + 8, pal[9] || '#7fd');
+      var width = textWidth(label);
+      var room = this.game.screen.width - 8;
+      while (width > room && found.length > 1) {
+        found.shift();
+        label = '.. ' + found.join(' ');
+        width = textWidth(label);
+      }
+      this.text(g, label, this.game.screen.width - width - 4, y + 8, pal[9] || '#7fd');
     }
     for (var m = 0; m < this.messages.length; m++) {
       this.textCentred(g, this.messages[m].text, this.game.screen.height - 20 - m * 8, pal[6] || '#fd5');
