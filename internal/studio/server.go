@@ -46,6 +46,21 @@ type Server struct {
 	lastSeen time.Time
 }
 
+// assistant returns the designer in use. Connecting Claude replaces it while
+// other requests may be reading it, so it is guarded: without this, designing
+// a game while somebody pastes a key is a data race.
+func (s *Server) assistant() *gamekit.Assistant {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Assistant
+}
+
+func (s *Server) setAssistant(a *gamekit.Assistant) {
+	s.mu.Lock()
+	s.Assistant = a
+	s.mu.Unlock()
+}
+
 // DefaultDir is where games are kept: alongside everything else Oliver owns,
 // so backing up one directory backs up the lot.
 func DefaultDir() string {
@@ -105,6 +120,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/status", s.guard(s.status))
 	mux.HandleFunc("/api/games", s.guard(s.games))
 	mux.HandleFunc("/api/game", s.guard(s.game))
+	mux.HandleFunc("/api/connect", s.guard(s.connect))
 	mux.HandleFunc("/api/read", s.guard(s.read))
 	mux.HandleFunc("/api/design", s.guard(s.design))
 	mux.HandleFunc("/api/assist", s.guard(s.assist))
@@ -166,15 +182,94 @@ func fail(w http.ResponseWriter, code int, format string, args ...any) {
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	current := s.assistant()
 	assistant := "offline designer"
-	if s.Assistant.Available() {
-		assistant = s.Assistant.Model
+	if current.Available() {
+		assistant = current.Model
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"dir":       s.Dir,
 		"assistant": assistant,
-		"online":    s.Assistant.Available(),
+		"online":    current.Available(),
+		"source":    current.Source(),
+		"model":     current.Model,
+		"models":    gamekit.Models,
 		"genres":    gamekit.Genres,
+	})
+}
+
+// connect stores a key so the studio can design with Claude, and disconnects
+// when given none. The key is checked against the API before it is written, so
+// a typo is a message here rather than a puzzle later.
+//
+// Nothing ever sends a key back: the studio reports whether it is connected
+// and to what, never the credential itself.
+func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Key        string `json:"key"`
+		Model      string `json:"model"`
+		Disconnect bool   `json:"disconnect"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+
+	if req.Disconnect {
+		if err := gamekit.ForgetKey(); err != nil {
+			fail(w, http.StatusInternalServerError, "%v", err)
+			return
+		}
+		after := gamekit.NewAssistant()
+		s.setAssistant(after)
+		s.Log("disconnected from Claude")
+		writeJSON(w, http.StatusOK, map[string]any{
+			"online": after.Available(),
+			"source": after.Source(),
+		})
+		return
+	}
+
+	prefs := gamekit.LoadPreferences()
+	if req.Model != "" {
+		prefs.Model = req.Model
+	}
+	candidate := gamekit.NewAssistant()
+	if req.Key != "" {
+		candidate.SetKey(strings.TrimSpace(req.Key))
+	}
+	if req.Model != "" {
+		candidate.Model = req.Model
+	}
+	if !candidate.Available() {
+		fail(w, http.StatusBadRequest, "paste a key from console.anthropic.com, or run `ant auth login` first")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	if err := gamekit.CheckCredential(ctx, candidate.Client, candidate.Endpoint, candidate.Credential); err != nil {
+		fail(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+
+	if req.Key != "" {
+		prefs.APIKey = strings.TrimSpace(req.Key)
+	}
+	if err := gamekit.SavePreferences(prefs); err != nil {
+		fail(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	connected := gamekit.NewAssistant()
+	if req.Model != "" {
+		connected.Model = req.Model
+	}
+	s.setAssistant(connected)
+	s.Log("connected to %s (%s)", connected.Model, connected.Source())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"online": true,
+		"model":  connected.Model,
+		"source": connected.Source(),
 	})
 }
 
@@ -303,7 +398,7 @@ func (s *Server) game(w http.ResponseWriter, r *http.Request) {
 		s.Log("saved %s", saved)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"name":     saved,
-			"problems": g.Validate(),
+			"problems": append(g.Validate(), g.Playability()...),
 		})
 	case http.MethodDelete:
 		path, err := s.Path(name)
@@ -351,7 +446,7 @@ func (s *Server) design(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	s.Log("designing: %s", req.Prompt)
-	g, note, err := s.Assistant.Create(ctx, req.Prompt)
+	g, note, err := s.assistant().Create(ctx, req.Prompt)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "%v", err)
 		return
@@ -391,7 +486,7 @@ func (s *Server) assist(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
-	edited, note, err := s.Assistant.Edit(ctx, g, req.Instruction)
+	edited, note, err := s.assistant().Edit(ctx, g, req.Instruction)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "%v", err)
 		return
@@ -406,7 +501,7 @@ func (s *Server) assist(w http.ResponseWriter, r *http.Request) {
 		"name":     name,
 		"game":     edited,
 		"note":     note,
-		"problems": edited.Validate(),
+		"problems": append(edited.Validate(), edited.Playability()...),
 	})
 }
 

@@ -29,14 +29,18 @@ taken apart and changed by hand.
   oliver studio play <name>          play a game now
   oliver studio export <name>        write a playable HTML file
   oliver studio export <name> --appimage
+  oliver studio connect [key]        design with Claude instead of offline
+  oliver studio disconnect           go back to designing offline
 
 Games are JSON files in ~/.local/share/oliver/games. An exported game is one
 HTML file with the engine, the artwork and the sound inside it: no server, no
 network, nothing to install.
 
-With ANTHROPIC_API_KEY set, designing asks Claude. Without it, the studio's own
-designer does the work offline — the editor, the engine and every export work
-the same either way.`
+Designing asks Claude when there is a way to reach it: a key given to "oliver
+studio connect" or pasted into the editor, ANTHROPIC_API_KEY, or the login that
+"ant auth login" already stores on this machine. Without any of those, the
+studio's own designer does the work offline — the editor, the engine and every
+export work the same either way.`
 
 func (a *app) cmdStudio(args []string) error {
 	if len(args) > 0 {
@@ -51,6 +55,10 @@ func (a *app) cmdStudio(args []string) error {
 			return a.studioExport(args[1:])
 		case "play":
 			return a.studioPlay(args[1:])
+		case "connect":
+			return a.studioConnect(args[1:])
+		case "disconnect":
+			return a.studioDisconnect(args[1:])
 		case "-h", "--help", "help":
 			fmt.Fprintln(os.Stdout, studioSynopsis)
 			return nil
@@ -90,9 +98,9 @@ func (a *app) studioServe(args []string) error {
 	u.Info("%s", u.Bold("Oliver Studio"))
 	u.Info("games in %s", s.Dir)
 	if s.Assistant.Available() {
-		u.Info("designing with %s", s.Assistant.Model)
+		u.Info("designing with %s, using %s", s.Assistant.Model, s.Assistant.Source())
 	} else {
-		u.Info("%s", u.Dim("designing offline — set ANTHROPIC_API_KEY to design with Claude instead"))
+		u.Info("%s", u.Dim("designing offline — connect Claude in the editor, or run `oliver studio connect`"))
 	}
 
 	return s.Serve(ctx, *addr, func(url string) {
@@ -112,6 +120,75 @@ func (a *app) studioServe(args []string) error {
 			}
 		}
 	})
+}
+
+// studioConnect stores a key so the studio designs with Claude.
+//
+// The key is checked before it is saved: a typed-in credential that does not
+// work should say so now, not the first time somebody waits for a game.
+func (a *app) studioConnect(args []string) error {
+	fs := a.newFlagSet("studio connect", studioSynopsis)
+	model := fs.String("model", "", "which model to design with (default: claude-opus-5)")
+	if err := parseFlagsAnywhere(fs, args); err != nil {
+		return err
+	}
+	u := a.ui
+
+	prefs := gamekit.LoadPreferences()
+	if key := strings.TrimSpace(fs.Arg(0)); key != "" {
+		prefs.APIKey = key
+	}
+	if *model != "" {
+		prefs.Model = *model
+	}
+
+	// Save first only if there is something new to save; the check below uses
+	// whatever the machine can already offer otherwise.
+	assistant := gamekit.NewAssistant()
+	if prefs.APIKey != "" {
+		assistant.SetKey(prefs.APIKey)
+	}
+	if prefs.Model != "" {
+		assistant.Model = prefs.Model
+	}
+	if !assistant.Available() {
+		u.Info("%s", u.Dim("No way to reach Claude was found on this machine."))
+		u.Info("%s", u.Dim("Either paste a key:   oliver studio connect sk-ant-..."))
+		u.Info("%s", u.Dim("or log in once:       ant auth login"))
+		return fmt.Errorf("nothing to connect with")
+	}
+
+	u.Info("checking with Anthropic…")
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	if err := gamekit.CheckCredential(ctx, assistant.Client, assistant.Endpoint, assistant.Credential); err != nil {
+		return err
+	}
+	if err := gamekit.SavePreferences(prefs); err != nil {
+		return err
+	}
+	u.Info("%s designing with %s, using %s", u.Green("✓"), assistant.Model, assistant.Source())
+	if prefs.APIKey != "" {
+		u.Info("%s", u.Dim("the key is saved at "+gamekit.SettingsPath()+", readable only by you"))
+	}
+	return nil
+}
+
+func (a *app) studioDisconnect(args []string) error {
+	fs := a.newFlagSet("studio disconnect", studioSynopsis)
+	if err := parseFlagsAnywhere(fs, args); err != nil {
+		return err
+	}
+	if err := gamekit.ForgetKey(); err != nil {
+		return err
+	}
+	after := gamekit.NewAssistant()
+	if after.Available() {
+		a.ui.Info("removed the saved key; still reaching Claude through %s", after.Source())
+		return nil
+	}
+	a.ui.Info("%s the studio is designing offline again", a.ui.Green("✓"))
+	return nil
 }
 
 func (a *app) studioNew(args []string) error {

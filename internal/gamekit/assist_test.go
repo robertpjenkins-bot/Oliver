@@ -55,7 +55,7 @@ func TestAssistantUsesTheDesignItIsGiven(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := &Assistant{APIKey: "test-key", Model: "claude-opus-5", Endpoint: srv.URL, Client: srv.Client()}
+	a := &Assistant{Credential: Credential{Key: "test-key"}, Model: "claude-opus-5", Endpoint: srv.URL, Client: srv.Client()}
 	g, note, err := a.Create(context.Background(), "a cave platformer")
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestAssistantFallsBackHonestly(t *testing.T) {
 	}
 	for name, handler := range cases {
 		srv := httptest.NewServer(handler)
-		a := &Assistant{APIKey: "k", Model: "m", Endpoint: srv.URL, Client: srv.Client()}
+		a := &Assistant{Credential: Credential{Key: "k"}, Model: "m", Endpoint: srv.URL, Client: srv.Client()}
 		g, note, err := a.Create(context.Background(), "a forest platformer")
 		srv.Close()
 		if err != nil {

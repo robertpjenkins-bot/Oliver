@@ -959,13 +959,70 @@
     });
   }, 20000);
 
-  api('/api/status').then(function (info) {
+  // Connecting Claude, from inside the studio: an AppImage opened from a
+  // desktop icon never sees the environment variables a terminal would set, so
+  // asking for the key here is the only way it can ever be given one.
+  function showStatus(info) {
     var badge = $('assistant');
     badge.textContent = info.online ? info.assistant : 'offline designer';
     badge.className = 'badge' + (info.online ? '' : ' offline');
     badge.title = info.online
-      ? 'designs come from ' + info.assistant
-      : 'set ANTHROPIC_API_KEY before starting the studio to design with Claude';
+      ? 'designing with ' + info.assistant + ' (' + (info.source || 'connected') + ') — click to change'
+      : 'click to design with Claude instead';
+    $('connect').hidden = false;
+    $('connectnote').textContent = info.online
+      ? 'Designing with ' + info.assistant + ', using ' + (info.source || 'a saved key') + '.'
+      : 'The studio designs offline on its own. Give it a key and Claude does the designing instead — better games, and it understands what you ask for.';
+    $('connectbtn').textContent = info.online ? 'reconnect' : 'connect';
+    var select = $('model');
+    if (select && !select.options.length && info.models) {
+      info.models.forEach(function (m) {
+        select.appendChild(el('option', { value: m, text: m, selected: m === info.model }));
+      });
+    }
+    var existing = document.getElementById('disconnectbtn');
+    if (info.online && !existing) {
+      $('connectbtn').parentNode.appendChild(el('button', {
+        id: 'disconnectbtn', text: 'disconnect',
+        onclick: function () { connect({ disconnect: true }); }
+      }));
+    } else if (!info.online && existing) {
+      existing.parentNode.removeChild(existing);
+    }
+  }
+
+  function connect(body) {
+    status(body.disconnect ? 'disconnecting…' : 'checking the key with Anthropic…');
+    api('/api/connect', { method: 'POST', body: JSON.stringify(body) })
+      .then(function (res) {
+        $('apikey').value = '';
+        return api('/api/status');
+      })
+      .then(function (info) {
+        showStatus(info);
+        status(info.online ? 'designing with ' + info.assistant : 'designing offline');
+        logEntry('assistant', info.online
+          ? 'Connected. Designs now come from ' + info.assistant + '.'
+          : 'Disconnected. The studio is designing on its own again.');
+      })
+      .catch(function (e) { status(e.message, 'err'); });
+  }
+
+  $('connectbtn').addEventListener('click', function () {
+    connect({ key: $('apikey').value.trim(), model: $('model').value });
+  });
+  $('apikey').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') connect({ key: this.value.trim(), model: $('model').value });
+  });
+  $('assistant').addEventListener('click', function () {
+    Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
+      if (b.dataset.tab === 'assistant') b.click();
+    });
+    $('apikey').focus();
+  });
+
+  api('/api/status').then(function (info) {
+    showStatus(info);
     status('games in ' + info.dir);
   });
 

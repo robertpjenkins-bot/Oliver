@@ -11,7 +11,7 @@
   <span class="brand">Oliver <b>Studio</b></span>
   <select id="gamelist" title="open a game"></select>
   <span class="grow"></span>
-  <span id="assistant" class="badge">…</span>
+  <button id="assistant" class="badge" title="click to connect Claude">…</button>
   <button id="save">save</button>
   <button id="export">export html</button>
   <button id="open" title="open the game in its own window">open</button>
@@ -31,6 +31,19 @@
   <section id="panel">
     <div class="tabpage" id="tab-assistant">
       <div class="column">
+        <div id="connect" class="connect" hidden>
+          <h2>Design with Claude</h2>
+          <p class="note" id="connectnote">
+            The studio designs offline on its own. Give it a key and Claude does the
+            designing instead — better games, and it understands what you ask for.
+          </p>
+          <div class="row">
+            <input id="apikey" type="password" placeholder="sk-ant-… from console.anthropic.com" autocomplete="off">
+            <select id="model"></select>
+            <button id="connectbtn" class="primary">connect</button>
+          </div>
+          <p class="note">The key is saved on this machine only, readable by you alone, and never leaves it except to talk to Anthropic.</p>
+        </div>
         <h2>Describe a game</h2>
         <textarea id="prompt" rows="3" placeholder="a haunted castle platformer where you collect candles and dodge ghosts"></textarea>
         <div class="row">

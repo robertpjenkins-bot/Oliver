@@ -271,3 +271,77 @@ func TestStudioKeepsRunningWithoutAnIdleTimeout(t *testing.T) {
 		t.Fatal("the studio did not stop when it was told to")
 	}
 }
+
+// Connecting Claude from inside the studio: the key is checked before it is
+// saved, it is never sent back, and disconnecting undoes it.
+func TestConnectingClaude(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("OLIVER_STUDIO_SETTINGS", filepath.Join(dir, "studio.json"))
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+	t.Setenv("PATH", dir)
+
+	var checked string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		checked = r.Header.Get("x-api-key")
+		if checked == "sk-ant-good" {
+			w.Write([]byte(`{"data":[]}`))
+			return
+		}
+		http.Error(w, `{"error":{"message":"no"}}`, http.StatusUnauthorized)
+	}))
+	defer api.Close()
+	t.Setenv("ANTHROPIC_BASE_URL", api.URL)
+
+	s := New(t.TempDir())
+	s.Assistant = gamekit.NewAssistant()
+	s.Assistant.Client = api.Client()
+	h := s.Handler()
+
+	rec := do(t, h, http.MethodGet, "/api/status", nil)
+	if strings.Contains(rec.Body.String(), `"online":true`) {
+		t.Fatalf("the studio started connected: %s", rec.Body)
+	}
+
+	// A key that does not work is refused, and nothing is written.
+	rec = do(t, h, http.MethodPost, "/api/connect", map[string]string{"key": "sk-ant-bad"})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("a bad key was accepted: %d %s", rec.Code, rec.Body)
+	}
+	if _, err := os.Stat(gamekit.SettingsPath()); err == nil {
+		if saved := gamekit.LoadPreferences(); saved.APIKey != "" {
+			t.Error("a key that failed its check was saved anyway")
+		}
+	}
+
+	rec = do(t, h, http.MethodPost, "/api/connect", map[string]string{"key": "sk-ant-good"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("connect: %d %s", rec.Code, rec.Body)
+	}
+	if checked != "sk-ant-good" {
+		t.Errorf("the key was saved without being checked (saw %q)", checked)
+	}
+	if !s.Assistant.Available() {
+		t.Error("the studio did not pick up the key it just saved")
+	}
+
+	// Nothing ever hands the key back out.
+	rec = do(t, h, http.MethodGet, "/api/status", nil)
+	if strings.Contains(rec.Body.String(), "sk-ant-good") {
+		t.Errorf("the status reply contains the key: %s", rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"online":true`) {
+		t.Errorf("status does not report the connection: %s", rec.Body)
+	}
+
+	rec = do(t, h, http.MethodPost, "/api/connect", map[string]bool{"disconnect": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("disconnect: %d %s", rec.Code, rec.Body)
+	}
+	if gamekit.LoadPreferences().APIKey != "" {
+		t.Error("disconnecting left the key on disk")
+	}
+	if s.Assistant.Available() {
+		t.Error("the studio is still connected after disconnecting")
+	}
+}

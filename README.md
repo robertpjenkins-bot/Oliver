@@ -345,19 +345,39 @@ menu with `--install`, and reopens in the studio with `--edit`.
 
 ### Designing with Claude
 
-With `ANTHROPIC_API_KEY` set, the studio asks Claude (Opus by default; set
-`OLIVER_STUDIO_MODEL` for another) to do the designing, which is far better at
-the parts that are judgement rather than procedure — what a game should be
-about, and what its rules should reward.
+There is nothing to install: Claude runs on Anthropic's machines, and the
+studio reaches it over the network with a credential. Giving it one takes a
+moment and can be done from inside the editor — the badge in the corner says
+which designer is in use, and clicking it opens the box to paste a key into.
 
-Whatever comes back is treated as a proposal: it is parsed, normalised and
-validated against exactly the same rules a hand-written project faces, given
-one round to correct anything wrong with it, and otherwise dropped in favour of
-the local design. Nothing a model returns can produce a project the editor
-cannot open or the engine cannot play.
+```console
+$ oliver studio connect sk-ant-...      # or paste it into the editor
+✓ designing with claude-opus-5, using the key saved in the studio
+$ oliver studio disconnect              # back to designing offline
+```
 
-Without a key, the studio's own designer does all of this offline, and the
-editor, the engine and both exports work exactly the same.
+Four places are looked in, most explicit first: the key given to the studio,
+`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and the login `ant auth login`
+already stores on the machine — so if you have signed in to Anthropic's tools
+once, the studio is already connected and needs no key at all.
+
+A key given to the studio is checked against the API before it is saved, so a
+typo is a message while you are still looking at the box. It is written to
+`~/.config/oliver/studio.json`, readable only by you, and nothing ever sends it
+back out — the studio reports what it is connected to, never the credential.
+
+Connected, the designing is done by Claude Opus 5 with adaptive thinking (set
+another with the dropdown or `OLIVER_STUDIO_MODEL`). What comes back is
+treated as a proposal rather than an answer: it is parsed, normalised, checked
+that it is a well-formed project *and* that it is a game somebody can finish —
+no gap wider than the jump, no key behind the door it opens, nothing to collect
+hanging out of reach — and anything wrong is sent back in those words for up to
+two rounds. A design that still cannot be played is dropped in favour of the
+local one. Nothing a model returns can produce a project the editor cannot open
+or the engine cannot play.
+
+Without any credential the studio's own designer does all of this offline, and
+the editor, the engine and both exports work exactly the same.
 
 ## Configuration
 

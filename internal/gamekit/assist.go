@@ -34,13 +34,30 @@ const defaultModel = "claude-opus-5"
 
 const apiVersion = "2023-06-01"
 
+// Models the studio offers. Opus is the default because designing a game is
+// judgement rather than transcription, and that is where the strongest model
+// is worth its cost; the others are there for somebody who wants a cheaper or
+// faster answer.
+var Models = []string{"claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"}
+
 // Assistant talks to the Claude API. The zero value is unusable; call
 // NewAssistant.
 type Assistant struct {
-	APIKey   string
-	Model    string
-	Endpoint string
-	Client   *http.Client
+	// Credential is how it authenticates. An empty one means no Claude, and
+	// everything falls back to the designer in this package.
+	Credential Credential
+	Model      string
+	Endpoint   string
+	Client     *http.Client
+	// Effort is how hard the model is asked to think. Designing a whole game
+	// is the kind of open-ended work that repays it.
+	Effort string
+}
+
+// APIKey reports the key in use, for tests and for callers that set one
+// directly rather than going through NewAssistant.
+func (a *Assistant) SetKey(key string) {
+	a.Credential = Credential{Key: key, Source: "set directly"}
 }
 
 // NewAssistant reads the environment the same way every other Anthropic tool
@@ -50,23 +67,36 @@ func NewAssistant() *Assistant {
 	if base == "" {
 		base = "https://api.anthropic.com"
 	}
+	prefs := LoadPreferences()
 	model := os.Getenv("OLIVER_STUDIO_MODEL")
+	if model == "" {
+		model = prefs.Model
+	}
 	if model == "" {
 		model = defaultModel
 	}
 	return &Assistant{
-		APIKey:   os.Getenv("ANTHROPIC_API_KEY"),
-		Model:    model,
-		Endpoint: base + "/v1/messages",
+		Credential: FindCredential(),
+		Model:      model,
+		Endpoint:   base,
+		Effort:     "high",
 		// Designing a game is a long request; the timeout has to allow for a
 		// model that is thinking rather than one that has stalled.
 		Client: &http.Client{Timeout: 10 * time.Minute},
 	}
 }
 
+// Source says where the credential came from, for the studio to show.
+func (a *Assistant) Source() string {
+	if a == nil {
+		return ""
+	}
+	return a.Credential.Source
+}
+
 // Available reports whether there is a key to use. The studio shows which
 // assistant is in use rather than pretending they are the same.
-func (a *Assistant) Available() bool { return a != nil && a.APIKey != "" }
+func (a *Assistant) Available() bool { return a != nil && a.Credential.ok() }
 
 // Create designs a new game from a description.
 //
@@ -81,9 +111,13 @@ func (a *Assistant) Create(ctx context.Context, prompt string) (*Game, string, e
 
 %s
 
-Return it by calling emit_game. If you would rather not draw the level maps
-yourself, leave "levels" out: the studio will generate levels in your genre,
-using your objects, laid out so they can always be finished.`, prompt)
+The studio reads that as: %s. Follow that reading unless the description says
+otherwise, and say so in the game's own words rather than arguing with it.
+
+Return the game by calling emit_game. If you would rather not draw the level
+maps yourself, leave "levels" out: the studio will generate levels in your
+genre, using your objects, laid out so they can always be finished.`,
+		prompt, Read(prompt))
 
 	game, err := a.ask(ctx, user, local)
 	if err != nil {
@@ -133,23 +167,33 @@ func (a *Assistant) ask(ctx context.Context, user string, fallback *Game) (*Game
 	if err != nil {
 		return nil, err
 	}
-	if problems := g.Validate(); len(problems) > 0 {
-		// One repair round: the model is told exactly what is wrong with what
-		// it sent, which fixes nearly everything that goes wrong.
+	// Two things are asked of a design: that it is a well-formed project, and
+	// that it is a game somebody can finish. The second is the one a model
+	// gets wrong — a gap wider than the jump, a key behind the door it opens —
+	// and it is invisible until somebody plays it, so it is checked here and
+	// sent back in the same words a person would be given.
+	problems := append(g.Validate(), g.Playability()...)
+	for round := 0; round < 2 && len(problems) > 0; round++ {
 		repaired, rerr := a.call(ctx, fmt.Sprintf(
-			"The game you returned has these problems:\n  %s\n\nReturn the corrected game by calling emit_game again.",
+			`The game you returned cannot be played yet:
+
+  %s
+
+Fix every one of those and return the whole corrected game by calling
+emit_game again. Keep everything that was already right.`,
 			strings.Join(problems, "\n  ")))
 		if rerr != nil {
-			return nil, fmt.Errorf("the design had %d problems: %s", len(problems), problems[0])
+			return nil, fmt.Errorf("the design had %d problems and could not be corrected: %s", len(problems), problems[0])
 		}
-		g2, aerr := assembleGame(repaired, fallback)
+		next, aerr := assembleGame(repaired, fallback)
 		if aerr != nil {
 			return nil, aerr
 		}
-		if problems2 := g2.Validate(); len(problems2) > 0 {
-			return nil, fmt.Errorf("the design still had problems: %s", problems2[0])
-		}
-		return g2, nil
+		g = next
+		problems = append(g.Validate(), g.Playability()...)
+	}
+	if len(problems) > 0 {
+		return nil, fmt.Errorf("the design still could not be played: %s", problems[0])
 	}
 	return g, nil
 }
@@ -233,12 +277,27 @@ func generateLevelsFor(g, fallback *Game) []Level {
 // ---------------------------------------------------------------- the wire
 
 type apiRequest struct {
-	Model     string       `json:"model"`
-	MaxTokens int          `json:"max_tokens"`
-	System    string       `json:"system,omitempty"`
-	Messages  []apiMessage `json:"messages"`
-	Tools     []apiTool    `json:"tools,omitempty"`
-	Stream    bool         `json:"stream,omitempty"`
+	Model        string        `json:"model"`
+	MaxTokens    int           `json:"max_tokens"`
+	System       string        `json:"system,omitempty"`
+	Messages     []apiMessage  `json:"messages"`
+	Tools        []apiTool     `json:"tools,omitempty"`
+	Stream       bool          `json:"stream,omitempty"`
+	Thinking     *apiThinking  `json:"thinking,omitempty"`
+	OutputConfig *outputConfig `json:"output_config,omitempty"`
+}
+
+// apiThinking asks the model to reason before answering. Designing a game is
+// exactly the kind of open-ended work that improves with it, and adaptive is
+// the mode the current models take: the model decides how much to think.
+type apiThinking struct {
+	Type string `json:"type"`
+}
+
+// outputConfig carries the effort level, which is how much thinking and how
+// many tokens the model spends. A game design is worth more than a default.
+type outputConfig struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 type apiMessage struct {
@@ -258,24 +317,31 @@ type apiTool struct {
 // non-streaming request for one is the kind of thing that dies on an HTTP
 // timeout minutes in, with nothing to show for the wait.
 func (a *Assistant) call(ctx context.Context, user string) ([]byte, error) {
+	effort := a.Effort
+	if effort == "" {
+		effort = "high"
+	}
 	body, err := json.Marshal(apiRequest{
-		Model:     a.Model,
-		MaxTokens: 32000,
-		System:    systemPrompt,
-		Messages:  []apiMessage{{Role: "user", Content: user}},
-		Tools:     []apiTool{{Name: "emit_game", Description: "Return the finished game project.", InputSchema: gameSchema()}},
-		Stream:    true,
+		Model:        a.Model,
+		MaxTokens:    32000,
+		System:       systemPrompt,
+		Messages:     []apiMessage{{Role: "user", Content: user}},
+		Tools:        []apiTool{{Name: "emit_game", Description: "Return the finished game project.", InputSchema: gameSchema()}},
+		Stream:       true,
+		Thinking:     &apiThinking{Type: "adaptive"},
+		OutputConfig: &outputConfig{Effort: effort},
 	})
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.Endpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		strings.TrimSuffix(a.Endpoint, "/")+"/v1/messages", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("content-type", "application/json")
-	req.Header.Set("x-api-key", a.APIKey)
 	req.Header.Set("anthropic-version", apiVersion)
+	a.Credential.apply(req)
 
 	resp, err := a.Client.Do(req)
 	if err != nil {
