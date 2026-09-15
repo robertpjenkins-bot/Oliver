@@ -1,7 +1,8 @@
 # Oliver
 
 Run Windows programs on Linux using the best of the compatibility runtimes you
-already have installed.
+already have installed — and make retro video games of your own, with
+[Oliver Studio](#oliver-studio).
 
 If you have collected Wine, a few Proton builds, and whatever Lutris and
 Bottles dropped on your disk, the hard part is no longer *having* a runner —
@@ -159,6 +160,25 @@ keeps working. `--uninstall` removes it again.
 Packing does not change whether a program works. If it fails under Wine, it
 fails the same way packed.
 
+**And it makes games.** `oliver studio` is a retro video game maker: describe
+a game in a sentence and it writes one — sprites, levels, enemies, rules and
+sound — then opens an editor where every part of it can be changed by hand.
+
+```console
+$ oliver studio new "a haunted castle platformer where you collect candles"
+✓ Cursed Keep (designed offline by Oliver Studio)
+Cursed Keep — Jump, collect, escape
+platformer, 3 levels, 10 objects, 19 sprites, 2 rules
+  level1     Royal Keep              56x15    3 enemies   8 to collect
+  level2     Cursed Hall             70x15    5 enemies   9 to collect
+  level3     Crumbling Tower         84x15    6 enemies  14 to collect
+```
+
+A finished game exports as one HTML file that plays in any browser with nothing
+installed, or as an AppImage that plays on any Linux machine — the same two
+things Oliver already does for Windows programs, now for games that did not
+exist an hour ago.
+
 ## Install
 
 Download the AppImage, make it executable, and register it with your desktop:
@@ -182,7 +202,9 @@ $ make appimage     # ./dist/Oliver-<version>-x86_64.AppImage
 $ make check        # format, vet and test
 ```
 
-Go 1.24 or newer. The build has no third-party dependencies.
+Go 1.24 or newer. The build has no third-party dependencies. The game engine's
+test suite runs the engine under Node when it is installed, and skips itself
+when it is not.
 
 ## Using it
 
@@ -194,6 +216,8 @@ oliver backends                           what is installed on this machine
 oliver prefix list                        the Windows environments Oliver made
 oliver doctor                             what is missing, and how to fix it
 oliver desktop install                    open .exe files by double-clicking
+oliver studio                             make retro video games
+oliver play <game>                        play a game you made
 ```
 
 Useful flags for `run`:
@@ -211,6 +235,80 @@ Useful flags for `run`:
 
 Oliver exits with the program's own exit status, so it drops into scripts
 without surprises.
+
+## Oliver Studio
+
+A game maker in the same binary. It needs no account, no network and no
+browser plugin: the editor is served from the process on your own machine, and
+the games are files in a folder you own.
+
+```console
+$ oliver studio
+Oliver Studio
+games in ~/.local/share/oliver/games
+http://127.0.0.1:41235/
+```
+
+**Describe it, then take it apart.** The assistant writes a complete, playable
+game from a sentence — one it picked a genre, a palette, a cast and a set of
+rules for. Everything it wrote is then editable: paint the levels tile by tile,
+draw the sprites pixel by pixel, change what an enemy does, add a rule.
+
+Instructions work on a finished game too — *make it harder*, *add a boss*, *add
+another level*, *give the player a gun*, *repaint it as ice*, *call it Midnight
+Run*.
+
+**Six kinds of game.** Platformer, top-down adventure, shooter, maze chase,
+bat-and-ball and endless runner. Each has its own physics, its own camera and
+its own kind of level; the generated layouts are checked to be finishable —
+no gap wider than the jump, no exit nobody can reach.
+
+**Everything is data.** A game is one JSON file: the pixels of every sprite as
+rows of text, the levels as rows of characters, the logic as *when this, do
+that* rules. It reviews in a diff, it edits in a text editor, and the engine
+reads it directly — there is no build step between the project and the game.
+
+**Two ways out.**
+
+```console
+$ oliver studio export cursed-keep
+✓ wrote cursed-keep.html
+
+$ oliver studio export cursed-keep --appimage
+✓ built cursed-keep-x86_64.AppImage
+```
+
+The HTML file is the whole game — engine, artwork and sound inlined — with no
+external requests at all, so it plays from a file, a USB stick or a web host,
+offline, years later. The AppImage carries that page, Oliver, and the project
+it was made from: it plays on any Linux machine, registers itself in the games
+menu with `--install`, and reopens in the studio with `--edit`.
+
+| Command | What it does |
+| --- | --- |
+| `oliver studio` | open the editor |
+| `oliver studio new "<description>"` | design a game without opening the editor |
+| `oliver studio list` | list the games on this machine |
+| `oliver studio edit <name> "<change>"` | change a game in words |
+| `oliver studio play <name>` | play it now |
+| `oliver studio export <name>` | write the HTML file |
+| `oliver studio export <name> --appimage` | package it for Linux |
+
+### Designing with Claude
+
+With `ANTHROPIC_API_KEY` set, the studio asks Claude (Opus by default; set
+`OLIVER_STUDIO_MODEL` for another) to do the designing, which is far better at
+the parts that are judgement rather than procedure — what a game should be
+about, and what its rules should reward.
+
+Whatever comes back is treated as a proposal: it is parsed, normalised and
+validated against exactly the same rules a hand-written project faces, given
+one round to correct anything wrong with it, and otherwise dropped in favour of
+the local design. Nothing a model returns can produce a project the editor
+cannot open or the engine cannot play.
+
+Without a key, the studio's own designer does all of this offline, and the
+editor, the engine and both exports work exactly the same.
 
 ## Configuration
 
