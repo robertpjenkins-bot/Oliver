@@ -167,7 +167,10 @@ func (a *app) studioConnect(args []string) error {
 	if err := gamekit.SavePreferences(prefs); err != nil {
 		return err
 	}
-	u.Info("%s designing with %s, using %s", u.Green("✓"), assistant.Model, assistant.Source())
+	// Re-read it the way the studio will, so what is reported is what will
+	// actually be used rather than what was just typed.
+	saved := gamekit.NewAssistant()
+	u.Info("%s designing with %s, using %s", u.Green("✓"), saved.Model, saved.Source())
 	if prefs.APIKey != "" {
 		u.Info("%s", u.Dim("the key is saved at "+gamekit.SettingsPath()+", readable only by you"))
 	}
