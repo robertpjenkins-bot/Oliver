@@ -50,9 +50,21 @@
   }
 
   function status(text, level) {
-    $('statustext').textContent = text;
+    // The status bar is one line tall. Anything longer — a list of places
+    // looked in, a paragraph about what to do next — goes above it, where it
+    // can be read and dismissed.
+    var lines = String(text).split('\n');
+    $('statustext').textContent = lines[0];
     $('status').className = level || '';
+    if (lines.length > 1) showAlert(text);
   }
+
+  function showAlert(text) {
+    $('alerttext').textContent = text;
+    $('alert').hidden = false;
+  }
+
+  function clearAlert() { $('alert').hidden = true; }
 
   function problemsOf(list) {
     if (!list || !list.length) return null;
@@ -980,7 +992,9 @@
     // terminal can, not a machine without it, so say where to look.
     $('clihelp').hidden = !!info.claudeCode;
     if (!info.claudeCode && info.searched) {
-      $('clisearched').textContent = 'Looked in: ' + info.searched.join('  ');
+      var list = $('clisearched');
+      list.innerHTML = '';
+      info.searched.forEach(function (p) { list.appendChild(el('li', { text: p })); });
     }
     if (info.claudeCode) {
       $('usecli').textContent = info.source && info.source.indexOf('Claude Code') >= 0
@@ -1007,7 +1021,9 @@
   }
 
   function connect(body) {
-    status(body.disconnect ? 'disconnecting…' : 'checking the key with Anthropic…');
+    clearAlert();
+    status(body.disconnect ? 'disconnecting…' : (body.use === 'claude-code'
+      ? 'looking for Claude Code…' : 'checking the key with Anthropic…'));
     api('/api/connect', { method: 'POST', body: JSON.stringify(body) })
       .then(function (res) {
         $('apikey').value = '';
@@ -1030,6 +1046,8 @@
   $('setclibin').addEventListener('click', function () {
     connect({ use: 'claude-code', bin: $('clibin').value.trim() });
   });
+  $('recheck').addEventListener('click', function () { connect({ use: 'claude-code' }); });
+  $('alertclose').addEventListener('click', clearAlert);
   $('setendpoint').addEventListener('click', function () {
     connect({ url: $('endpoint').value.trim(), key: $('apikey').value.trim() });
   });

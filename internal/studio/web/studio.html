@@ -40,15 +40,28 @@
           <div class="row" id="clirow" hidden>
             <button id="usecli" class="primary">use the Claude Code on this machine — no key</button>
           </div>
-          <details class="advanced" id="clihelp" hidden>
-            <summary>Claude Code is installed, but not found</summary>
-            <p class="note">A window opened from a desktop icon cannot see everything a terminal can. Run <code>which claude</code> in a terminal and put the answer here.</p>
+          <div id="clihelp" hidden>
+            <p class="note">
+              <b>No Claude Code on this machine.</b> Installing it is one line in a terminal, and it
+              goes in your home folder — so it works on a Steam Deck or anywhere else the system
+              folders are read-only. It needs a paid Claude plan (Pro, Max, Team or Console).
+            </p>
+            <pre class="command" id="installcmd">curl -fsSL https://claude.ai/install.sh | bash</pre>
             <div class="row">
-              <input id="clibin" placeholder="/home/you/.local/bin/claude">
-              <button id="setclibin">use this one</button>
+              <button id="recheck">check again</button>
+              <span class="note">after installing, no need to restart</span>
             </div>
-            <p class="note" id="clisearched"></p>
-          </details>
+            <details class="advanced">
+              <summary>it is installed, but not found</summary>
+              <p class="note">Run <code>which claude</code> in a terminal and put the answer here.</p>
+              <div class="row">
+                <input id="clibin" placeholder="/home/you/.local/bin/claude">
+                <button id="setclibin">use this one</button>
+              </div>
+              <p class="note">Looked in:</p>
+              <ul id="clisearched" class="searched"></ul>
+            </details>
+          </div>
           <div class="row">
             <input id="apikey" type="password" placeholder="sk-ant-… from console.anthropic.com" autocomplete="off">
             <select id="model"></select>
@@ -150,6 +163,7 @@
   </section>
 </main>
 
+<div id="alert" class="alert" hidden><button id="alertclose" title="close">×</button><pre id="alerttext"></pre></div>
 <footer id="status"><span id="statustext">ready</span></footer>
 
 <script src="/engine.js"></script>

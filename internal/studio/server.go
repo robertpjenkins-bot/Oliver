@@ -265,9 +265,13 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		cli := gamekit.FindClaudeCode()
 		if !cli.Available() {
 			fail(w, http.StatusBadRequest,
-				"Claude Code was not found. Looked in:\n  %s\n\nIf it is somewhere else, put the path in the box "+
-					"(find it with: which claude). Otherwise install it from claude.com/product/claude-code, "+
-					"or connect with a key.",
+				"Claude Code was not found on this machine.\n\n"+
+					"To install it, run this in a terminal — it goes in your home folder, so it works "+
+					"even where the system folders are read-only:\n\n"+
+					"    curl -fsSL https://claude.ai/install.sh | bash\n\n"+
+					"It needs a paid Claude plan (Pro, Max, Team or Console). Then press \"check again\".\n\n"+
+					"If it is already installed somewhere unusual, run \"which claude\" and put the answer "+
+					"in the box.\n\nLooked in:\n  %s",
 				strings.Join(gamekit.SearchedFor(), "\n  "))
 			return
 		}
