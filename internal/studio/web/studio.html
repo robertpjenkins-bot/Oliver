@@ -62,6 +62,23 @@
               <ul id="clisearched" class="searched"></ul>
             </details>
           </div>
+          <div id="signinhelp" hidden>
+            <p class="note">
+              <b>Claude Code is installed, but not signed in.</b> Signing in opens a browser —
+              if you are already signed in to Claude there it is one button, the same account,
+              no key and no password to type.
+            </p>
+            <div class="row">
+              <button id="signin">sign in</button>
+              <span class="note">opens a terminal and a browser</span>
+            </div>
+            <details class="advanced">
+              <summary>do it yourself instead</summary>
+              <p class="note">Open a terminal and run this, then press "check again":</p>
+              <pre class="command">claude auth login</pre>
+              <div class="row"><button id="recheck2">check again</button></div>
+            </details>
+          </div>
           <div class="row">
             <input id="apikey" type="password" placeholder="sk-ant-… from console.anthropic.com" autocomplete="off">
             <select id="model"></select>

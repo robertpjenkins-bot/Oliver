@@ -121,6 +121,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/games", s.guard(s.games))
 	mux.HandleFunc("/api/game", s.guard(s.game))
 	mux.HandleFunc("/api/connect", s.guard(s.connect))
+	mux.HandleFunc("/api/signin", s.guard(s.signin))
 	mux.HandleFunc("/api/read", s.guard(s.read))
 	mux.HandleFunc("/api/design", s.guard(s.design))
 	mux.HandleFunc("/api/assist", s.guard(s.assist))
@@ -184,6 +185,21 @@ func fail(w http.ResponseWriter, code int, format string, args ...any) {
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	current := s.assistant()
 	cli := gamekit.FindClaudeCode()
+	// "Installed" and "signed in" are different states with different
+	// buttons, so the editor is told which one this machine is in. Unknown
+	// stays unknown: an installation too old to answer must not be shown as
+	// signed out and sent round a sign-in it does not need.
+	signedIn := "unknown"
+	if cli.Available() {
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		if login := cli.LoggedIn(ctx); login.Known {
+			signedIn = "no"
+			if login.In {
+				signedIn = "yes"
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"dir":        s.Dir,
 		"assistant":  current.Describe(),
@@ -193,6 +209,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		"models":     gamekit.Models,
 		"genres":     gamekit.Genres,
 		"claudeCode": cli.Available(),
+		"signedIn":   signedIn,
 		"searched":   gamekit.SearchedFor(),
 		"endpoint":   gamekit.LoadPreferences().BaseURL,
 	})
@@ -705,4 +722,29 @@ func OpenBrowser(url string) error {
 		}
 	}
 	return fmt.Errorf("no browser could be opened; visit %s", url)
+}
+
+// signin opens Claude Code's own sign-in in a terminal window.
+//
+// The studio never sees the login: the browser and Claude Code settle it
+// between them, and the studio only finds out by asking afterwards whether it
+// worked. That is the point of signing in this way rather than holding a key.
+func (s *Server) signin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		fail(w, http.StatusMethodNotAllowed, "POST only")
+		return
+	}
+	term, err := gamekit.SignIn()
+	if err != nil {
+		fail(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+	s.Log("opened sign-in in %s", term)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"terminal": term,
+		"says": "A terminal opened, and it will open a browser.\n\n" +
+			"If you are already signed in to Claude there it is one button — the same\n" +
+			"account, no key and no password to type.\n\n" +
+			"When it says you are signed in, come back and press \"check again\".",
+	})
 }

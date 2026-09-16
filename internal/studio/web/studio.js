@@ -988,16 +988,26 @@
   // desktop icon never sees the environment variables a terminal would set, so
   // asking for the key here is the only way it can ever be given one.
   function showStatus(info) {
+    // A Claude Code nobody has signed into cannot design anything, so the
+    // studio does not get to call itself connected to it. Saying otherwise
+    // is how a game gets made offline while the badge insists Claude made it.
+    var unusable = info.claudeCode && info.signedIn === 'no' &&
+      !!(info.source && info.source.indexOf('Claude Code') >= 0);
+    var working = info.online && !unusable;
+
     var badge = $('assistant');
-    badge.textContent = info.online ? info.assistant : 'offline designer';
-    badge.className = 'badge' + (info.online ? '' : ' offline');
-    badge.title = info.online
+    badge.textContent = working ? info.assistant : (unusable ? 'not signed in' : 'offline designer');
+    badge.className = 'badge' + (working ? '' : ' offline');
+    badge.title = working
       ? 'designing with ' + info.assistant + ' (' + (info.source || 'connected') + ') — click to change'
-      : 'click to design with Claude instead';
+      : (unusable ? 'Claude Code is installed but not signed in — click to sign in'
+        : 'click to design with Claude instead');
     $('connect').hidden = false;
-    $('connectnote').textContent = info.online
-      ? 'Designing with ' + info.assistant + ', using ' + (info.source || 'a saved key') + '.'
-      : 'The studio designs offline on its own. Give it a key and Claude does the designing instead — better games, and it understands what you ask for.';
+    $('connectnote').textContent = unusable
+      ? 'Claude Code is on this machine but not signed in, so designs are still being made offline.'
+      : (info.online
+        ? 'Designing with ' + info.assistant + ', using ' + (info.source || 'a saved key') + '.'
+        : 'The studio designs offline on its own. Give it a key and Claude does the designing instead — better games, and it understands what you ask for.');
     $('connectbtn').textContent = info.online ? 'use a key instead' : 'connect with a key';
     // The machine may already have a Claude that needs no key at all.
     $('clirow').hidden = !info.claudeCode;
@@ -1009,6 +1019,12 @@
       list.innerHTML = '';
       info.searched.forEach(function (p) { list.appendChild(el('li', { text: p })); });
     }
+    // Installed and signed in are two different problems with two different
+    // buttons, and offering "use it" to a Claude Code that will refuse is how
+    // somebody ends up staring at a design that quietly happened offline.
+    var needsSignIn = info.claudeCode && info.signedIn === 'no';
+    $('signinhelp').hidden = !needsSignIn;
+    $('clirow').hidden = !info.claudeCode || needsSignIn;
     if (info.claudeCode) {
       $('usecli').textContent = info.source && info.source.indexOf('Claude Code') >= 0
         ? 'designing with Claude Code on this machine'
@@ -1060,6 +1076,20 @@
     connect({ use: 'claude-code', bin: $('clibin').value.trim() });
   });
   $('recheck').addEventListener('click', function () { connect({ use: 'claude-code' }); });
+  $('recheck2').addEventListener('click', function () { connect({ use: 'claude-code' }); });
+  $('signin').addEventListener('click', function () {
+    var button = this;
+    button.disabled = true;
+    clearAlert();
+    status('opening the sign-in…');
+    api('/api/signin', { method: 'POST', body: '{}' })
+      .then(function (res) {
+        showAlert(res.says);
+        status('finish signing in, then press "check again"');
+      })
+      .catch(function (e) { showAlert(e.message); status('could not open the sign-in', 'err'); })
+      .then(function () { button.disabled = false; });
+  });
   $('alertclose').addEventListener('click', clearAlert);
   $('setendpoint').addEventListener('click', function () {
     connect({ url: $('endpoint').value.trim(), key: $('apikey').value.trim() });
