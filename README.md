@@ -159,6 +159,54 @@ keeps working. `--uninstall` removes it again.
 Packing does not change whether a program works. If it fails under Wine, it
 fails the same way packed.
 
+## Pro Coder
+
+Oliver also carries a coder. `oliver procoder` opens a window with three things
+in it:
+
+```console
+$ oliver procoder
+▸ Pro Coder is at http://127.0.0.1:41263/
+```
+
+**Scratch** and **MakeCode Arcade** are the two block coders everybody starts
+with. Pro Coder opens them with their address on show and an Exit button back
+to the menu. Scratch tells browsers not to let its editor run inside another
+page; rather than showing an empty rectangle, Pro Coder says so and opens it in
+a window of its own.
+
+**CCP** — the Claude Coding Program — is built in, and needs no internet at
+all. Its palette is a merger: Motion, Looks, Events, Control, Sensing,
+Operators and Variables are Scratch's, because that is the vocabulary a child
+arriving here already has; Arcade is MakeCode Arcade's way of thinking, with
+score, lives, countdowns, projectiles and game over as blocks rather than as
+things to build by hand; and the last category is CCP's own, for confetti,
+screen shake, rainbow trails and time warp. Blocks drag, snap and nest, several
+scripts run at once, and a finished game exports as a single HTML file that
+plays anywhere — that file is Pro Coder itself with the project attached to the
+front of it.
+
+**Convert** is the other half. Give it the address of a Scratch project or a
+MakeCode Arcade game and it writes either a standalone HTML file that plays it,
+or an AppImage that opens it as an application with its own window, its own
+browser profile and its own menu entry:
+
+```console
+$ oliver procoder convert https://scratch.mit.edu/projects/60917032 -format appimage
+✓ built /home/u/scratch-60917032-x86_64.AppImage
+  Opens https://scratch.mit.edu/projects/60917032
+```
+
+Scratch and MakeCode addresses are recognised, so the wrapper points at the
+player rather than at the editor page — the page refuses to be framed, the
+player does not. Any other web address is wrapped as it is. Nothing is copied:
+the project still lives on the site, and the wrapper needs the internet to
+reach it.
+
+`oliver procoder -write procoder.html` writes the whole thing out as one file,
+for a machine that does not have Oliver on it. Everything works from there
+except building AppImages, which needs Oliver.
+
 ## Install
 
 Download the AppImage, make it executable, and register it with your desktop:
@@ -194,6 +242,7 @@ oliver backends                           what is installed on this machine
 oliver prefix list                        the Windows environments Oliver made
 oliver doctor                             what is missing, and how to fix it
 oliver desktop install                    open .exe files by double-clicking
+oliver procoder                           Scratch, MakeCode Arcade and CCP
 ```
 
 Useful flags for `run`:

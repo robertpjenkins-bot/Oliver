@@ -1,0 +1,2138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pro Coder</title>
+<style>
+:root{
+  color-scheme: dark;
+  --bg:#0e1118; --panel:#171c27; --panel2:#1f2634; --line:#2c3547;
+  --ink:#e9edf6; --dim:#93a1bd; --accent:#59c2ff; --accent2:#7c5cff;
+  --motion:#4c97ff; --looks:#9966ff; --events:#ffbf00; --control:#ffab19;
+  --sensing:#5cb1d6; --operators:#59c059; --variables:#ff8c1a;
+  --arcade:#ff5c8d; --ccp:#22d3a7;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  overflow:hidden;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.view{position:absolute;inset:0;display:none;flex-direction:column}
+.view.on{display:flex}
+
+/* ---------- main menu ---------- */
+#menu{overflow:auto;align-items:center;justify-content:center;padding:28px}
+.brand{text-align:center;margin-bottom:26px}
+.brand h1{
+  margin:0;font-size:52px;letter-spacing:-1px;
+  background:linear-gradient(100deg,var(--accent),var(--accent2) 55%,var(--ccp));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.brand p{margin:8px 0 0;color:var(--dim)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px;width:min(900px,100%)}
+.tile{
+  background:var(--panel);border:1px solid var(--line);border-radius:18px;
+  padding:22px;text-align:left;transition:transform .12s ease,border-color .12s ease;
+  display:flex;flex-direction:column;gap:6px;min-height:186px;
+}
+.tile:hover{transform:translateY(-3px);border-color:var(--accent)}
+.tile .glyph{font-size:40px;line-height:1}
+.tile h2{margin:6px 0 0;font-size:21px}
+.tile p{margin:0;color:var(--dim);font-size:13.5px;flex:1}
+.tile code{font:12px ui-monospace,monospace;color:#7d8ca8;word-break:break-all}
+.menu-actions{display:flex;gap:12px;margin-top:22px;flex-wrap:wrap;justify-content:center}
+.btn{
+  background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+  padding:10px 18px;font-weight:600;
+}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#0b1018;border-color:transparent}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.small{padding:6px 12px;font-size:13px;font-weight:500}
+#hostNote{margin-top:18px;color:var(--dim);font-size:12.5px;text-align:center;max-width:620px}
+
+/* ---------- shared top bar ---------- */
+.bar{
+  display:flex;align-items:center;gap:10px;padding:8px 12px;
+  background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap;
+}
+.bar h2{margin:0;font-size:15px;white-space:nowrap}
+.urlbox{
+  flex:1;min-width:180px;font:12px ui-monospace,monospace;color:#a9b8d4;
+  background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;
+}
+.urlbox:focus{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* ---------- site view ---------- */
+#siteFrameWrap{flex:1;position:relative;background:#000}
+#siteFrame{position:absolute;inset:0;width:100%;height:100%;border:0}
+.cover{
+  position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(14,17,24,.96);padding:24px;
+}
+.cover.on{display:flex}
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:16px;
+  padding:26px;max-width:560px;text-align:center;
+}
+.card h3{margin:0 0 10px;font-size:20px}
+.card p{margin:0 0 14px;color:var(--dim)}
+.card .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+#coverUrl{width:100%;text-align:center;margin-bottom:14px}
+
+/* ---------- CCP ---------- */
+#ccpBody{flex:1;display:flex;min-height:0}
+#palette{
+  width:186px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+  overflow:auto;padding:8px;
+}
+.cat{
+  display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border-radius:9px;
+  font-weight:600;font-size:13.5px;text-align:left;
+}
+.cat:hover{background:var(--panel2)}
+.cat.on{background:var(--panel2)}
+.dot{width:12px;height:12px;border-radius:50%;flex:none}
+#paletteBlocks{
+  width:264px;flex:none;background:var(--panel2);border-right:1px solid var(--line);
+  overflow:auto;padding:12px 10px 60px;
+}
+#paletteBlocks h4{margin:2px 0 10px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+#canvasWrap{flex:1;position:relative;overflow:auto;background:
+  radial-gradient(circle at 1px 1px,#222b3b 1px,transparent 0) 0 0/22px 22px,var(--bg)}
+#canvas{position:relative;width:4000px;height:3000px}
+#stagePane{
+  width:372px;flex:none;background:var(--panel);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;overflow:auto;
+}
+#stageHolder{padding:10px;display:flex;flex-direction:column;align-items:center;gap:8px}
+#stage{width:352px;height:264px;background:#fff;border-radius:10px;display:block}
+.stage-tools{display:flex;gap:8px;align-items:center;width:100%}
+#sprites{padding:10px;border-top:1px solid var(--line)}
+#spriteList{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.sprite-chip{
+  width:62px;height:62px;border-radius:10px;background:var(--panel2);
+  border:2px solid transparent;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;font-size:22px;gap:1px;
+}
+.sprite-chip span{font-size:10px;color:var(--dim);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sprite-chip.on{border-color:var(--accent)}
+.panel-title{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+
+/* ---------- blocks ---------- */
+.script{position:absolute}
+.stack{min-height:6px}
+.block{
+  position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  padding:7px 12px;border-radius:8px;color:#fff;font-weight:600;font-size:13.5px;
+  margin-top:-2px;box-shadow:0 1px 0 rgba(0,0,0,.25);cursor:grab;user-select:none;
+  min-height:34px;
+}
+.block.hat{border-radius:16px 16px 8px 8px;padding-top:12px}
+.block.cap{border-radius:8px 8px 14px 14px}
+.block .lbl{white-space:nowrap}
+.c-block{margin-top:-2px}
+.c-block .c-head,.c-block .c-else,.c-block .c-foot{margin-top:0}
+.c-block .c-foot{min-height:16px;border-radius:0 0 8px 8px}
+.c-wrap{display:flex}
+.c-spine{width:14px;flex:none}
+.c-body{padding:2px 0 2px 0;min-width:120px}
+.drop-marker{height:8px;border-radius:4px;background:#ffffffcc;margin:2px 0}
+.dragging{position:fixed;z-index:60;pointer-events:none;opacity:.92;filter:drop-shadow(0 8px 14px rgba(0,0,0,.5))}
+.block input,.block select{
+  font:inherit;font-size:12.5px;font-weight:600;color:#10131a;background:#fff;
+  border:0;border-radius:11px;padding:3px 8px;min-width:34px;max-width:150px;
+}
+.block input{text-align:center}
+.block .slot{display:inline-flex;align-items:center;gap:3px}
+.block .fx{
+  background:#ffffff33;border-radius:50%;width:17px;height:17px;font-size:11px;
+  line-height:17px;text-align:center;color:#fff;
+}
+.block .fx:hover{background:#ffffff66}
+.rep{
+  display:inline-flex;align-items:center;gap:5px;background:#ffffff2e;
+  border-radius:12px;padding:2px 8px;font-size:12.5px;
+}
+.rep.bool{border-radius:4px;transform:skewX(-12deg);padding:2px 10px}
+.rep.bool>*{transform:skewX(12deg)}
+.cat-motion{background:var(--motion)} .cat-looks{background:var(--looks)}
+.cat-events{background:var(--events);color:#241c00} .cat-control{background:var(--control);color:#241c00}
+.cat-sensing{background:var(--sensing)} .cat-operators{background:var(--operators)}
+.cat-variables{background:var(--variables)} .cat-arcade{background:var(--arcade)}
+.cat-ccp{background:var(--ccp);color:#062a21}
+.cat-events .fx,.cat-control .fx,.cat-ccp .fx{background:#0000001f;color:inherit}
+.palette-item{margin-bottom:12px;cursor:grab}
+#trash{
+  position:absolute;right:16px;bottom:16px;width:52px;height:52px;border-radius:50%;
+  background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;
+  justify-content:center;font-size:22px;opacity:.55;
+}
+#trash.hot{opacity:1;border-color:var(--arcade);background:#3a1524}
+
+/* ---------- dialog ---------- */
+dialog{
+  border:1px solid var(--line);background:var(--panel);color:var(--ink);
+  border-radius:16px;padding:0;width:min(560px,92vw);
+}
+dialog::backdrop{background:rgba(6,8,13,.72)}
+.dlg-head{padding:18px 22px 0}
+.dlg-head h3{margin:0 0 4px;font-size:20px}
+.dlg-head p{margin:0;color:var(--dim);font-size:13.5px}
+.dlg-body{padding:18px 22px}
+.dlg-body label{display:block;font-size:12.5px;color:var(--dim);margin:12px 0 5px}
+.dlg-body input[type=text]{
+  width:100%;font:inherit;background:var(--bg);border:1px solid var(--line);
+  border-radius:9px;padding:9px 11px;color:var(--ink);
+}
+.choices{display:flex;gap:10px;margin-top:6px;flex-wrap:wrap}
+.choice{
+  flex:1;min-width:190px;border:1px solid var(--line);border-radius:12px;padding:12px;
+  text-align:left;background:var(--panel2);
+}
+.choice.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.choice b{display:block;margin-bottom:3px}
+.choice span{color:var(--dim);font-size:12.5px}
+.dlg-foot{display:flex;gap:10px;justify-content:flex-end;padding:0 22px 20px}
+#convertOut{
+  margin-top:14px;font:12px ui-monospace,monospace;background:var(--bg);
+  border:1px solid var(--line);border-radius:9px;padding:10px;color:#a9b8d4;
+  white-space:pre-wrap;word-break:break-all;display:none;
+}
+#convertOut.on{display:block}
+.chip{font-size:11px;padding:2px 7px;border-radius:99px;background:var(--panel2);color:var(--dim);border:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<!-- ============ MAIN MENU ============ -->
+<section id="menu" class="view on">
+  <div class="brand">
+    <h1>Pro Coder</h1>
+    <p>Three ways to make things. Pick one.</p>
+  </div>
+
+  <div class="tiles">
+    <button class="tile" data-open="scratch">
+      <div class="glyph">🐱</div>
+      <h2>Scratch</h2>
+      <p>Drag blocks, make cats dance, share projects. The one everybody starts with.</p>
+      <code>scratch.mit.edu</code>
+    </button>
+    <button class="tile" data-open="makecode">
+      <div class="glyph">🕹️</div>
+      <h2>MakeCode Arcade</h2>
+      <p>Retro games with blocks or JavaScript, sprites and tilemaps built in.</p>
+      <code>arcade.makecode.com</code>
+    </button>
+    <button class="tile" data-open="ccp">
+      <div class="glyph">🧩</div>
+      <h2>CCP</h2>
+      <p>Claude Coding Program — Scratch's blocks and Arcade's game blocks in one palette, plus some of its own. Runs right here, no internet needed.</p>
+      <code>built in</code>
+    </button>
+  </div>
+
+  <div class="menu-actions">
+    <button class="btn primary" id="convertBtn">⇄ Convert a project</button>
+    <button class="btn" id="aboutBtn">What is this?</button>
+  </div>
+  <p id="hostNote"></p>
+</section>
+
+<!-- ============ SITE VIEW ============ -->
+<section id="site" class="view">
+  <div class="bar">
+    <button class="btn small" data-exit>← Exit</button>
+    <h2 id="siteName">Site</h2>
+    <input id="siteUrl" class="urlbox" readonly spellcheck="false">
+    <button class="btn small" id="siteCopy">Copy</button>
+    <button class="btn small" id="siteReload">Reload</button>
+    <button class="btn small primary" id="siteOpen">Open in a window ↗</button>
+  </div>
+  <div id="siteFrameWrap">
+    <iframe id="siteFrame" title="Pro Coder site view"
+      allow="autoplay; fullscreen; gamepad; microphone; camera; clipboard-write"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"></iframe>
+    <div class="cover" id="siteCover">
+      <div class="card">
+        <h3 id="coverTitle">This site will not open inside another app</h3>
+        <p id="coverText"></p>
+        <input class="urlbox" id="coverUrl" readonly spellcheck="false">
+        <div class="row">
+          <button class="btn primary" id="coverOpen">Open it in a window ↗</button>
+          <button class="btn" id="coverTry">Try it in here anyway</button>
+          <button class="btn" data-exit>Back to the menu</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CCP ============ -->
+<section id="ccp" class="view">
+  <div class="bar">
+    <button class="btn small" data-exit>← Exit</button>
+    <h2>CCP <span class="chip">Claude Coding Program</span></h2>
+    <input id="ccpName" class="urlbox" style="max-width:220px;flex:none" value="My game" spellcheck="false">
+    <button class="btn small primary" id="ccpRun">⚑ Go</button>
+    <button class="btn small" id="ccpStop">⏹ Stop</button>
+    <button class="btn small" id="ccpFull">Full stage</button>
+    <span style="flex:1"></span>
+    <button class="btn small" id="ccpSave">Save</button>
+    <button class="btn small" id="ccpLoad">Load</button>
+    <button class="btn small" id="ccpExport">Export as HTML</button>
+    <button class="btn small" id="ccpNew">New</button>
+  </div>
+  <div id="ccpBody">
+    <nav id="palette"></nav>
+    <div id="paletteBlocks"></div>
+    <div id="canvasWrap">
+      <div id="canvas"></div>
+      <div id="trash" title="Drop blocks here to delete them">🗑️</div>
+    </div>
+    <aside id="stagePane">
+      <div id="stageHolder">
+        <canvas id="stage" width="480" height="360"></canvas>
+        <div class="stage-tools">
+          <span class="panel-title">Stage</span>
+          <span style="flex:1"></span>
+          <span id="stageStatus" style="font-size:12px;color:var(--dim)">stopped</span>
+        </div>
+      </div>
+      <div id="sprites">
+        <span class="panel-title">Sprites</span>
+        <div id="spriteList"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn small" id="spriteAdd">+ Sprite</button>
+          <button class="btn small" id="spriteEdit">Rename / look</button>
+          <button class="btn small" id="spriteDel">Delete</button>
+        </div>
+      </div>
+      <div id="sprites" style="border-top:1px solid var(--line);padding:10px">
+        <span class="panel-title">Variables</span>
+        <div id="varList" style="margin-top:8px;font-size:13px;color:var(--dim)"></div>
+        <button class="btn small" id="varAdd" style="margin-top:10px">+ Variable</button>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============ CONVERT ============ -->
+<dialog id="convertDlg">
+  <div class="dlg-head">
+    <h3>Convert a project</h3>
+    <p>Paste the address of a Scratch project, a MakeCode Arcade game, or any page. Pro Coder packs it into something you keep.</p>
+  </div>
+  <div class="dlg-body">
+    <label for="convUrl">Project address</label>
+    <input type="text" id="convUrl" placeholder="https://scratch.mit.edu/projects/60917032" spellcheck="false">
+    <label for="convName">Call it</label>
+    <input type="text" id="convName" placeholder="Left empty, Pro Coder names it for you">
+    <label>Make</label>
+    <div class="choices">
+      <button class="choice on" data-format="html">
+        <b>An HTML file</b>
+        <span>One file that plays the project. Double-click it, email it, put it on a memory stick.</span>
+      </button>
+      <button class="choice" data-format="appimage">
+        <b>An AppImage</b>
+        <span>A Linux application with its own window and menu entry. Needs Oliver running Pro Coder.</span>
+      </button>
+    </div>
+    <div id="convertOut"></div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" id="convCancel">Close</button>
+    <button class="btn primary" id="convGo">Convert</button>
+  </div>
+</dialog>
+
+<dialog id="aboutDlg">
+  <div class="dlg-head"><h3>Pro Coder</h3><p>A launcher with three coders in it.</p></div>
+  <div class="dlg-body" style="font-size:14px;color:var(--dim)">
+    <p><b style="color:var(--ink)">Scratch</b> and <b style="color:var(--ink)">MakeCode Arcade</b> are websites. Pro Coder opens them with their address on show, and an Exit button to come back here. Some sites refuse to run inside another app; when that happens Pro Coder says so and opens them in a window of their own instead.</p>
+    <p><b style="color:var(--ink)">CCP</b> is built in. Its blocks are Scratch's blocks and MakeCode Arcade's game blocks in one palette, with a few that belong to neither. It runs without the internet, and can export a finished game as a single HTML file.</p>
+    <p><b style="color:var(--ink)">Convert</b> turns a project address into an HTML file or a Linux AppImage.</p>
+  </div>
+  <div class="dlg-foot"><button class="btn primary" id="aboutClose">Right, got it</button></div>
+</dialog>
+
+<dialog id="promptDlg">
+  <div class="dlg-head"><h3 id="promptTitle">Name</h3><p id="promptText"></p></div>
+  <div class="dlg-body"><input type="text" id="promptInput" spellcheck="false"></div>
+  <div class="dlg-foot">
+    <button class="btn" id="promptCancel">Cancel</button>
+    <button class="btn primary" id="promptOk">OK</button>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+/* Pro Coder — one page, three coders.
+
+   The page is kept as it arrived, because exporting a CCP game means shipping
+   this very page with a project stapled to the front of it: one file, no build
+   step, and the game plays with exactly the engine it was made with. The copy
+   is taken once the document is parsed and before anything has been drawn into
+   it — taking it any earlier gets half a page, since a script can only see the
+   markup the parser has already reached. */
+let PRISTINE_SOURCE = "";
+document.addEventListener("DOMContentLoaded", () => {
+  PRISTINE_SOURCE = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+}, { once:true });
+
+const $ = (sel, root) => (root || document).querySelector(sel);
+const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+/* ================= views ================= */
+function showView(id){
+  $$(".view").forEach(v => v.classList.toggle("on", v.id === id));
+}
+function toMenu(){
+  stopCCP();
+  $("#siteFrame").src = "about:blank";   // stops whatever was playing
+  showView("menu");
+}
+$$("[data-exit]").forEach(b => b.addEventListener("click", toMenu));
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !$("#menu").classList.contains("on") && !$$("dialog[open]").length) toMenu();
+});
+
+/* ================= the two websites ================= */
+const SITES = {
+  scratch: {
+    name: "Scratch",
+    url: "https://scratch.mit.edu/projects/editor/",
+    home: "https://scratch.mit.edu",
+    framed: false,
+    why: "Scratch tells browsers not to let its editor run inside another page, " +
+         "so Pro Coder cannot draw it in here. Its address is above — opening it " +
+         "in a window of its own works perfectly, and Exit brings you back."
+  },
+  makecode: {
+    name: "MakeCode Arcade",
+    url: "https://arcade.makecode.com/",
+    home: "https://arcade.makecode.com",
+    framed: true,
+    why: "MakeCode Arcade did not load inside Pro Coder. Opening it in a window " +
+         "of its own always works."
+  }
+};
+let currentSite = null;
+
+function openSite(key){
+  const site = SITES[key];
+  currentSite = site;
+  $("#siteName").textContent = site.name;
+  $("#siteUrl").value = site.url;
+  $("#coverUrl").value = site.url;
+  $("#coverTitle").textContent = site.framed
+    ? site.name + " is not loading"
+    : site.name + " will not open inside another app";
+  $("#coverText").textContent = site.why;
+  showView("site");
+
+  const frame = $("#siteFrame");
+  if (site.framed) {
+    $("#siteCover").classList.remove("on");
+    frame.src = site.url;
+    // A site that refuses framing fails silently: the frame stays blank and
+    // nothing throws. So give it a few seconds, then offer the way out.
+    clearTimeout(openSite.timer);
+    openSite.timer = setTimeout(() => {
+      if (currentSite === site && !frameLooksAlive(frame)) $("#siteCover").classList.add("on");
+    }, 6000);
+  } else {
+    frame.src = "about:blank";
+    $("#siteCover").classList.add("on");
+  }
+}
+function frameLooksAlive(frame){
+  // Cross-origin frames hide everything except this: a page that really loaded
+  // usually has a history entry or sub-frames of its own, an error page has
+  // neither. It is a hint, not proof — which is why the cover it raises can be
+  // dismissed.
+  try { return frame.contentWindow && frame.contentWindow.length > 0; } catch (e) { return true; }
+}
+$$(".tile").forEach(t => t.addEventListener("click", () => {
+  const what = t.dataset.open;
+  if (what === "ccp") openCCP(); else openSite(what);
+}));
+$("#siteOpen").addEventListener("click", () => openOutside(currentSite.url));
+$("#coverOpen").addEventListener("click", () => openOutside(currentSite.url));
+$("#coverTry").addEventListener("click", () => {
+  $("#siteCover").classList.remove("on");
+  $("#siteFrame").src = currentSite.url;
+});
+$("#siteReload").addEventListener("click", () => { $("#siteFrame").src = currentSite.url; });
+$("#siteCopy").addEventListener("click", () => copyText($("#siteUrl").value, $("#siteCopy")));
+$("#siteUrl").addEventListener("focus", e => e.target.select());
+
+function openOutside(url){ window.open(url, "_blank", "noopener"); }
+function copyText(text, button){
+  const done = () => { if (!button) return; const old = button.textContent;
+    button.textContent = "Copied"; setTimeout(() => button.textContent = old, 1200); };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, () => fallback());
+  } else fallback();
+  function fallback(){
+    const t = document.createElement("textarea");
+    t.value = text; document.body.appendChild(t); t.select();
+    try { document.execCommand("copy"); done(); } catch (e) {}
+    t.remove();
+  }
+}
+
+/* ================= is Oliver behind us? ================= */
+const CAPS = { appimage: false, host: null };
+function describeHost(){
+  $("#hostNote").innerHTML = CAPS.appimage
+    ? "Running inside Oliver, so Convert can build AppImages as well as HTML files."
+    : "Opened as a plain file, so Convert makes HTML files. For AppImages, start it with " +
+      "<code>oliver procoder</code> instead.";
+}
+if (location.protocol === "http:" || location.protocol === "https:") {
+  fetch("api/capabilities").then(r => r.json()).then(c => {
+    CAPS.appimage = !!c.appimage; CAPS.host = c.host; describeHost();
+  }).catch(() => describeHost());
+} else describeHost();
+
+/* ================= dialogs ================= */
+function askText(title, text, value){
+  return new Promise(resolve => {
+    const dlg = $("#promptDlg"), input = $("#promptInput");
+    $("#promptTitle").textContent = title;
+    $("#promptText").textContent = text || "";
+    input.value = value || "";
+    const finish = v => { dlg.close(); cleanup(); resolve(v); };
+    const ok = () => finish(input.value.trim() || null);
+    const cancel = () => finish(null);
+    const key = e => { if (e.key === "Enter") { e.preventDefault(); ok(); } };
+    function cleanup(){
+      $("#promptOk").removeEventListener("click", ok);
+      $("#promptCancel").removeEventListener("click", cancel);
+      input.removeEventListener("keydown", key);
+    }
+    $("#promptOk").addEventListener("click", ok);
+    $("#promptCancel").addEventListener("click", cancel);
+    input.addEventListener("keydown", key);
+    dlg.showModal(); input.focus(); input.select();
+  });
+}
+$("#aboutBtn").addEventListener("click", () => $("#aboutDlg").showModal());
+$("#aboutClose").addEventListener("click", () => $("#aboutDlg").close());
+
+/* ================= Convert ================= */
+/* The same rules the Go side uses, because the page has to name the player
+   address before it can put it in a file. */
+function recognise(raw){
+  const s = (raw || "").trim();
+  if (!s) throw new Error("Paste a project address first.");
+  let m;
+  if ((m = s.match(/^(?:https?:\/\/)?(?:www\.)?scratch\.mit\.edu\/projects\/(\d+)/i)) || (m = s.match(/^(\d{4,})$/)))
+    return { kind:"scratch", id:m[1], title:"Scratch project " + m[1],
+             page:"https://scratch.mit.edu/projects/" + m[1],
+             play:"https://scratch.mit.edu/projects/" + m[1] + "/embed", file:"scratch-" + m[1] };
+  if ((m = s.match(/^(?:https?:\/\/)?(?:www\.)?turbowarp\.org\/(\d+)/i)))
+    return { kind:"turbowarp", id:m[1], title:"TurboWarp project " + m[1],
+             page:"https://turbowarp.org/" + m[1],
+             play:"https://turbowarp.org/" + m[1] + "/embed", file:"turbowarp-" + m[1] };
+  if ((m = s.match(/^(?:https?:\/\/)?(?:arcade\.)?makecode\.com\/(_[A-Za-z0-9]+|S?\d{4,6}(?:-\d{4,6}){2,4})/i)))
+    return { kind:"makecode", id:m[1], title:"MakeCode Arcade game " + m[1],
+             page:"https://arcade.makecode.com/" + m[1],
+             play:"https://arcade.makecode.com/---run?id=" + encodeURIComponent(m[1]),
+             file:"arcade-" + m[1].replace(/^_/, "") };
+  const scheme = (s.match(/^([A-Za-z][A-Za-z0-9+.\-]*):/) || [])[1];
+  if (scheme && !/^https?$/i.test(scheme))
+    throw new Error("Only http and https addresses can be converted, not " + scheme + ":");
+  const withScheme = scheme ? s : "https://" + s;
+  let u;
+  try { u = new URL(withScheme); } catch (e) { throw new Error("That does not look like a web address."); }
+  if (u.protocol !== "http:" && u.protocol !== "https:")
+    throw new Error("Only http and https addresses can be converted.");
+  return { kind:"web", id:u.host, title:u.host, page:u.href, play:u.href,
+           file:u.host.replace(/[^A-Za-z0-9]+/g, "-") };
+}
+
+function wrapperHTML(target, name){
+  const esc = s => String(s).replace(/[&<>"']/g, c =>
+    ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(name)}</title>
+<style>
+  :root{color-scheme:dark}*{box-sizing:border-box}
+  body{margin:0;height:100vh;display:flex;flex-direction:column;background:#10131a;color:#e8ecf4;
+       font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#1a1f2b;border-bottom:1px solid #2b3345}
+  h1{font-size:15px;margin:0;white-space:nowrap}
+  .url{flex:1;min-width:0;font:12px ui-monospace,monospace;color:#9fb0cc;background:#10131a;
+       border:1px solid #2b3345;border-radius:6px;padding:6px 8px;overflow:hidden;
+       text-overflow:ellipsis;white-space:nowrap}
+  a.open{color:#10131a;background:#59c2ff;text-decoration:none;padding:6px 12px;border-radius:6px;
+         font-weight:600;white-space:nowrap}
+  main{flex:1;position:relative}
+  iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}
+  .note{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:#1a1f2b;
+        border:1px solid #2b3345;border-radius:8px;padding:8px 14px;color:#9fb0cc;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>${esc(name)}</h1>
+  <div class="url" title="${esc(target.page)}">${esc(target.page)}</div>
+  <a class="open" href="${esc(target.page)}" target="_blank" rel="noopener">Open the original</a>
+</header>
+<main>
+  <iframe src="${esc(target.play)}" allow="autoplay; fullscreen; gamepad; microphone" allowfullscreen></iframe>
+  <div class="note">Nothing showing? The site may not allow being framed — use “Open the original”.</div>
+</main>
+</body>
+</html>
+`;
+}
+
+function download(filename, text, type){
+  const blob = new Blob([text], { type: type || "text/html" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+let convertFormat = "html";
+$$("#convertDlg .choice").forEach(c => c.addEventListener("click", () => {
+  convertFormat = c.dataset.format;
+  $$("#convertDlg .choice").forEach(o => o.classList.toggle("on", o === c));
+}));
+$("#convertBtn").addEventListener("click", () => {
+  $("#convertOut").classList.remove("on");
+  $("#convertDlg").showModal();
+  $("#convUrl").focus();
+});
+$("#convCancel").addEventListener("click", () => $("#convertDlg").close());
+$("#convGo").addEventListener("click", async () => {
+  const out = $("#convertOut");
+  out.classList.add("on");
+  let target;
+  try { target = recognise($("#convUrl").value); }
+  catch (e) { out.textContent = "✗ " + e.message; return; }
+  const name = $("#convName").value.trim() || target.title;
+
+  if (convertFormat === "html") {
+    download(target.file + ".html", wrapperHTML(target, name));
+    out.textContent = "✓ Saved " + target.file + ".html to your downloads.\n  It plays " + target.play +
+      "\n  Double-click the file to open it.";
+    return;
+  }
+  if (!CAPS.appimage) {
+    out.textContent = "An AppImage has to be built by Oliver, and Pro Coder was opened as a plain file.\n\n" +
+      "Run this in a terminal:\n\n  oliver procoder convert " + target.page +
+      " -format appimage -name " + JSON.stringify(name);
+    return;
+  }
+  out.textContent = "Building…";
+  try {
+    const res = await fetch("api/convert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: target.page, name: name, format: "appimage" })
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || ("failed with status " + res.status));
+    // Without appimagetool what comes back is a directory, and the thing to
+    // run inside it is its AppRun.
+    const runnable = body.path.endsWith(".AppDir") ? body.path + "/AppRun" : body.path;
+    out.textContent = "✓ Built " + body.path + (body.note ? "\n  " + body.note : "") +
+      "\n  Add it to your menu with:  " + runnable + " --install";
+  } catch (e) {
+    out.textContent = "✗ " + e.message;
+  }
+});
+</script>
+
+<script>
+"use strict";
+/* ===================================================================
+   CCP — the Claude Coding Program.
+
+   The palette is deliberately a merger rather than a copy. Motion, Looks,
+   Events, Control, Sensing, Operators and Variables are Scratch's categories,
+   because that is the vocabulary anybody arriving here already has. Arcade is
+   MakeCode Arcade's way of thinking — score, lives, countdown, game over,
+   projectiles — which Scratch makes you build by hand every time. The last
+   category is CCP's own, and exists because a coder for children should have
+   at least a few blocks that are pure delight.
+   =================================================================== */
+
+const KEYS = ["space","up arrow","down arrow","left arrow","right arrow","enter",
+              "a","b","d","s","w","x","z","any"];
+const COLOURS = ["black","white","red","orange","yellow","green","blue","purple","pink","grey"];
+
+/* Slot builders. Every block is a list of label strings and slots. */
+const N = (a, d) => ({ a, t:"num", d: d === undefined ? 0 : d });
+const T = (a, d) => ({ a, t:"text", d: d === undefined ? "" : d });
+const A = (a, d) => ({ a, t:"any", d: d === undefined ? "" : d });
+const M = (a, opts, d) => ({ a, t:"menu", m:opts, d: d === undefined ? opts[0] : d });
+const KEY = a => ({ a, t:"menu", m:KEYS, d:"space" });
+const SP = (a, extra, d) => ({ a, t:"sprite", extra: extra || [], d: d || (extra && extra[0]) || "" });
+const VARS = a => ({ a, t:"var" });
+const MSG = a => ({ a, t:"msg", d:"go" });
+const BOOL = a => ({ a, t:"bool" });
+
+const BLOCKS = {};
+const PALETTE = { motion:[], looks:[], events:[], control:[], sensing:[],
+                  operators:[], variables:[], arcade:[], ccp:[] };
+
+function def(cat, op, shape, parts, extra){
+  BLOCKS[op] = Object.assign({ cat, op, shape, parts }, extra || {});
+  PALETTE[cat].push(op);
+}
+
+/* ---------------- Motion ---------------- */
+def("motion","move","stack",["move", N("steps",10), "steps"]);
+def("motion","turnRight","stack",["turn ↻", N("degrees",15), "degrees"]);
+def("motion","turnLeft","stack",["turn ↺", N("degrees",15), "degrees"]);
+def("motion","goXY","stack",["go to x:", N("x",0), "y:", N("y",0)]);
+def("motion","glide","stack",["glide", N("secs",1), "secs to x:", N("x",0), "y:", N("y",0)]);
+def("motion","changeX","stack",["change x by", N("dx",10)]);
+def("motion","setX","stack",["set x to", N("x",0)]);
+def("motion","changeY","stack",["change y by", N("dy",10)]);
+def("motion","setY","stack",["set y to", N("y",0)]);
+def("motion","point","stack",["point in direction", N("dir",90)]);
+def("motion","pointTowards","stack",["point towards", SP("target",["mouse"],"mouse")]);
+def("motion","bounce","stack",["if on edge, bounce"]);
+def("motion","setSpeed","stack",["set speed x:", N("vx",3), "y:", N("vy",0)]);
+def("motion","xpos","reporter",["x position"]);
+def("motion","ypos","reporter",["y position"]);
+def("motion","direction","reporter",["direction"]);
+
+/* ---------------- Looks ---------------- */
+def("looks","say","stack",["say", T("text","Hello!")]);
+def("looks","sayFor","stack",["say", T("text","Hello!"), "for", N("secs",2), "seconds"]);
+def("looks","think","stack",["think", T("text","Hmm…")]);
+def("looks","costume","stack",["switch look to", T("look","🐱")]);
+def("looks","changeSize","stack",["change size by", N("by",10)]);
+def("looks","setSize","stack",["set size to", N("size",100), "%"]);
+def("looks","show","stack",["show"]);
+def("looks","hide","stack",["hide"]);
+def("looks","setColour","stack",["set my colour to", M("colour",COLOURS,"pink")]);
+def("looks","front","stack",["go to the front"]);
+def("looks","size","reporter",["size"]);
+def("looks","look","reporter",["my look"]);
+
+/* ---------------- Events ---------------- */
+def("events","whenFlag","hat",["when ⚑ Go clicked"]);
+def("events","whenKey","hat",["when", KEY("key"), "key pressed"]);
+def("events","whenClicked","hat",["when this sprite clicked"]);
+def("events","whenReceive","hat",["when I get", MSG("msg")]);
+def("events","whenTouch","hat",["when I touch", SP("other")]);
+def("events","whenClone","hat",["when I start as a clone"]);
+def("events","broadcast","stack",["send", MSG("msg")]);
+def("events","broadcastWait","stack",["send", MSG("msg"), "and wait"]);
+
+/* ---------------- Control ---------------- */
+def("control","wait","stack",["wait", N("secs",1), "seconds"]);
+def("control","repeat","c",["repeat", N("times",10)]);
+def("control","forever","c",["forever"]);
+def("control","if","c",["if", BOOL("cond"), "then"]);
+def("control","ifElse","c2",["if", BOOL("cond"), "then"], { elseLabel:"else" });
+def("control","waitUntil","stack",["wait until", BOOL("cond")]);
+def("control","repeatUntil","c",["repeat until", BOOL("cond")]);
+def("control","stop","cap",["stop", M("what",["all","this script","other scripts of mine"])]);
+def("control","clone","stack",["make a clone of", SP("who",["myself"],"myself")]);
+def("control","deleteClone","cap",["delete this clone"]);
+
+/* ---------------- Sensing ---------------- */
+def("sensing","touching","bool",["touching", SP("what",["edge","mouse"]), "?"]);
+def("sensing","keyPressed","bool",["key", KEY("key"), "pressed?"]);
+def("sensing","mouseDown","bool",["mouse button down?"]);
+def("sensing","hitByBullet","bool",["hit by a bullet?"]);
+def("sensing","mouseX","reporter",["mouse x"]);
+def("sensing","mouseY","reporter",["mouse y"]);
+def("sensing","distanceTo","reporter",["distance to", SP("what",["mouse"],"mouse")]);
+def("sensing","ask","stack",["ask", T("question","What is your name?"), "and wait"]);
+def("sensing","answer","reporter",["answer"]);
+def("sensing","timer","reporter",["timer"]);
+def("sensing","resetTimer","stack",["reset timer"]);
+
+/* ---------------- Operators ---------------- */
+def("operators","add","reporter",[N("a",0), "+", N("b",0)]);
+def("operators","sub","reporter",[N("a",0), "−", N("b",0)]);
+def("operators","mul","reporter",[N("a",0), "×", N("b",0)]);
+def("operators","div","reporter",[N("a",0), "÷", N("b",1)]);
+def("operators","random","reporter",["pick random", N("from",1), "to", N("to",10)]);
+def("operators","lt","bool",[A("a",""), "<", A("b","50")]);
+def("operators","eq","bool",[A("a",""), "=", A("b","50")]);
+def("operators","gt","bool",[A("a",""), ">", A("b","50")]);
+def("operators","and","bool",[BOOL("a"), "and", BOOL("b")]);
+def("operators","or","bool",[BOOL("a"), "or", BOOL("b")]);
+def("operators","not","bool",["not", BOOL("a")]);
+def("operators","join","reporter",["join", T("a","apple "), T("b","pie")]);
+def("operators","letterOf","reporter",["letter", N("n",1), "of", T("text","world")]);
+def("operators","lengthOf","reporter",["length of", T("text","world")]);
+def("operators","mod","reporter",[N("a",7), "mod", N("b",2)]);
+def("operators","round","reporter",["round", N("a",0)]);
+def("operators","mathop","reporter",[M("fn",["abs","floor","ceil","sqrt","sin","cos","−(negate)"],"abs"), "of", N("a",9)]);
+
+/* ---------------- Variables ---------------- */
+def("variables","setVar","stack",["set", VARS("name"), "to", A("value","0")]);
+def("variables","changeVar","stack",["change", VARS("name"), "by", N("by",1)]);
+def("variables","showVar","stack",["show", VARS("name"), "on the stage"]);
+def("variables","hideVar","stack",["hide", VARS("name"), "from the stage"]);
+def("variables","varRep","reporter",[VARS("name")]);
+
+/* ---------------- Arcade (MakeCode Arcade's ideas) ---------------- */
+def("arcade","setScore","stack",["set score to", N("score",0)]);
+def("arcade","changeScore","stack",["change score by", N("by",1)]);
+def("arcade","score","reporter",["score"]);
+def("arcade","setLives","stack",["set lives to", N("lives",3)]);
+def("arcade","changeLives","stack",["change lives by", N("by",-1)]);
+def("arcade","lives","reporter",["lives"]);
+def("arcade","gameOver","cap",["game over —", M("result",["you win!","you lose"],"you win!")]);
+def("arcade","countdown","stack",["start countdown", N("secs",30), "seconds"]);
+def("arcade","timeLeft","reporter",["time left"]);
+def("arcade","splash","stack",["splash", T("text","Level 1!")]);
+def("arcade","background","stack",["set background to", M("colour",COLOURS,"black")]);
+def("arcade","shoot","stack",["shoot", T("look","🔴"), "at speed", N("speed",8)]);
+def("arcade","spawnEdge","stack",["clone", SP("who",["myself"],"myself"), "at a random edge"]);
+def("arcade","playSound","stack",["play sound", M("sound",["beep","pop","zap","coin","jump","buzz"],"pop")]);
+
+/* ---------------- CCP's own ---------------- */
+def("ccp","confetti","stack",["confetti!"]);
+def("ccp","shake","stack",["shake the screen for", N("secs",0.3), "seconds"]);
+def("ccp","trail","stack",["rainbow trail", M("state",["on","off"],"on")]);
+def("ccp","timeWarp","stack",["set time warp to", N("rate",0.5), "×"]);
+def("ccp","pop","stack",["pop me into pixels"]);
+def("ccp","spin","stack",["spin me around", N("times",1), "times"]);
+
+const CAT_NAMES = { motion:"Motion", looks:"Looks", events:"Events", control:"Control",
+                    sensing:"Sensing", operators:"Operators", variables:"Variables",
+                    arcade:"Arcade", ccp:"CCP" };
+
+/* Which expressions can go in a slot. Anything reporting a value is offered
+   for a number or text slot; anything reporting yes-or-no for a boolean one. */
+function expressionsFor(type){
+  const want = type === "bool" ? "bool" : "reporter";
+  return Object.keys(BLOCKS).filter(op => BLOCKS[op].shape === want);
+}
+function slotsOf(spec){ return spec.parts.filter(p => typeof p === "object"); }
+function newBlock(op){
+  const spec = BLOCKS[op];
+  const b = { op, args: {} };
+  slotsOf(spec).forEach(s => { if (s.t !== "bool") b.args[s.a] = s.d; else b.args[s.a] = null; });
+  if (spec.shape === "c" || spec.shape === "c2") b.body = [];
+  if (spec.shape === "c2") b.body2 = [];
+  return b;
+}
+</script>
+
+<script>
+"use strict";
+/* ===================================================================
+   CCP editor: the project, the palette, and dragging blocks about.
+   =================================================================== */
+
+const STAGE_W = 480, STAGE_H = 360;
+let project = null, currentSpriteId = null, currentCat = "motion";
+
+function blankProject(){
+  return {
+    name: "My game",
+    messages: ["go"],
+    vars: [{ name:"my number", value:0, shown:true }],
+    sprites: [newSprite("Cat", "🐱", 0, 0)]
+  };
+}
+let spriteSeq = 1;
+function newSprite(name, look, x, y){
+  return { id: "s" + (spriteSeq++) + "-" + Math.random().toString(36).slice(2,7),
+           name, look, x, y, dir:90, size:100, visible:true, colour:"pink", scripts:[] };
+}
+function currentSprite(){
+  return project.sprites.find(s => s.id === currentSpriteId) || project.sprites[0];
+}
+function firstVarName(){ return project && project.vars.length ? project.vars[0].name : "my number"; }
+function varNamed(name){ return project.vars.find(v => v.name === name); }
+
+/* ---------------- palette ---------------- */
+function renderPalette(){
+  const nav = $("#palette");
+  nav.innerHTML = "";
+  Object.keys(CAT_NAMES).forEach(cat => {
+    const b = document.createElement("button");
+    b.className = "cat" + (cat === currentCat ? " on" : "");
+    b.innerHTML = '<span class="dot" style="background:var(--' + cat + ')"></span>' + CAT_NAMES[cat];
+    b.addEventListener("click", () => { currentCat = cat; renderPalette(); });
+    nav.appendChild(b);
+  });
+
+  const list = $("#paletteBlocks");
+  list.innerHTML = "<h4>" + CAT_NAMES[currentCat] + "</h4>";
+  if (currentCat === "variables") {
+    const add = document.createElement("button");
+    add.className = "btn small"; add.textContent = "+ Make a variable";
+    add.style.marginBottom = "14px";
+    add.addEventListener("click", addVariable);
+    list.appendChild(add);
+  }
+  PALETTE[currentCat].forEach(op => {
+    const holder = document.createElement("div");
+    holder.className = "palette-item";
+    holder.appendChild(renderBlockTree(newBlock(op), null, 0, true));
+    holder.addEventListener("pointerdown", e => startPaletteDrag(e, op));
+    list.appendChild(holder);
+  });
+}
+
+/* ---------------- rendering one block ---------------- */
+/* Every rendered block carries the array it lives in and where in that array
+   it sits. Dragging needs exactly that pair, and keeping it on the element
+   means the workspace is re-rendered after every change rather than patched —
+   far fewer ways to end up with a picture that disagrees with the project. */
+function renderBlockTree(block, stack, index, inPalette){
+  const spec = BLOCKS[block.op];
+  const cls = "cat-" + spec.cat;
+
+  const head = document.createElement("div");
+  head.className = "block " + cls + (spec.shape === "hat" ? " hat" : "") +
+                   (spec.shape === "cap" ? " cap" : "");
+  spec.parts.forEach(part => head.appendChild(renderPart(block, part, inPalette)));
+
+  if (spec.shape !== "c" && spec.shape !== "c2") {
+    mark(head, block, stack, index);
+    return head;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "c-block";
+  head.classList.add("c-head");
+  wrap.appendChild(head);
+  wrap.appendChild(cBody(block.body, cls, inPalette));
+  if (spec.shape === "c2") {
+    const els = document.createElement("div");
+    els.className = "block " + cls + " c-else";
+    els.appendChild(label(spec.elseLabel || "else"));
+    wrap.appendChild(els);
+    wrap.appendChild(cBody(block.body2, cls, inPalette));
+  }
+  const foot = document.createElement("div");
+  foot.className = "block " + cls + " c-foot";
+  wrap.appendChild(foot);
+  mark(wrap, block, stack, index);
+  return wrap;
+}
+function cBody(arr, cls, inPalette){
+  const wrap = document.createElement("div");
+  wrap.className = "c-wrap";
+  const spine = document.createElement("div");
+  spine.className = "c-spine " + cls;
+  const body = document.createElement("div");
+  body.className = "c-body";
+  body.appendChild(renderStack(arr, inPalette));
+  wrap.appendChild(spine); wrap.appendChild(body);
+  return wrap;
+}
+function renderStack(arr, inPalette){
+  const el = document.createElement("div");
+  el.className = "stack";
+  el._stack = arr;
+  arr.forEach((b, i) => el.appendChild(renderBlockTree(b, arr, i, inPalette)));
+  return el;
+}
+function mark(el, block, stack, index){
+  el.dataset.blockroot = "";
+  el._block = block; el._stack = stack; el._index = index;
+}
+function label(text){
+  const s = document.createElement("span");
+  s.className = "lbl"; s.textContent = text;
+  return s;
+}
+
+/* ---------------- rendering one slot ---------------- */
+function renderPart(block, part, inPalette){
+  if (typeof part === "string") return label(part);
+  return renderArg(block, part, inPalette);
+}
+function renderArg(owner, spec, inPalette){
+  const wrap = document.createElement("span");
+  wrap.className = "slot";
+  const value = owner.args[spec.a];
+
+  // A slot holding an expression shows that expression, with a way to empty it.
+  if (value && typeof value === "object" && value.op) {
+    const sub = BLOCKS[value.op];
+    const rep = document.createElement("span");
+    rep.className = "rep" + (sub.shape === "bool" ? " bool" : "");
+    sub.parts.forEach(p => rep.appendChild(renderPart(value, p, inPalette)));
+    const clear = document.createElement("button");
+    clear.className = "fx"; clear.textContent = "✕"; clear.title = "Empty this slot";
+    clear.addEventListener("click", e => {
+      e.stopPropagation();
+      owner.args[spec.a] = spec.t === "bool" ? null : spec.d;
+      renderWorkspace(); renderPalette();
+    });
+    rep.appendChild(clear);
+    wrap.appendChild(rep);
+    return wrap;
+  }
+
+  if (spec.t === "bool") {
+    const pick = document.createElement("button");
+    pick.className = "rep bool";
+    pick.appendChild(label("pick a test ▾"));
+    pick.addEventListener("click", e => {
+      e.stopPropagation();
+      chooseExpression(pick, "bool", op => { owner.args[spec.a] = newBlock(op); redrawEditor(); });
+    });
+    wrap.appendChild(pick);
+    return wrap;
+  }
+
+  let field;
+  if (spec.t === "menu" || spec.t === "sprite" || spec.t === "var" || spec.t === "msg") {
+    field = document.createElement("select");
+    optionsFor(spec).forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o; opt.textContent = o;
+      field.appendChild(opt);
+    });
+    let v = value;
+    if (spec.t === "var" && (v === undefined || v === null)) v = firstVarName();
+    if (spec.t === "sprite" && !v) v = (spec.extra && spec.extra[0]) || project.sprites[0].name;
+    field.value = v;
+    if (field.selectedIndex < 0) field.selectedIndex = 0;
+    owner.args[spec.a] = field.value;
+    field.addEventListener("change", () => { owner.args[spec.a] = field.value; });
+    if (spec.t === "msg") {
+      const add = document.createElement("button");
+      add.className = "fx"; add.textContent = "+"; add.title = "New message";
+      add.addEventListener("click", async e => {
+        e.stopPropagation();
+        const name = await askText("New message", "What should this message be called?", "level up");
+        if (!name) return;
+        if (!project.messages.includes(name)) project.messages.push(name);
+        owner.args[spec.a] = name; redrawEditor();
+      });
+      wrap.appendChild(field); wrap.appendChild(add);
+      return wrap;
+    }
+  } else {
+    field = document.createElement("input");
+    field.type = "text";
+    field.value = value === undefined || value === null ? spec.d : value;
+    field.size = Math.max(2, String(field.value).length);
+    field.addEventListener("input", () => {
+      owner.args[spec.a] = field.value;
+      field.size = Math.max(2, field.value.length);
+    });
+    field.addEventListener("pointerdown", e => e.stopPropagation());
+  }
+  wrap.appendChild(field);
+
+  if (spec.t === "num" || spec.t === "text" || spec.t === "any") {
+    const fx = document.createElement("button");
+    fx.className = "fx"; fx.textContent = "▾"; fx.title = "Use a value from the game";
+    fx.addEventListener("click", e => {
+      e.stopPropagation();
+      chooseExpression(fx, "value", op => { owner.args[spec.a] = newBlock(op); redrawEditor(); });
+    });
+    wrap.appendChild(fx);
+  }
+  return wrap;
+}
+function optionsFor(spec){
+  if (spec.t === "menu") return spec.m;
+  if (spec.t === "var") return project.vars.map(v => v.name);
+  if (spec.t === "msg") return project.messages;
+  return (spec.extra || []).concat(project.sprites.map(s => s.name));
+}
+
+/* A little menu of everything that reports a value, so a slot can hold a
+   calculation without needing a second kind of dragging to learn. */
+function chooseExpression(anchor, kind, pick){
+  closeMenu();
+  const menu = document.createElement("div");
+  menu.id = "exprMenu";
+  Object.assign(menu.style, {
+    position:"fixed", zIndex:80, background:"var(--panel)", border:"1px solid var(--line)",
+    borderRadius:"10px", padding:"6px", maxHeight:"340px", overflow:"auto",
+    boxShadow:"0 12px 30px rgba(0,0,0,.5)", minWidth:"210px"
+  });
+  const ops = expressionsFor(kind === "bool" ? "bool" : "value");
+  let cat = null;
+  ops.forEach(op => {
+    const spec = BLOCKS[op];
+    if (spec.cat !== cat) {
+      cat = spec.cat;
+      const h = document.createElement("div");
+      h.textContent = CAT_NAMES[cat];
+      Object.assign(h.style, { fontSize:"11px", textTransform:"uppercase", letterSpacing:".07em",
+                               color:"var(--dim)", padding:"8px 8px 4px" });
+      menu.appendChild(h);
+    }
+    const b = document.createElement("button");
+    b.textContent = previewText(spec);
+    Object.assign(b.style, { display:"block", width:"100%", textAlign:"left", padding:"6px 8px",
+                             borderRadius:"7px", fontSize:"13px" });
+    b.addEventListener("mouseenter", () => b.style.background = "var(--panel2)");
+    b.addEventListener("mouseleave", () => b.style.background = "none");
+    b.addEventListener("click", () => { closeMenu(); pick(op); });
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = Math.min(r.left, window.innerWidth - menu.offsetWidth - 12) + "px";
+  menu.style.top = Math.min(r.bottom + 4, window.innerHeight - menu.offsetHeight - 12) + "px";
+  document.addEventListener("pointerdown", outsideMenu, true);
+}
+/* Closing has to happen on a press outside the menu and nowhere else: closing
+   on any press at all takes the menu away before the button inside it has been
+   clicked, and nothing is ever chosen. */
+function outsideMenu(e){
+  const m = $("#exprMenu");
+  if (m && !m.contains(e.target)) closeMenu();
+}
+function closeMenu(){
+  const m = $("#exprMenu");
+  if (m) m.remove();
+  document.removeEventListener("pointerdown", outsideMenu, true);
+}
+function previewText(spec){
+  return spec.parts.map(p => typeof p === "string" ? p :
+    (p.t === "bool" ? "< >" : "( )")).join(" ");
+}
+
+/* ---------------- workspace ---------------- */
+function renderWorkspace(){
+  const canvas = $("#canvas");
+  canvas.innerHTML = "";
+  const sprite = currentSprite();
+  if (!sprite) return;
+  sprite.scripts.forEach(script => {
+    const el = document.createElement("div");
+    el.className = "script";
+    el.style.left = script.x + "px";
+    el.style.top = script.y + "px";
+    el._script = script;
+    el.appendChild(renderStack(script.blocks, false));
+    canvas.appendChild(el);
+  });
+}
+function redrawEditor(){ renderWorkspace(); renderPalette(); renderVars(); renderSprites(); }
+
+/* ---------------- dragging ---------------- */
+let drag = null;
+
+$("#canvas").addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  if (e.target.closest("input,select,button")) return;
+  const root = e.target.closest("[data-blockroot]");
+  if (!root) return;
+  const stack = root._stack, index = root._index;
+  let moving, origin;
+  const scriptEl = root.closest(".script");
+  const wholeScript = scriptEl && scriptEl._script.blocks === stack && index === 0;
+  if (wholeScript) {
+    const script = scriptEl._script;
+    moving = script.blocks;
+    project.sprites.forEach(s => {
+      const i = s.scripts.indexOf(script);
+      if (i >= 0) s.scripts.splice(i, 1);
+    });
+    origin = scriptEl.getBoundingClientRect();
+  } else {
+    origin = root.getBoundingClientRect();
+    moving = stack.splice(index);
+  }
+  beginDrag(e, moving, origin);
+});
+
+function startPaletteDrag(e, op){
+  if (e.button !== 0) return;
+  if (e.target.closest("input,select,button")) return;
+  const root = e.currentTarget.firstChild;
+  beginDrag(e, [newBlock(op)], root.getBoundingClientRect(), true);
+}
+
+function beginDrag(e, blocks, origin, fromPalette){
+  e.preventDefault();
+  closeMenu();
+  renderWorkspace();
+
+  const ghost = document.createElement("div");
+  ghost.className = "dragging";
+  ghost.appendChild(renderStack(blocks, true));
+  document.body.appendChild(ghost);
+
+  drag = {
+    blocks, ghost, fromPalette,
+    dx: e.clientX - origin.left, dy: e.clientY - origin.top,
+    points: connectionPoints(blocks), target: null,
+    marker: markerElement()
+  };
+  moveDrag(e);
+  window.addEventListener("pointermove", moveDrag);
+  window.addEventListener("pointerup", endDrag, { once:true });
+}
+
+function markerElement(){
+  const m = document.createElement("div");
+  m.className = "drop-marker";
+  Object.assign(m.style, { position:"fixed", zIndex:70, display:"none", width:"120px" });
+  document.body.appendChild(m);
+  return m;
+}
+
+/* Where a dragged stack may be joined on. Worked out once, at the moment the
+   dragged blocks leave the workspace, so nothing shifts underneath while the
+   pointer moves. */
+function connectionPoints(moving){
+  const points = [];
+  if (BLOCKS[moving[0].op].shape === "hat") return points;  // a hat only ever starts a script
+  $$("#canvas .stack").forEach(stackEl => {
+    const arr = stackEl._stack;
+    const kids = $$(":scope > [data-blockroot]", stackEl);
+    kids.forEach((kid, i) => {
+      if (i === 0 && arr.length && BLOCKS[arr[0].op].shape === "hat") return;
+      if (i > 0 && BLOCKS[arr[i-1].op].shape === "cap") return;
+      const r = kid.getBoundingClientRect();
+      points.push({ x:r.left, y:r.top, width:r.width, arr, i });
+    });
+    const last = kids[kids.length - 1];
+    if (last && BLOCKS[arr[arr.length - 1].op].shape === "cap") return;
+    const r = (last || stackEl).getBoundingClientRect();
+    points.push({ x:r.left, y: last ? r.bottom : r.top, width: Math.max(r.width, 120), arr, i: arr.length });
+  });
+  return points;
+}
+
+function moveDrag(e){
+  if (!drag) return;
+  const x = e.clientX - drag.dx, y = e.clientY - drag.dy;
+  drag.ghost.style.left = x + "px";
+  drag.ghost.style.top = y + "px";
+
+  const overTrash = isOver($("#trash"), e) || isOver($("#paletteBlocks"), e) || isOver($("#palette"), e);
+  $("#trash").classList.toggle("hot", overTrash && !drag.fromPalette);
+
+  let best = null, bestDist = 74;
+  if (!overTrash) {
+    drag.points.forEach(p => {
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (d < bestDist) { bestDist = d; best = p; }
+    });
+  }
+  drag.target = best;
+  if (best) {
+    Object.assign(drag.marker.style, {
+      display:"block", left: best.x + "px", top: (best.y - 4) + "px",
+      width: Math.max(best.width, 90) + "px"
+    });
+  } else drag.marker.style.display = "none";
+}
+function isOver(el, e){
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+}
+
+function endDrag(e){
+  if (!drag) return;
+  window.removeEventListener("pointermove", moveDrag);
+  const { blocks, target, fromPalette } = drag;
+  const ghostRect = drag.ghost.getBoundingClientRect();
+  drag.ghost.remove(); drag.marker.remove();
+  drag = null;
+
+  const overPalette = isOver($("#paletteBlocks"), e) || isOver($("#palette"), e) || isOver($("#trash"), e);
+  if (target) {
+    target.arr.splice(target.i, 0, ...blocks);
+  } else if (overPalette) {
+    if (fromPalette) dropOnCanvas(blocks, 40, 40);   // a click in the palette: put it somewhere visible
+  } else {
+    const wrap = $("#canvasWrap").getBoundingClientRect();
+    dropOnCanvas(blocks,
+      ghostRect.left - wrap.left + $("#canvasWrap").scrollLeft,
+      ghostRect.top - wrap.top + $("#canvasWrap").scrollTop);
+  }
+  redrawEditor();
+}
+function dropOnCanvas(blocks, x, y){
+  currentSprite().scripts.push({ x: Math.max(8, Math.round(x)), y: Math.max(8, Math.round(y)), blocks });
+}
+</script>
+
+<style>
+#ccp.playing #palette, #ccp.playing #paletteBlocks, #ccp.playing #canvasWrap,
+#ccp.playing #sprites { display:none }
+#ccp.playing #stagePane{ width:100%; border-left:0; align-items:center; justify-content:center }
+#ccp.playing #stageHolder{ flex:1; justify-content:center }
+#ccp.playing #stage{ width:min(96vw, calc((100vh - 120px) * 4 / 3)); height:auto; aspect-ratio:4/3 }
+#ccp.player .stage-tools{ display:none }
+</style>
+
+<script>
+"use strict";
+/* ===================================================================
+   CCP: sprites, variables, saving, and getting in and out of the editor.
+   =================================================================== */
+
+function openCCP(){
+  if (!project) project = loadSaved() || blankProject();
+  currentSpriteId = project.sprites[0].id;
+  $("#ccpName").value = project.name;
+  showView("ccp");
+  redrawEditor();
+  drawStage();
+}
+
+/* ---------------- sprites ---------------- */
+function renderSprites(){
+  const list = $("#spriteList");
+  list.innerHTML = "";
+  project.sprites.forEach(s => {
+    const b = document.createElement("button");
+    b.className = "sprite-chip" + (s.id === currentSpriteId ? " on" : "");
+    b.innerHTML = s.look + "<span>" + escapeHTML(s.name) + "</span>";
+    b.addEventListener("click", () => { currentSpriteId = s.id; redrawEditor(); });
+    list.appendChild(b);
+  });
+}
+function escapeHTML(s){
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+$("#spriteAdd").addEventListener("click", async () => {
+  const name = await askText("New sprite", "What is it called?", "Sprite " + (project.sprites.length + 1));
+  if (!name) return;
+  const look = await askText("What does it look like?", "Any emoji or a letter or two.", "⭐");
+  const s = newSprite(name, look || "⭐", Math.round(Math.random() * 200 - 100), Math.round(Math.random() * 120 - 60));
+  project.sprites.push(s);
+  currentSpriteId = s.id;
+  redrawEditor(); drawStage();
+});
+$("#spriteEdit").addEventListener("click", async () => {
+  const s = currentSprite();
+  const name = await askText("Rename", "What should this sprite be called?", s.name);
+  if (name) s.name = name;
+  const look = await askText("Its look", "Any emoji or a letter or two.", s.look);
+  if (look) s.look = look;
+  redrawEditor(); drawStage();
+});
+$("#spriteDel").addEventListener("click", () => {
+  if (project.sprites.length === 1) return;
+  const i = project.sprites.findIndex(s => s.id === currentSpriteId);
+  project.sprites.splice(i, 1);
+  currentSpriteId = project.sprites[0].id;
+  redrawEditor(); drawStage();
+});
+
+/* ---------------- variables ---------------- */
+function renderVars(){
+  const list = $("#varList");
+  list.innerHTML = "";
+  project.vars.forEach(v => {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:6px";
+    const shown = document.createElement("input");
+    shown.type = "checkbox"; shown.checked = v.shown; shown.title = "Show on the stage";
+    shown.addEventListener("change", () => { v.shown = shown.checked; drawStage(); });
+    const name = document.createElement("span");
+    name.textContent = v.name;
+    name.style.cssText = "flex:1;color:var(--ink)";
+    const value = document.createElement("span");
+    value.textContent = v.value;
+    const del = document.createElement("button");
+    del.className = "fx"; del.textContent = "✕"; del.style.color = "var(--dim)";
+    del.addEventListener("click", () => {
+      project.vars = project.vars.filter(x => x !== v);
+      if (!project.vars.length) project.vars.push({ name:"my number", value:0, shown:true });
+      redrawEditor(); drawStage();
+    });
+    row.append(shown, name, value, del);
+    list.appendChild(row);
+  });
+}
+async function addVariable(){
+  const name = await askText("New variable", "Something to remember a number or some words.", "lives left");
+  if (!name || varNamed(name)) return;
+  project.vars.push({ name, value:0, shown:true });
+  redrawEditor(); drawStage();
+}
+$("#varAdd").addEventListener("click", addVariable);
+
+/* ---------------- saving ---------------- */
+const SAVE_KEY = "procoder.ccp.project";
+function saveProject(){
+  project.name = $("#ccpName").value.trim() || "My game";
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(project));
+    flash("#ccpSave", "Saved");
+  } catch (e) { flash("#ccpSave", "Could not save"); }
+}
+function loadSaved(){
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function flash(sel, text){
+  const b = $(sel), old = b.textContent;
+  b.textContent = text;
+  setTimeout(() => b.textContent = old, 1200);
+}
+$("#ccpSave").addEventListener("click", saveProject);
+$("#ccpLoad").addEventListener("click", () => {
+  const saved = loadSaved();
+  if (!saved) return flash("#ccpLoad", "Nothing saved");
+  stopCCP();
+  project = saved;
+  currentSpriteId = project.sprites[0].id;
+  $("#ccpName").value = project.name;
+  redrawEditor(); drawStage();
+});
+$("#ccpNew").addEventListener("click", async () => {
+  const sure = await askText("Start again", "Type the name of the new project. The one you have now is replaced.", "My game");
+  if (!sure) return;
+  stopCCP();
+  project = blankProject();
+  project.name = sure;
+  currentSpriteId = project.sprites[0].id;
+  $("#ccpName").value = sure;
+  redrawEditor(); drawStage();
+});
+$("#ccpName").addEventListener("change", () => { project.name = $("#ccpName").value; });
+
+/* Exporting a game means shipping this page with the project attached to the
+   front of it. One file, no server, and it plays with exactly the engine it
+   was built with — including on a machine that has never heard of Pro Coder. */
+$("#ccpExport").addEventListener("click", () => {
+  project.name = $("#ccpName").value.trim() || "My game";
+  const payload = JSON.stringify(project).replace(/</g, "\\u003c");
+  const page = PRISTINE_SOURCE.replace("<head>",
+    () => "<head>\n<script>window.CCP_PLAY = " + payload + ";<\/script>");
+  const file = project.name.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "ccp-game";
+  download(file + ".html", page);
+  flash("#ccpExport", "Exported");
+});
+
+$("#ccpFull").addEventListener("click", () => {
+  $("#ccp").classList.toggle("playing");
+  flash("#ccpFull", $("#ccp").classList.contains("playing") ? "Editor back" : "Full stage");
+});
+/* Wrapped, not passed straight in: the engine is the next script down the
+   page, so its functions do not exist yet at this line. */
+$("#ccpRun").addEventListener("click", () => startCCP());
+$("#ccpStop").addEventListener("click", () => stopCCP());
+</script>
+
+<script>
+"use strict";
+/* ===================================================================
+   The CCP engine: what happens when you press Go.
+
+   Every script is a generator. A generator that yields once per loop turn is
+   all it takes to make "forever" and "wait" behave the way a child expects —
+   several scripts running at once, none of them freezing the page — without a
+   scheduler worth the name.
+   =================================================================== */
+
+const stageCanvas = $("#stage"), sctx = stageCanvas.getContext("2d");
+const STOP_SCRIPT = { stopScript: true };
+
+let running = false, over = null, actors = [], threads = [], bullets = [], particles = [];
+let clock = 0, DT = 0, lastTS = 0, rafID = null, timerBase = 0, answer = "";
+let hud = null, effects = null;
+const keys = new Set();
+const mouse = { x:0, y:0, down:false };
+
+const COLOUR_CSS = { black:"#12151c", white:"#ffffff", red:"#ff4d4d", orange:"#ff9f1a",
+  yellow:"#ffd93d", green:"#4cd964", blue:"#4c97ff", purple:"#9966ff", pink:"#ff6ec7",
+  grey:"#8a93a6" };
+
+function freshHud(){
+  return { score:0, lives:3, countdown:null, splash:"", splashUntil:0, background:"white" };
+}
+function makeActor(def, isClone){
+  return { def, name:def.name, look:def.look, x:def.x, y:def.y, dir:def.dir, size:def.size,
+           visible:def.visible, colour:def.colour || "pink", vx:0, vy:0,
+           say:"", sayUntil:0, think:false, trailOn:false, trail:[], spin:0,
+           isClone:!!isClone, touchState:{}, dead:false };
+}
+function actorFor(def){ return actors.find(a => a.def === def && !a.isClone); }
+function isHat(b){ return b && BLOCKS[b.op] && BLOCKS[b.op].shape === "hat"; }
+
+function startCCP(){
+  stopCCP();
+  ensureAudio();
+  running = true; over = null; clock = 0; lastTS = 0; timerBase = 0; answer = "";
+  hud = freshHud(); effects = { shake:0, timeWarp:1 };
+  bullets = []; particles = []; threads = [];
+  actors = project.sprites.map(d => makeActor(d, false));
+  eachScript((script, def) => {
+    if (isHat(script.blocks[0]) && script.blocks[0].op === "whenFlag") startScript(script, actorFor(def));
+  });
+  $("#stageStatus").textContent = "running";
+  rafID = requestAnimationFrame(tick);
+}
+function stopCCP(){
+  running = false;
+  if (rafID) cancelAnimationFrame(rafID);
+  rafID = null; threads = []; bullets = []; particles = []; actors = [];
+  const status = $("#stageStatus");
+  if (status) status.textContent = "stopped";
+  drawStage();
+}
+function eachScript(fn){
+  project.sprites.forEach(def => def.scripts.forEach(script => fn(script, def)));
+}
+function startScript(script, actor){
+  if (!actor || actor.dead) return null;
+  const t = { actor, script, gen: runStack(script.blocks.slice(1), actor), done:false };
+  threads.push(t);
+  return t;
+}
+function startMatching(match){
+  const started = [];
+  eachScript((script, def) => {
+    const hat = script.blocks[0];
+    if (!isHat(hat) || !match(hat, def)) return;
+    actors.filter(a => a.def === def).forEach(a => {
+      const t = startScript(script, a);
+      if (t) started.push(t);
+    });
+  });
+  return started;
+}
+
+/* ---------------- the loop ---------------- */
+function tick(ts){
+  if (!running) return;
+  if (!lastTS) lastTS = ts;
+  DT = Math.min((ts - lastTS) / 1000, 0.1) * effects.timeWarp;
+  lastTS = ts;
+  clock += DT;
+
+  if (!over) {
+    stepThreads();
+    stepActors();
+    stepTouchHats();
+    stepBullets();
+    stepCountdown();
+  }
+  stepParticles();
+  if (effects.shake > 0) effects.shake = Math.max(0, effects.shake - DT);
+  drawStage();
+  rafID = requestAnimationFrame(tick);
+}
+function stepThreads(){
+  const list = threads.slice();
+  list.forEach(t => {
+    if (t.done) return;
+    try {
+      if (t.gen.next().done) t.done = true;
+    } catch (e) {
+      if (e !== STOP_SCRIPT) { t.done = true; console.error(e); }
+      else t.done = true;
+    }
+  });
+  threads = threads.filter(t => !t.done);
+}
+function stepActors(){
+  actors.forEach(a => {
+    if (a.vx || a.vy) { a.x += a.vx * DT * 60; a.y += a.vy * DT * 60; }
+    if (a.trailOn) {
+      a.trail.push({ x:a.x, y:a.y, hue:(clock * 180) % 360 });
+      if (a.trail.length > 90) a.trail.shift();
+    } else if (a.trail.length) a.trail.shift();
+    if (a.sayUntil && clock > a.sayUntil) { a.say = ""; a.sayUntil = 0; }
+  });
+}
+function stepTouchHats(){
+  eachScript((script, def) => {
+    const hat = script.blocks[0];
+    if (!isHat(hat) || hat.op !== "whenTouch") return;
+    actors.filter(a => a.def === def).forEach(a => {
+      const key = def.id + ":" + def.scripts.indexOf(script);
+      const now = touchingWhat(a, hat.args.other);
+      if (now && !a.touchState[key]) startScript(script, a);
+      a.touchState[key] = now;
+    });
+  });
+}
+function stepBullets(){
+  bullets.forEach(b => { b.x += b.vx * DT * 60; b.y += b.vy * DT * 60; });
+  bullets = bullets.filter(b => Math.abs(b.x) < 260 && Math.abs(b.y) < 200);
+}
+function stepCountdown(){
+  if (hud.countdown === null) return;
+  hud.countdown = Math.max(0, hud.countdown - DT);
+  if (hud.countdown === 0) { hud.countdown = null; endGame("time is up"); }
+}
+function stepParticles(){
+  particles.forEach(p => {
+    p.x += p.vx * DT * 60; p.y += p.vy * DT * 60; p.vy -= 12 * DT * 60 * 0.02; p.life -= DT;
+  });
+  particles = particles.filter(p => p.life > 0);
+}
+function endGame(text){
+  over = text;
+  threads = [];
+  $("#stageStatus").textContent = "game over";
+}
+
+/* ---------------- running blocks ---------------- */
+function* runStack(blocks, a){
+  for (const b of blocks) {
+    if (!running || a.dead || over) return;
+    yield* runBlock(b, a);
+  }
+}
+function* wait(secs){
+  const end = clock + Math.max(0, secs);
+  while (clock < end) { if (!running) return; yield; }
+}
+function* runBlock(b, a){
+  const v = key => evalExpr(b.args[key], a);
+  const n = key => num(evalExpr(b.args[key], a));
+  switch (b.op) {
+    /* ---- motion ---- */
+    case "move": { const d = n("steps"); a.x += Math.sin(rad(a.dir)) * d; a.y += Math.cos(rad(a.dir)) * d; break; }
+    case "turnRight": a.dir = wrapDir(a.dir + n("degrees")); break;
+    case "turnLeft": a.dir = wrapDir(a.dir - n("degrees")); break;
+    case "goXY": a.x = n("x"); a.y = n("y"); break;
+    case "glide": {
+      const secs = Math.max(0.016, n("secs")), tx = n("x"), ty = n("y");
+      const sx = a.x, sy = a.y, end = clock + secs;
+      while (clock < end) {
+        const k = 1 - (end - clock) / secs;
+        a.x = sx + (tx - sx) * k; a.y = sy + (ty - sy) * k;
+        yield;
+        if (!running) return;
+      }
+      a.x = tx; a.y = ty; break;
+    }
+    case "changeX": a.x += n("dx"); break;
+    case "setX": a.x = n("x"); break;
+    case "changeY": a.y += n("dy"); break;
+    case "setY": a.y = n("y"); break;
+    case "point": a.dir = wrapDir(n("dir")); break;
+    case "pointTowards": {
+      const p = pointOf(v("target"), a);
+      if (p) a.dir = wrapDir(Math.atan2(p.x - a.x, p.y - a.y) * 180 / Math.PI);
+      break;
+    }
+    case "bounce": {
+      const r = radiusOf(a);
+      let vx = Math.sin(rad(a.dir)), vy = Math.cos(rad(a.dir));
+      if (a.x > STAGE_W/2 - r) { a.x = STAGE_W/2 - r; vx = -Math.abs(vx); a.vx = -Math.abs(a.vx); }
+      if (a.x < -STAGE_W/2 + r) { a.x = -STAGE_W/2 + r; vx = Math.abs(vx); a.vx = Math.abs(a.vx); }
+      if (a.y > STAGE_H/2 - r) { a.y = STAGE_H/2 - r; vy = -Math.abs(vy); a.vy = -Math.abs(a.vy); }
+      if (a.y < -STAGE_H/2 + r) { a.y = -STAGE_H/2 + r; vy = Math.abs(vy); a.vy = Math.abs(a.vy); }
+      a.dir = wrapDir(Math.atan2(vx, vy) * 180 / Math.PI);
+      break;
+    }
+    case "setSpeed": a.vx = n("vx"); a.vy = n("vy"); break;
+
+    /* ---- looks ---- */
+    case "say": a.say = String(v("text")); a.think = false; a.sayUntil = 0; break;
+    case "think": a.say = String(v("text")); a.think = true; a.sayUntil = 0; break;
+    case "sayFor": {
+      a.say = String(v("text")); a.think = false; a.sayUntil = 0;
+      yield* wait(n("secs"));
+      a.say = ""; break;
+    }
+    case "costume": a.look = String(v("look")); break;
+    case "changeSize": a.size = clamp(a.size + n("by"), 10, 500); break;
+    case "setSize": a.size = clamp(n("size"), 10, 500); break;
+    case "show": a.visible = true; break;
+    case "hide": a.visible = false; break;
+    case "setColour": a.colour = String(v("colour")); break;
+    case "front": { const i = actors.indexOf(a); if (i >= 0) { actors.splice(i,1); actors.push(a); } break; }
+
+    /* ---- events ---- */
+    case "broadcast": startMatching(h => h.op === "whenReceive" && h.args.msg === b.args.msg); break;
+    case "broadcastWait": {
+      const started = startMatching(h => h.op === "whenReceive" && h.args.msg === b.args.msg);
+      while (started.some(t => !t.done)) { yield; if (!running) return; }
+      break;
+    }
+
+    /* ---- control ---- */
+    case "wait": yield* wait(n("secs")); break;
+    case "repeat": {
+      const times = Math.max(0, Math.round(n("times")));
+      for (let i = 0; i < times; i++) { yield* runStack(b.body, a); yield; if (!running || a.dead) return; }
+      break;
+    }
+    case "forever":
+      for (;;) { yield* runStack(b.body, a); yield; if (!running || a.dead) return; }
+    case "if": if (truth(evalExpr(b.args.cond, a))) yield* runStack(b.body, a); break;
+    case "ifElse":
+      if (truth(evalExpr(b.args.cond, a))) yield* runStack(b.body, a);
+      else yield* runStack(b.body2, a);
+      break;
+    case "waitUntil":
+      while (!truth(evalExpr(b.args.cond, a))) { yield; if (!running) return; }
+      break;
+    case "repeatUntil":
+      while (!truth(evalExpr(b.args.cond, a))) { yield* runStack(b.body, a); yield; if (!running || a.dead) return; }
+      break;
+    case "stop": {
+      const what = b.args.what;
+      if (what === "all") { stopCCP(); return; }
+      if (what === "this script") throw STOP_SCRIPT;
+      threads.forEach(t => { if (t.actor === a) t.done = true; });
+      break;
+    }
+    case "clone": {
+      const def = defNamed(v("who"), a);
+      if (def) makeClone(def, a);
+      break;
+    }
+    case "deleteClone":
+      if (a.isClone) { a.dead = true; actors = actors.filter(x => x !== a); throw STOP_SCRIPT; }
+      break;
+
+    /* ---- sensing ---- */
+    case "ask": {
+      let done = false;
+      askText("Question", String(v("question")), "").then(r => { answer = r || ""; done = true; });
+      while (!done) { yield; if (!running) return; }
+      break;
+    }
+    case "resetTimer": timerBase = clock; break;
+
+    /* ---- variables ---- */
+    case "setVar": { const vr = varNamed(b.args.name); if (vr) vr.value = v("value"); renderVars(); break; }
+    case "changeVar": { const vr = varNamed(b.args.name); if (vr) vr.value = num(vr.value) + n("by"); renderVars(); break; }
+    case "showVar": { const vr = varNamed(b.args.name); if (vr) vr.shown = true; renderVars(); break; }
+    case "hideVar": { const vr = varNamed(b.args.name); if (vr) vr.shown = false; renderVars(); break; }
+
+    /* ---- arcade ---- */
+    case "setScore": hud.score = n("score"); break;
+    case "changeScore": hud.score += n("by"); break;
+    case "setLives": hud.lives = n("lives"); break;
+    case "changeLives":
+      hud.lives += n("by");
+      if (hud.lives <= 0) { hud.lives = 0; endGame("you lose"); return; }
+      break;
+    case "gameOver": endGame(String(v("result"))); return;
+    case "countdown": hud.countdown = Math.max(0, n("secs")); break;
+    case "splash": hud.splash = String(v("text")); hud.splashUntil = clock + 1.8; break;
+    case "background": hud.background = String(v("colour")); break;
+    case "shoot": {
+      const speed = n("speed");
+      bullets.push({ x:a.x, y:a.y, vx:Math.sin(rad(a.dir)) * speed, vy:Math.cos(rad(a.dir)) * speed,
+                     look:String(v("look")) || "🔴", owner:a });
+      beep("zap"); break;
+    }
+    case "spawnEdge": {
+      const def = defNamed(v("who"), a);
+      if (def) {
+        const c = makeClone(def, a);
+        const side = Math.floor(Math.random() * 4);
+        if (side === 0) { c.x = -STAGE_W/2 + 10; c.y = rnd(-STAGE_H/2, STAGE_H/2); }
+        else if (side === 1) { c.x = STAGE_W/2 - 10; c.y = rnd(-STAGE_H/2, STAGE_H/2); }
+        else if (side === 2) { c.y = STAGE_H/2 - 10; c.x = rnd(-STAGE_W/2, STAGE_W/2); }
+        else { c.y = -STAGE_H/2 + 10; c.x = rnd(-STAGE_W/2, STAGE_W/2); }
+      }
+      break;
+    }
+    case "playSound": beep(String(v("sound"))); break;
+
+    /* ---- CCP's own ---- */
+    case "confetti": {
+      for (let i = 0; i < 60; i++)
+        particles.push({ x:a.x, y:a.y, vx:rnd(-4,4), vy:rnd(0,6), life:rnd(0.6,1.6),
+                         hue:Math.floor(rnd(0,360)), size:rnd(3,7) });
+      beep("coin"); break;
+    }
+    case "shake": effects.shake = Math.max(effects.shake, n("secs")); break;
+    case "trail": a.trailOn = v("state") === "on"; if (!a.trailOn) a.trail = []; break;
+    case "timeWarp": effects.timeWarp = clamp(n("rate"), 0.05, 5); break;
+    case "pop": {
+      for (let i = 0; i < 40; i++)
+        particles.push({ x:a.x, y:a.y, vx:rnd(-5,5), vy:rnd(-2,6), life:rnd(0.4,1.1),
+                         hue:Math.floor(rnd(0,360)), size:rnd(2,6) });
+      a.visible = false; beep("buzz"); break;
+    }
+    case "spin": {
+      const turns = Math.max(1, Math.round(n("times"))), end = clock + 0.6 * turns, start = a.dir;
+      while (clock < end) { a.dir = wrapDir(start + (1 - (end - clock) / (0.6 * turns)) * 360 * turns); yield; if (!running) return; }
+      a.dir = start; break;
+    }
+    default: break;   // reporters never appear in a stack
+  }
+}
+
+function makeClone(def, from){
+  const source = actors.find(x => x.def === def) || makeActor(def, false);
+  const c = makeActor(def, true);
+  c.x = source.x; c.y = source.y; c.dir = source.dir; c.size = source.size;
+  c.look = source.look; c.visible = true; c.colour = source.colour;
+  actors.push(c);
+  def.scripts.forEach(script => {
+    if (isHat(script.blocks[0]) && script.blocks[0].op === "whenClone") startScript(script, c);
+  });
+  return c;
+}
+function defNamed(name, a){
+  if (name === "myself") return a.def;
+  return project.sprites.find(s => s.name === name) || null;
+}
+
+/* ---------------- expressions ---------------- */
+function evalExpr(e, a){
+  if (e === null || e === undefined) return "";
+  if (typeof e !== "object") return e;
+  const v = key => evalExpr(e.args[key], a);
+  const n = key => num(evalExpr(e.args[key], a));
+  switch (e.op) {
+    case "xpos": return round2(a.x);
+    case "ypos": return round2(a.y);
+    case "direction": return round2(a.dir);
+    case "size": return a.size;
+    case "look": return a.look;
+    case "touching": return touchingWhat(a, e.args.what);
+    case "keyPressed": return keyHeld(e.args.key);
+    case "mouseDown": return mouse.down;
+    case "hitByBullet": {
+      const i = bullets.findIndex(b => b.owner !== a && dist(b, a) < radiusOf(a) + 6);
+      if (i < 0) return false;
+      bullets.splice(i, 1);
+      return true;
+    }
+    case "mouseX": return round2(mouse.x);
+    case "mouseY": return round2(mouse.y);
+    case "distanceTo": { const p = pointOf(v("what"), a); return p ? round2(Math.hypot(p.x - a.x, p.y - a.y)) : 0; }
+    case "answer": return answer;
+    case "timer": return round2(clock - timerBase);
+    case "add": return n("a") + n("b");
+    case "sub": return n("a") - n("b");
+    case "mul": return n("a") * n("b");
+    case "div": { const d = n("b"); return d === 0 ? 0 : n("a") / d; }
+    case "random": { const lo = n("from"), hi = n("to"); return Math.floor(rnd(Math.min(lo,hi), Math.max(lo,hi) + 1)); }
+    case "lt": return compare(v("a"), v("b")) < 0;
+    case "eq": return compare(v("a"), v("b")) === 0;
+    case "gt": return compare(v("a"), v("b")) > 0;
+    case "and": return truth(v("a")) && truth(v("b"));
+    case "or": return truth(v("a")) || truth(v("b"));
+    case "not": return !truth(v("a"));
+    case "join": return String(v("a")) + String(v("b"));
+    case "letterOf": return String(v("text")).charAt(Math.max(0, Math.round(n("n")) - 1));
+    case "lengthOf": return String(v("text")).length;
+    case "mod": { const d = n("b"); return d === 0 ? 0 : ((n("a") % d) + d) % d; }
+    case "round": return Math.round(n("a"));
+    case "mathop": {
+      const x = n("a");
+      switch (e.args.fn) {
+        case "abs": return Math.abs(x);
+        case "floor": return Math.floor(x);
+        case "ceil": return Math.ceil(x);
+        case "sqrt": return x < 0 ? 0 : round2(Math.sqrt(x));
+        case "sin": return round2(Math.sin(rad(x)));
+        case "cos": return round2(Math.cos(rad(x)));
+        default: return -x;
+      }
+    }
+    case "varRep": { const vr = varNamed(e.args.name); return vr ? vr.value : 0; }
+    case "score": return hud ? hud.score : 0;
+    case "lives": return hud ? hud.lives : 0;
+    case "timeLeft": return hud && hud.countdown !== null ? round2(hud.countdown) : 0;
+    default: return "";
+  }
+}
+function truth(x){ return x === true || x === "true" || (typeof x === "number" && x !== 0); }
+function num(x){ const f = parseFloat(x); return isNaN(f) ? 0 : f; }
+function compare(a, b){
+  const na = parseFloat(a), nb = parseFloat(b);
+  if (!isNaN(na) && !isNaN(nb)) return na === nb ? 0 : (na < nb ? -1 : 1);
+  const sa = String(a).toLowerCase(), sb = String(b).toLowerCase();
+  return sa === sb ? 0 : (sa < sb ? -1 : 1);
+}
+function rad(d){ return d * Math.PI / 180; }
+function wrapDir(d){ d = ((d + 180) % 360 + 360) % 360 - 180; return d; }
+function clamp(x, lo, hi){ return Math.max(lo, Math.min(hi, x)); }
+function rnd(lo, hi){ return lo + Math.random() * (hi - lo); }
+function round2(x){ return Math.round(x * 100) / 100; }
+function dist(p, q){ return Math.hypot(p.x - q.x, p.y - q.y); }
+function radiusOf(a){ return 17 * (a.size / 100); }
+function pointOf(name, a){
+  if (name === "mouse") return { x:mouse.x, y:mouse.y };
+  const other = actors.find(x => x !== a && x.name === name);
+  return other ? { x:other.x, y:other.y } : null;
+}
+function touchingWhat(a, what){
+  const r = radiusOf(a);
+  if (what === "edge")
+    return Math.abs(a.x) >= STAGE_W/2 - r || Math.abs(a.y) >= STAGE_H/2 - r;
+  if (what === "mouse") return dist(a, mouse) < r + 4;
+  return actors.some(o => o !== a && !o.dead && o.visible && o.name === what && dist(a, o) < r + radiusOf(o));
+}
+function keyHeld(name){
+  if (name === "any") return keys.size > 0;
+  return keys.has(name);
+}
+</script>
+
+<script>
+"use strict";
+/* ===================================================================
+   Drawing the stage, and the keyboard and mouse that drive it.
+   =================================================================== */
+
+function onStage(){ return running ? actors : project.sprites.map(d => makeActor(d, false)); }
+
+function drawStage(){
+  if (!project || !sctx) return;
+  const w = STAGE_W, h = STAGE_H;
+  sctx.setTransform(1, 0, 0, 1, 0, 0);
+  sctx.clearRect(0, 0, w, h);
+  sctx.fillStyle = COLOUR_CSS[(hud && hud.background) || "white"] || "#ffffff";
+  sctx.fillRect(0, 0, w, h);
+
+  if (effects && effects.shake > 0) {
+    sctx.translate(rnd(-6, 6), rnd(-6, 6));
+  }
+
+  const list = onStage();
+
+  list.forEach(a => {
+    if (!a.trail || !a.trail.length) return;
+    a.trail.forEach((p, i) => {
+      sctx.globalAlpha = (i / a.trail.length) * 0.65;
+      sctx.fillStyle = "hsl(" + p.hue + ",90%,60%)";
+      sctx.beginPath();
+      sctx.arc(w/2 + p.x, h/2 - p.y, 5 * (a.size / 100), 0, Math.PI * 2);
+      sctx.fill();
+    });
+    sctx.globalAlpha = 1;
+  });
+
+  bullets.forEach(b => {
+    sctx.font = "18px system-ui, sans-serif";
+    sctx.textAlign = "center"; sctx.textBaseline = "middle";
+    sctx.fillText(b.look, w/2 + b.x, h/2 - b.y);
+  });
+
+  list.forEach(a => {
+    if (!a.visible) return;
+    const px = w/2 + a.x, py = h/2 - a.y;
+    sctx.save();
+    sctx.translate(px, py);
+    sctx.rotate(rad(a.dir - 90));
+    sctx.font = Math.max(8, 34 * (a.size / 100)) + "px system-ui, 'Noto Color Emoji', sans-serif";
+    sctx.textAlign = "center"; sctx.textBaseline = "middle";
+    sctx.fillStyle = COLOUR_CSS[a.colour] || "#ff6ec7";
+    sctx.fillText(a.look, 0, 0);
+    sctx.restore();
+    if (a.say) drawBubble(a.say, px, py - radiusOf(a) - 10, a.think);
+  });
+
+  particles.forEach(p => {
+    sctx.globalAlpha = Math.max(0, Math.min(1, p.life));
+    sctx.fillStyle = "hsl(" + p.hue + ",90%,60%)";
+    sctx.fillRect(w/2 + p.x, h/2 - p.y, p.size, p.size);
+  });
+  sctx.globalAlpha = 1;
+
+  drawWatchers();
+
+  if (running && hud) {
+    sctx.font = "bold 15px system-ui, sans-serif";
+    sctx.textBaseline = "top";
+    sctx.textAlign = "right";
+    sctx.fillStyle = "#1b1f2a";
+    sctx.fillText("score " + round2(hud.score), w - 10, 9);
+    sctx.textAlign = "left";
+    sctx.fillText("♥".repeat(Math.max(0, Math.min(9, Math.round(hud.lives)))), 10, 9);
+    if (hud.countdown !== null) {
+      sctx.textAlign = "center";
+      sctx.fillText(Math.ceil(hud.countdown) + "s", w/2, 9);
+    }
+    if (hud.splash && clock < hud.splashUntil) {
+      sctx.textAlign = "center"; sctx.textBaseline = "middle";
+      sctx.font = "bold 34px system-ui, sans-serif";
+      sctx.fillStyle = "#101520";
+      sctx.fillText(hud.splash, w/2, h/2);
+    }
+  }
+
+  if (over) {
+    sctx.fillStyle = "rgba(10,13,20,.72)";
+    sctx.fillRect(0, 0, w, h);
+    sctx.fillStyle = "#ffffff";
+    sctx.textAlign = "center"; sctx.textBaseline = "middle";
+    sctx.font = "bold 36px system-ui, sans-serif";
+    sctx.fillText(over, w/2, h/2 - 10);
+    sctx.font = "15px system-ui, sans-serif";
+    sctx.fillText("score " + round2(hud.score) + " — press ⚑ Go to play again", w/2, h/2 + 28);
+  } else if (!running) {
+    sctx.fillStyle = "rgba(10,13,20,.55)";
+    sctx.fillRect(0, h - 34, w, 34);
+    sctx.fillStyle = "#e9edf6";
+    sctx.textAlign = "center"; sctx.textBaseline = "middle";
+    sctx.font = "14px system-ui, sans-serif";
+    sctx.fillText("press ⚑ Go to run your blocks", w/2, h - 17);
+  }
+}
+function drawWatchers(){
+  if (!project) return;
+  let y = 30;
+  project.vars.filter(v => v.shown).forEach(v => {
+    const text = v.name + ": " + v.value;
+    sctx.font = "bold 12px system-ui, sans-serif";
+    const tw = sctx.measureText(text).width + 14;
+    sctx.fillStyle = "rgba(255,255,255,.85)";
+    roundRect(8, y, tw, 20, 6); sctx.fill();
+    sctx.strokeStyle = "rgba(0,0,0,.15)"; sctx.stroke();
+    sctx.fillStyle = "#1b1f2a";
+    sctx.textAlign = "left"; sctx.textBaseline = "middle";
+    sctx.fillText(text, 15, y + 10);
+    y += 25;
+  });
+}
+function drawBubble(text, x, y, think){
+  sctx.font = "13px system-ui, sans-serif";
+  const words = String(text).slice(0, 120);
+  const tw = Math.min(200, sctx.measureText(words).width + 18);
+  const bx = Math.max(4, Math.min(STAGE_W - tw - 4, x - tw/2)), by = Math.max(4, y - 30);
+  sctx.fillStyle = "#ffffff";
+  sctx.strokeStyle = "rgba(0,0,0,.2)";
+  roundRect(bx, by, tw, 26, 10); sctx.fill(); sctx.stroke();
+  sctx.beginPath();
+  if (think) { sctx.arc(x, by + 32, 4, 0, Math.PI * 2); sctx.fill(); }
+  else { sctx.moveTo(x - 5, by + 25); sctx.lineTo(x + 5, by + 25); sctx.lineTo(x, by + 34); sctx.closePath(); sctx.fill(); }
+  sctx.fillStyle = "#12151c";
+  sctx.textAlign = "left"; sctx.textBaseline = "middle";
+  sctx.fillText(words, bx + 9, by + 13, tw - 16);
+}
+function roundRect(x, y, w, h, r){
+  sctx.beginPath();
+  sctx.moveTo(x + r, y);
+  sctx.arcTo(x + w, y, x + w, y + h, r);
+  sctx.arcTo(x + w, y + h, x, y + h, r);
+  sctx.arcTo(x, y + h, x, y, r);
+  sctx.arcTo(x, y, x + w, y, r);
+  sctx.closePath();
+}
+
+/* ---------------- keyboard and mouse ---------------- */
+function keyName(e){
+  switch (e.key) {
+    case " ": return "space";
+    case "ArrowUp": return "up arrow";
+    case "ArrowDown": return "down arrow";
+    case "ArrowLeft": return "left arrow";
+    case "ArrowRight": return "right arrow";
+    case "Enter": return "enter";
+    default: return e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  }
+}
+window.addEventListener("keydown", e => {
+  if (!$("#ccp").classList.contains("on")) return;
+  if (e.target.matches("input,select,textarea")) return;
+  const name = keyName(e);
+  if (["space","up arrow","down arrow","left arrow","right arrow"].includes(name)) e.preventDefault();
+  if (keys.has(name)) return;           // holding a key is one press, not many
+  keys.add(name);
+  if (running && !over) startMatching(h => h.op === "whenKey" && (h.args.key === name || h.args.key === "any"));
+});
+window.addEventListener("keyup", e => keys.delete(keyName(e)));
+window.addEventListener("blur", () => keys.clear());
+
+function stagePoint(e){
+  const r = stageCanvas.getBoundingClientRect();
+  return { x: ((e.clientX - r.left) / r.width) * STAGE_W - STAGE_W/2,
+           y: STAGE_H/2 - ((e.clientY - r.top) / r.height) * STAGE_H };
+}
+stageCanvas.addEventListener("pointermove", e => { const p = stagePoint(e); mouse.x = p.x; mouse.y = p.y; });
+stageCanvas.addEventListener("pointerdown", e => {
+  const p = stagePoint(e);
+  mouse.x = p.x; mouse.y = p.y; mouse.down = true;
+  if (!running || over) return;
+  // Topmost first: the sprite drawn last is the one on top.
+  for (let i = actors.length - 1; i >= 0; i--) {
+    const a = actors[i];
+    if (!a.visible || dist(a, p) > radiusOf(a)) continue;
+    a.def.scripts.forEach(script => {
+      if (isHat(script.blocks[0]) && script.blocks[0].op === "whenClicked") startScript(script, a);
+    });
+    break;
+  }
+});
+window.addEventListener("pointerup", () => { mouse.down = false; });
+
+/* ---------------- sound ---------------- */
+let audio = null;
+function ensureAudio(){
+  if (audio) return audio;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return null;
+  try { audio = new Ctx(); } catch (e) { audio = null; }
+  return audio;
+}
+const SOUNDS = {
+  beep:{ f:660, to:660, t:0.12, wave:"square" }, pop:{ f:440, to:880, t:0.09, wave:"sine" },
+  zap:{ f:900, to:120, t:0.16, wave:"sawtooth" }, coin:{ f:880, to:1320, t:0.18, wave:"square" },
+  jump:{ f:300, to:700, t:0.15, wave:"triangle" }, buzz:{ f:160, to:90, t:0.25, wave:"sawtooth" }
+};
+function beep(kind){
+  const ctx = ensureAudio();
+  const s = SOUNDS[kind] || SOUNDS.pop;
+  if (!ctx) return;
+  if (ctx.state === "suspended") ctx.resume();
+  const osc = ctx.createOscillator(), gain = ctx.createGain();
+  osc.type = s.wave;
+  osc.frequency.setValueAtTime(s.f, ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(s.to, ctx.currentTime + s.t);
+  gain.gain.setValueAtTime(0.18, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + s.t);
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.start(); osc.stop(ctx.currentTime + s.t + 0.02);
+}
+
+/* ---------------- start up ---------------- */
+/* An exported game is this same page with a project stapled to the front of
+   it, so the only difference here is that there is nothing to edit. */
+function bootPlayer(){
+  project = window.CCP_PLAY;
+  currentSpriteId = project.sprites[0].id;
+  document.title = project.name || "CCP game";
+  showView("ccp");
+  $("#ccp").classList.add("playing", "player");
+  ["ccpFull","ccpSave","ccpLoad","ccpExport","ccpNew"].forEach(id => { $("#" + id).style.display = "none"; });
+  $$("#ccp [data-exit]").forEach(b => { b.style.display = "none"; });
+  $("#ccpName").readOnly = true;
+  $("#ccpName").value = project.name || "CCP game";
+  renderVars();
+  drawStage();
+  const go = () => {
+    window.removeEventListener("pointerdown", go);
+    window.removeEventListener("keydown", go);
+    startCCP();
+  };
+  window.addEventListener("pointerdown", go);
+  window.addEventListener("keydown", go);
+}
+
+if (window.CCP_PLAY) bootPlayer();
+else {
+  project = loadSaved() || blankProject();
+  currentSpriteId = project.sprites[0].id;
+  drawStage();
+}
+</script>
+</body>
+</html>
