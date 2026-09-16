@@ -83,6 +83,9 @@ type Preferences struct {
 	// BaseURL points the studio at something other than Anthropic's own API,
 	// for a gateway or a proxy that speaks the same protocol.
 	BaseURL string `json:"base_url,omitempty"`
+	// ClaudeBin is where Claude Code is on this machine, for an installation
+	// somewhere the studio does not think to look.
+	ClaudeBin string `json:"claude_bin,omitempty"`
 }
 
 // LoadPreferences reads what the studio was told, returning an empty set when

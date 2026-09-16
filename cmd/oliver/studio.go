@@ -29,6 +29,7 @@ taken apart and changed by hand.
   oliver studio play <name>          play a game now
   oliver studio export <name>        write a playable HTML file
   oliver studio export <name> --appimage
+  oliver studio status              what the studio found on this machine
   oliver studio connect [key]        design with Claude instead of offline
   oliver studio disconnect           go back to designing offline
 
@@ -57,6 +58,8 @@ func (a *app) cmdStudio(args []string) error {
 			return a.studioPlay(args[1:])
 		case "connect":
 			return a.studioConnect(args[1:])
+		case "status", "where":
+			return a.studioStatus(args[1:])
 		case "disconnect":
 			return a.studioDisconnect(args[1:])
 		case "-h", "--help", "help":
@@ -130,6 +133,7 @@ func (a *app) studioConnect(args []string) error {
 	fs := a.newFlagSet("studio connect", studioSynopsis)
 	model := fs.String("model", "", "which model to design with (default: claude-opus-5)")
 	use := fs.String("use", "", "how to reach Claude: claude-code (no key needed) or api")
+	bin := fs.String("bin", "", "where Claude Code is, if it is somewhere the studio does not look")
 	endpoint := fs.String("url", "", "an API address to use instead of Anthropic's own, for a gateway or a proxy")
 	if err := parseFlagsAnywhere(fs, args); err != nil {
 		return err
@@ -155,11 +159,30 @@ func (a *app) studioConnect(args []string) error {
 
 	// Designing through the Claude Code already on the machine needs no key at
 	// all, which is the whole reason to offer it.
+	if *bin != "" {
+		prefs.ClaudeBin = *bin
+		if err := gamekit.SavePreferences(prefs); err != nil {
+			return err
+		}
+	}
+
 	switch *use {
 	case "claude-code", "cli", "code":
 		cli := gamekit.FindClaudeCode()
 		if !cli.Available() {
-			return fmt.Errorf("Claude Code is not installed on this machine — install it from claude.com/product/claude-code, or connect with a key instead")
+			u.Warn("Claude Code was not found on this machine.")
+			u.Info("%s", u.Dim("Looked in:"))
+			for _, p := range gamekit.SearchedFor() {
+				u.Info("%s", u.Dim("  "+p))
+			}
+			u.Info("")
+			u.Info("%s", u.Dim("If it is installed somewhere else, say where:"))
+			u.Info("%s", u.Dim("  oliver studio connect --use claude-code --bin /path/to/claude"))
+			u.Info("%s", u.Dim("Find it with:  which claude   (or: ls ~/.local/bin/claude ~/.claude/local/claude)"))
+			u.Info("")
+			u.Info("%s", u.Dim("Otherwise install it from claude.com/product/claude-code, or connect with a key:"))
+			u.Info("%s", u.Dim("  oliver studio connect sk-ant-..."))
+			return fmt.Errorf("Claude Code not found")
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
@@ -214,6 +237,55 @@ func (a *app) studioConnect(args []string) error {
 	u.Info("%s designing with %s, using %s", u.Green("✓"), saved.Model, saved.Source())
 	if prefs.APIKey != "" {
 		u.Info("%s", u.Dim("the key is saved at "+gamekit.SettingsPath()+", readable only by you"))
+	}
+	return nil
+}
+
+// studioStatus says what the studio found and where, which is the answer to
+// "it says Claude Code is not installed" on a machine that has it.
+func (a *app) studioStatus(args []string) error {
+	fs := a.newFlagSet("studio status", studioSynopsis)
+	dir := fs.String("dir", "", "folder holding the games")
+	if err := parseFlagsAnywhere(fs, args); err != nil {
+		return err
+	}
+	u := a.ui
+	s := studio.New(*dir)
+
+	u.Printf("%s", u.Bold("Oliver Studio"))
+	u.Printf("  designing with   %s", s.Assistant.Describe())
+	if source := s.Assistant.Source(); source != "" {
+		u.Printf("  using            %s", source)
+	}
+	u.Printf("  games in         %s", s.Dir)
+	u.Printf("  settings         %s", gamekit.SettingsPath())
+
+	cli := gamekit.FindClaudeCode()
+	if cli.Available() {
+		version, err := cli.Version(context.Background())
+		if err != nil {
+			u.Printf("  Claude Code      found at %s, but it would not run: %v", cli.Bin, err)
+		} else {
+			u.Printf("  Claude Code      %s at %s", version, cli.Bin)
+		}
+	} else {
+		u.Printf("  Claude Code      not found. Looked in:")
+		for _, p := range gamekit.SearchedFor() {
+			u.Printf("                     %s", p)
+		}
+		u.Printf("  %s", u.Dim("if it is elsewhere: oliver studio connect --use claude-code --bin /path/to/claude"))
+	}
+
+	prefs := gamekit.LoadPreferences()
+	if prefs.APIKey != "" {
+		u.Printf("  key              saved in the studio")
+	} else if k := os.Getenv("ANTHROPIC_API_KEY"); k != "" {
+		u.Printf("  key              ANTHROPIC_API_KEY is set")
+	} else {
+		u.Printf("  key              none saved")
+	}
+	if prefs.BaseURL != "" {
+		u.Printf("  address          %s", prefs.BaseURL)
 	}
 	return nil
 }

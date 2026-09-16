@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -29,19 +30,106 @@ type ClaudeCode struct {
 	Timeout time.Duration
 }
 
-// FindClaudeCode looks for the command. A machine without it simply has no
-// second option; nothing about the studio changes.
+// FindClaudeCode looks for the command.
+//
+// Looking on PATH alone is not enough, and the reason is the whole point of
+// this studio being an AppImage: a program opened from a desktop icon gets a
+// minimal PATH — /usr/bin and little else — while Claude Code installs into a
+// home directory. "Claude Code is not installed" would then be wrong on a
+// machine that has it, which is a bad thing to tell somebody about their own
+// computer. So the places it actually installs are looked in by name.
 func FindClaudeCode() *ClaudeCode {
-	bin := os.Getenv("OLIVER_CLAUDE_BIN")
-	if bin == "" {
-		found, err := exec.LookPath("claude")
-		if err != nil {
-			return nil
+	for _, p := range claudeSearch() {
+		if isRunnable(p) {
+			return &ClaudeCode{Bin: p, Timeout: 6 * time.Minute}
 		}
-		bin = found
 	}
-	return &ClaudeCode{Bin: bin, Timeout: 6 * time.Minute}
+	return nil
 }
+
+// claudeSearch is the list of places to look. It is a variable so a test can
+// look somewhere other than the machine it is running on.
+var claudeSearch = claudeCandidates
+
+// claudeCandidates lists every path worth trying, most explicit first.
+func claudeCandidates() []string {
+	var paths []string
+	add := func(p string) {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+
+	// An explicit path is an instruction, not a hint: if one is set, that is
+	// the only place looked at. Guessing elsewhere would quietly ignore
+	// somebody who told the studio exactly what to use — and it is what lets
+	// anyone who would rather the studio left Claude Code alone point it at
+	// nothing and mean it.
+	// A path somebody put into the studio beats one in the environment: it is
+	// the more deliberate of the two, and it is the one they just typed.
+	if saved := LoadPreferences().ClaudeBin; saved != "" {
+		return []string{saved}
+	}
+	if explicit := os.Getenv("OLIVER_CLAUDE_BIN"); explicit != "" {
+		return []string{explicit}
+	}
+	if found, err := exec.LookPath("claude"); err == nil {
+		add(found)
+	}
+
+	home, err := os.UserHomeDir()
+	if err == nil {
+		for _, rel := range []string{
+			".local/bin/claude",
+			".claude/local/claude",
+			".claude/local/node_modules/.bin/claude",
+			".npm-global/bin/claude",
+			".npm/bin/claude",
+			".bun/bin/claude",
+			".yarn/bin/claude",
+			"node_modules/.bin/claude",
+			"bin/claude",
+		} {
+			add(filepath.Join(home, rel))
+		}
+		// Node installed through nvm or fnm puts its binaries under a
+		// version directory, and which version is anybody's guess.
+		for _, pattern := range []string{
+			".nvm/versions/node/*/bin/claude",
+			".local/share/fnm/node-versions/*/installation/bin/claude",
+			".volta/bin/claude",
+		} {
+			matches, _ := filepath.Glob(filepath.Join(home, pattern))
+			for _, m := range matches {
+				add(m)
+			}
+		}
+	}
+
+	for _, p := range []string{
+		"/usr/local/bin/claude",
+		"/usr/bin/claude",
+		"/snap/bin/claude",
+		"/opt/homebrew/bin/claude",
+		"/opt/claude-code/bin/claude",
+	} {
+		add(p)
+	}
+	return paths
+}
+
+// isRunnable reports whether a path is something this process can execute.
+func isRunnable(path string) bool {
+	info, err := os.Stat(path) // follows symlinks, which is what an installer leaves
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.Mode().Perm()&0o111 != 0
+}
+
+// SearchedFor lists where the studio looked, for when it found nothing. A
+// person who knows their own machine can then see what was missed.
+func SearchedFor() []string { return claudeSearch() }
 
 // Available reports whether this is a usable provider.
 func (c *ClaudeCode) Available() bool { return c != nil && c.Bin != "" }

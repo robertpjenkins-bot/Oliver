@@ -13,6 +13,26 @@ import (
 	"github.com/robertpjenkins-bot/oliver/internal/ui"
 )
 
+// No test reaches Claude. The studio uses the Claude Code installed on the
+// machine when it finds one, so a suite run on a developer's own computer
+// would design games by really asking it — minutes per test, and their money.
+// Pointing it at a path that does not exist is how anyone says "leave it
+// alone", and the suite says it first.
+func TestMain(m *testing.M) {
+	sandbox, err := os.MkdirTemp("", "oliver-tests-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("OLIVER_CLAUDE_BIN", filepath.Join(sandbox, "no-claude-code-here"))
+	os.Setenv("OLIVER_STUDIO_SETTINGS", filepath.Join(sandbox, "studio.json"))
+	os.Setenv("ANTHROPIC_API_KEY", "")
+	os.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+
+	code := m.Run()
+	os.RemoveAll(sandbox)
+	os.Exit(code)
+}
+
 // system is a synthetic Linux install with compatibility runtimes on it,
 // used to drive the command-line interface end to end.
 type system struct {

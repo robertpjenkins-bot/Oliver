@@ -40,6 +40,15 @@
           <div class="row" id="clirow" hidden>
             <button id="usecli" class="primary">use the Claude Code on this machine — no key</button>
           </div>
+          <details class="advanced" id="clihelp" hidden>
+            <summary>Claude Code is installed, but not found</summary>
+            <p class="note">A window opened from a desktop icon cannot see everything a terminal can. Run <code>which claude</code> in a terminal and put the answer here.</p>
+            <div class="row">
+              <input id="clibin" placeholder="/home/you/.local/bin/claude">
+              <button id="setclibin">use this one</button>
+            </div>
+            <p class="note" id="clisearched"></p>
+          </details>
           <div class="row">
             <input id="apikey" type="password" placeholder="sk-ant-… from console.anthropic.com" autocomplete="off">
             <select id="model"></select>

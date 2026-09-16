@@ -193,6 +193,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		"models":     gamekit.Models,
 		"genres":     gamekit.Genres,
 		"claudeCode": cli.Available(),
+		"searched":   gamekit.SearchedFor(),
 		"endpoint":   gamekit.LoadPreferences().BaseURL,
 	})
 }
@@ -208,6 +209,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		Key        string `json:"key"`
 		Model      string `json:"model"`
 		Use        string `json:"use"`
+		Bin        string `json:"bin"`
 		URL        string `json:"url"`
 		Disconnect bool   `json:"disconnect"`
 	}
@@ -253,9 +255,20 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	// Designing through the Claude Code already installed here needs no key,
 	// which is the whole point of offering it.
 	if req.Use == "claude-code" {
+		if req.Bin != "" {
+			prefs.ClaudeBin = strings.TrimSpace(req.Bin)
+			if err := gamekit.SavePreferences(prefs); err != nil {
+				fail(w, http.StatusInternalServerError, "%v", err)
+				return
+			}
+		}
 		cli := gamekit.FindClaudeCode()
 		if !cli.Available() {
-			fail(w, http.StatusBadRequest, "Claude Code is not installed on this machine")
+			fail(w, http.StatusBadRequest,
+				"Claude Code was not found. Looked in:\n  %s\n\nIf it is somewhere else, put the path in the box "+
+					"(find it with: which claude). Otherwise install it from claude.com/product/claude-code, "+
+					"or connect with a key.",
+				strings.Join(gamekit.SearchedFor(), "\n  "))
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)

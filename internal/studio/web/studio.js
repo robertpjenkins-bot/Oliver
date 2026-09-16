@@ -976,6 +976,12 @@
     $('connectbtn').textContent = info.online ? 'use a key instead' : 'connect with a key';
     // The machine may already have a Claude that needs no key at all.
     $('clirow').hidden = !info.claudeCode;
+    // Not finding it is usually a window that cannot see as much as a
+    // terminal can, not a machine without it, so say where to look.
+    $('clihelp').hidden = !!info.claudeCode;
+    if (!info.claudeCode && info.searched) {
+      $('clisearched').textContent = 'Looked in: ' + info.searched.join('  ');
+    }
     if (info.claudeCode) {
       $('usecli').textContent = info.source && info.source.indexOf('Claude Code') >= 0
         ? 'designing with Claude Code on this machine'
@@ -1021,6 +1027,9 @@
     connect({ key: $('apikey').value.trim(), model: $('model').value, use: 'api' });
   });
   $('usecli').addEventListener('click', function () { connect({ use: 'claude-code' }); });
+  $('setclibin').addEventListener('click', function () {
+    connect({ use: 'claude-code', bin: $('clibin').value.trim() });
+  });
   $('setendpoint').addEventListener('click', function () {
     connect({ url: $('endpoint').value.trim(), key: $('apikey').value.trim() });
   });

@@ -307,3 +307,161 @@ func shellJSON(t *testing.T, doc string) string {
 	// Inside '...' in sh, a single quote has to leave and re-enter the quotes.
 	return strings.ReplaceAll(string(quoted), "'", `'\''`)
 }
+
+// The reported failure: "Claude Code is not installed" on a machine that has
+// it. A program opened from a desktop icon gets /usr/bin and little else,
+// while Claude Code installs into a home directory, so looking on PATH alone
+// is wrong about somebody's own computer.
+func TestClaudeCodeIsFoundWhereItInstalls(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin") // what a desktop icon gets
+	t.Setenv("OLIVER_CLAUDE_BIN", "")
+	t.Setenv("OLIVER_STUDIO_SETTINGS", filepath.Join(home, "studio.json"))
+
+	for _, rel := range []string{
+		".local/bin/claude",
+		".claude/local/claude",
+		".npm-global/bin/claude",
+		".nvm/versions/node/v22.0.0/bin/claude",
+	} {
+		t.Run(rel, func(t *testing.T) {
+			path := filepath.Join(home, rel)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("#!/bin/sh\necho hello\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(path)
+
+			cli := FindClaudeCode()
+			if !cli.Available() {
+				t.Fatalf("not found, though it is at %s", path)
+			}
+			if cli.Bin != path {
+				t.Errorf("found %s, want %s", cli.Bin, path)
+			}
+		})
+	}
+}
+
+// A file that is there but cannot be run is not an installation.
+func TestSomethingThatCannotBeRunIsNotClaudeCode(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".local", "bin", "claude")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("not executable"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if isRunnable(path) {
+		t.Error("a file with no executable bit was taken for a program")
+	}
+	if isRunnable(filepath.Dir(path)) {
+		t.Error("a directory was taken for a program")
+	}
+}
+
+// When there really is nothing, the studio says where it looked — which is
+// what lets somebody who knows their own machine point at the right place.
+func TestWhenClaudeCodeIsNowhereItSaysWhereItLooked(t *testing.T) {
+	home := t.TempDir()
+	restore := claudeSearch
+	claudeSearch = func() []string {
+		return []string{
+			filepath.Join(home, ".local/bin/claude"),
+			filepath.Join(home, ".claude/local/claude"),
+		}
+	}
+	defer func() { claudeSearch = restore }()
+
+	if cli := FindClaudeCode(); cli.Available() {
+		t.Fatalf("found something in an empty machine: %s", cli.Bin)
+	}
+	places := SearchedFor()
+	if len(places) != 2 {
+		t.Fatalf("searched %v", places)
+	}
+	for _, p := range places {
+		if !strings.Contains(p, "claude") {
+			t.Errorf("odd place to look: %s", p)
+		}
+	}
+
+	// And an assistant with nothing falls back rather than failing.
+	a := &Assistant{CLI: FindClaudeCode()}
+	if a.Available() {
+		t.Error("an assistant with no Claude reports one")
+	}
+	g, note, err := a.Create(context.Background(), "a forest platformer")
+	if err != nil || g == nil {
+		t.Fatalf("no game came back: %v", err)
+	}
+	if !strings.Contains(note, "offline") {
+		t.Errorf("note %q does not say it designed offline", note)
+	}
+}
+
+// Somebody who knows where it is can say so, and that beats every guess.
+func TestAnExplicitPathWins(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("OLIVER_STUDIO_SETTINGS", filepath.Join(home, "studio.json"))
+
+	odd := filepath.Join(home, "somewhere", "odd", "claude-code")
+	if err := os.MkdirAll(filepath.Dir(odd), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(odd, []byte("#!/bin/sh\necho hi\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("OLIVER_CLAUDE_BIN", odd)
+	if cli := FindClaudeCode(); !cli.Available() || cli.Bin != odd {
+		t.Errorf("OLIVER_CLAUDE_BIN ignored: %+v", cli)
+	}
+
+	t.Setenv("OLIVER_CLAUDE_BIN", "")
+	if err := SavePreferences(Preferences{ClaudeBin: odd}); err != nil {
+		t.Fatal(err)
+	}
+	if cli := FindClaudeCode(); !cli.Available() || cli.Bin != odd {
+		t.Errorf("the saved path was ignored: %+v", cli)
+	}
+}
+
+// A path typed into the studio beats one in the environment: it is the more
+// deliberate of the two, and it is the one somebody just typed.
+func TestASavedPathBeatsTheEnvironment(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("OLIVER_STUDIO_SETTINGS", filepath.Join(home, "studio.json"))
+
+	typed := filepath.Join(home, "typed", "claude")
+	if err := os.MkdirAll(filepath.Dir(typed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(typed, []byte("#!/bin/sh\necho hi\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OLIVER_CLAUDE_BIN", filepath.Join(home, "from-the-environment"))
+	if err := SavePreferences(Preferences{ClaudeBin: typed}); err != nil {
+		t.Fatal(err)
+	}
+
+	cli := FindClaudeCode()
+	if !cli.Available() || cli.Bin != typed {
+		t.Errorf("the typed path was ignored: %+v", cli)
+	}
+
+	// And with nothing typed, the environment still decides — which is how a
+	// test suite says "leave Claude Code alone".
+	if err := SavePreferences(Preferences{}); err != nil {
+		t.Fatal(err)
+	}
+	if cli := FindClaudeCode(); cli.Available() {
+		t.Errorf("a path that does not exist should find nothing, got %s", cli.Bin)
+	}
+}

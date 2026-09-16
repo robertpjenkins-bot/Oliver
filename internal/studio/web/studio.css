@@ -12,6 +12,10 @@
   --danger: #e8556d;
 }
 * { box-sizing: border-box; }
+/* The browser hides [hidden] with a display rule of its own, which any rule
+   here beats — so a hidden row with "display: flex" stays on screen. Say it
+   once, loudly, rather than remembering it at every use. */
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg); color: var(--text);
