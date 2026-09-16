@@ -353,6 +353,16 @@ $ oliver studio connect --use claude-code
 ✓ designing with 2.1.273 (Claude Code) — no key needed
 ```
 
+It is looked for where it actually installs — `~/.local/bin`,
+`~/.claude/local`, the npm, nvm, bun and system directories — not only on
+`PATH`, because a window opened from a desktop icon gets `/usr/bin` and little
+else. If it is somewhere else, say where:
+
+```console
+$ oliver studio status                  # what it found, and where it looked
+$ oliver studio connect --use claude-code --bin ~/.local/bin/claude
+```
+
 That is the whole setup. The design goes to the Claude you are already signed
 in to, and comes back as a game. It takes a minute or two, sometimes longer,
 because the studio would rather wait and check than hand over something that
