@@ -190,6 +190,16 @@
 
   // ------------------------------------------------------------- assistant
 
+  // A note may carry more than a label: when Claude could not be reached the
+  // first line says so in the log and the rest — what to actually do about it
+  // — belongs in the alert, where there is room to read it.
+  function noteEntry(note, text, cls) {
+    note = note || 'done';
+    var lines = note.split('\n');
+    logEntry(lines[0], text, cls);
+    if (lines.length > 1) showAlert(note);
+  }
+
   function logEntry(who, text, cls) {
     $('log').insertBefore(
       el('div', { class: 'entry ' + (cls || '') }, [
@@ -230,9 +240,12 @@
         renderAll();
         refreshGameList();
         if (res.read) logEntry('understood', res.read);
-        logEntry(res.note, G.name + ' — ' + (G.tagline || '') + ' · ' +
+        noteEntry(res.note, G.name + ' — ' + (G.tagline || '') + ' · ' +
           G.levels.length + ' levels, ' + G.objects.length + ' objects');
-        status('made ' + G.name);
+        // A game made offline when Claude was meant to make it is still a
+        // game, but saying only "made it" would hide that the thing you
+        // connected never ran.
+        status('made ' + G.name, res.note.indexOf('\n') < 0 ? '' : 'warn');
       })
       .catch(function (e) { logEntry('failed', e.message, 'err'); status(e.message, 'err'); })
       .then(function () { button.disabled = false; });
@@ -249,7 +262,7 @@
     }).then(function (res) {
       G = res.game; NAME = res.name;
       renderAll();
-      logEntry(res.note || 'done', describeGame());
+      noteEntry(res.note, describeGame());
       if (!problemsOf(res.problems)) status('done');
       refreshGameList();
     }).catch(function (e) { logEntry('failed', e.message, 'err'); status(e.message, 'err'); });

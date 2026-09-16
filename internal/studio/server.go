@@ -282,6 +282,13 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusBadRequest, "%v", err)
 			return
 		}
+		// Installed is not the same as signed in, and the difference is worth
+		// catching here: finding out at design time costs a minute of waiting
+		// and arrives as a complaint about a key nobody was asked for.
+		if login := cli.LoggedIn(ctx); login.Known && !login.In {
+			fail(w, http.StatusBadRequest, "%s\n\nThen press \"check again\".", gamekit.SignInHint)
+			return
+		}
 		prefs.Prefer = "claude-code"
 		if err := gamekit.SavePreferences(prefs); err != nil {
 			fail(w, http.StatusInternalServerError, "%v", err)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/robertpjenkins-bot/oliver/internal/gamekit"
 	"github.com/robertpjenkins-bot/oliver/internal/studio"
+	"github.com/robertpjenkins-bot/oliver/internal/ui"
 )
 
 const studioSynopsis = `oliver studio [command] [flags]
@@ -194,6 +195,12 @@ func (a *app) studioConnect(args []string) error {
 		if err != nil {
 			return err
 		}
+		// Installed but never signed into is the other half of "it does not
+		// work", and it is cheaper to say now than to let a design fail.
+		if login := cli.LoggedIn(ctx); login.Known && !login.In {
+			u.Warn("%s", gamekit.SignInHint)
+			return fmt.Errorf("Claude Code not signed in")
+		}
 		prefs.Prefer = "claude-code"
 		if err := gamekit.SavePreferences(prefs); err != nil {
 			return err
@@ -271,6 +278,11 @@ func (a *app) studioStatus(args []string) error {
 			u.Printf("  Claude Code      found at %s, but it would not run: %v", cli.Bin, err)
 		} else {
 			u.Printf("  Claude Code      %s at %s", version, cli.Bin)
+			if login := cli.LoggedIn(context.Background()); login.Known && !login.In {
+				u.Printf("  signed in        no — run: claude auth login")
+			} else if login.Known {
+				u.Printf("  signed in        yes")
+			}
 		}
 	} else {
 		u.Printf("  Claude Code      not found. Looked in:")
@@ -340,7 +352,9 @@ func (a *app) studioNew(args []string) error {
 	if err != nil {
 		return err
 	}
-	u.Info("%s %s (%s)", u.Green("✓"), g.Name, note)
+	head, detail := splitNote(note)
+	u.Info("%s %s (%s)", u.Green("✓"), g.Name, head)
+	sayDetail(u, detail)
 	u.Printf("%s", strings.TrimRight(g.Summary(), "\n"))
 	if problems := g.Validate(); len(problems) > 0 {
 		for _, p := range problems {
@@ -415,7 +429,9 @@ func (a *app) studioEdit(args []string) error {
 	if _, err := s.Save(name, edited); err != nil {
 		return err
 	}
-	a.ui.Info("%s %s", a.ui.Green("✓"), note)
+	head, detail := splitNote(note)
+	a.ui.Info("%s %s", a.ui.Green("✓"), head)
+	sayDetail(a.ui, detail)
 	for _, p := range edited.Validate() {
 		a.ui.Warn("%s", p)
 	}
@@ -677,4 +693,25 @@ mkdir -p "${DATA}"
 cp -f "${HERE}/usr/share/oliver/game/%[1]s.html" "${DATA}/%[1]s.html"
 exec "${OLIVER}" play "${DATA}/%[1]s.html"
 `, slug, name)
+}
+
+// splitNote takes the one-line label off a design note. Anything after it
+// explains something that went wrong, and a paragraph does not belong inside
+// the parentheses of a line that starts with a tick.
+func splitNote(note string) (head, detail string) {
+	head, detail, _ = strings.Cut(note, "\n")
+	return strings.TrimSpace(head), strings.TrimSpace(detail)
+}
+
+// sayDetail prints the explanation under the result, indented, so it reads as
+// a note about the thing above it rather than as a second result.
+func sayDetail(u *ui.UI, detail string) {
+	if detail == "" {
+		return
+	}
+	u.Info("")
+	for _, line := range strings.Split(detail, "\n") {
+		u.Info("  %s", u.Dim(line))
+	}
+	u.Info("")
 }

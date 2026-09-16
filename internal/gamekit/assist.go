@@ -171,7 +171,7 @@ genre, using your objects, laid out so they can always be finished.`,
 
 	game, err := a.ask(ctx, user, local)
 	if err != nil {
-		return local, "designed offline (" + err.Error() + ")", nil
+		return local, fellBackTo("designed offline", err), nil
 	}
 	return game, "designed by " + a.Describe(), nil
 }
@@ -224,7 +224,7 @@ ask you to change.`, compact, instruction)
 	edited, err := a.ask(ctx, user, g)
 	if err != nil {
 		notes := Refine(g, instruction)
-		return g, strings.Join(notes, "; ") + " (offline: " + err.Error() + ")", nil
+		return g, fellBackTo(strings.Join(notes, "; ")+" (changed offline)", err), nil
 	}
 	return edited, "edited by " + a.Describe(), nil
 }
@@ -632,4 +632,23 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// fellBackTo writes the note for a design the studio had to make on its own
+// after Claude could not be reached.
+//
+// The note is a label above a game in the editor, so the first line has to
+// stay one short line. Everything the trouble is worth explaining goes after
+// it, where the editor can show it properly instead of squeezing a
+// paragraph into a caption.
+func fellBackTo(what string, err error) string {
+	said := strings.TrimSpace(err.Error())
+	head, rest, _ := strings.Cut(said, "\n")
+	note := what + " — " + strings.TrimSpace(head)
+	if strings.TrimSpace(rest) != "" {
+		// Only what the label does not already say: repeating the first line
+		// under itself reads like the studio said the same thing twice.
+		note += "\n\n" + strings.TrimSpace(rest)
+	}
+	return note
 }
