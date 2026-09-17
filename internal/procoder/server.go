@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 )
 
 // PackRequest asks for a project to be turned into an AppImage.
@@ -38,6 +40,103 @@ type Server struct {
 	// offers the command to run in a terminal instead of a button that would
 	// fail.
 	Pack func(PackRequest) (PackResult, error)
+
+	// Now is the clock, so tests do not have to wait for real minutes.
+	Now func() time.Time
+
+	mu       sync.Mutex
+	activity Activity
+}
+
+// Activity is what the page has told the server about itself: when it last
+// spoke, and whether it said goodbye on the way out.
+//
+// This is how Pro Coder knows it is still wanted. The obvious alternative —
+// waiting for the browser process to exit — does not work, because a browser
+// that is already running does not start a new process at all: it hands the
+// address to the copy of itself that is already there and exits immediately.
+// Taking that as "the window was closed" shuts the server down a moment before
+// the window it just asked for finishes opening, and the window then shows
+// "127.0.0.1 refused to connect".
+type Activity struct {
+	Held  int       // windows holding a connection open right now
+	Empty time.Time // when the last of them let go
+	Last  time.Time // the last time any page said anything at all
+}
+
+// How patient the server is.
+const (
+	HoldGrace  = 5 * time.Second // after the last window let go, in case of a reload
+	Silence    = 3 * time.Minute // no word at all from a page that did load
+	NoContact  = 2 * time.Minute // no page ever loaded
+	HeartbeatS = 5               // seconds between the page's pings
+)
+
+// ShouldStop decides whether Pro Coder has been left alone.
+//
+// A held connection is the reliable signal and is checked first: while one is
+// open there is a window, and when the window goes the connection goes with
+// it, whatever the browser thinks about running code on the way out. The
+// timing rules below it are the backstop for a browser that never managed to
+// hold one open — there, the page's own heartbeat has to do, and it is given
+// minutes rather than seconds, because a window left in the background has its
+// timers throttled to about one a minute.
+func ShouldStop(now, started time.Time, a Activity) (bool, string) {
+	switch {
+	case a.Held > 0:
+		return false, ""
+	case !a.Empty.IsZero():
+		if now.Sub(a.Empty) > HoldGrace {
+			return true, "the window was closed"
+		}
+	case a.Last.IsZero():
+		if now.Sub(started) > NoContact {
+			return true, "nothing opened it"
+		}
+	case now.Sub(a.Last) > Silence:
+		return true, "the window went away"
+	}
+	return false, ""
+}
+
+// Activity reports what the page has been up to.
+func (s *Server) Activity() Activity {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.activity
+}
+
+func (s *Server) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+// seen records that the page is still there. Any request counts: a reload
+// arriving after a goodbye means the page came back.
+func (s *Server) seen() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activity.Last = s.now()
+}
+
+// hold records a window arriving and returns the function that records it
+// leaving.
+func (s *Server) hold() func() {
+	s.mu.Lock()
+	s.activity.Held++
+	s.activity.Empty = time.Time{}
+	s.mu.Unlock()
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.activity.Held--
+		if s.activity.Held <= 0 {
+			s.activity.Held = 0
+			s.activity.Empty = s.now()
+		}
+	}
 }
 
 // Handler returns the routes.
@@ -46,7 +145,54 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.serveApp)
 	mux.HandleFunc("/api/capabilities", s.serveCapabilities)
 	mux.HandleFunc("/api/convert", s.serveConvert)
-	return localOnly(mux)
+	mux.HandleFunc("/api/alive", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("/api/hold", s.serveHold)
+	return localOnly(s.noteActivity(mux))
+}
+
+func (s *Server) noteActivity(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.seen()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// serveHold is a connection the page opens and never closes. Its only purpose
+// is to end when the window does.
+func (s *Server) serveHold(w http.ResponseWriter, r *http.Request) {
+	release := s.hold()
+	defer release()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return
+	}
+	// A reconnection delay shorter than the grace period, so that a page being
+	// reloaded is back before its absence is acted on.
+	fmt.Fprint(w, "retry: 1000\n\n")
+	flusher.Flush()
+
+	ping := time.NewTicker(20 * time.Second)
+	defer ping.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ping.C:
+			// Writing is also how a connection that died without telling
+			// anybody gets noticed.
+			if _, err := fmt.Fprint(w, ": still here\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func (s *Server) serveApp(w http.ResponseWriter, r *http.Request) {

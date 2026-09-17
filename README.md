@@ -177,7 +177,10 @@ procoder` builds the AppImage from source.
 Pro Coder draws its window with whatever browser the machine has — one
 installed normally, or a flatpak, which is what a system with no package
 manager, a Steam Deck say, will have. It needs no browser of its own and
-bundles none.
+bundles none. Closing the window closes Pro Coder: the window holds a
+connection open for exactly as long as it exists, so a browser that was
+already running — and therefore opens the window without starting a process of
+its own — makes no difference to when Pro Coder stops.
 
 The window has three things in it.
 

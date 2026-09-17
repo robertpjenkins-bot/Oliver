@@ -500,6 +500,20 @@ if (location.protocol === "http:" || location.protocol === "https:") {
   fetch("api/capabilities").then(r => r.json()).then(c => {
     CAPS.appimage = !!c.appimage; CAPS.host = c.host; describeHost();
   }).catch(() => describeHost());
+
+  /* Pro Coder is a window, not a server, so it has to know when its window has
+     gone. Waiting for the browser to exit does not tell it: a browser that is
+     already running opens the window and exits at once, leaving Pro Coder to
+     shut down just as the window appears.
+
+     So the window holds a connection open, and closing it closes that — which
+     needs no code to run as the page goes away, and no promise that the
+     browser will let any. The heartbeat behind it is for anywhere this
+     connection cannot be made at all. */
+  try { new EventSource("api/hold"); } catch (e) { /* the heartbeat covers it */ }
+  const alive = () => fetch("api/alive", { cache:"no-store" }).catch(() => {});
+  alive();
+  setInterval(alive, 5000);
 } else describeHost();
 
 /* ================= dialogs ================= */

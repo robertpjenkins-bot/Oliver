@@ -1,11 +1,13 @@
 package procoder
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRecognise(t *testing.T) {
@@ -226,5 +228,88 @@ func TestListenIsLoopbackOnly(t *testing.T) {
 	defer ln.Close()
 	if !strings.HasPrefix(addr, "http://127.0.0.1:") {
 		t.Errorf("Listen gave %q, want a loopback address", addr)
+	}
+}
+
+// Pro Coder closes when its window does. Getting this wrong is what made it
+// shut down while the window was still opening.
+func TestShouldStop(t *testing.T) {
+	start := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
+	at := func(d time.Duration) time.Time { return start.Add(d) }
+
+	cases := []struct {
+		name  string
+		now   time.Time
+		act   Activity
+		stop  bool
+		cause string
+	}{
+		{"the window is still opening", at(20 * time.Second), Activity{}, false, ""},
+		{"nothing ever opened it", at(NoContact + time.Second), Activity{}, true, "nothing opened it"},
+		{"a window is holding on", at(time.Hour), Activity{Held: 1, Last: at(time.Minute)}, false, ""},
+		{"the window let go", at(time.Minute + 10*time.Second),
+			Activity{Held: 0, Empty: at(time.Minute), Last: at(time.Minute)}, true, "the window was closed"},
+		{"it may only be reloading", at(time.Minute + 2*time.Second),
+			Activity{Held: 0, Empty: at(time.Minute), Last: at(time.Minute)}, false, ""},
+		{"it came back", at(time.Minute + 10*time.Second),
+			Activity{Held: 1, Empty: time.Time{}, Last: at(time.Minute + 2*time.Second)}, false, ""},
+		// Where no connection could be held, the page's heartbeat is all
+		// there is — and a window left in the background is throttled to
+		// about one a minute, so a quiet minute is not a closed window.
+		{"minimised, not closed", at(5 * time.Minute), Activity{Last: at(4 * time.Minute)}, false, ""},
+		{"quiet for too long", at(10 * time.Minute), Activity{Last: at(6 * time.Minute)}, true, "the window went away"},
+	}
+	for _, c := range cases {
+		stop, why := ShouldStop(c.now, start, c.act)
+		if stop != c.stop {
+			t.Errorf("%s: stop = %v, want %v (%q)", c.name, stop, c.stop, why)
+		}
+		if stop && why != c.cause {
+			t.Errorf("%s: reason = %q, want %q", c.name, why, c.cause)
+		}
+	}
+}
+
+// The held connection is what makes closing the window immediate: it ends when
+// the window does, with nothing having to run inside the page.
+func TestServerNoticesAWindowComingAndGoing(t *testing.T) {
+	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
+	srv := &Server{Now: func() time.Time { return now }}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/hold", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	// The response begins as soon as the hold is counted.
+	buf := make([]byte, 1)
+	if _, err := res.Body.Read(buf); err != nil {
+		t.Fatalf("reading the held connection: %v", err)
+	}
+	if got := srv.Activity(); got.Held != 1 {
+		t.Fatalf("held = %d, want 1", got.Held)
+	}
+
+	now = now.Add(time.Minute)
+	cancel() // the window closes
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if got := srv.Activity(); got.Held == 0 {
+			if !got.Empty.Equal(now) {
+				t.Errorf("letting go was not timed: %+v", got)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the server did not notice the window going away")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

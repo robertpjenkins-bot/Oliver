@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/robertpjenkins-bot/oliver/internal/procoder"
 )
@@ -71,11 +72,6 @@ func (a *app) cmdProCoder(args []string) error {
 
 	u.Info("%s Pro Coder is at %s", u.Green("▸"), u.Cyan(addr))
 
-	// Waiting on the browser is what makes this feel like an application
-	// rather than a server: closing the window ends the command. When the
-	// window cannot be owned — an already-running browser took the address,
-	// or the desktop opened it for us — there is nothing to wait for, so
-	// Ctrl-C is the way out and the address stays printed.
 	var window *exec.Cmd
 	if !*noOpen {
 		window, err = openAppWindow(addr)
@@ -89,24 +85,46 @@ func (a *app) cmdProCoder(args []string) error {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(stop)
 
-	closed := make(chan struct{})
-	if window != nil {
-		go func() {
-			_ = window.Wait()
-			close(closed)
-		}()
-	} else {
-		u.Info("%s", u.Dim("Press Ctrl-C to stop Pro Coder."))
+	// Pro Coder closes when its window does, and the window itself is what
+	// says so — it keeps telling the server it is there, and waves goodbye as
+	// it closes. What cannot be used for this is the browser command, even
+	// though waiting on it is the obvious thing: a browser that is already
+	// running hands the address to the copy of itself that is already open and
+	// exits at once, which would mean closing the server just as the window
+	// appears. That is exactly what happened on the machine this was written
+	// for.
+	started := time.Now()
+	tick := time.NewTicker(2 * time.Second)
+	defer tick.Stop()
+
+	u.Info("%s", u.Dim("Close the window when you are done, or press Ctrl-C."))
+
+	bySignal := false
+	for done := false; !done; {
+		select {
+		case err := <-errs:
+			return err
+		case <-stop:
+			bySignal, done = true, true
+		case now := <-tick.C:
+			quit, why := procoder.ShouldStop(now, started, srv.Activity())
+			if !quit {
+				continue
+			}
+			if why == "nothing opened it" {
+				u.Warn("no window ever reached Pro Coder")
+				u.Info("%s", u.Dim("Open "+addr+" in a browser, or run with -no-open and do it yourself."))
+			}
+			done = true
+		}
 	}
 
-	select {
-	case err := <-errs:
-		return err
-	case <-stop:
-	case <-closed:
-	}
 	_ = server.Shutdown(context.Background())
-	if window != nil && window.Process != nil {
+	// Only a Ctrl-C closes the window from here. Stopping because the page
+	// went quiet means the window has already gone, and the process still
+	// holding that name may by then be the browser the rest of the desktop is
+	// using.
+	if bySignal && window != nil && window.Process != nil {
 		_ = window.Process.Kill()
 	}
 	return nil
