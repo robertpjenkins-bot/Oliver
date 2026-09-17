@@ -1,0 +1,47 @@
+#!/bin/sh
+# AppRun for the Pro Coder AppImage.
+#
+# Pro Coder is Oliver's coder: Scratch, MakeCode Arcade and CCP in one window.
+# The AppImage carries the same oliver binary as the Oliver AppImage does, and
+# this entry point simply opens the coder rather than the command line, so
+# double-clicking the file does the obvious thing.
+set -eu
+
+HERE="$(dirname "$(readlink -f "${0}")")"
+export PATH="${HERE}/usr/bin:${PATH}"
+BIN="${HERE}/usr/bin/oliver"
+
+# Adding Pro Coder to the application menu has to record where the AppImage
+# actually is: an entry pointing inside the mount stops working the moment the
+# AppImage closes.
+if [ "${1:-}" = "--install" ] || [ "${1:-}" = "--uninstall" ]; then
+	APPS="${XDG_DATA_HOME:-${HOME}/.local/share}/applications"
+	ICONS="${XDG_DATA_HOME:-${HOME}/.local/share}/icons/hicolor/scalable/apps"
+	ENTRY="${APPS}/procoder.desktop"
+	if [ "${1}" = "--uninstall" ]; then
+		rm -f "${ENTRY}" "${ICONS}/procoder.svg"
+		echo "Removed Pro Coder from your application menu."
+	else
+		SELF="${APPIMAGE:-$(readlink -f "${0}")}"
+		mkdir -p "${APPS}" "${ICONS}"
+		[ -f "${HERE}/procoder.svg" ] && cp "${HERE}/procoder.svg" "${ICONS}/procoder.svg" || true
+		cat > "${ENTRY}" <<DESKTOP_ENTRY
+[Desktop Entry]
+Type=Application
+Name=Pro Coder
+GenericName=Block coding
+Comment=Scratch, MakeCode Arcade and CCP in one window
+Exec="${SELF}"
+TryExec=${SELF}
+Icon=procoder
+Terminal=false
+Categories=Development;Education;
+Keywords=scratch;makecode;arcade;blocks;coding;games;
+DESKTOP_ENTRY
+		echo "Added Pro Coder to your application menu."
+	fi
+	command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "${APPS}" || true
+	exit 0
+fi
+
+exec "${BIN}" procoder "$@"

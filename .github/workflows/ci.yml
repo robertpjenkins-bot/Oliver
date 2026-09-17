@@ -32,8 +32,10 @@ jobs:
           go-version: "1.24"
       - name: Install FUSE for appimagetool
         run: sudo apt-get update && sudo apt-get install -y libfuse2
-      - name: Build AppImage
-        run: make appimage
+      - name: Build AppImages
+        run: |
+          make appimage
+          make procoder
       - uses: actions/upload-artifact@v4
         with:
           name: oliver-appimage

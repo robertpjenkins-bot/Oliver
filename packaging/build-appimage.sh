@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Builds oliver as an AppImage.
+# Builds an AppImage from this repository.
+#
+# Two applications come out of the same binary. APP=oliver (the default) builds
+# Oliver, the command line. APP=procoder builds Pro Coder, which opens the
+# coder in a window instead — the same file, a different front door.
 #
 # The result is a single self-contained file that runs on any x86-64 Linux with
 # a 2.6+ kernel: the binary is statically linked with no libc dependency, so
@@ -9,11 +13,20 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 
+APP="${APP:-oliver}"
+case "${APP}" in
+	oliver)
+		app_name="Oliver"; app_slug="oliver"; app_run="${here}/AppRun" ;;
+	procoder)
+		app_name="ProCoder"; app_slug="procoder"; app_run="${here}/procoder.AppRun" ;;
+	*) echo "unknown APP: ${APP} (use oliver or procoder)" >&2; exit 1 ;;
+esac
+
 ARCH="${ARCH:-x86_64}"
 VERSION="${VERSION:-$(git -C "${root}" describe --tags --always --dirty 2>/dev/null || echo dev)}"
 OUTDIR="${OUTDIR:-${root}/dist}"
-APPDIR="${OUTDIR}/Oliver.AppDir"
-OUTPUT="${OUTDIR}/Oliver-${VERSION}-${ARCH}.AppImage"
+APPDIR="${OUTDIR}/${app_name}.AppDir"
+OUTPUT="${OUTPUT:-${OUTDIR}/${app_name}-${VERSION}-${ARCH}.AppImage}"
 
 # Map the AppImage architecture name onto Go's.
 case "${ARCH}" in
@@ -26,7 +39,7 @@ esac
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 
-say "building oliver ${VERSION} for ${ARCH}"
+say "building ${app_name} ${VERSION} for ${ARCH}"
 rm -rf "${APPDIR}"
 mkdir -p "${APPDIR}/usr/bin" \
          "${APPDIR}/usr/share/applications" \
@@ -41,13 +54,24 @@ CGO_ENABLED=0 GOOS=linux GOARCH="${goarch}" \
 		-o "${APPDIR}/usr/bin/oliver" \
 		"${root}/cmd/oliver"
 
-install -m 0755 "${here}/AppRun"          "${APPDIR}/AppRun"
-install -m 0644 "${here}/oliver.desktop"  "${APPDIR}/oliver.desktop"
-install -m 0644 "${here}/oliver.svg"      "${APPDIR}/oliver.svg"
-install -m 0644 "${here}/oliver.desktop"  "${APPDIR}/usr/share/applications/oliver.desktop"
-install -m 0644 "${here}/oliver.svg"      "${APPDIR}/usr/share/icons/hicolor/scalable/apps/oliver.svg"
-if [ -f "${here}/oliver.appdata.xml" ]; then
-	install -m 0644 "${here}/oliver.appdata.xml" "${APPDIR}/usr/share/metainfo/oliver.appdata.xml"
+install -m 0755 "${app_run}"                      "${APPDIR}/AppRun"
+install -m 0644 "${here}/${app_slug}.desktop"     "${APPDIR}/${app_slug}.desktop"
+install -m 0644 "${here}/${app_slug}.svg"         "${APPDIR}/${app_slug}.svg"
+install -m 0644 "${here}/${app_slug}.desktop"     "${APPDIR}/usr/share/applications/${app_slug}.desktop"
+install -m 0644 "${here}/${app_slug}.svg"         "${APPDIR}/usr/share/icons/hicolor/scalable/apps/${app_slug}.svg"
+if [ -f "${here}/${app_slug}.appdata.xml" ]; then
+	install -m 0644 "${here}/${app_slug}.appdata.xml" "${APPDIR}/usr/share/metainfo/${app_slug}.appdata.xml"
+fi
+
+# A desktop entry's Exec has to name something that resolves on PATH, and the
+# binary here is called oliver. Pro Coder's entry therefore names a launcher of
+# its own, which AppRun puts on PATH along with everything else in usr/bin.
+if [ "${APP}" = "procoder" ]; then
+	cat > "${APPDIR}/usr/bin/procoder" <<-'LAUNCHER'
+	#!/bin/sh
+	exec "$(dirname "$(readlink -f "${0}")")/oliver" procoder "$@"
+	LAUNCHER
+	chmod 0755 "${APPDIR}/usr/bin/procoder"
 fi
 
 say "AppDir ready at ${APPDIR}"

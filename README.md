@@ -161,13 +161,25 @@ fails the same way packed.
 
 ## Pro Coder
 
-Oliver also carries a coder. `oliver procoder` opens a window with three things
-in it:
+Oliver also carries a coder, and it ships as an AppImage of its own. Download
+it, make it executable, and double-click it:
 
 ```console
-$ oliver procoder
-▸ Pro Coder is at http://127.0.0.1:41263/
+$ chmod +x ProCoder-x86_64.AppImage
+$ ./ProCoder-x86_64.AppImage             # opens the window
+$ ./ProCoder-x86_64.AppImage --install   # and add it to the application menu
 ```
+
+It is the same binary as Oliver behind a different front door: `oliver
+procoder` does exactly the same thing from the command line, and `make
+procoder` builds the AppImage from source.
+
+Pro Coder draws its window with whatever browser the machine has — one
+installed normally, or a flatpak, which is what a system with no package
+manager, a Steam Deck say, will have. It needs no browser of its own and
+bundles none.
+
+The window has three things in it.
 
 **Scratch** and **MakeCode Arcade** are the two block coders everybody starts
 with. Pro Coder opens them with their address on show and an Exit button back
@@ -207,9 +219,9 @@ frame. Any other web address is wrapped as it is. Nothing is copied: the
 project still lives on the site, and the wrapper needs the internet to reach
 it.
 
-`oliver procoder -write procoder.html` writes the whole thing out as one file,
-for a machine that does not have Oliver on it. Everything works from there
-except building AppImages, which needs Oliver.
+`oliver procoder -write procoder.html` writes the whole thing out as one HTML
+file, for a machine that has neither Oliver nor the AppImage on it. Everything
+works from there except building AppImages, which needs Oliver.
 
 ## Install
 

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Pro Coder
+GenericName=Block coding
+Comment=Scratch, MakeCode Arcade and CCP in one window
+Exec=procoder
+TryExec=procoder
+Icon=procoder
+Terminal=false
+Categories=Development;Education;
+Keywords=scratch;makecode;arcade;blocks;coding;games;

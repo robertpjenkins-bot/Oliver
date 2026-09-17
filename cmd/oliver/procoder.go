@@ -356,9 +356,23 @@ for browser in chromium chromium-browser google-chrome google-chrome-stable brav
 	fi
 done
 
+# A system with no package manager — a Steam Deck, say — keeps its browsers as
+# flatpaks, where nothing lands on PATH. A flatpak cannot reach a profile
+# directory outside its sandbox, so it keeps its own.
+if command -v flatpak >/dev/null 2>&1; then
+	for id in org.chromium.Chromium com.google.Chrome com.brave.Browser com.microsoft.Edge; do
+		if flatpak info "${id}" >/dev/null 2>&1; then
+			exec flatpak run "${id}" --app="${URL}" --class="%[1]s" "$@"
+		fi
+	done
+fi
+
 # Firefox has no application mode; a plain window is the closest it gets.
 if command -v firefox >/dev/null 2>&1; then
 	exec firefox --new-window "${URL}" "$@"
+fi
+if command -v flatpak >/dev/null 2>&1 && flatpak info org.mozilla.firefox >/dev/null 2>&1; then
+	exec flatpak run org.mozilla.firefox --new-window "${URL}" "$@"
 fi
 if command -v xdg-open >/dev/null 2>&1; then
 	exec xdg-open "${URL}"
@@ -370,33 +384,74 @@ exit 1
 `, slug, appName, shellLiteral(play), shellLiteral(page))
 }
 
+// chromiumBrowsers are the browsers with an application mode, in the order
+// they are worth trying.
+var chromiumBrowsers = []string{
+	"chromium", "chromium-browser", "google-chrome", "google-chrome-stable",
+	"brave-browser", "microsoft-edge", "vivaldi-stable",
+}
+
+// chromiumFlatpaks are the same browsers installed the way an immutable
+// system installs them. A Steam Deck has no package manager to speak of and
+// often no browser on PATH at all, so skipping these would mean Pro Coder
+// could not open a window on the machine it is most likely to be used on.
+var chromiumFlatpaks = []string{
+	"org.chromium.Chromium", "com.google.Chrome", "com.brave.Browser", "com.microsoft.Edge",
+}
+
 // openAppWindow opens an address in a window with no browser furniture around
 // it, which is what turns a page into something that reads as an application.
 func openAppWindow(addr string) (*exec.Cmd, error) {
-	for _, browser := range []string{
-		"chromium", "chromium-browser", "google-chrome", "google-chrome-stable",
-		"brave-browser", "microsoft-edge", "vivaldi-stable",
-	} {
-		path, err := exec.LookPath(browser)
-		if err != nil {
-			continue
+	cmd := appWindowCommand(addr)
+	if cmd == nil {
+		// Anything else at all is better than nothing, but a browser opened
+		// this way belongs to the desktop and cannot be waited on.
+		if path, err := exec.LookPath("xdg-open"); err == nil {
+			if err := exec.Command(path, addr).Start(); err == nil {
+				return nil, nil
+			}
 		}
-		profile := filepath.Join(os.TempDir(), "oliver-procoder-window")
-		cmd := exec.Command(path, "--app="+addr, "--user-data-dir="+profile, "--class=oliver-procoder")
-		cmd.Stdout, cmd.Stderr = nil, nil
-		if err := cmd.Start(); err != nil {
-			return nil, fmt.Errorf("starting %s: %w", browser, err)
-		}
-		return cmd, nil
+		return nil, fmt.Errorf("no browser found to open Pro Coder")
 	}
-	// Anything else at all is better than nothing, but a browser opened this
-	// way belongs to the desktop and cannot be waited on.
-	if path, err := exec.LookPath("xdg-open"); err == nil {
-		if err := exec.Command(path, addr).Start(); err == nil {
-			return nil, nil
+	cmd.Stdout, cmd.Stderr = nil, nil
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("starting %s: %w", cmd.Path, err)
+	}
+	return cmd, nil
+}
+
+func appWindowCommand(addr string) *exec.Cmd {
+	profile := filepath.Join(os.TempDir(), "oliver-procoder-window")
+	for _, browser := range chromiumBrowsers {
+		if path, err := exec.LookPath(browser); err == nil {
+			return exec.Command(path, "--app="+addr, "--user-data-dir="+profile, "--class=oliver-procoder")
 		}
 	}
-	return nil, fmt.Errorf("no browser found to open Pro Coder")
+	if flatpak, err := exec.LookPath("flatpak"); err == nil {
+		for _, id := range chromiumFlatpaks {
+			if !flatpakInstalled(flatpak, id) {
+				continue
+			}
+			// No --user-data-dir here: a flatpak cannot reach a path outside
+			// its own sandbox, and it keeps a profile of its own anyway.
+			return exec.Command(flatpak, "run", id, "--app="+addr, "--class=oliver-procoder")
+		}
+	}
+	// Firefox has no application mode, so this is a plain window — which is
+	// still Pro Coder, just with an address bar above it.
+	if path, err := exec.LookPath("firefox"); err == nil {
+		return exec.Command(path, "--new-window", addr)
+	}
+	if flatpak, err := exec.LookPath("flatpak"); err == nil && flatpakInstalled(flatpak, "org.mozilla.firefox") {
+		return exec.Command(flatpak, "run", "org.mozilla.firefox", "--new-window", addr)
+	}
+	return nil
+}
+
+func flatpakInstalled(flatpak, id string) bool {
+	cmd := exec.Command(flatpak, "info", id)
+	cmd.Stdout, cmd.Stderr = nil, nil
+	return cmd.Run() == nil
 }
 
 // shellLiteral quotes a string so a POSIX shell sees it exactly as written.
