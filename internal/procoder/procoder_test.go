@@ -96,6 +96,50 @@ func TestWrapperHTML(t *testing.T) {
 	}
 }
 
+// The editor pages of these sites refuse to be framed, so wrapping one
+// produces a blank rectangle. Converting one has to give a shortcut instead.
+func TestUnframablePagesConvertToAShortcut(t *testing.T) {
+	target, err := Recognise("https://scratch.mit.edu/projects/editor/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Framed {
+		t.Error("the Scratch editor cannot be framed")
+	}
+	if target.Title != "Scratch" {
+		t.Errorf("title = %q, want Scratch", target.Title)
+	}
+	page, err := WrapperHTML(target, "Scratch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	if strings.Contains(html, "<iframe") {
+		t.Errorf("a page that refuses framing should not be wrapped in one:\n%s", html)
+	}
+	if !strings.Contains(html, `href="https://scratch.mit.edu/projects/editor/"`) {
+		t.Errorf("the shortcut does not open the site:\n%s", html)
+	}
+}
+
+// A project, on the other hand, plays perfectly inside a frame.
+func TestProjectsConvertToAPlayer(t *testing.T) {
+	target, err := Recognise("https://scratch.mit.edu/projects/60917032")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !target.Framed {
+		t.Fatal("a Scratch project player can be framed")
+	}
+	page, err := WrapperHTML(target, "Game")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(page), "<iframe") {
+		t.Errorf("a project should be wrapped in a frame:\n%s", page)
+	}
+}
+
 func TestServerServesTheApp(t *testing.T) {
 	srv := &Server{}
 	rec := httptest.NewRecorder()

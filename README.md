@@ -199,9 +199,13 @@ $ oliver procoder convert https://scratch.mit.edu/projects/60917032 -format appi
 
 Scratch and MakeCode addresses are recognised, so the wrapper points at the
 player rather than at the editor page — the page refuses to be framed, the
-player does not. Any other web address is wrapped as it is. Nothing is copied:
-the project still lives on the site, and the wrapper needs the internet to
-reach it.
+player does not. Handed a page that refuses anyway, such as the Scratch editor
+itself, Convert does not wrap it in a frame it will never fill: the HTML file
+becomes a shortcut that opens the site, and it says so before it builds. The
+AppImage has no such limit, since it opens a real browser window rather than a
+frame. Any other web address is wrapped as it is. Nothing is copied: the
+project still lives on the site, and the wrapper needs the internet to reach
+it.
 
 `oliver procoder -write procoder.html` writes the whole thing out as one file,
 for a machine that does not have Oliver on it. Everything works from there

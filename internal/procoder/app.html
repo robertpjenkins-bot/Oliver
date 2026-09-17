@@ -535,15 +535,15 @@ function recognise(raw){
   if (!s) throw new Error("Paste a project address first.");
   let m;
   if ((m = s.match(/^(?:https?:\/\/)?(?:www\.)?scratch\.mit\.edu\/projects\/(\d+)/i)) || (m = s.match(/^(\d{4,})$/)))
-    return { kind:"scratch", id:m[1], title:"Scratch project " + m[1],
+    return { kind:"scratch", id:m[1], title:"Scratch project " + m[1], framed:true,
              page:"https://scratch.mit.edu/projects/" + m[1],
              play:"https://scratch.mit.edu/projects/" + m[1] + "/embed", file:"scratch-" + m[1] };
   if ((m = s.match(/^(?:https?:\/\/)?(?:www\.)?turbowarp\.org\/(\d+)/i)))
-    return { kind:"turbowarp", id:m[1], title:"TurboWarp project " + m[1],
+    return { kind:"turbowarp", id:m[1], title:"TurboWarp project " + m[1], framed:true,
              page:"https://turbowarp.org/" + m[1],
              play:"https://turbowarp.org/" + m[1] + "/embed", file:"turbowarp-" + m[1] };
   if ((m = s.match(/^(?:https?:\/\/)?(?:arcade\.)?makecode\.com\/(_[A-Za-z0-9]+|S?\d{4,6}(?:-\d{4,6}){2,4})/i)))
-    return { kind:"makecode", id:m[1], title:"MakeCode Arcade game " + m[1],
+    return { kind:"makecode", id:m[1], title:"MakeCode Arcade game " + m[1], framed:true,
              page:"https://arcade.makecode.com/" + m[1],
              play:"https://arcade.makecode.com/---run?id=" + encodeURIComponent(m[1]),
              file:"arcade-" + m[1].replace(/^_/, "") };
@@ -555,23 +555,29 @@ function recognise(raw){
   try { u = new URL(withScheme); } catch (e) { throw new Error("That does not look like a web address."); }
   if (u.protocol !== "http:" && u.protocol !== "https:")
     throw new Error("Only http and https addresses can be converted.");
-  return { kind:"web", id:u.host, title:u.host, page:u.href, play:u.href,
+  const host = u.host.toLowerCase().replace(/^www\./, "");
+  const titles = { "scratch.mit.edu":"Scratch", "turbowarp.org":"TurboWarp",
+                   "arcade.makecode.com":"MakeCode Arcade", "makecode.com":"MakeCode Arcade" };
+  return { kind:"web", id:u.host, title:titles[host] || u.host, page:u.href, play:u.href,
+           // These sites' editors refuse to be framed, and their players were
+           // recognised further up, so anything of theirs reaching here is a
+           // page that would convert into an empty rectangle.
+           framed: host !== "scratch.mit.edu" && host !== "turbowarp.org",
            file:u.host.replace(/[^A-Za-z0-9]+/g, "-") };
 }
 
+/* A converted project becomes one of two pages. One that plays inside a frame
+   becomes the project, filling the window. One that refuses — every one of
+   these sites' editors does — becomes a shortcut, because a wrapper around a
+   rectangle the site will not fill only looks broken and hides the address
+   that would have worked. */
 function wrapperHTML(target, name){
   const esc = s => String(s).replace(/[&<>"']/g, c =>
     ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(name)}</title>
-<style>
+  const style = `
   :root{color-scheme:dark}*{box-sizing:border-box}
-  body{margin:0;height:100vh;display:flex;flex-direction:column;background:#10131a;color:#e8ecf4;
-       font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+  body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:#10131a;color:#e8ecf4;
+       font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
   header{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#1a1f2b;border-bottom:1px solid #2b3345}
   h1{font-size:15px;margin:0;white-space:nowrap}
   .url{flex:1;min-width:0;font:12px ui-monospace,monospace;color:#9fb0cc;background:#10131a;
@@ -579,13 +585,48 @@ function wrapperHTML(target, name){
        text-overflow:ellipsis;white-space:nowrap}
   a.open{color:#10131a;background:#59c2ff;text-decoration:none;padding:6px 12px;border-radius:6px;
          font-weight:600;white-space:nowrap}
-  main{flex:1;position:relative}
+  main{flex:1;position:relative;display:flex}
   iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}
-  .note{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:#1a1f2b;
-        border:1px solid #2b3345;border-radius:8px;padding:8px 14px;color:#9fb0cc;font-size:13px}
-</style>
+  .bar{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;
+       gap:12px;background:#1a1f2b;border:1px solid #2b3345;border-radius:10px;
+       padding:8px 10px 8px 14px;color:#9fb0cc;font-size:13px}
+  .card{margin:auto;background:#1a1f2b;border:1px solid #2b3345;border-radius:18px;padding:34px;
+        max-width:520px;text-align:center}
+  .card .glyph{font-size:46px;line-height:1}
+  .card h2{margin:12px 0 8px;font-size:24px}
+  .card p{margin:0 0 18px;color:#9fb0cc}
+  .card .url{margin:0 0 18px;text-align:center}
+  .big{display:inline-block;color:#10131a;background:#59c2ff;text-decoration:none;padding:12px 22px;
+       border-radius:10px;font-weight:700;font-size:16px}`;
+
+  const head = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(name)}</title>
+<style>${style}</style>
 </head>
-<body>
+<body>`;
+
+  if (!target.framed) {
+    const glyph = target.page.includes("scratch.mit.edu") ? "🐱"
+                : target.kind === "makecode" ? "🕹️" : "🌐";
+    return head + `
+<main>
+  <div class="card">
+    <div class="glyph">${glyph}</div>
+    <h2>${esc(name)}</h2>
+    <p>This site will not run inside a file — it tells browsers not to. So this is a shortcut: it opens the real thing in your browser.</p>
+    <div class="url">${esc(target.page)}</div>
+    <a class="big" href="${esc(target.page)}" target="_blank" rel="noopener">Open ${esc(name)} ↗</a>
+  </div>
+</main>
+</body>
+</html>
+`;
+  }
+  return head + `
 <header>
   <h1>${esc(name)}</h1>
   <div class="url" title="${esc(target.page)}">${esc(target.page)}</div>
@@ -593,7 +634,10 @@ function wrapperHTML(target, name){
 </header>
 <main>
   <iframe src="${esc(target.play)}" allow="autoplay; fullscreen; gamepad; microphone" allowfullscreen></iframe>
-  <div class="note">Nothing showing? The site may not allow being framed — use “Open the original”.</div>
+  <div class="bar">
+    Nothing showing?
+    <a class="open" href="${esc(target.page)}" target="_blank" rel="noopener">Open it in a window ↗</a>
+  </div>
 </main>
 </body>
 </html>
@@ -620,6 +664,20 @@ $("#convertBtn").addEventListener("click", () => {
   $("#convUrl").focus();
 });
 $("#convCancel").addEventListener("click", () => $("#convertDlg").close());
+/* Say what will happen before the button is pressed, not after: pasting the
+   editor's address instead of a project's is the easiest mistake to make here,
+   and it is the one that produces a file that looks broken. */
+$("#convUrl").addEventListener("input", () => {
+  const out = $("#convertOut");
+  let target = null;
+  try { target = recognise($("#convUrl").value); } catch (e) { /* still typing */ }
+  if (!target || target.framed) { out.classList.remove("on"); return; }
+  out.classList.add("on");
+  out.textContent = "This is " + target.title + "'s own page, and it will not run inside a file.\n" +
+    "  As an HTML file it becomes a shortcut that opens it in your browser.\n" +
+    "  As an AppImage it becomes an application with a window of its own.\n" +
+    "  For a file that plays, paste a project link — scratch.mit.edu/projects/60917032";
+});
 $("#convGo").addEventListener("click", async () => {
   const out = $("#convertOut");
   out.classList.add("on");
@@ -630,8 +688,14 @@ $("#convGo").addEventListener("click", async () => {
 
   if (convertFormat === "html") {
     download(target.file + ".html", wrapperHTML(target, name));
-    out.textContent = "✓ Saved " + target.file + ".html to your downloads.\n  It plays " + target.play +
-      "\n  Double-click the file to open it.";
+    out.textContent = target.framed
+      ? "✓ Saved " + target.file + ".html to your downloads.\n  It plays " + target.play +
+        "\n  Double-click the file to open it."
+      : "✓ Saved " + target.file + ".html to your downloads.\n" +
+        "  " + target.title + " will not run inside a file, so this one is a shortcut:\n" +
+        "  it opens " + target.page + " in your browser.\n" +
+        "  For a file that really plays, paste a project link — scratch.mit.edu/projects/60917032\n" +
+        "  For " + target.title + " with a window of its own, choose AppImage instead.";
     return;
   }
   if (!CAPS.appimage) {

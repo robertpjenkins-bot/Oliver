@@ -49,6 +49,10 @@ type Target struct {
 	Title string
 	Page  string
 	Play  string
+	// Framed reports whether Play can be drawn inside a frame. When it
+	// cannot, wrapping it in a page produces an empty rectangle, so the
+	// conversion becomes a shortcut that opens the site instead.
+	Framed bool
 }
 
 var (
@@ -79,11 +83,12 @@ func Recognise(raw string) (Target, error) {
 	if m := turboWarpURL.FindStringSubmatch(s); m != nil {
 		id := m[1]
 		return Target{
-			Kind:  KindTurboWarp,
-			ID:    id,
-			Title: "TurboWarp project " + id,
-			Page:  "https://turbowarp.org/" + id,
-			Play:  "https://turbowarp.org/" + id + "/embed",
+			Kind:   KindTurboWarp,
+			ID:     id,
+			Title:  "TurboWarp project " + id,
+			Page:   "https://turbowarp.org/" + id,
+			Play:   "https://turbowarp.org/" + id + "/embed",
+			Framed: true,
 		}, nil
 	}
 	if m := makeCodeURL.FindStringSubmatch(s); m != nil {
@@ -95,7 +100,8 @@ func Recognise(raw string) (Target, error) {
 			Page:  "https://arcade.makecode.com/" + id,
 			// ---run is MakeCode's player address: the game, without the
 			// editor around it, and framable.
-			Play: "https://arcade.makecode.com/---run?id=" + url.QueryEscape(id),
+			Play:   "https://arcade.makecode.com/---run?id=" + url.QueryEscape(id),
+			Framed: true,
 		}, nil
 	}
 	// A project number on its own is what people copy out of a Scratch URL
@@ -126,12 +132,42 @@ func Recognise(raw string) (Target, error) {
 		return Target{}, fmt.Errorf("that address has no site in it: %s", raw)
 	}
 	return Target{
-		Kind:  KindWeb,
-		ID:    u.Host,
-		Title: u.Host,
-		Page:  u.String(),
-		Play:  u.String(),
+		Kind:   KindWeb,
+		ID:     u.Host,
+		Title:  titleFor(u),
+		Page:   u.String(),
+		Play:   u.String(),
+		Framed: framable(u),
 	}, nil
+}
+
+// framable reports whether a page can be drawn inside a frame.
+//
+// The list is short and specific rather than clever, because guessing wrong in
+// either direction is worse than not guessing: a site wrongly called framable
+// converts into a blank rectangle, and one wrongly called unframable converts
+// into a shortcut when it could have been the real thing. These are the sites
+// Pro Coder points at, and their editors all refuse. Their players do not, and
+// they were recognised further up before ever reaching here.
+func framable(u *url.URL) bool {
+	host := strings.ToLower(strings.TrimPrefix(u.Host, "www."))
+	switch host {
+	case "scratch.mit.edu", "turbowarp.org":
+		return false
+	}
+	return true
+}
+
+func titleFor(u *url.URL) string {
+	switch strings.ToLower(strings.TrimPrefix(u.Host, "www.")) {
+	case "scratch.mit.edu":
+		return "Scratch"
+	case "turbowarp.org":
+		return "TurboWarp"
+	case "arcade.makecode.com", "makecode.com":
+		return "MakeCode Arcade"
+	}
+	return u.Host
 }
 
 // schemePrefix returns the URL scheme a string starts with, or "" when it
@@ -151,7 +187,8 @@ func scratchTarget(id string) Target {
 		Page:  "https://scratch.mit.edu/projects/" + id,
 		// /embed is the one Scratch address that allows framing: the project
 		// player with a green flag and nothing else.
-		Play: "https://scratch.mit.edu/projects/" + id + "/embed",
+		Play:   "https://scratch.mit.edu/projects/" + id + "/embed",
+		Framed: true,
 	}
 }
 
@@ -169,21 +206,17 @@ func (t Target) Name() string {
 	}
 }
 
-// wrapper is the standalone page a converted project becomes: the project
-// filling the window, with its address on show and a way out to the real site
-// for the days when framing is refused.
-var wrapper = template.Must(template.New("wrapper").Parse(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Name}}</title>
-<style>
+// The two pages a conversion can become. A project that plays inside a frame
+// becomes the project, filling the window. A page that refuses to be framed —
+// every one of these sites' editors does — becomes a shortcut instead, because
+// a wrapper around a rectangle the site will not fill is worse than useless:
+// it looks broken, and it hides the address that would have worked.
+var wrapperStyle = `
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; height: 100vh; display: flex; flex-direction: column;
+  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column;
          background: #10131a; color: #e8ecf4;
-         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
   header { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
            background: #1a1f2b; border-bottom: 1px solid #2b3345; }
   h1 { font-size: 15px; margin: 0; white-space: nowrap; }
@@ -192,12 +225,29 @@ var wrapper = template.Must(template.New("wrapper").Parse(`<!DOCTYPE html>
          padding: 6px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   a.open { color: #10131a; background: #59c2ff; text-decoration: none;
            padding: 6px 12px; border-radius: 6px; font-weight: 600; white-space: nowrap; }
-  main { flex: 1; position: relative; }
+  main { flex: 1; position: relative; display: flex; }
   iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; }
-  .note { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-          background: #1a1f2b; border: 1px solid #2b3345; border-radius: 8px;
-          padding: 8px 14px; color: #9fb0cc; font-size: 13px; }
-</style>
+  .bar { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+         display: flex; align-items: center; gap: 12px; background: #1a1f2b;
+         border: 1px solid #2b3345; border-radius: 10px; padding: 8px 10px 8px 14px;
+         color: #9fb0cc; font-size: 13px; }
+  .card { margin: auto; background: #1a1f2b; border: 1px solid #2b3345; border-radius: 18px;
+          padding: 34px; max-width: 520px; text-align: center; }
+  .card .glyph { font-size: 46px; line-height: 1; }
+  .card h2 { margin: 12px 0 8px; font-size: 24px; }
+  .card p { margin: 0 0 18px; color: #9fb0cc; }
+  .card .url { margin: 0 0 18px; text-align: center; }
+  .big { display: inline-block; color: #10131a; background: #59c2ff; text-decoration: none;
+         padding: 12px 22px; border-radius: 10px; font-weight: 700; font-size: 16px; }
+`
+
+var playerPage = template.Must(template.New("player").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Name}}</title>
+<style>{{.Style}}</style>
 </head>
 <body>
 <header>
@@ -207,7 +257,32 @@ var wrapper = template.Must(template.New("wrapper").Parse(`<!DOCTYPE html>
 </header>
 <main>
   <iframe src="{{.Play}}" allow="autoplay; fullscreen; gamepad; microphone" allowfullscreen></iframe>
-  <div class="note">Nothing showing? The site may not allow being framed — use “Open the original”.</div>
+  <div class="bar">
+    Nothing showing?
+    <a class="open" href="{{.Page}}" target="_blank" rel="noopener">Open it in a window ↗</a>
+  </div>
+</main>
+</body>
+</html>
+`))
+
+var shortcutPage = template.Must(template.New("shortcut").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Name}}</title>
+<style>{{.Style}}</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <div class="glyph">{{.Glyph}}</div>
+    <h2>{{.Name}}</h2>
+    <p>{{.Why}}</p>
+    <div class="url">{{.Page}}</div>
+    <a class="big" href="{{.Page}}" target="_blank" rel="noopener">Open {{.Name}} ↗</a>
+  </div>
 </main>
 </body>
 </html>
@@ -220,21 +295,44 @@ func WrapperHTML(t Target, name string) ([]byte, error) {
 	if name == "" {
 		name = t.Title
 	}
-	var b strings.Builder
-	err := wrapper.Execute(&b, struct {
-		Name string
-		Page template.URL
-		Play template.URL
-	}{
-		Name: name,
+	data := struct {
+		Name  string
+		Glyph string
+		Why   string
+		Style template.CSS
 		// Both addresses were checked in Recognise, so they are http(s) and
 		// safe to mark as URLs the template may emit unescaped in an
 		// attribute.
-		Page: template.URL(t.Page),
-		Play: template.URL(t.Play),
-	})
-	if err != nil {
+		Page template.URL
+		Play template.URL
+	}{
+		Name:  name,
+		Glyph: glyphFor(t),
+		Why: "This site will not run inside a file — it tells browsers not to. " +
+			"So this is a shortcut: it opens the real thing in your browser.",
+		Style: template.CSS(wrapperStyle),
+		Page:  template.URL(t.Page),
+		Play:  template.URL(t.Play),
+	}
+
+	page := playerPage
+	if !t.Framed {
+		page = shortcutPage
+	}
+	var b strings.Builder
+	if err := page.Execute(&b, data); err != nil {
 		return nil, err
 	}
 	return []byte(b.String()), nil
+}
+
+func glyphFor(t Target) string {
+	switch {
+	case t.Kind == KindScratch, strings.Contains(t.Page, "scratch.mit.edu"):
+		return "🐱"
+	case t.Kind == KindMakeCode:
+		return "🕹️"
+	default:
+		return "🌐"
+	}
 }
