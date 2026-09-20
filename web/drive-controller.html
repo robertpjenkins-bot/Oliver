@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drive Controller</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --panel-2: #fafbfc;
+    --ink: #16181d;
+    --ink-soft: #5c636e;
+    --ink-faint: #8b929c;
+    --line: #dfe2e7;
+    --accent: #2f6df6;
+    --accent-ink: #ffffff;
+    --ok: #17845a;
+    --ok-bg: #e4f5ed;
+    --warn: #9a6200;
+    --warn-bg: #fdf1dc;
+    --bad: #c03030;
+    --bad-bg: #fce9e9;
+    --term-bg: #13161c;
+    --term-ink: #cfd6e0;
+    --radius: 12px;
+    --shadow: 0 1px 2px rgba(16,18,23,.06), 0 8px 24px rgba(16,18,23,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1116;
+      --panel: #171a21;
+      --panel-2: #1d2029;
+      --ink: #e8eaef;
+      --ink-soft: #a4abb7;
+      --ink-faint: #737b88;
+      --line: #2a2e38;
+      --accent: #5b8cff;
+      --accent-ink: #0b0d11;
+      --ok: #4cc38a;
+      --ok-bg: #122a20;
+      --warn: #e3ad4a;
+      --warn-bg: #2c2312;
+      --bad: #f2777a;
+      --bad-bg: #2e1718;
+      --term-bg: #0b0d11;
+      --term-ink: #c6cede;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1116; --panel: #171a21; --panel-2: #1d2029;
+    --ink: #e8eaef; --ink-soft: #a4abb7; --ink-faint: #737b88; --line: #2a2e38;
+    --accent: #5b8cff; --accent-ink: #0b0d11;
+    --ok: #4cc38a; --ok-bg: #122a20; --warn: #e3ad4a; --warn-bg: #2c2312;
+    --bad: #f2777a; --bad-bg: #2e1718;
+    --term-bg: #0b0d11; --term-ink: #c6cede;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 16px 56px; }
+
+  header.top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 14px; }
+  header.top h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+  header.top .sub { color: var(--ink-soft); font-size: 13px; margin: 2px 0 0; }
+  .spacer { flex: 1 1 auto; }
+
+  .demo-note {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: var(--warn-bg); color: var(--warn);
+    border: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+    border-radius: var(--radius); padding: 10px 14px; margin-bottom: 18px;
+    font-size: 13px; line-height: 1.45;
+  }
+  .demo-note strong { color: inherit; }
+
+  .layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+  }
+  .card > h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ink-faint); margin: 0; padding: 14px 16px 10px;
+  }
+
+  /* ---- drive list ---- */
+  ul.drives { list-style: none; margin: 0; padding: 0 8px 8px; }
+  ul.drives li { margin: 0 0 4px; }
+  .drive-btn {
+    width: 100%; text-align: left; cursor: pointer;
+    display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center;
+    background: transparent; border: 1px solid transparent; border-radius: 9px;
+    padding: 9px 10px; color: var(--ink); font: inherit;
+  }
+  .drive-btn:hover { background: var(--panel-2); }
+  .drive-btn[aria-pressed="true"] { background: var(--panel-2); border-color: var(--accent); }
+  .drive-btn .icon { font-size: 17px; line-height: 1; text-align: center; }
+  .drive-btn .name { font-weight: 600; font-size: 14px; }
+  .drive-btn .meta { color: var(--ink-faint); font-size: 12px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); display: inline-block; }
+  .dot.warn { background: var(--warn); }
+  .dot.bad { background: var(--bad); }
+
+  .rescan-row { padding: 6px 16px 14px; }
+
+  /* ---- detail ---- */
+  .detail-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 16px 18px 0; }
+  .detail-head h2 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+  .pill {
+    font-size: 11.5px; font-weight: 600; letter-spacing: .02em;
+    padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+  }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .pill.bad { background: var(--bad-bg); color: var(--bad); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px;
+           background: var(--line); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+           margin: 16px 0 0; }
+  .stat { background: var(--panel); padding: 12px 18px; }
+  .stat dt { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-faint); margin: 0 0 3px; }
+  .stat dd { margin: 0; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .health { padding: 16px 18px 4px; }
+  .health-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-soft); margin-bottom: 6px; }
+  .bar { height: 8px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--ok); transition: width .5s ease, background .4s ease; }
+  .bar.warn > span { background: var(--warn); }
+  .bar.bad > span { background: var(--bad); }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 18px; }
+  button {
+    font: inherit; font-weight: 600; font-size: 13.5px;
+    border-radius: 9px; padding: 9px 15px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+  }
+  button:hover:not(:disabled) { border-color: var(--ink-faint); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.primary:hover:not(:disabled) { filter: brightness(1.07); }
+  button.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.small { padding: 6px 11px; font-size: 12.5px; }
+  button:focus-visible, .drive-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .progress { padding: 0 18px 16px; display: none; }
+  .progress.on { display: block; }
+  .progress .step { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+  .progress .bar > span { background: var(--accent); transition: width .25s linear; }
+
+  .log { margin: 0; padding: 14px 16px; background: var(--term-bg); color: var(--term-ink);
+         border-radius: 0 0 var(--radius) var(--radius); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+         font-size: 12.5px; line-height: 1.65; max-height: 260px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+  .log .t { color: #6f7b8d; }
+  .log .ok { color: #64d6a0; }
+  .log .warn { color: #e8bb62; }
+  .log .bad { color: #f58f92; }
+  .log-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
+  .log-head h2 { flex: 1 1 auto; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-faint); margin: 0; }
+
+  .empty { padding: 40px 18px; text-align: center; color: var(--ink-faint); font-size: 14px; }
+  footer { margin-top: 22px; color: var(--ink-faint); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>Drive Controller</h1>
+      <p class="sub">Inspect external drives, repair corruption, and lift write protection.</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="small" id="theme-btn" type="button">Theme</button>
+    <button class="small" id="reset-btn" type="button">Reset demo</button>
+  </header>
+
+  <div class="demo-note">
+    <span aria-hidden="true">⚠️</span>
+    <span><strong>Simulation.</strong> A web page cannot reach real hardware — browsers have no API for
+    block devices, partition tables or write-protect flags. Every drive, scan and repair below is
+    modelled in JavaScript. Nothing on your actual disks is read or changed. For real work use
+    <code>fsck</code>/<code>chkdsk</code>, <code>hdparm</code> or your vendor's tool.</span>
+  </div>
+
+  <div class="layout">
+
+    <section class="card" aria-label="External drives">
+      <h2>External drives</h2>
+      <ul class="drives" id="drive-list"></ul>
+      <div class="rescan-row">
+        <button class="small" id="rescan-btn" type="button">Rescan bus</button>
+      </div>
+    </section>
+
+    <section class="card" id="detail" aria-live="polite">
+      <div class="empty">Select a drive to begin.</div>
+    </section>
+
+  </div>
+
+  <footer>Drive Controller — demo interface, no hardware access.</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var GB = 1;
+  function seed() {
+    return [
+      { id: "sdb1", name: "FIELD BACKUP", bus: "USB 3.2", fs: "exFAT", size: 2000 * GB, used: 1240 * GB,
+        state: "corrupt", protected: false, health: 34, badSectors: 148, mounted: true },
+      { id: "sdc1", name: "PHOTOS 2025", bus: "USB-C", fs: "NTFS", size: 1000 * GB, used: 612 * GB,
+        state: "healthy", protected: true, health: 97, badSectors: 0, mounted: true },
+      { id: "sdd1", name: "SANDISK 64", bus: "USB 2.0", fs: "FAT32", size: 64 * GB, used: 41 * GB,
+        state: "warning", protected: true, health: 68, badSectors: 12, mounted: true },
+      { id: "sde1", name: "ARCHIVE RAID", bus: "Thunderbolt", fs: "ext4", size: 8000 * GB, used: 5100 * GB,
+        state: "healthy", protected: false, health: 91, badSectors: 2, mounted: false }
+    ];
+  }
+
+  var STORE = "drive-controller-state";
+  var drives = load();
+  var selectedId = drives.length ? drives[0].id : null;
+  var busy = false;
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORE);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length) return parsed;
+      }
+    } catch (e) { /* private mode, blocked storage — fall through */ }
+    return seed();
+  }
+  function save() {
+    try { localStorage.setItem(STORE, JSON.stringify(drives)); } catch (e) { /* ignore */ }
+  }
+
+  function selected() {
+    for (var i = 0; i < drives.length; i++) if (drives[i].id === selectedId) return drives[i];
+    return null;
+  }
+  function fmtSize(gb) {
+    if (gb >= 1000) return (gb / 1000).toFixed(gb % 1000 === 0 ? 0 : 1) + " TB";
+    return gb + " GB";
+  }
+  function stateWord(d) {
+    if (d.state === "corrupt") return "Corrupted";
+    if (d.state === "warning") return "Degraded";
+    return "Healthy";
+  }
+  function stateClass(d) {
+    if (d.state === "corrupt") return "bad";
+    if (d.state === "warning") return "warn";
+    return "ok";
+  }
+
+  /* ---------- log ---------- */
+  var logLines = [];
+  function log(msg, kind) {
+    var now = new Date();
+    var t = [now.getHours(), now.getMinutes(), now.getSeconds()]
+      .map(function (n) { return String(n).padStart(2, "0"); }).join(":");
+    logLines.push({ t: t, msg: msg, kind: kind || "" });
+    if (logLines.length > 300) logLines.shift();
+    paintLog();
+  }
+  function paintLog() {
+    var el = document.getElementById("log");
+    if (!el) return;
+    el.innerHTML = logLines.map(function (l) {
+      return '<span class="t">' + l.t + '</span> <span class="' + l.kind + '">' + esc(l.msg) + "</span>";
+    }).join("\n");
+    el.scrollTop = el.scrollHeight;
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  /* ---------- rendering ---------- */
+  function renderList() {
+    var ul = document.getElementById("drive-list");
+    ul.innerHTML = "";
+    drives.forEach(function (d) {
+      var li = document.createElement("li");
+      var b = document.createElement("button");
+      b.className = "drive-btn";
+      b.type = "button";
+      b.setAttribute("aria-pressed", d.id === selectedId ? "true" : "false");
+      b.innerHTML =
+        '<span class="icon" aria-hidden="true">' + (d.protected ? "🔒" : "💾") + "</span>" +
+        '<span><span class="name">' + esc(d.name) + "</span><br>" +
+        '<span class="meta">/dev/' + esc(d.id) + " · " + esc(d.fs) + " · " + fmtSize(d.size) + "</span></span>" +
+        '<span class="dot ' + stateClass(d) + '" title="' + stateWord(d) + '"></span>';
+      b.addEventListener("click", function () {
+        if (busy) return;
+        selectedId = d.id;
+        render();
+        log("selected /dev/" + d.id + " (" + d.name + ")");
+      });
+      li.appendChild(b);
+      ul.appendChild(li);
+    });
+  }
+
+  function renderDetail() {
+    var host = document.getElementById("detail");
+    var d = selected();
+    if (!d) { host.innerHTML = '<div class="empty">Select a drive to begin.</div>'; return; }
+
+    var barClass = d.health >= 85 ? "" : d.health >= 50 ? "warn" : "bad";
+    host.innerHTML =
+      '<div class="detail-head">' +
+        "<h2>" + esc(d.name) + "</h2>" +
+        '<span class="pill ' + stateClass(d) + '">' + stateWord(d) + "</span>" +
+        (d.protected ? '<span class="pill warn">Write protected</span>' : '<span class="pill ok">Writable</span>') +
+        (d.mounted ? "" : '<span class="pill warn">Not mounted</span>') +
+      "</div>" +
+      '<dl class="stats">' +
+        stat("Device", "/dev/" + d.id) +
+        stat("Bus", d.bus) +
+        stat("Filesystem", d.fs) +
+        stat("Capacity", fmtSize(d.size)) +
+        stat("Used", fmtSize(d.used) + " (" + Math.round((d.used / d.size) * 100) + "%)") +
+        stat("Bad sectors", String(d.badSectors)) +
+      "</dl>" +
+      '<div class="health">' +
+        '<div class="health-label"><span>Drive health</span><span>' + d.health + "%</span></div>" +
+        '<div class="bar ' + barClass + '"><span style="width:' + d.health + '%"></span></div>' +
+      "</div>" +
+      '<div class="actions">' +
+        '<button class="primary" id="act-uncorrupt" type="button"' + (d.state === "healthy" ? " disabled" : "") + ">Uncorrupt</button>" +
+        '<button id="act-protect" type="button">' + (d.protected ? "Unprotect" : "Write-protect") + "</button>" +
+        '<button id="act-scan" type="button">Scan surface</button>' +
+        '<button id="act-mount" type="button">' + (d.mounted ? "Eject" : "Mount") + "</button>" +
+        '<button class="danger" id="act-format" type="button">Format…</button>' +
+      "</div>" +
+      '<div class="progress" id="progress">' +
+        '<div class="step" id="progress-step"></div>' +
+        '<div class="bar"><span id="progress-bar" style="width:0%"></span></div>' +
+      "</div>" +
+      '<div class="log-head"><h2>Activity</h2>' +
+        '<button class="small" id="clear-log" type="button">Clear</button></div>' +
+      '<pre class="log" id="log"></pre>';
+
+    document.getElementById("act-uncorrupt").addEventListener("click", uncorrupt);
+    document.getElementById("act-protect").addEventListener("click", toggleProtect);
+    document.getElementById("act-scan").addEventListener("click", scan);
+    document.getElementById("act-mount").addEventListener("click", toggleMount);
+    document.getElementById("act-format").addEventListener("click", format);
+    document.getElementById("clear-log").addEventListener("click", function () {
+      logLines = []; paintLog();
+    });
+    paintLog();
+    setBusy(busy);
+  }
+
+  function stat(label, value) {
+    return '<div class="stat"><dt>' + esc(label) + "</dt><dd>" + esc(value) + "</dd></div>";
+  }
+
+  function render() { renderList(); renderDetail(); }
+
+  function setBusy(v) {
+    busy = v;
+    ["act-uncorrupt", "act-protect", "act-scan", "act-mount", "act-format", "rescan-btn", "reset-btn"]
+      .forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (v) { el.disabled = true; }
+        else if (id === "act-uncorrupt") { var d = selected(); el.disabled = !d || d.state === "healthy"; }
+        else { el.disabled = false; }
+      });
+    document.querySelectorAll(".drive-btn").forEach(function (b) { b.disabled = v; });
+  }
+
+  /* ---------- simulated jobs ---------- */
+  function runJob(steps, done) {
+    var box = document.getElementById("progress");
+    var bar = document.getElementById("progress-bar");
+    var label = document.getElementById("progress-step");
+    box.classList.add("on");
+    setBusy(true);
+
+    var i = 0;
+    function next() {
+      if (i >= steps.length) {
+        bar.style.width = "100%";
+        label.textContent = "Done";
+        setTimeout(function () {
+          box.classList.remove("on");
+          bar.style.width = "0%";
+          setBusy(false);
+          if (done) done();
+          render();
+          save();
+        }, 500);
+        return;
+      }
+      var s = steps[i];
+      label.textContent = "(" + (i + 1) + "/" + steps.length + ") " + s.text;
+      bar.style.width = Math.round((i / steps.length) * 100) + "%";
+      log(s.text + "…");
+      i++;
+      setTimeout(function () {
+        if (s.after) s.after();
+        next();
+      }, s.ms || 650);
+    }
+    next();
+  }
+
+  function uncorrupt() {
+    var d = selected();
+    if (!d || busy) return;
+    if (d.protected) {
+      log("cannot repair /dev/" + d.id + ": drive is write protected — press Unprotect first", "bad");
+      return;
+    }
+    log("repair requested on /dev/" + d.id, "warn");
+    var recovered = d.badSectors;
+    runJob([
+      { text: "Unmounting /dev/" + d.id, ms: 500, after: function () { d.mounted = false; } },
+      { text: "Reading partition table", ms: 700 },
+      { text: "Checking filesystem metadata (" + d.fs + ")", ms: 900,
+        after: function () { log("found " + recovered + " damaged sectors and 3 orphaned inodes", "warn"); } },
+      { text: "Rebuilding allocation tables", ms: 1000 },
+      { text: "Remapping bad sectors to spare pool", ms: 900,
+        after: function () { d.badSectors = Math.max(0, Math.floor(d.badSectors * 0.05)); } },
+      { text: "Relinking orphaned files to /lost+found", ms: 800 },
+      { text: "Verifying repaired volume", ms: 900 },
+      { text: "Remounting /dev/" + d.id, ms: 500, after: function () { d.mounted = true; } }
+    ], function () {
+      d.state = "healthy";
+      d.health = Math.min(99, Math.max(d.health, 88) + 4);
+      log("repair complete — " + recovered + " sectors recovered, volume is clean", "ok");
+    });
+  }
+
+  function toggleProtect() {
+    var d = selected();
+    if (!d || busy) return;
+    if (d.protected) {
+      runJob([
+        { text: "Clearing hardware write-protect flag", ms: 600 },
+        { text: "Remounting read-write", ms: 600 }
+      ], function () {
+        d.protected = false;
+        log("/dev/" + d.id + " is now writable", "ok");
+      });
+    } else {
+      runJob([{ text: "Setting write-protect flag", ms: 600 }], function () {
+        d.protected = true;
+        log("/dev/" + d.id + " is now write protected", "warn");
+      });
+    }
+  }
+
+  function scan() {
+    var d = selected();
+    if (!d || busy) return;
+    runJob([
+      { text: "Reading SMART attributes", ms: 700 },
+      { text: "Surface scan 0–33%", ms: 800 },
+      { text: "Surface scan 33–66%", ms: 800 },
+      { text: "Surface scan 66–100%", ms: 800 }
+    ], function () {
+      if (d.badSectors > 100) {
+        d.state = "corrupt";
+        log("scan finished: " + d.badSectors + " bad sectors — filesystem is corrupt", "bad");
+      } else if (d.badSectors > 0) {
+        if (d.state !== "corrupt") d.state = "warning";
+        log("scan finished: " + d.badSectors + " bad sectors, volume mountable", "warn");
+      } else {
+        d.state = "healthy";
+        log("scan finished: no errors found", "ok");
+      }
+    });
+  }
+
+  function toggleMount() {
+    var d = selected();
+    if (!d || busy) return;
+    runJob([{ text: d.mounted ? "Flushing buffers and ejecting" : "Mounting volume", ms: 700 }], function () {
+      d.mounted = !d.mounted;
+      log("/dev/" + d.id + (d.mounted ? " mounted" : " safe to remove"), "ok");
+    });
+  }
+
+  function format() {
+    var d = selected();
+    if (!d || busy) return;
+    if (d.protected) { log("cannot format /dev/" + d.id + ": write protected", "bad"); return; }
+    if (!window.confirm("Format " + d.name + " (/dev/" + d.id + ")?\n\nThis is a simulation — no real data is touched.")) return;
+    runJob([
+      { text: "Writing new partition table", ms: 800 },
+      { text: "Creating " + d.fs + " filesystem", ms: 1000 },
+      { text: "Writing volume label", ms: 500 }
+    ], function () {
+      d.used = 0; d.badSectors = 0; d.state = "healthy"; d.health = Math.max(d.health, 95); d.mounted = true;
+      log("/dev/" + d.id + " formatted as " + d.fs, "ok");
+    });
+  }
+
+  /* ---------- toolbar ---------- */
+  document.getElementById("rescan-btn").addEventListener("click", function () {
+    if (busy) return;
+    log("rescanning USB/Thunderbolt bus…");
+    setBusy(true);
+    setTimeout(function () {
+      setBusy(false);
+      log("found " + drives.length + " external volumes", "ok");
+      render();
+    }, 900);
+  });
+
+  document.getElementById("reset-btn").addEventListener("click", function () {
+    if (busy) return;
+    drives = seed();
+    selectedId = drives[0].id;
+    logLines = [];
+    save();
+    render();
+    log("demo state reset", "ok");
+  });
+
+  document.getElementById("theme-btn").addEventListener("click", function () {
+    var root = document.documentElement;
+    var cur = root.getAttribute("data-theme");
+    var next = cur === "dark" ? "light" : cur === "light" ? "" : "dark";
+    if (next) root.setAttribute("data-theme", next); else root.removeAttribute("data-theme");
+    try { localStorage.setItem(STORE + "-theme", next); } catch (e) { /* ignore */ }
+  });
+
+  try {
+    var savedTheme = localStorage.getItem(STORE + "-theme");
+    if (savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
+  } catch (e) { /* ignore */ }
+
+  render();
+  log("drive controller ready — simulation mode, no hardware access", "ok");
+})();
+</script>
+</body>
+</html>
