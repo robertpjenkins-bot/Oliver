@@ -80,6 +80,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.page)
 
 	api := map[string]http.HandlerFunc{
+		"GET /api/status":            s.status,
 		"GET /api/drives":            s.drives,
 		"GET /api/image":             s.image,
 		"GET /api/browse":            s.browse,
@@ -262,6 +263,28 @@ type partitionView struct {
 	SizeHuman string `json:"size_human"`
 	Contents  string `json:"contents"`
 	MountedAt string `json:"mounted_at,omitempty"`
+}
+
+// status reports what this instance of Oliver can and cannot do, so the page
+// can say so before somebody presses a button and finds out.
+func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	elevated := device.Elevated()
+	out := struct {
+		Elevated bool   `json:"elevated"`
+		Warning  string `json:"warning,omitempty"`
+		Command  string `json:"command,omitempty"`
+	}{Elevated: elevated}
+
+	if !elevated {
+		out.Warning = "Oliver is not running as root, so it cannot write to a drive or clear a " +
+			"read-only flag. Close this and start it again with sudo."
+		self, err := device.Self()
+		if err != nil {
+			self = "oliver"
+		}
+		out.Command = "sudo " + self + " ui"
+	}
+	send(w, out)
 }
 
 func (s *Server) drives(w http.ResponseWriter, r *http.Request) {
@@ -472,7 +495,8 @@ type request struct {
 // applies is applied here too, because the page is only a front end and a
 // front end's checks can be skipped by anything that can reach the socket.
 func (s *Server) prepare(req *request, action string) (*device.Device, error) {
-	dev, err := s.Scanner().Find(req.Device)
+	scanner := s.Scanner()
+	dev, err := scanner.Find(req.Device)
 	if err != nil {
 		return nil, err
 	}
@@ -491,6 +515,13 @@ func (s *Server) prepare(req *request, action string) (*device.Device, error) {
 		if err := device.Unmount(dev); err != nil {
 			return nil, err
 		}
+	}
+
+	// Knowing why a drive is read-only and then failing on it is no use to
+	// anybody. The drive is about to be overwritten; a flag saying "do not
+	// write" is much the smaller thing to undo.
+	if _, err := device.MakeWritable(scanner, dev); err != nil {
+		return nil, err
 	}
 	return dev, nil
 }

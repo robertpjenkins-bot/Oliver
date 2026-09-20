@@ -862,3 +862,82 @@ func TestAnUnprotectedDriveReportsNothingInTheWay(t *testing.T) {
 		t.Errorf("a writable drive was reported as protected: %+v", p)
 	}
 }
+
+func TestAReadOnlyDriveIsClearedByTheOperationItself(t *testing.T) {
+	h := newHarness(t)
+	node := h.drive("sdb", 64<<20, true, "Cruzer")
+	h.protect("sdb")
+
+	// This is the case from a real machine: the flag is detected and shown,
+	// the user presses Erase, and the kernel refuses the open with an errno
+	// that names neither a filesystem nor anything they can act on. Clearing
+	// it is part of erasing, not a separate thing to have known about.
+	original := device.ClearReadOnly
+	t.Cleanup(func() { device.ClearReadOnly = original })
+	device.ClearReadOnly = func(string) error {
+		return os.WriteFile(filepath.Join(h.root, "sys", "block", "sdb", "ro"), []byte("0\n"), 0o644)
+	}
+
+	res, body := h.do("POST", "/api/erase", map[string]any{
+		"device": "sdb", "confirm": "sdb", "raw": true,
+	})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("the erase was refused rather than getting past the flag: %d %+v", res.StatusCode, body)
+	}
+	final := h.await(body["id"].(string))
+	if final["error"] != nil {
+		t.Fatalf("erase failed: %v", final["error"])
+	}
+
+	drives := h.list("/api/drives")
+	if p, ok := drives[0]["protections"]; ok && p != nil {
+		t.Errorf("the drive is still reported as protected: %+v", p)
+	}
+	if got := contentsOf(t, node, 512); !bytes.Equal(got, make([]byte, 512)) {
+		t.Error("the drive was not erased")
+	}
+}
+
+func TestADriveThatCannotBeMadeWritableSaysSoRatherThanFailingOnAnErrno(t *testing.T) {
+	h := newHarness(t)
+	h.drive("sdb", 64<<20, true, "Cruzer")
+	h.protect("sdb")
+
+	// A flag that will not clear: the drive itself is refusing.
+	original := device.ClearReadOnly
+	t.Cleanup(func() { device.ClearReadOnly = original })
+	device.ClearReadOnly = func(string) error { return fmt.Errorf("permission denied: this needs root") }
+
+	res, body := h.do("POST", "/api/erase", map[string]any{"device": "sdb", "confirm": "sdb"})
+	if res.StatusCode == http.StatusOK {
+		t.Fatal("an erase started on a drive that cannot be written to")
+	}
+	if !strings.Contains(fmt.Sprint(body["error"]), "needs root") {
+		t.Errorf("the reason was lost: %v", body["error"])
+	}
+}
+
+func TestThePageIsToldWhenOliverHasNoPrivilege(t *testing.T) {
+	h := newHarness(t)
+
+	original := device.Elevated
+	t.Cleanup(func() { device.Elevated = original })
+
+	device.Elevated = func() bool { return false }
+	_, body := h.do("GET", "/api/status", nil)
+	if body["elevated"] != false {
+		t.Fatalf("status = %+v", body)
+	}
+	if !strings.Contains(fmt.Sprint(body["warning"]), "not running as root") {
+		t.Errorf("the warning does not say what is wrong: %v", body["warning"])
+	}
+	if !strings.Contains(fmt.Sprint(body["command"]), "sudo") {
+		t.Errorf("the warning does not say what to run: %v", body["command"])
+	}
+
+	device.Elevated = func() bool { return true }
+	_, body = h.do("GET", "/api/status", nil)
+	if body["elevated"] != true || body["warning"] != nil {
+		t.Errorf("a privileged instance still warned: %+v", body)
+	}
+}

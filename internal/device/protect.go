@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // A drive that will not accept writes is refusing for one of a handful of
@@ -214,4 +215,75 @@ func Unprotect(d *Device, protections []Protection, force bool) ([]string, error
 		return done, fmt.Errorf("could not clear write protection: %s", strings.Join(failed, "; "))
 	}
 	return done, nil
+}
+
+// MakeWritable does whatever it takes to get a drive ready to be written to,
+// and reports each thing it did.
+//
+// It exists because knowing why a drive is read-only and then failing on it is
+// no use to anybody. By the time this is called the caller has already agreed
+// to destroy what is on the drive, so clearing a flag that merely says "do not
+// write" is the smaller act by a long way — and it is the difference between
+// a tool that explains the problem and one that solves it.
+//
+// A dirty filesystem is not touched: it stops a volume being mounted for
+// writing, not the drive being written to, and it is about to be overwritten
+// anyway.
+func MakeWritable(s *Scanner, d *Device) ([]string, error) {
+	var steps []string
+
+	blockers := []Protection{}
+	for _, p := range s.WriteProtection(d) {
+		if p.Kind == KernelFlag || p.Kind == GPTAttribute {
+			blockers = append(blockers, p)
+		}
+	}
+	if len(blockers) > 0 {
+		done, err := Unprotect(d, blockers, false)
+		steps = append(steps, done...)
+		if err != nil {
+			return steps, err
+		}
+	}
+
+	if err := TestWrite(d.Path); err == nil {
+		return steps, nil
+	}
+
+	// Still refusing. A stick whose controller latched read-only after an
+	// error stays that way until it is power-cycled, and the kernel can do
+	// that without anybody touching the drive.
+	if _, isUSB := USBPath(d); !isUSB {
+		return steps, TestWrite(d.Path)
+	}
+	if err := ResetUSB(d); err != nil {
+		return steps, fmt.Errorf("the drive is still refusing writes, and resetting it failed: %w", err)
+	}
+	steps = append(steps, "reset the USB device, which had latched itself read-only")
+
+	// It disappears and comes back, possibly under another name.
+	fresh, err := waitForDevice(s, d.Path)
+	if err != nil {
+		return steps, err
+	}
+	if blockers := s.WriteProtection(fresh); len(blockers) > 0 {
+		done, _ := Unprotect(fresh, blockers, false)
+		steps = append(steps, done...)
+	}
+	return steps, TestWrite(fresh.Path)
+}
+
+// waitForDevice waits for a drive to come back after a reset.
+func waitForDevice(s *Scanner, path string) (*Device, error) {
+	var last error
+	for attempt := 0; attempt < 20; attempt++ {
+		time.Sleep(250 * time.Millisecond)
+		d, err := s.Find(path)
+		if err != nil {
+			last = err
+			continue
+		}
+		return d, nil
+	}
+	return nil, fmt.Errorf("%s did not come back after being reset: %w", path, last)
 }

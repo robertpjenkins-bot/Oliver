@@ -199,6 +199,9 @@ func (a *app) cmdWrite(args []string) error {
 	if err := a.release(dev, *g); err != nil {
 		return err
 	}
+	if err := a.makeWritable(dev); err != nil {
+		return err
+	}
 
 	ctx, stop := interruptible()
 	defer stop()
@@ -256,6 +259,9 @@ func (a *app) cmdErase(args []string) error {
 	if err := a.release(dev, *g); err != nil {
 		return err
 	}
+	if err := a.makeWritable(dev); err != nil {
+		return err
+	}
 
 	ctx, stop := interruptible()
 	defer stop()
@@ -305,6 +311,9 @@ func (a *app) cmdFormat(args []string) error {
 		return err
 	}
 	if err := a.release(dev, *g); err != nil {
+		return err
+	}
+	if err := a.makeWritable(dev); err != nil {
 		return err
 	}
 	if *bootable {
@@ -374,6 +383,9 @@ func (a *app) cmdTest(args []string) error {
 		return err
 	}
 	if err := a.release(dev, *g); err != nil {
+		return err
+	}
+	if err := a.makeWritable(dev); err != nil {
 		return err
 	}
 
@@ -644,6 +656,9 @@ func (a *app) cmdRepair(args []string) error {
 		return err
 	}
 	if err := a.release(dev, *g); err != nil {
+		return err
+	}
+	if err := a.makeWritable(dev); err != nil {
 		return err
 	}
 
@@ -932,6 +947,21 @@ func checkBusy(d *device.Device, action string, g guard) error {
 		return nil
 	}
 	return withFlagHint(device.CheckIdle(d, action))
+}
+
+// makeWritable clears anything standing between the drive and the write that
+// is about to happen. It runs after the confirmation, because by then the
+// drive is going to be overwritten and a flag saying "do not write" is much
+// the smaller thing to undo.
+func (a *app) makeWritable(d *device.Device) error {
+	steps, err := device.MakeWritable(newScanner(), d)
+	for _, step := range steps {
+		a.ui.Info("%s %s", a.ui.Green("✓"), step)
+	}
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s will not take writes: %w", d.Path, err)
 }
 
 // release unmounts what is on the drive, once the user has agreed to destroy

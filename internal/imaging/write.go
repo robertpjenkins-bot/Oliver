@@ -9,6 +9,7 @@ import (
 	"hash"
 	"io"
 	"os"
+	"syscall"
 	"time"
 )
 
@@ -365,8 +366,18 @@ func Capacity(f *os.File) (int64, error) {
 
 // openError turns the kernel's refusals into the two things that actually
 // cause them.
+// ErrReadOnlyDevice is the kernel refusing to open a device for writing
+// because it is holding it read-only. It is worth recognising because the
+// message the kernel gives for it — "read-only file system" — names neither a
+// filesystem nor anything a person can act on.
+var ErrReadOnlyDevice = errors.New("the kernel is holding this device read-only")
+
 func openError(path string, err error) error {
 	switch {
+	case errors.Is(err, syscall.EROFS):
+		return fmt.Errorf("%w: %s.\n"+
+			"Nothing was wrong with the request — a flag on the device is refusing writes before "+
+			"they reach the drive. `oliver unprotect %s` clears it", ErrReadOnlyDevice, path, path)
 	case errors.Is(err, os.ErrPermission):
 		return fmt.Errorf("cannot open %s for writing: %w\n"+
 			"Writing to a drive needs privileges your user does not have. "+

@@ -203,6 +203,15 @@ Oliver is serving its drives at http://127.0.0.1:41273/?t=6f3a…</pre>
   </div>
 </section>
 
+<section id="privilege" class="card" hidden style="margin:20px 24px 0">
+  <div class="body" style="padding:14px 16px">
+    <div class="note bad" style="margin:0">
+      <strong id="privilege-text"></strong>
+      <div class="mono" id="privilege-command" style="margin-top:8px"></div>
+    </div>
+  </div>
+</section>
+
 <main>
   <section class="card" aria-labelledby="drives-h">
     <h2 id="drives-h">Drives</h2>
@@ -372,6 +381,24 @@ async function api(path, options = {}) {
 const state = { drives: [], selected: null, tab: "write", image: null, job: null, allowFixed: false, unmount: false };
 
 /* ---- drives ------------------------------------------------------------ */
+
+// checkPrivilege asks once whether this Oliver can do anything at all. Finding
+// out by pressing a button and reading an errno is how the last person found
+// out, and they should not have had to.
+async function checkPrivilege() {
+  try {
+    const status = await api("/api/status");
+    if (status.elevated) {
+      $("privilege").hidden = true;
+      return;
+    }
+    $("privilege-text").textContent = status.warning;
+    $("privilege-command").textContent = status.command || "";
+    $("privilege").hidden = false;
+  } catch (e) {
+    // Not knowing is not worth a banner of its own.
+  }
+}
 
 async function loadDrives() {
   try {
@@ -848,6 +875,7 @@ async function connect(text, { quiet } = {}) {
   remember(parsed.base + "/?t=" + parsed.token);
   $("connect").hidden = true;
   document.querySelector("main").hidden = false;
+  checkPrivilege();
   loadDrives();
   return true;
 }
@@ -857,6 +885,7 @@ $("connect-url").addEventListener("keydown", (e) => { if (e.key === "Enter") con
 
 async function start() {
   if (SERVED) {
+    checkPrivilege();
     loadDrives();
     return;
   }
