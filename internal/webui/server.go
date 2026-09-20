@@ -89,6 +89,7 @@ func (s *Server) Handler() http.Handler {
 		"POST /api/unprotect":        s.unprotect,
 		"POST /api/write":            s.write,
 		"POST /api/repair":           s.repair,
+		"POST /api/test":             s.surfaceTest,
 		"POST /api/erase":            s.erase,
 		"POST /api/format":           s.format,
 	}
@@ -459,7 +460,9 @@ type request struct {
 	Verify     bool   `json:"verify"`
 	Full       bool   `json:"full"`
 	Raw        bool   `json:"raw"`
-	Name       string `json:"name"`
+	// Quick samples across a drive instead of covering all of it.
+	Quick bool   `json:"quick"`
+	Name  string `json:"name"`
 	// Force permits the steps that have a cost of their own, such as marking
 	// a dirty filesystem clean without checking it.
 	Force bool `json:"force"`
@@ -650,6 +653,51 @@ func (s *Server) unprotect(w http.ResponseWriter, r *http.Request) {
 		Remaining []device.Protection `json:"remaining,omitempty"`
 		Free      bool                `json:"free"`
 	}{done, remaining, len(remaining) == 0})
+}
+
+// surfaceTest writes to every part of a drive and reads it back, which is the
+// only way to find a drive that takes writes and loses them.
+func (s *Server) surfaceTest(w http.ResponseWriter, r *http.Request) {
+	req, ok := decode(w, r)
+	if !ok {
+		return
+	}
+	dev, err := s.prepare(req, "test")
+	if err != nil {
+		failRefusal(w, err)
+		return
+	}
+
+	job, err := s.start("test", dev, "", func(ctx context.Context, j *Job) error {
+		res, err := imaging.SurfaceTest(ctx, dev.Path, imaging.SurfaceOptions{
+			Quick:    req.Quick,
+			Progress: j.progress,
+		})
+		if err != nil {
+			return err
+		}
+		switch {
+		case res.Counterfeit():
+			j.finishWith(nil, fmt.Sprintf(
+				"this drive is not the size it claims: it says %s and has %s. "+
+					"Everything written past the real size wraps round and replaces what was written "+
+					"first, which is why files on a drive like this go missing. There is no fixing it.",
+				imaging.HumanBytes(res.Claimed), imaging.HumanBytes(res.RealSize)))
+		case !res.Healthy():
+			j.finishWith(nil, fmt.Sprintf(
+				"%d region(s) did not hold what was written to them. Worn flash does this, and it "+
+					"will keep losing what is put there.", len(res.Bad)))
+		default:
+			j.finishWith(nil, fmt.Sprintf("every part of the drive held what was written to it — %s checked",
+				imaging.HumanBytes(res.Checked)))
+		}
+		return nil
+	})
+	if err != nil {
+		fail(w, http.StatusConflict, err)
+		return
+	}
+	send(w, job.Snapshot())
 }
 
 // repair clears what describes the drive and writes a full-size volume, which

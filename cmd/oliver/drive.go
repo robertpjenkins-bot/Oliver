@@ -87,6 +87,27 @@ drive, and the way it fixes it is by overwriting what is on it. If the files
 matter, copy them off first — a drive that mounts read-only will usually still
 let you read them.`
 
+const testSynopsis = `oliver test <drive>
+
+Finds out whether a drive keeps what is written to it.
+
+  oliver test /dev/sdb          check every part of the drive
+  oliver test /dev/sdb -quick   sample across it instead, in seconds
+
+A drive can be perfectly writable and still lose what it is given. Two kinds
+do, and no filesystem reports either.
+
+A counterfeit claims a size its flash does not have: the controller takes
+every write and wraps around, so the last file quietly replaces the first and
+the drive looks fine until somebody reads back what they stored. A worn one
+has regions that no longer hold what they are given.
+
+Both are found the same way — write something different to every part of the
+drive, read it all back, and see what came back changed. That destroys
+everything on the drive, and there is no version of this that does not: a
+drive can only be proved to keep what it is given by giving it something and
+asking for it back.`
+
 const unprotectSynopsis = `oliver unprotect [drive]
 
 Works out why a drive will not take writes, and clears what can be cleared.
@@ -333,6 +354,77 @@ func (a *app) cmdVerify(args []string) error {
 	return nil
 }
 
+func (a *app) cmdTest(args []string) error {
+	fs := a.newFlagSet("test", testSynopsis)
+	quick := fs.Bool("quick", false, "sample across the drive instead of covering all of it")
+	asJSON := fs.Bool("json", false, "print the result as JSON")
+	g := guardFlags(fs)
+	if err := parseFlagsAnywhere(fs, args); err != nil {
+		return err
+	}
+
+	dev, err := a.chooseDrive("test", fs.Arg(0), *g)
+	if err != nil {
+		return err
+	}
+	if err := checkBusy(dev, "test", *g); err != nil {
+		return err
+	}
+	if err := a.confirmDestruction(dev, fmt.Sprintf("Test %s? This destroys everything on it.", dev.Path), *g); err != nil {
+		return err
+	}
+	if err := a.release(dev, *g); err != nil {
+		return err
+	}
+
+	ctx, stop := interruptible()
+	defer stop()
+
+	rep := newReporter(a.ui)
+	res, err := imaging.SurfaceTest(ctx, dev.Path, imaging.SurfaceOptions{
+		Quick:    *quick,
+		Progress: rep.report,
+	})
+	rep.close()
+	if err != nil {
+		return writeError(err, dev)
+	}
+	if *asJSON {
+		return a.printJSON(res)
+	}
+
+	u := a.ui
+	switch {
+	case res.Counterfeit():
+		u.Info("%s %s", u.Red("✕"), u.Bold("This drive is not the size it claims."))
+		u.Info("  It says %s. It has %s.", humanBytes(res.Claimed), humanBytes(res.RealSize))
+		u.Info("  %s", u.Dim("Everything written past the real size wraps round and replaces what was "+
+			"written first, which is why files on a drive like this go missing or come back as rubbish. "+
+			"There is no fixing it: the flash is not there."))
+	case !res.Healthy():
+		u.Info("%s %s", u.Yellow("•"), u.Bold(fmt.Sprintf("%d region(s) did not hold what was written to them.",
+			len(res.Bad))))
+		for i, b := range res.Bad {
+			if i >= 5 {
+				u.Info("  %s", u.Dim(fmt.Sprintf("and %d more", len(res.Bad)-5)))
+				break
+			}
+			u.Info("  %s at %s", humanBytes(b.Length), humanBytes(b.Offset))
+		}
+		u.Info("  %s", u.Dim("Worn flash does this. The drive will keep losing what is put in those "+
+			"places; do not trust it with anything that matters."))
+	default:
+		u.Info("%s every part of %s held what was written to it", u.Green("✓"), dev.Path)
+		u.Info("  %s", u.Dim(fmt.Sprintf("%s checked in %s", humanBytes(res.Checked), shortDuration(res.Duration))))
+	}
+	if res.Quick && res.Healthy() {
+		u.Info("  %s", u.Dim("This was a quick test: it samples across the drive, so it catches a "+
+			"drive lying about its size but can miss worn blocks between the samples."))
+	}
+	u.Info("%s", u.Dim("The drive holds nothing now. Format it before use: oliver format "+dev.Path))
+	return nil
+}
+
 func (a *app) cmdUnprotect(args []string) error {
 	fs := a.newFlagSet("unprotect", unprotectSynopsis)
 	checkOnly := fs.Bool("check", false, "report what is protecting it and change nothing")
@@ -426,13 +518,55 @@ func (a *app) cmdUnprotect(args []string) error {
 
 	// The drive has the last word. Reading flags back proves only that the
 	// flags changed; a write proves the drive takes writes.
-	if err := device.TestWrite(dev.Path); err != nil {
+	if err := device.TestWrite(dev.Path); err == nil {
+		a.ui.Info("%s %s takes writes now, tested", a.ui.Green("✓"), dev.Path)
+		return nil
+	} else {
 		a.ui.Info("")
 		a.ui.Info("%s %v", a.ui.Yellow("the drive still refuses a write:"), err)
-		a.printProtection(device.HardwareProtection(dev))
-		return nil
 	}
-	a.ui.Info("%s %s takes writes now, tested", a.ui.Green("✓"), dev.Path)
+
+	// One thing left that is not a flag: a stick whose controller latched
+	// read-only after an error stays that way until it is power-cycled, and
+	// the kernel can do that without anybody touching the drive.
+	if _, isUSB := device.USBPath(dev); isUSB {
+		u.Printf("")
+		u.Printf("%s", u.Dim("A USB drive that hit an error can stay read-only until it is unplugged "+
+			"and back in. Oliver can ask the kernel to do that for it."))
+		if g.force || u.Confirm("Reset the USB device and try again?", true) {
+			if err := device.ResetUSB(dev); err != nil {
+				a.ui.Info("%s %v", a.ui.Yellow("could not reset it:"), err)
+			} else {
+				a.ui.Info("%s reset the USB device; waiting for it to come back", a.ui.Green("✓"))
+				if again := a.afterReset(dev); again != nil {
+					return again
+				}
+				return nil
+			}
+		}
+	}
+
+	a.printProtection(device.HardwareProtection(dev))
+	return nil
+}
+
+// afterReset waits for a drive to reappear and tries the write once more.
+// A drive that has been reset can come back under a different name, so it is
+// looked up again rather than assumed.
+func (a *app) afterReset(dev *device.Device) error {
+	for attempt := 0; attempt < 10; attempt++ {
+		time.Sleep(500 * time.Millisecond)
+		fresh, err := newScanner().Find(dev.Path)
+		if err != nil {
+			continue
+		}
+		if err := device.TestWrite(fresh.Path); err == nil {
+			a.ui.Info("%s %s takes writes now, tested", a.ui.Green("✓"), fresh.Path)
+			return nil
+		}
+	}
+	a.ui.Info("%s", a.ui.Yellow("still refusing after the reset"))
+	a.printProtection(device.HardwareProtection(dev))
 	return nil
 }
 
@@ -621,9 +755,45 @@ func (a *app) chooseDrive(action, arg string, g guard) (*device.Device, error) {
 	}
 
 	if err := device.CheckWritable(dev, action, g.allowFixed); err != nil {
+		if reason, ok := device.RefusedFor(err); ok && reason == device.NotWritable {
+			// Not having the privilege is the commonest reason this program
+			// appears not to work, and telling somebody so is not the same as
+			// helping them.
+			if elevated := a.offerElevation(dev); elevated != nil {
+				return nil, elevated
+			}
+		}
 		return nil, withFlagHint(err)
 	}
 	return dev, nil
+}
+
+// offerElevation runs this whole command again as root, with consent. It does
+// not return when it succeeds: the new process takes over.
+func (a *app) offerElevation(dev *device.Device) error {
+	if device.Elevated() {
+		return nil // already root; the refusal is something else
+	}
+	u := a.ui.OnStderr()
+	elevator, ok := device.FindElevator(u.Interactive)
+	if !ok {
+		return nil // nothing here can grant it; the ordinary advice follows
+	}
+
+	command := device.ElevateCommand(elevator, os.Args[1:])
+	u.Printf("%s", u.Yellow(fmt.Sprintf("Writing to %s needs privileges this user does not have.", dev.Path)))
+	if !u.Interactive {
+		u.Printf("  %s", u.Dim("Run: "+command))
+		return nil
+	}
+	if !u.Confirm("Run this again with "+elevator.Command+"?", true) {
+		u.Printf("  %s", u.Dim("Run it yourself with: "+command))
+		return nil
+	}
+	if err := device.Elevate(elevator, os.Args[1:]); err != nil {
+		return fmt.Errorf("could not run as root: %w.\nRun it yourself with: %s", err, command)
+	}
+	return nil // unreachable: the process has been replaced
 }
 
 // withFlagHint adds the way past a refusal, in the terms this front end
@@ -771,7 +941,39 @@ func (a *app) release(d *device.Device, g guard) error {
 		return nil
 	}
 	a.ui.Info("· unmounting %d filesystem(s) on %s", len(d.Mounts), d.Path)
-	return device.Unmount(d)
+	err := device.Unmount(d)
+	if err == nil {
+		return nil
+	}
+
+	// "Target is busy" never says what is busy. The kernel knows, and so can
+	// this: every process holding the drive open has a link to it in /proc.
+	u := a.ui.OnStderr()
+	holders := device.Holders(d)
+	if len(holders) > 0 {
+		u.Printf("")
+		u.Printf("%s", u.Bold("Still open by:"))
+		for _, h := range holders {
+			u.Printf("  %s", h.Describe())
+		}
+	}
+	u.Printf("")
+	u.Printf("%s", u.Dim("A lazy unmount detaches it now and tidies up when the last one lets go."))
+	if !g.force && !u.Confirm("Force it?", true) {
+		return err
+	}
+	var failed []string
+	for _, m := range d.Mounts {
+		if ferr := device.ForceUnmount(m.Source); ferr != nil {
+			failed = append(failed, fmt.Sprintf("%s: %v", m.Source, ferr))
+			continue
+		}
+		a.ui.Info("%s forced %s off %s", a.ui.Green("✓"), m.Source, m.Target)
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("%s", strings.Join(failed, "; "))
+	}
+	return nil
 }
 
 func (a *app) format(d *device.Device, label string, asJSON bool) error {

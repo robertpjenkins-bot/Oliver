@@ -829,3 +829,71 @@ func TestRepairingAHealthyDriveNeedsSayingSoTwice(t *testing.T) {
 		t.Errorf("the drive was erased anyway: %v", got)
 	}
 }
+
+func TestTheSurfaceTestNamesACounterfeitPlainly(t *testing.T) {
+	m := newMachine(t)
+	node := m.drive("sdb", 8<<20, true, "NoName 128GB")
+
+	out, err := m.run("test", "sdb", "-f")
+	if err != nil {
+		t.Fatalf("test failed: %v\n%s", err, out)
+	}
+	// A file keeps what it is given, so this one passes — which is the
+	// baseline the counterfeit wording has to differ from.
+	if !strings.Contains(out, "held what was written to it") {
+		t.Errorf("a sound drive was not reported sound:\n%s", out)
+	}
+	if !strings.Contains(out, "oliver format") {
+		t.Errorf("the drive is left empty and nothing says so:\n%s", out)
+	}
+	if got := driveContents(t, node, 16); bytes.Equal(got, make([]byte, 16)) {
+		t.Error("the test wrote nothing to the drive")
+	}
+}
+
+func TestTheSurfaceTestRefusesTheSystemDisk(t *testing.T) {
+	m := newMachine(t)
+	m.drive("sda", 8<<20, false, "System SSD")
+	m.mount("sda", "/")
+
+	_, err := m.run("test", "sda", "-f", "-allow-fixed")
+	if err == nil {
+		t.Fatal("the system disk was surface-tested, which would destroy it")
+	}
+	if !strings.Contains(err.Error(), "running system") {
+		t.Errorf("error = %v", err)
+	}
+}
+
+func TestADriveThisUserCannotWriteToOffersToRunAsRoot(t *testing.T) {
+	m := newMachine(t)
+	m.drive("sdb", 8<<20, true, "stick")
+	m.readOnly = true
+
+	// With a terminal and something to elevate with, the offer is made; the
+	// answer here is no, so the ordinary advice follows.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "sudo"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	// The machine running the tests may well be root; the user this is for
+	// is not.
+	elevated := device.Elevated
+	t.Cleanup(func() { device.Elevated = elevated })
+	device.Elevated = func() bool { return false }
+
+	m.answers("n")
+
+	out, err := m.run("format", "sdb", "-name", "X")
+	if err == nil {
+		t.Fatal("expected a refusal")
+	}
+	if !strings.Contains(out, "needs privileges") {
+		t.Errorf("no offer to elevate was made:\n%s", out)
+	}
+	if !strings.Contains(out, "sudo") {
+		t.Errorf("the command to run was not given:\n%s", out)
+	}
+}

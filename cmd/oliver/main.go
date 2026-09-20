@@ -48,6 +48,7 @@ COMMANDS
   verify       check a drive against the image that should be on it
   repair       work out why a drive misbehaves, and put it right
   unprotect    work out why a drive will not take writes, and clear it
+  test         check whether a drive keeps what is written to it
   device       expose one of this machine's drives to a Windows program
   doctor       check this system and report what is missing
   log          show the output of the last program that ran
@@ -153,6 +154,8 @@ func run(args []string) error {
 		return a.cmdRepair(rest)
 	case "unprotect", "unlock":
 		return a.cmdUnprotect(rest)
+	case "test", "check":
+		return a.cmdTest(rest)
 	case "doctor":
 		return a.cmdDoctor(rest)
 	case "log", "logs":

@@ -256,6 +256,30 @@ that has put worn-out flash beyond writing to protect what is still readable.
 No software fixes either. If it is the second, the drive is finished — copy
 what you need off it while it still reads.
 
+**And if the drive takes every write and still loses things, it finds that
+too.** A drive can be perfectly writable and not keep what it is given. A
+counterfeit claims a size its flash does not have — the controller wraps every
+write round to the start, so the last file quietly replaces the first and the
+drive looks fine until somebody reads back what they stored. A worn one has
+places that no longer hold anything. No filesystem reports either:
+
+```console
+$ oliver test /dev/sdb -quick
+✕ This drive is not the size it claims.
+  It says 128.0 GB. It has 7.8 GB.
+  Everything written past the real size wraps round and replaces what was
+  written first, which is why files on a drive like this go missing or come
+  back as rubbish. There is no fixing it: the flash is not there.
+```
+
+The real size is worked out from where the data went rather than from where
+the failures start, because a drive that wraps destroys its own beginning: the
+last writes land on top of the first and every part of it then reads back
+wrong. Each block written says which part of the drive it belongs to, so a
+block that turns up somewhere else gives away the distance between two
+addresses sharing one piece of flash — and what every such distance has in
+common is the real capacity.
+
 **It gets the stick back afterwards.** A drive holding an image is no longer
 usable for ordinary files, and the tools that say so are not always the ones
 that fix it:
@@ -410,6 +434,7 @@ oliver format [drive] -name NAME          one empty FAT32 volume, filling the dr
 oliver verify <image.iso> <drive>         check a drive against the image
 oliver repair [drive] [-check]            why a drive misbehaves, and the fix
 oliver unprotect [drive] [-check]         why a drive will not take writes
+oliver test [drive] [-quick]              does the drive keep what it is given
 oliver doctor                             what is missing, and how to fix it
 oliver desktop install                    open .exe files by double-clicking
 ```

@@ -215,6 +215,7 @@ Oliver is serving its drives at http://127.0.0.1:41273/?t=6f3a…</pre>
       <button class="tab" role="tab" data-tab="erase" aria-selected="false">Erase</button>
       <button class="tab" role="tab" data-tab="format" aria-selected="false">Format</button>
       <button class="tab" role="tab" data-tab="repair" aria-selected="false">Repair</button>
+      <button class="tab" role="tab" data-tab="test" aria-selected="false">Test</button>
     </div>
     <div class="body">
       <div id="target" class="imgsum" style="margin-bottom:16px">
@@ -277,6 +278,25 @@ Oliver is serving its drives at http://127.0.0.1:41273/?t=6f3a…</pre>
           Repairing clears what describes the drive and writes one full-size FAT32 volume, so
           everything sees the whole drive again. It does not recover files — it overwrites them.
           If the files matter, copy them off first.
+        </p>
+      </div>
+
+      <div data-panel="test" hidden>
+        <p class="dim" style="font-size:13.5px;margin:0 0 14px">
+          A drive can take every write and still lose what it was given. A counterfeit claims a
+          size its flash does not have and wraps round, so the last file quietly replaces the
+          first; a worn one has places that no longer hold anything. Neither shows up in
+          anything a filesystem reports.
+        </p>
+        <div class="check">
+          <input type="checkbox" id="quick" checked>
+          <label for="quick">Quick
+            <span class="hint">Samples across the drive instead of covering all of it. Catches a
+              drive lying about its size in seconds; can miss worn blocks in between.</span></label>
+        </div>
+        <p class="dim" style="font-size:12.5px;margin:0 0 14px">
+          This destroys everything on the drive. There is no version of it that does not: a drive
+          can only be proved to keep what it is given by giving it something and asking for it back.
         </p>
       </div>
 
@@ -563,7 +583,7 @@ function updateButton() {
   const why = blocked();
   go.disabled = !!why || !!state.job;
   if (why) { go.textContent = why; return; }
-  const verb = { write: "Write image to ", erase: "Erase ", format: "Format ", repair: "Repair " }[state.tab];
+  const verb = { write: "Write image to ", erase: "Erase ", format: "Format ", repair: "Repair ", test: "Test " }[state.tab];
   go.textContent = verb + (state.selected ? state.selected.name : "");
 }
 
@@ -661,6 +681,7 @@ $("go").addEventListener("click", () => {
     erase: "Erasing this drive",
     format: "Formatting this drive as FAT32",
     repair: "Repairing this drive",
+    test: "Testing this drive, which writes over all of it",
   }[state.tab];
   what.append(el("div", "note bad", doing + " destroys everything on it. This cannot be undone."));
   $("confirm-label").textContent = 'Type "' + d.name + '" to continue';
@@ -697,6 +718,8 @@ async function begin() {
     body.name = $("erase-name").value.trim();
   } else if (state.tab === "repair") {
     body.name = $("repair-name").value.trim();
+  } else if (state.tab === "test") {
+    body.quick = $("quick").checked;
   } else {
     body.name = $("format-name").value.trim();
   }
