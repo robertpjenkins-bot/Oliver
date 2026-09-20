@@ -66,6 +66,12 @@ func resolve(in []Alternative) []Alternative {
 	out := make([]Alternative, len(in))
 	copy(out, in)
 	for i := range out {
+		if out[i].Command == "oliver" {
+			// Oliver is running, so it is available whether or not it is on
+			// PATH: an AppImage sitting in a downloads folder still works.
+			out[i].Installed = true
+			continue
+		}
 		if out[i].Command == "" {
 			continue
 		}
@@ -120,6 +126,19 @@ func versioned(base string) *regexp.Regexp {
 	return regexp.MustCompile(`^` + regexp.QuoteMeta(base) + `(?:[^a-z].*)?$`)
 }
 
+// imageWriters are the native ways to write an image to a drive. Oliver leads
+// the list because it is already running: the program that just explained why
+// Rufus cannot work is the one thing here that is certainly installed.
+var imageWriters = []Alternative{
+	{Name: "oliver write", Command: "oliver", Note: "this program: `oliver write image.iso`, with a read-back check"},
+	{Name: "Ventoy", Note: "copy ISOs onto the stick and pick one at boot; handles Windows ISOs"},
+	{Name: "GNOME Disks", Command: "gnome-disks", Note: "Restore Disk Image from the menu"},
+	{Name: "KDE ISO Image Writer", Command: "isoimagewriter"},
+	{Name: "Fedora Media Writer", Command: "mediawriter"},
+	{Name: "balenaEtcher", Command: "balena-etcher"},
+	{Name: "dd", Command: "dd", Note: "for a single Linux ISO; check the device name first"},
+}
+
 // knownPrograms lists software whose core function depends on hardware access
 // that Wine and Proton do not implement. These are not bugs in the runner:
 // the Windows APIs involved talk to devices that only the Linux kernel owns.
@@ -134,43 +153,23 @@ var knownPrograms = []need{
 			"physical devices. A translated Windows process gets neither real device " +
 			"enumeration nor the Windows storage ioctls, so no device is ever found.",
 		instead: "Mapping the drive into the prefix with a dosdevices symlink does not help " +
-			"here: that exposes a drive letter, not the device enumeration Rufus uses. Use a " +
-			"native writer instead — Ventoy, GNOME Disks, KDE ISO Image Writer, Fedora Media " +
-			"Writer, or `dd`. Running Rufus under Wine is unsupported upstream.",
-		alternatives: []Alternative{
-			{Name: "Ventoy", Note: "copy ISOs onto the stick and pick one at boot; handles Windows ISOs"},
-			{Name: "GNOME Disks", Command: "gnome-disks", Note: "Restore Disk Image from the menu"},
-			{Name: "KDE ISO Image Writer", Command: "isoimagewriter"},
-			{Name: "Fedora Media Writer", Command: "mediawriter"},
-			{Name: "balenaEtcher", Command: "balena-etcher"},
-			{Name: "dd", Command: "dd", Note: "for a single Linux ISO; check the device name first"},
-		},
+			"here: that exposes a drive letter, not the device enumeration Rufus uses. " +
+			"`oliver write image.iso` does the same job from Linux, and reads the drive back " +
+			"afterwards to prove the write arrived. Running Rufus under Wine is unsupported " +
+			"upstream.",
+		alternatives: imageWriters,
 	},
 	{
 		match: versioned("win32diskimager"), program: "Win32 Disk Imager", severity: Blocking,
-		detail:  "It reads and writes raw disk images to physical devices, which requires block-device access.",
-		instead: "Use GNOME Disks, or `dd` with the device path.",
-		alternatives: []Alternative{
-			{Name: "Ventoy", Note: "copy ISOs onto the stick and pick one at boot; handles Windows ISOs"},
-			{Name: "GNOME Disks", Command: "gnome-disks", Note: "Restore Disk Image from the menu"},
-			{Name: "KDE ISO Image Writer", Command: "isoimagewriter"},
-			{Name: "Fedora Media Writer", Command: "mediawriter"},
-			{Name: "balenaEtcher", Command: "balena-etcher"},
-			{Name: "dd", Command: "dd", Note: "for a single Linux ISO; check the device name first"},
-		},
+		detail:       "It reads and writes raw disk images to physical devices, which requires block-device access.",
+		instead:      "Use `oliver write image.img`, which writes the image and verifies it.",
+		alternatives: imageWriters,
 	},
 	{
 		match: versioned("balenaetcher"), program: "balenaEtcher", severity: Blocking,
-		detail:  "It writes images directly to removable devices.",
-		instead: "balenaEtcher ships a native Linux build; use that.",
-		alternatives: []Alternative{
-			{Name: "Ventoy", Note: "copy ISOs onto the stick and pick one at boot; handles Windows ISOs"},
-			{Name: "GNOME Disks", Command: "gnome-disks", Note: "Restore Disk Image from the menu"},
-			{Name: "KDE ISO Image Writer", Command: "isoimagewriter"},
-			{Name: "Fedora Media Writer", Command: "mediawriter"},
-			{Name: "balenaEtcher", Command: "balena-etcher"},
-			{Name: "dd", Command: "dd", Note: "for a single Linux ISO; check the device name first"},
-		},
+		detail:       "It writes images directly to removable devices.",
+		instead:      "balenaEtcher ships a native Linux build; use that.",
+		alternatives: imageWriters,
 	},
 	{
 		match: regexp.MustCompile(`^cpu-?z(?:[-_. ].*)?$`), program: "CPU-Z", severity: Blocking,

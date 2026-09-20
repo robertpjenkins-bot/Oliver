@@ -4,22 +4,28 @@
 package ui
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // UI writes program output.
 type UI struct {
-	Out   io.Writer
-	Err   io.Writer
+	Out io.Writer
+	Err io.Writer
+	// In is where answers to prompts are read from.
+	In    io.Reader
 	Color bool
 	// Interactive reports whether a terminal is attached. When it is not,
 	// errors are shown as desktop notifications instead of vanishing.
 	Interactive bool
 	Quiet       bool
+
+	in *bufio.Reader
 }
 
 // New builds a UI for the current process.
@@ -33,6 +39,7 @@ func New() *UI {
 	return &UI{
 		Out:         os.Stdout,
 		Err:         os.Stderr,
+		In:          os.Stdin,
 		Color:       colorOK,
 		Interactive: isTerminal(os.Stderr),
 	}
@@ -206,25 +213,136 @@ func pad(s string, width int, last bool) string {
 	return s
 }
 
+// OnStderr returns a view of this UI whose tables and Printf lines go to
+// standard error instead of standard output.
+//
+// Output that is addressed to a person — a list to choose from, a summary of
+// what is about to be destroyed — must not land in the same stream as output a
+// program asked for with --json. Prompts and progress already go to stderr;
+// this keeps their surrounding context with them.
+func (u *UI) OnStderr() *UI {
+	// The buffered prompt reader is created before the copy so that every view
+	// shares it. Two readers over one input would each buffer what the other
+	// is waiting for, and the second question asked would never be answered.
+	u.reader()
+	clone := *u
+	clone.Out = u.Err
+	return &clone
+}
+
+// reader returns the prompt reader, buffered once so that an answer typed
+// ahead of the next question is not lost between them.
+func (u *UI) reader() *bufio.Reader {
+	if u.in == nil {
+		src := u.In
+		if src == nil {
+			src = os.Stdin
+		}
+		u.in = bufio.NewReader(src)
+	}
+	return u.in
+}
+
+// Ask puts a question and returns the answer with its whitespace removed. The
+// second result is false when there is nobody to answer: no terminal, or the
+// input ended.
+func (u *UI) Ask(question string) (string, bool) {
+	if !u.Interactive {
+		return "", false
+	}
+	fmt.Fprintf(u.Err, "%s ", question)
+	line, err := u.reader().ReadString('\n')
+	if err != nil && line == "" {
+		fmt.Fprintln(u.Err)
+		return "", false
+	}
+	return strings.TrimSpace(line), true
+}
+
 // Confirm asks a yes/no question. Without a terminal it returns the default.
 func (u *UI) Confirm(question string, def bool) bool {
-	if !u.Interactive {
-		return def
-	}
 	hint := "[y/N]"
 	if def {
 		hint = "[Y/n]"
 	}
-	fmt.Fprintf(u.Err, "%s %s ", question, hint)
-	var answer string
-	if _, err := fmt.Fscanln(os.Stdin, &answer); err != nil {
+	answer, ok := u.Ask(question + " " + hint)
+	if !ok {
 		return def
 	}
-	switch strings.ToLower(strings.TrimSpace(answer)) {
+	switch strings.ToLower(answer) {
 	case "y", "yes":
 		return true
 	case "n", "no":
 		return false
 	}
 	return def
+}
+
+// ConfirmWord asks the user to type a specific word before something
+// irreversible happens. A yes/no prompt is answered by reflex; typing the name
+// of the drive about to be erased is not.
+func (u *UI) ConfirmWord(question, word string) bool {
+	answer, ok := u.Ask(question)
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(answer, word)
+}
+
+// Bar reports the progress of something slow enough to need reporting.
+//
+// On a terminal it redraws one line in place. Piped into a file or a log it
+// writes a line each time another tenth is done, because a log full of
+// carriage returns is unreadable and a log with no progress at all leaves
+// somebody wondering whether a four gigabyte write has stalled.
+type Bar struct {
+	ui      *UI
+	label   string
+	started time.Time
+	drawn   bool
+	step    int64
+}
+
+// NewBar starts a progress display labelled with what is happening.
+func (u *UI) NewBar(label string) *Bar {
+	return &Bar{ui: u, label: label, started: time.Now(), step: -1}
+}
+
+// Update redraws the bar. detail is shown after the percentage: a transfer
+// rate, a remaining time, whatever the caller has.
+func (b *Bar) Update(done, total int64, detail string) {
+	if b.ui.Quiet || total <= 0 {
+		return
+	}
+	pct := float64(done) / float64(total)
+	if pct > 1 {
+		pct = 1
+	}
+
+	if !b.ui.Interactive {
+		// One line per tenth, and never the same tenth twice.
+		if step := int64(pct * 10); step > b.step {
+			b.step = step
+			fmt.Fprintf(b.ui.Err, "%s %3.0f%%  %s\n", b.label, pct*100, detail)
+		}
+		return
+	}
+
+	const width = 28
+	filled := int(pct * width)
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+	fmt.Fprintf(b.ui.Err, "\r\x1b[K%s %s %3.0f%%  %s", b.label, b.ui.Cyan(bar), pct*100, b.ui.Dim(detail))
+	b.drawn = true
+}
+
+// Done ends the bar, leaving one summary line where it was.
+func (b *Bar) Done(summary string) {
+	if b.ui.Quiet {
+		return
+	}
+	if b.drawn {
+		fmt.Fprint(b.ui.Err, "\r\x1b[K")
+	}
+	fmt.Fprintf(b.ui.Err, "%s %s\n", b.label, summary)
+	b.drawn = false
 }

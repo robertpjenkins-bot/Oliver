@@ -40,7 +40,12 @@ COMMANDS
   why          explain how every installed runtime scores for a program
   backends     list the compatibility runtimes found on this system
   prefix       list, inspect and remove the Windows environments Oliver made
-  device       show this machine's drives, and expose one to a program
+  drives       show this machine's drives and what is on them
+  write        write a disc image to a drive, and verify it arrived
+  erase        erase a drive and leave an empty one behind
+  format       put one empty FAT32 volume on a drive
+  verify       check a drive against the image that should be on it
+  device       expose one of this machine's drives to a Windows program
   doctor       check this system and report what is missing
   log          show the output of the last program that ran
   report       write everything needed to diagnose a problem to one file
@@ -57,6 +62,11 @@ func main() {
 	if err := run(os.Args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			os.Exit(2)
+		}
+		if errors.Is(err, errCancelled) {
+			// Declining a prompt is not a failure to report as one.
+			fmt.Fprintln(os.Stderr, "cancelled")
+			os.Exit(1)
 		}
 		var ee *exitError
 		if errors.As(err, &ee) {
@@ -121,8 +131,18 @@ func run(args []string) error {
 		return a.cmdBackends(rest)
 	case "prefix", "prefixes":
 		return a.cmdPrefix(rest)
-	case "device", "devices", "drives":
+	case "device", "devices":
 		return a.cmdDevice(rest)
+	case "drives", "disks":
+		return a.deviceList(a.wantsJSON(rest))
+	case "write", "burn", "flash":
+		return a.cmdWrite(rest)
+	case "erase", "wipe":
+		return a.cmdErase(rest)
+	case "format":
+		return a.cmdFormat(rest)
+	case "verify":
+		return a.cmdVerify(rest)
 	case "doctor":
 		return a.cmdDoctor(rest)
 	case "log", "logs":
@@ -219,4 +239,15 @@ func (a *app) newFlagSet(name, synopsis string) *flag.FlagSet {
 		fs.PrintDefaults()
 	}
 	return fs
+}
+
+// wantsJSON reports whether -json appears among a command's arguments, for the
+// aliases that take no other flags.
+func (a *app) wantsJSON(args []string) bool {
+	for _, arg := range args {
+		if arg == "-json" || arg == "--json" {
+			return true
+		}
+	}
+	return false
 }

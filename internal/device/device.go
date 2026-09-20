@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -20,14 +21,29 @@ type Mount struct {
 	Target string `json:"target"`
 }
 
+// Partition is one slice of a device, such as /dev/sda1.
+type Partition struct {
+	Path   string  `json:"path"`
+	Name   string  `json:"name"`
+	Number int     `json:"number"`
+	Size   int64   `json:"size_bytes"`
+	Mounts []Mount `json:"mounts,omitempty"`
+}
+
 // Device is a whole block device, such as /dev/sda.
 type Device struct {
-	Path      string  `json:"path"`
-	Name      string  `json:"name"`
-	Model     string  `json:"model,omitempty"`
-	Size      int64   `json:"size_bytes"`
-	Removable bool    `json:"removable"`
-	Mounts    []Mount `json:"mounts,omitempty"`
+	Path       string      `json:"path"`
+	Name       string      `json:"name"`
+	Model      string      `json:"model,omitempty"`
+	Size       int64       `json:"size_bytes"`
+	Removable  bool        `json:"removable"`
+	Mounts     []Mount     `json:"mounts,omitempty"`
+	Partitions []Partition `json:"partitions,omitempty"`
+
+	// LogicalBlockSize is the sector size the kernel addresses this device in,
+	// almost always 512. A drive that reports anything else needs a filesystem
+	// laid out for that size.
+	LogicalBlockSize int `json:"logical_block_size,omitempty"`
 
 	// Readable and Writable report the calling user's access to the raw
 	// device. Without write access a program cannot repartition or image it,
@@ -167,6 +183,11 @@ func (s *Scanner) describe(name string, mounts []Mount) *Device {
 	if raw, err := os.ReadFile(filepath.Join(base, "device", "model")); err == nil {
 		d.Model = strings.TrimSpace(string(raw))
 	}
+	if raw, err := os.ReadFile(filepath.Join(base, "queue", "logical_block_size")); err == nil {
+		if size, err := strconv.Atoi(strings.TrimSpace(string(raw))); err == nil {
+			d.LogicalBlockSize = size
+		}
+	}
 
 	// A mount of any partition counts against the whole device: writing to
 	// /dev/sda destroys /dev/sda1 along with it.
@@ -175,11 +196,53 @@ func (s *Scanner) describe(name string, mounts []Mount) *Device {
 			d.Mounts = append(d.Mounts, m)
 		}
 	}
+	d.Partitions = s.partitions(base, d, mounts)
 
 	if s.Access != nil {
 		d.Readable, d.Writable = s.Access(d.Path)
 	}
 	return d
+}
+
+// partitions lists the device's partitions, as /sys records them: a
+// subdirectory of the device holding a "partition" file with its number.
+func (s *Scanner) partitions(base string, d *Device, mounts []Mount) []Partition {
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return nil
+	}
+	var out []Partition
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), d.Name) {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(base, e.Name(), "partition"))
+		if err != nil {
+			continue
+		}
+		number, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+		if err != nil {
+			continue
+		}
+		p := Partition{
+			Path:   filepath.Join(s.Dev, e.Name()),
+			Name:   e.Name(),
+			Number: number,
+		}
+		if raw, err := os.ReadFile(filepath.Join(base, e.Name(), "size")); err == nil {
+			if sectors, err := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64); err == nil {
+				p.Size = sectors * 512
+			}
+		}
+		for _, m := range mounts {
+			if m.Source == p.Path {
+				p.Mounts = append(p.Mounts, m)
+			}
+		}
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
+	return out
 }
 
 func (s *Scanner) readMounts() []Mount {
@@ -265,4 +328,55 @@ func AccessAdvice(d *Device) string {
 			"Either add yourself to the %q group (`sudo usermod -aG %s $USER`, then log out and back in), "+
 			"or run the program with elevated privileges for the one operation that needs it.",
 		d.Path, group, group)
+}
+
+// Busy reports whether anything on this device is mounted. Writing to a drive
+// the system is reading from produces a corrupt drive and, often, a corrupt
+// cache of the old filesystem in the bargain.
+func (d *Device) Busy() bool { return len(d.Mounts) > 0 }
+
+// unmountCommands are tried in order. udisksctl is first because on a desktop
+// it unmounts a user's drive without asking for a password, which plain umount
+// will not do.
+var unmountCommands = [][]string{
+	{"udisksctl", "unmount", "-b"},
+	{"umount"},
+}
+
+// runCommand is a variable so tests can watch what would have been run.
+var runCommand = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+
+// Unmount releases every filesystem this device has mounted, so the drive can
+// be written to safely. It reports what it could not release.
+func Unmount(d *Device) error {
+	var failed []string
+	for _, m := range d.Mounts {
+		if err := unmountOne(m.Source); err != nil {
+			failed = append(failed, fmt.Sprintf("%s (%s): %v", m.Source, m.Target, err))
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("could not unmount %s", strings.Join(failed, "; "))
+	}
+	return nil
+}
+
+func unmountOne(source string) error {
+	var last error
+	for _, c := range unmountCommands {
+		if _, err := exec.LookPath(c[0]); err != nil {
+			continue
+		}
+		out, err := runCommand(c[0], append(c[1:], source)...)
+		if err == nil {
+			return nil
+		}
+		last = fmt.Errorf("%s: %s", c[0], strings.TrimSpace(string(out)))
+	}
+	if last == nil {
+		return fmt.Errorf("no unmount command is available")
+	}
+	return last
 }

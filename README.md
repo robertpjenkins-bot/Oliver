@@ -78,12 +78,76 @@ WILL NOT WORK: Rufus needs hardware access that no compatibility layer provides
   physical drives and the Windows storage ioctls, neither of which a
   translated Windows process gets, so the device list stays empty and most
   controls stay disabled.
-  Use a native writer instead: Ventoy, GNOME Disks, KDE ISO Image Writer,
-  Fedora Media Writer, or `dd`.
+  Use a native writer instead: `oliver write`, Ventoy, GNOME Disks, KDE ISO
+  Image Writer, Fedora Media Writer, or `dd`.
 ```
 
 It still launches the program if you ask it to — the warning is information,
 not a refusal.
+
+**And for the commonest of those, it does the job itself.** Writing an image to
+a USB stick is the one thing people most often reach for a Windows tool to do,
+and the one thing a compatibility layer can never provide. So Oliver writes it,
+natively:
+
+```console
+$ oliver write ubuntu-24.04.iso
+Image
+  ubuntu-24.04.iso
+  ISO 9660 image  5.7 GB  "Ubuntu 24.04 LTS amd64"  bootable: BIOS+UEFI
+
+   #  DEVICE         SIZE      TYPE       CONTAINS             MODEL
+  ––  /dev/nvme0n1   477.0 GB  fixed      the running system   SSD 980
+   1  /dev/sda       28.6 GB   removable  NTFS "Backup"        SanDisk Ultra
+
+Which drive should Oliver write to? [1-1, or q to stop] 1
+
+Drive
+  /dev/sda  28.6 GB  SanDisk Ultra  removable
+  contains NTFS "Backup"
+    /dev/sda1  28.6 GB  NTFS "Backup"
+
+  Everything on this drive will be destroyed.
+
+Write ubuntu-24.04.iso to /dev/sda? Type sda to continue: sda
+writing   ████████████████████████░░░░  87%  5.0 GB of 5.7 GB  42.1 MB/s  17s left
+verifying ████████████████████████████ 100%  5.7 GB of 5.7 GB  98.3 MB/s
+✓ wrote 5.7 GB to /dev/sda in 2m18s (42.1 MB/s)
+✓ read back and compared: the drive holds the image exactly
+  sha256 8f434346648f6b96df89dda901c5176b10a6d3961dd3c058494d29d1d5e94880
+```
+
+The disk the system is running from is listed but cannot be chosen, and there
+is no flag that changes that. A drive that is merely fixed rather than
+removable needs `-allow-fixed`. Anything mounted stops the write, because
+writing underneath a mounted filesystem is how a drive gets corrupted; pass
+`-unmount` and Oliver releases it first. Confirmation means typing the drive's
+own name, not "y".
+
+Then it reads the drive back. This is the part worth waiting for: a failing USB
+stick accepts every byte you send it and hands back something else, and the
+first you would otherwise hear of it is a machine that will not boot.
+
+It also says when an image will not boot *before* the write rather than after
+the reboot — an ISO with no partition table was built to be burned to a disc,
+and a Windows installation image is never hybrid, so raw-writing one produces a
+stick most firmware will not boot.
+
+**It gets the stick back afterwards.** A drive holding an image is no longer
+usable for ordinary files, and the tools that say so are not always the ones
+that fix it:
+
+```console
+$ oliver erase /dev/sda -name WORK
+✓ erased 5.0 MB of /dev/sda in 0.4s
+✓ formatted /dev/sda as FAT32 "WORK", 28.5 GB usable in 32.0 KB clusters
+```
+
+The partition table and the FAT32 volume are written by Oliver itself, byte by
+byte — there is no `mkfs` to install, and nothing is shelled out to. FAT32 is
+the deliberate choice: Linux, macOS, Windows and the firmware of a machine
+being installed can all read it. `-full` overwrites every byte first, `-raw`
+leaves the drive unformatted, and `oliver format` does the filesystem alone.
 
 **You can hand a program one real disk, deliberately.** Windows disk utilities
 expect to open drives directly, and a prefix has access to none by default —
@@ -192,9 +256,27 @@ oliver info <program.exe>                 what it is and what it needs
 oliver why <program.exe>                  how every runtime scored, and why
 oliver backends                           what is installed on this machine
 oliver prefix list                        the Windows environments Oliver made
+oliver drives                             this machine's drives, and what is on them
+oliver write <image.iso> [drive]          write an image to a drive, and verify it
+oliver erase [drive] -name NAME           erase a drive, leave an empty named one
+oliver format [drive] -name NAME          one empty FAT32 volume, filling the drive
+oliver verify <image.iso> <drive>         check a drive against the image
 oliver doctor                             what is missing, and how to fix it
 oliver desktop install                    open .exe files by double-clicking
 ```
+
+Useful flags for `write`, `erase` and `format`:
+
+| Flag | Effect |
+| --- | --- |
+| `-f` | do not ask for confirmation |
+| `-allow-fixed` | permit a drive that is not removable |
+| `-unmount` | unmount anything on the drive first |
+| `-name NAME` | name the new volume (up to 11 characters) |
+| `-no-verify` | skip the read-back check after writing |
+| `-full` | `erase` only: overwrite every byte |
+| `-raw` | `erase` only: leave the drive unformatted |
+| `--json` | machine-readable output |
 
 Useful flags for `run`:
 

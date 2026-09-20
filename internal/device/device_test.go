@@ -1,8 +1,10 @@
 package device
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -217,3 +219,106 @@ func TestAccessIsReportedAndAdvised(t *testing.T) {
 		t.Error("no advice needed when the device is already writable")
 	}
 }
+
+// partition adds a partition to a device that already exists.
+func (f *fakeMachine) partition(disk, name string, number int, sizeSectors int64) {
+	f.t.Helper()
+	base := filepath.Join(f.root, "sys", "block", disk, name)
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		f.t.Fatal(err)
+	}
+	write := func(path, content string) {
+		if err := os.WriteFile(path, []byte(content+"\n"), 0o644); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+	write(filepath.Join(base, "partition"), itoa(int64(number)))
+	write(filepath.Join(base, "size"), itoa(sizeSectors))
+	write(filepath.Join(f.root, "dev", name), "")
+}
+
+func TestPartitionsAreListedInOrderWithTheirMounts(t *testing.T) {
+	f := newFakeMachine(t)
+	f.disk("sdb", 30310400, true, "Cruzer Blade")
+	// Deliberately created out of order: /sys does not promise an order, and a
+	// numbered list shown to a user has to be stable.
+	f.partition("sdb", "sdb2", 2, 20000000)
+	f.partition("sdb", "sdb1", 1, 1048576)
+	f.mounts(f.root + "/dev/sdb2 /media/user/DATA ext4 rw 0 0\n")
+
+	devices, err := f.scanner().List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := devices[0]
+	if len(d.Partitions) != 2 {
+		t.Fatalf("found %d partitions, want 2", len(d.Partitions))
+	}
+	if d.Partitions[0].Name != "sdb1" || d.Partitions[1].Name != "sdb2" {
+		t.Errorf("partitions out of order: %s, %s", d.Partitions[0].Name, d.Partitions[1].Name)
+	}
+	if got := d.Partitions[0].Size; got != 1048576*512 {
+		t.Errorf("sdb1 size = %d bytes", got)
+	}
+	if len(d.Partitions[1].Mounts) != 1 || d.Partitions[1].Mounts[0].Target != "/media/user/DATA" {
+		t.Errorf("sdb2 mounts = %+v", d.Partitions[1].Mounts)
+	}
+	if len(d.Partitions[0].Mounts) != 0 {
+		t.Errorf("sdb1 should not have inherited its neighbour's mount")
+	}
+	if !d.Busy() {
+		t.Error("a device with a mounted partition is not idle")
+	}
+}
+
+func TestDeviceWithoutPartitionsReportsNone(t *testing.T) {
+	f := newFakeMachine(t)
+	f.disk("sdc", 2048, true, "blank")
+	devices, err := f.scanner().List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices[0].Partitions) != 0 {
+		t.Errorf("an unpartitioned drive reported %d partitions", len(devices[0].Partitions))
+	}
+	if devices[0].Busy() {
+		t.Error("an unmounted drive reported as busy")
+	}
+}
+
+func TestUnmountReleasesEveryMountAndReportsWhatItCannot(t *testing.T) {
+	var called [][]string
+	original := runCommand
+	t.Cleanup(func() { runCommand = original })
+	runCommand = func(name string, args ...string) ([]byte, error) {
+		called = append(called, append([]string{name}, args...))
+		if args[len(args)-1] == "/dev/sdb2" {
+			return []byte("target is busy"), errBusy
+		}
+		return nil, nil
+	}
+	// Only the commands present on this machine are tried, so the test drives
+	// the lookup through a directory it controls.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "umount"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	d := &Device{Path: "/dev/sdb", Mounts: []Mount{
+		{Source: "/dev/sdb1", Target: "/media/a"},
+		{Source: "/dev/sdb2", Target: "/media/b"},
+	}}
+	err := Unmount(d)
+	if err == nil {
+		t.Fatal("a busy mount was reported as released")
+	}
+	if !strings.Contains(err.Error(), "/dev/sdb2") || !strings.Contains(err.Error(), "busy") {
+		t.Errorf("error does not say what failed or why: %v", err)
+	}
+	if len(called) != 2 {
+		t.Errorf("ran %d commands, want one per mount: %v", len(called), called)
+	}
+}
+
+var errBusy = errors.New("exit status 32")

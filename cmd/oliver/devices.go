@@ -65,7 +65,7 @@ func (a *app) manager() *prefix.Manager {
 }
 
 func (a *app) deviceList(asJSON bool) error {
-	devices, err := device.NewScanner().List()
+	devices, err := newScanner().List()
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func (a *app) deviceList(asJSON bool) error {
 		return nil
 	}
 
-	t := u.NewTable("DEVICE", "SIZE", "TYPE", "ACCESS", "MODEL", "IN USE BY")
+	t := u.NewTable("DEVICE", "SIZE", "TYPE", "CONTAINS", "ACCESS", "MODEL", "IN USE BY")
 	for _, d := range devices {
 		kind := "fixed"
 		if d.Removable {
@@ -98,16 +98,18 @@ func (a *app) deviceList(asJSON bool) error {
 		} else if len(d.Mounts) > 0 {
 			inUse = u.Dim(fmt.Sprintf("%d mounted", len(d.Mounts)))
 		}
-		t.Row(d.Path, humanBytes(d.Size), kind, access, d.Model, inUse)
+		t.Row(d.Path, humanBytes(d.Size), kind, describeContents(d), access, d.Model, inUse)
 	}
 	t.Render()
 	u.Printf("")
-	u.Printf("%s", u.Dim("Attach one with: oliver device attach <prefix> <device>"))
+	u.Printf("%s", u.Dim("Write an image to one with:  oliver write <image.iso>"))
+	u.Printf("%s", u.Dim("Erase and reformat one with: oliver erase"))
+	u.Printf("%s", u.Dim("Expose one to a program:     oliver device attach <prefix> <device>"))
 	return nil
 }
 
 func (a *app) deviceAttach(prefixName, devicePath, letter string, force bool) error {
-	scanner := device.NewScanner()
+	scanner := newScanner()
 	dev, err := scanner.Find(devicePath)
 	if err != nil {
 		return err

@@ -296,8 +296,34 @@ func TestResolveDoesNotMutateTheSharedTable(t *testing.T) {
 
 	withInstalled(t) // now nothing is installed
 	for _, a := range Check(&pe.Info{Name: "rufus.exe", Kind: pe.KindPE})[0].Alternatives {
+		if a.Command == "oliver" {
+			// Oliver is running, so it is always available; it is not a
+			// detection result that could have leaked.
+			continue
+		}
 		if a.Installed {
 			t.Errorf("%s reported installed from a previous run's state", a.Name)
+		}
+	}
+}
+
+func TestOliverOffersItselfForTheProgramsItReplaces(t *testing.T) {
+	// Nothing at all is on this machine's PATH.
+	withInstalled(t)
+
+	for _, name := range []string{"rufus.exe", "win32diskimager.exe", "balenaetcher.exe"} {
+		caveats := Check(&pe.Info{Name: name, Kind: pe.KindPE})
+		if len(caveats) == 0 {
+			t.Errorf("%s: no caveat", name)
+			continue
+		}
+		alts := caveats[0].Alternatives
+		if len(alts) == 0 || alts[0].Command != "oliver" {
+			t.Errorf("%s: the advice does not lead with the one tool that is certainly present: %+v", name, alts)
+			continue
+		}
+		if !alts[0].Installed {
+			t.Errorf("%s: oliver reported as not installed while it is running", name)
 		}
 	}
 }
