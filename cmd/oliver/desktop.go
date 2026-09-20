@@ -64,10 +64,21 @@ func (a *app) cmdDesktop(args []string) error {
 // cmdDesktopWelcome runs when Oliver is opened with no arguments from a
 // desktop, where there is no terminal to print help into.
 //
-// Someone who double-clicks expects to be able to do something. Telling them
-// to open a terminal is a dead end, particularly on a machine whose whole
-// point is that you do not need one.
+// It opens the drives, because that is what somebody who double-clicks this
+// is holding: a stick they want to write. A menu of six things is an answer to
+// a question they did not ask — the other tools are still there, under
+// `oliver menu` and on the launcher's right-click menu.
 func (a *app) cmdDesktopWelcome(args []string) error {
+	kit, ok := findDialogKit()
+	if !ok {
+		fmt.Fprint(os.Stdout, usage)
+		return nil
+	}
+	return a.guiDrives(kit)
+}
+
+// cmdDesktopMenu offers everything Oliver can do, for the desktop.
+func (a *app) cmdDesktopMenu(args []string) error {
 	kit, ok := findDialogKit()
 	if !ok {
 		fmt.Fprint(os.Stdout, usage)
@@ -639,12 +650,17 @@ Categories=System;Emulator;Utility;
 MimeType=%s;
 Keywords=wine;proton;windows;exe;msi;usb;iso;
 NoDisplay=false
-Actions=drives;
+Actions=drives;menu;
 
 [Desktop Action drives]
 Name=Write an image to a drive
 Exec=%s ui
-`, quoteExec(launcher), quoteExec(launcher), strings.Join(exeMimeTypes, ";"), quoteExec(launcher))
+
+[Desktop Action menu]
+Name=Everything else Oliver does
+Exec=%s menu
+`, quoteExec(launcher), quoteExec(launcher), strings.Join(exeMimeTypes, ";"),
+		quoteExec(launcher), quoteExec(launcher))
 
 	if err := os.WriteFile(path, []byte(entry), 0o644); err != nil {
 		return err

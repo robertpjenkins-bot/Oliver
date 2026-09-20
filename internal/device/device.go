@@ -324,9 +324,9 @@ func AccessAdvice(d *Device) string {
 	}
 	group := "disk"
 	return fmt.Sprintf(
-		"You do not have write access to %s, so a program cannot write to it even once mapped. "+
-			"Either add yourself to the %q group (`sudo usermod -aG %s $USER`, then log out and back in), "+
-			"or run the program with elevated privileges for the one operation that needs it.",
+		"You do not have permission to write to %s. Writing to a drive needs it, and nothing "+
+			"Oliver does can grant it. Either run this one command with sudo, or add yourself to "+
+			"the %q group (`sudo usermod -aG %s $USER`, then log out and back in) to stop having to.",
 		d.Path, group, group)
 }
 

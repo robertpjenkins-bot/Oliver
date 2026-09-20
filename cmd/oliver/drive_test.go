@@ -25,6 +25,9 @@ type machine struct {
 	err         *bytes.Buffer
 	input       string
 	interactive bool
+	// readOnly describes a machine where this user cannot write to the device
+	// nodes, which is the default on most desktops.
+	readOnly bool
 }
 
 func newMachine(t *testing.T) *machine {
@@ -110,7 +113,7 @@ func (m *machine) run(args ...string) (string, error) {
 			SysBlock: filepath.Join(m.root, "sys", "block"),
 			Dev:      filepath.Join(m.root, "dev"),
 			Mounts:   filepath.Join(m.root, "mounts"),
-			Access:   func(string) (bool, bool) { return true, true },
+			Access:   func(string) (bool, bool) { return true, !m.readOnly },
 		}
 	}
 	defer func() { newUI, newScanner = origUI, origScanner }()
@@ -678,5 +681,62 @@ func TestTheDesktopEntryCanReachTheDrives(t *testing.T) {
 	}
 	if !strings.Contains(action, "Name=") {
 		t.Errorf("the action has no name to show in a menu:\n%s", action)
+	}
+}
+
+func TestDoubleClickingOpensTheDrivesNotAMenu(t *testing.T) {
+	// The dialog tools are looked up on PATH; with none present both paths
+	// fall back to printing usage, so this asserts the routing rather than
+	// the dialogs: `menu` must still exist, and be a separate command.
+	m := newMachine(t)
+	t.Setenv("PATH", t.TempDir())
+
+	if _, err := m.run("desktop-welcome"); err != nil {
+		t.Errorf("a double-click failed: %v", err)
+	}
+	if _, err := m.run("menu"); err != nil {
+		t.Errorf("the menu is no longer reachable: %v", err)
+	}
+}
+
+func TestTheLauncherKeepsAWayBackToEverythingElse(t *testing.T) {
+	m := newMachine(t)
+	home := filepath.Join(m.root, "home2")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	if _, err := m.run("desktop", "install"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(desktopFilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := string(data)
+	// Moving the chooser off the double-click must not strand it.
+	if !strings.Contains(entry, "[Desktop Action menu]") {
+		t.Errorf("no way back to the other tools from the launcher:\n%s", entry)
+	}
+	if !strings.Contains(entry, " menu\n") {
+		t.Errorf("the action does not run the menu:\n%s", entry)
+	}
+}
+
+func TestADriveTheUserCannotWriteToSaysHowToFixIt(t *testing.T) {
+	m := newMachine(t)
+	m.drive("sdb", 64<<20, true, "stick")
+	// A machine where this user has no write access to the device nodes,
+	// which is every desktop that has not been set up for it.
+	m.readOnly = true
+	iso := bootableISO(t, "test.iso", 1<<20)
+
+	_, err := m.run("write", iso, "sdb", "-f")
+	if err == nil {
+		t.Fatal("wrote to a drive it has no permission for")
+	}
+	for _, phrase := range []string{"permission", "sudo", "disk"} {
+		if !strings.Contains(err.Error(), phrase) {
+			t.Errorf("the refusal never mentions %q: %v", phrase, err)
+		}
 	}
 }

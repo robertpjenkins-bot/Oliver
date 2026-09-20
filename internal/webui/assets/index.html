@@ -388,7 +388,9 @@ function renderDrives() {
       }
       node.append(parts);
     }
-    if (locked) node.append(el("div", "note bad", d.refusal));
+    if (d.refusal && (locked || d.reason === "not_writable")) {
+      node.append(el("div", locked ? "note bad" : "note warn", d.refusal));
+    }
 
     node.addEventListener("click", () => {
       state.selected = d;
@@ -421,6 +423,12 @@ function renderTarget() {
   const facts = el("div", "facts", [d.model, d.contents].filter(Boolean).join(" · "));
   box.append(name, facts);
   box.append(el("div", "note bad", "Everything on this drive will be destroyed."));
+
+  // A drive this user cannot write to is not a refusal with a checkbox behind
+  // it: it needs privileges, which no page can grant. Say what would.
+  if (d.reason === "not_writable") {
+    opts.append(el("div", "note warn", d.refusal));
+  }
 
   // The refusals that have a way past are offered as a deliberate choice,
   // never assumed. The system disk has none and cannot be selected at all.

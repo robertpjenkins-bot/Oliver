@@ -53,6 +53,7 @@ COMMANDS
   pack         wrap a Windows program into an AppImage
   which        find an installed program inside a Windows environment
   desktop      register Oliver so .exe files open with a double-click
+  menu         everything Oliver does, as a menu of dialogs
   config       show or create the configuration file
   version      print the version
 
@@ -158,6 +159,8 @@ func run(args []string) error {
 		return a.cmdWhich(rest)
 	case "desktop":
 		return a.cmdDesktop(rest)
+	case "menu":
+		return a.cmdDesktopMenu(rest)
 	case "desktop-welcome":
 		// Not advertised: the AppImage launcher uses it when opened with no
 		// arguments from a desktop menu.
