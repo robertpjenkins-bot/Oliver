@@ -83,6 +83,7 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 
 	choices := []menuChoice{
 		{ID: "run", Label: "Run a Windows program", Note: "choose an .exe or .msi to launch"},
+		{ID: "drives", Label: "Write an image to a drive", Note: "and erase or format one, in a browser"},
 		{ID: "pack", Label: "Package a program as an AppImage", Note: "make it launchable like any other app"},
 		{ID: "doctor", Label: "Check this system", Note: "what is installed and what is missing"},
 		{ID: "log", Label: "Show the last run", Note: "why something failed to start"},
@@ -109,6 +110,8 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 		kit.info("Oliver is ready", "You can now open .exe and .msi files from your file manager.")
 	case "run":
 		return a.guiRun(kit)
+	case "drives":
+		return a.guiDrives(kit)
 	case "pack":
 		return a.guiPack(kit)
 	case "doctor":
@@ -133,6 +136,28 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 		}
 		kit.showText("Oliver - last run", body)
 	}
+	return nil
+}
+
+// guiDrives opens the drives page and keeps serving it until the dialog is
+// dismissed.
+//
+// Launched from a menu there is no terminal to stop this with, so the dialog
+// is the stop control: while it is up the server is running, and closing it
+// shuts the server down.
+func (a *app) guiDrives(kit dialogKit) error {
+	session, err := serveDrives(0)
+	if err != nil {
+		kit.errorBox("Could not start", fmtErr(err))
+		return err
+	}
+	defer session.stop()
+
+	openBrowser(session.url)
+	kit.info("Oliver is serving your drives",
+		"The page should have opened in your browser. If it did not, open this address:\n\n"+
+			session.url+"\n\nClose this window when you have finished. A write already "+
+			"under way will be allowed to finish.")
 	return nil
 }
 
@@ -612,9 +637,14 @@ Icon=oliver
 Terminal=false
 Categories=System;Emulator;Utility;
 MimeType=%s;
-Keywords=wine;proton;windows;exe;msi;
+Keywords=wine;proton;windows;exe;msi;usb;iso;
 NoDisplay=false
-`, quoteExec(launcher), quoteExec(launcher), strings.Join(exeMimeTypes, ";"))
+Actions=drives;
+
+[Desktop Action drives]
+Name=Write an image to a drive
+Exec=%s ui
+`, quoteExec(launcher), quoteExec(launcher), strings.Join(exeMimeTypes, ";"), quoteExec(launcher))
 
 	if err := os.WriteFile(path, []byte(entry), 0o644); err != nil {
 		return err

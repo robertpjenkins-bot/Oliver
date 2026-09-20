@@ -54,6 +54,9 @@ func (a *app) cmdDoctor(args []string) error {
 		checkDesktopIntegration(),
 		checkArch(),
 	}
+	if c, ok := checkAppImageMount(); ok {
+		checks = append(checks, c)
+	}
 
 	if *asJSON {
 		for i := range checks {
@@ -240,6 +243,43 @@ func checkDesktopIntegration() check {
 		}
 	}
 	return check{Name: "double-click .exe files", Status: statusOK, Result: "registered"}
+}
+
+// checkAppImageMount reports the one way this program misbehaves through no
+// fault of its own.
+//
+// An AppImage is mounted by a runtime that needs FUSE. Where FUSE is missing —
+// which is most current Ubuntu installs, since libfuse2 stopped being included
+// — that runtime prints "No suitable fusermount binary found on the $PATH" and
+// then unpacks itself instead. It works, but the message goes to standard
+// output rather than standard error, so it lands in the middle of anything
+// being piped elsewhere and makes `-json` unparseable.
+//
+// Nothing here can suppress it: it is written before this program starts. The
+// least Oliver can do is say what it is and how to be rid of it, rather than
+// leave somebody debugging a message Oliver did not print.
+func checkAppImageMount() (check, bool) {
+	if os.Getenv("APPIMAGE") == "" {
+		return check{}, false // not running as an AppImage
+	}
+	if os.Getenv("APPIMAGE_EXTRACT_AND_RUN") == "1" {
+		return check{Name: "AppImage mounting", Status: statusOK,
+			Result: "unpacking rather than mounting, as asked"}, true
+	}
+	for _, name := range []string{"fusermount", "fusermount3"} {
+		if _, err := exec.LookPath(name); err == nil {
+			return check{Name: "AppImage mounting", Status: statusOK, Result: "FUSE available"}, true
+		}
+	}
+	return check{
+		Name:   "AppImage mounting",
+		Status: statusWarn,
+		Result: "no FUSE, so the AppImage unpacks itself and prints an error first",
+		Advice: "That message comes from the AppImage runtime, not from Oliver, and it goes to " +
+			"standard output — so piping `-json` anywhere will not parse. Either install FUSE " +
+			"(`sudo apt install libfuse2`), or run with APPIMAGE_EXTRACT_AND_RUN=1 set, which " +
+			"skips mounting and stays quiet.",
+	}, true
 }
 
 func checkArch() check {

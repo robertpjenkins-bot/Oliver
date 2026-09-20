@@ -55,29 +55,17 @@ func (a *app) cmdUI(args []string) error {
 		return nil
 	}
 
-	server := webui.New()
-
-	// Loopback only. This is the whole security boundary: a program that
-	// writes boot records must not be reachable from the network, whatever
-	// else is misconfigured on the machine.
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
+	session, err := serveDrives(*port)
 	if err != nil {
-		return fmt.Errorf("could not start the server: %w", err)
+		return err
 	}
-	defer listener.Close()
+	defer session.stop()
 
-	url := fmt.Sprintf("http://%s/?t=%s", listener.Addr().String(), server.Token)
+	url := session.url
 	u := a.ui
 	u.Info("%s %s", u.Bold("Oliver is serving its drives at"), u.Cyan(url))
 	u.Info("%s", u.Dim("The link carries a one-time token; anything without it is refused."))
 	u.Info("%s", u.Dim("Press Ctrl-C to stop."))
-
-	httpServer := &http.Server{
-		Handler:           server.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-		// No write timeout: the progress stream stays open for as long as a
-		// write takes, which for a five gigabyte image is minutes.
-	}
 
 	ctx, stop := interruptible()
 	defer stop()
@@ -86,11 +74,8 @@ func (a *app) cmdUI(args []string) error {
 		openBrowser(url)
 	}
 
-	errs := make(chan error, 1)
-	go func() { errs <- httpServer.Serve(listener) }()
-
 	select {
-	case err := <-errs:
+	case err := <-session.errs:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
@@ -98,12 +83,48 @@ func (a *app) cmdUI(args []string) error {
 	case <-ctx.Done():
 		u.Info("")
 		u.Info("%s", u.Dim("stopping"))
-		// Shutdown waits for what is in flight, so a write in progress is not
-		// cut off half way by a Ctrl-C meant for the server.
-		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return httpServer.Shutdown(shutdown)
+		return session.stop()
 	}
+}
+
+// session is a running drives server.
+type session struct {
+	url    string
+	server *http.Server
+	errs   chan error
+}
+
+// serveDrives starts the server on loopback and returns the address to open.
+//
+// Loopback only is the whole security boundary: a program that writes boot
+// records must not be reachable from the network, whatever else is
+// misconfigured on the machine.
+func serveDrives(port int) (*session, error) {
+	drives := webui.New()
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return nil, fmt.Errorf("could not start the server: %w", err)
+	}
+	s := &session{
+		url: fmt.Sprintf("http://%s/?t=%s", listener.Addr().String(), drives.Token),
+		server: &http.Server{
+			Handler:           drives.Handler(),
+			ReadHeaderTimeout: 10 * time.Second,
+			// No write timeout: the progress stream stays open for as long as
+			// a write takes, which for a five gigabyte image is minutes.
+		},
+		errs: make(chan error, 1),
+	}
+	go func() { s.errs <- s.server.Serve(listener) }()
+	return s, nil
+}
+
+// stop shuts the server down, waiting for what is in flight so that a write in
+// progress is not cut off half way.
+func (s *session) stop() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.server.Shutdown(ctx)
 }
 
 // openBrowser asks the desktop to open the page. Failing to is not an error:

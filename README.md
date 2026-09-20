@@ -269,10 +269,33 @@ $ ./Oliver-x86_64.AppImage desktop install --default
 ```
 
 That last step is what lets you double-click an `.exe` in your file manager, or
-reach Oliver from "Open With". Undo it with `desktop uninstall`.
+reach Oliver from "Open With", and puts "Write an image to a drive" on the
+launcher's right-click menu. Undo it with `desktop uninstall`.
 
 The AppImage is a single statically linked file with no dependencies — no
 glibc version to match, nothing to install.
+
+One thing to know if you are scripting it. An AppImage is mounted by a runtime
+that wants FUSE, and current Ubuntu no longer ships libfuse2. Without it the
+runtime still works — it unpacks itself instead — but it first prints
+
+```
+Error: No suitable fusermount binary found on the $PATH
+```
+
+to **standard output**, where it lands in the middle of anything you are
+piping: `oliver drives -json | jq` will not parse. That message is the
+AppImage runtime's, not Oliver's, and nothing in Oliver can suppress something
+written before it starts. `oliver doctor` says so when it applies. To be rid of
+it, either install FUSE (`sudo apt install libfuse2`) or set
+`APPIMAGE_EXTRACT_AND_RUN=1`, which skips mounting and stays quiet:
+
+```console
+$ APPIMAGE_EXTRACT_AND_RUN=1 ./Oliver-x86_64.AppImage drives -json | jq
+```
+
+The plain binary from `make build` has none of this; it is the better choice
+for scripts.
 
 ### From source
 

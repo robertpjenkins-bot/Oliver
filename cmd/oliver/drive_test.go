@@ -604,3 +604,79 @@ func TestUIRefusesAPortItCannotHave(t *testing.T) {
 		t.Errorf("error = %v", err)
 	}
 }
+
+func TestDoctorNamesTheAppImageMessageItCannotSuppress(t *testing.T) {
+	m := newMachine(t)
+
+	// A machine with no fusermount anywhere, running as an AppImage.
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("APPIMAGE", "/home/you/Downloads/Oliver.AppImage")
+
+	out, err := m.run("doctor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "AppImage mounting") {
+		t.Fatalf("doctor says nothing about it:\n%s", out)
+	}
+	// The two things somebody needs: that it is not Oliver's message, and that
+	// it breaks piped output.
+	for _, phrase := range []string{"not from Oliver", "json", "APPIMAGE_EXTRACT_AND_RUN"} {
+		if !strings.Contains(out, phrase) {
+			t.Errorf("the advice never mentions %q:\n%s", phrase, out)
+		}
+	}
+
+	// Once it is being unpacked deliberately, there is nothing to warn about.
+	t.Setenv("APPIMAGE_EXTRACT_AND_RUN", "1")
+	out, err = m.run("doctor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "prints an error first") {
+		t.Errorf("still warning when the cause is gone:\n%s", out)
+	}
+}
+
+func TestDoctorSaysNothingAboutAppImagesWhenItIsNotOne(t *testing.T) {
+	m := newMachine(t)
+	out, err := m.run("doctor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "AppImage mounting") {
+		t.Errorf("a plain binary was told about AppImage mounting:\n%s", out)
+	}
+}
+
+func TestTheDesktopEntryCanReachTheDrives(t *testing.T) {
+	m := newMachine(t)
+	home := filepath.Join(m.root, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	if _, err := m.run("desktop", "install"); err != nil {
+		t.Fatalf("desktop install: %v", err)
+	}
+	data, err := os.ReadFile(desktopFilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := string(data)
+
+	// Without this, the drive tools exist but a desktop user cannot get to
+	// them: the launcher only ever ran Windows programs.
+	if !strings.Contains(entry, "Actions=drives;") {
+		t.Errorf("the launcher offers no action for the drives:\n%s", entry)
+	}
+	if !strings.Contains(entry, "[Desktop Action drives]") {
+		t.Errorf("the action is declared but not defined:\n%s", entry)
+	}
+	action := entry[strings.Index(entry, "[Desktop Action drives]"):]
+	if !strings.Contains(action, " ui\n") {
+		t.Errorf("the action does not open the drives page:\n%s", action)
+	}
+	if !strings.Contains(action, "Name=") {
+		t.Errorf("the action has no name to show in a menu:\n%s", action)
+	}
+}
