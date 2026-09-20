@@ -740,3 +740,92 @@ func TestADriveTheUserCannotWriteToSaysHowToFixIt(t *testing.T) {
 		}
 	}
 }
+
+// brokenStick makes the drive people actually complain about: a large stick
+// with an installation image written over it, whose partition table therefore
+// describes a disc rather than the drive.
+func (m *machine) brokenStick(name string, size int64) string {
+	m.t.Helper()
+	node := m.drive(name, size, true, "SanDisk Ultra")
+	f, err := os.OpenFile(node, os.O_RDWR, 0)
+	if err != nil {
+		m.t.Fatal(err)
+	}
+	defer f.Close()
+
+	mbr := make([]byte, 512)
+	e := mbr[446:462]
+	e[4] = 0x17
+	binary.LittleEndian.PutUint32(e[12:], uint32((size/24)/512)) // a fraction of the drive
+	mbr[510], mbr[511] = 0x55, 0xAA
+	if _, err := f.WriteAt(mbr, 0); err != nil {
+		m.t.Fatal(err)
+	}
+	f.WriteAt([]byte("CD001"), 32769)
+	f.WriteAt([]byte("UBUNTU 24.04.1 LTS AMD64        "), 32768+40)
+	return node
+}
+
+func TestRepairExplainsWhyAStickLooksSmallAndThenFixesIt(t *testing.T) {
+	m := newMachine(t)
+	node := m.brokenStick("sdb", 512<<20)
+
+	out, err := m.run("repair", "-check", "sdb")
+	if err != nil {
+		t.Fatalf("check failed: %v\n%s", err, out)
+	}
+	t.Logf("oliver repair -check sdb:\n%s", out)
+
+	// The two faults this drive really has, and the size gap named.
+	for _, phrase := range []string{"512.0 MB", "21.3 MB", "disc image", "oliver repair"} {
+		if !strings.Contains(out, phrase) {
+			t.Errorf("the report never mentions %q:\n%s", phrase, out)
+		}
+	}
+	// -check must not have touched it.
+	if got := driveContents(t, node, 512)[510]; got != 0x55 {
+		t.Error("-check changed the drive")
+	}
+
+	out, err = m.run("repair", "sdb", "-f", "-name", "FIXED")
+	if err != nil {
+		t.Fatalf("repair failed: %v\n%s", err, out)
+	}
+	t.Logf("oliver repair sdb:\n%s", out)
+	if !strings.Contains(out, "usable again") {
+		t.Errorf("the repair does not say what it recovered:\n%s", out)
+	}
+
+	// The drive now describes all of itself, and the disc descriptor is gone.
+	head := driveContents(t, node, 512)
+	if head[450] != 0x0C {
+		t.Errorf("partition type = %#x, want FAT32", head[450])
+	}
+	sectors := int64(binary.LittleEndian.Uint32(head[458:]))
+	if want := int64(512<<20/512 - 2048); sectors != want {
+		t.Errorf("the new partition covers %d sectors, want the whole drive (%d)", sectors, want)
+	}
+	if out, err := m.run("repair", "-check", "sdb"); err != nil {
+		t.Fatal(err)
+	} else if !strings.Contains(out, "Nothing wrong") {
+		t.Errorf("still faulty after a repair:\n%s", out)
+	}
+}
+
+func TestRepairingAHealthyDriveNeedsSayingSoTwice(t *testing.T) {
+	m := newMachine(t)
+	m.drive("sdb", 512<<20, true, "stick")
+	if _, err := m.run("format", "sdb", "-f", "-name", "FINE"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Nothing is wrong with it, so a repair must not quietly erase it.
+	m.answers("n")
+	_, err := m.run("repair", "sdb")
+	if err == nil {
+		t.Fatal("a healthy drive was erased on one prompt")
+	}
+	if got := imaging.Probe(filepath.Join(m.root, "dev", "sdb")); got.Type != "partitioned" {
+		t.Errorf("the drive was erased anyway: %v", got)
+	}
+}

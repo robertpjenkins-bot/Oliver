@@ -220,3 +220,49 @@ func TestMissingDriveIsExplainedRatherThanReported(t *testing.T) {
 		t.Errorf("error for a missing drive = %v", err)
 	}
 }
+
+func TestAQuickWipeReportsWhatItClearedNotWhereItWent(t *testing.T) {
+	const size = 512 << 20
+	drive := blankDrive(t, size)
+
+	var last Progress
+	res, err := Wipe(context.Background(), drive, WipeOptions{
+		Progress: func(p Progress) {
+			last = p
+			if p.Done > p.Total {
+				t.Errorf("progress overran: %d of %d", p.Done, p.Total)
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Counting position on the drive would report a quick wipe of a large
+	// drive as having erased all of it, which is not what happened.
+	want := int64(4<<20 + 1<<20)
+	if res.Bytes != want {
+		t.Errorf("cleared %d bytes, want %d", res.Bytes, want)
+	}
+	if last.Total != want {
+		t.Errorf("progress counted up to %d, want %d", last.Total, want)
+	}
+	if last.Done != want {
+		t.Errorf("progress ended at %d of %d", last.Done, last.Total)
+	}
+}
+
+func TestAFullWipeStillCountsTheWholeDrive(t *testing.T) {
+	const size = 8 << 20
+	drive := blankDrive(t, size)
+	var last Progress
+	if _, err := Wipe(context.Background(), drive, WipeOptions{
+		Full: true, BlockSize: 1 << 20,
+		Progress: func(p Progress) { last = p },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if last.Total != size || last.Done != size {
+		t.Errorf("progress ended at %d of %d, want %d", last.Done, last.Total, size)
+	}
+}

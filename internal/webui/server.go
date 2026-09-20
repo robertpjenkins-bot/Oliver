@@ -85,7 +85,9 @@ func (s *Server) Handler() http.Handler {
 		"GET /api/browse":            s.browse,
 		"GET /api/jobs":              s.listJobs,
 		"POST /api/jobs/{id}/cancel": s.cancelJob,
+		"GET /api/diagnose":          s.diagnose,
 		"POST /api/write":            s.write,
+		"POST /api/repair":           s.repair,
 		"POST /api/erase":            s.erase,
 		"POST /api/format":           s.format,
 	}
@@ -236,6 +238,12 @@ type driveView struct {
 	Busy       bool            `json:"busy"`
 	Mounts     []device.Mount  `json:"mounts,omitempty"`
 	Partitions []partitionView `json:"partitions,omitempty"`
+	// Faults are what is wrong with how the drive describes itself: the
+	// reason a stick turns up at a fraction of its size, or read-only.
+	Faults []imaging.Fault `json:"faults,omitempty"`
+	// Described is how much of the drive its partition table accounts for.
+	Described string `json:"described,omitempty"`
+
 	// Refusal is why this drive cannot be used, empty when it can be.
 	Refusal string `json:"refusal,omitempty"`
 	// Reason names which refusal it is, so the page can offer the way past
@@ -291,6 +299,17 @@ func (s *Server) drives(w http.ResponseWriter, r *http.Request) {
 			}
 			v.Partitions = append(v.Partitions, pv)
 		}
+		// Reading a few sectors is cheap, and a drive that is lying about its
+		// size should say so on the card rather than only when asked.
+		if !v.SystemDisk {
+			if diagnosis, err := imaging.Diagnose(d.Path); err == nil && !diagnosis.Healthy() {
+				v.Faults = diagnosis.Faults
+				if diagnosis.Described > 0 {
+					v.Described = imaging.HumanBytes(diagnosis.Described)
+				}
+			}
+		}
+
 		// The page shows the reason a drive is unavailable rather than hiding
 		// it: seeing the system disk listed and locked is how somebody
 		// confirms they are looking at the right list.
@@ -543,6 +562,75 @@ func (s *Server) erase(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		j.finishWith(res, summary+", "+formatSummary(formatted))
+		return nil
+	})
+	if err != nil {
+		fail(w, http.StatusConflict, err)
+		return
+	}
+	send(w, job.Snapshot())
+}
+
+// diagnose reports what is wrong with a drive, without touching it.
+func (s *Server) diagnose(w http.ResponseWriter, r *http.Request) {
+	dev, err := s.Scanner().Find(r.URL.Query().Get("device"))
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	d, err := imaging.Diagnose(dev.Path)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	send(w, struct {
+		*imaging.Diagnosis
+		CapacityHuman  string `json:"capacity_human"`
+		DescribedHuman string `json:"described_human,omitempty"`
+		Healthy        bool   `json:"healthy"`
+	}{d, imaging.HumanBytes(d.Capacity), imaging.HumanBytes(d.Described), d.Healthy()})
+}
+
+// repair clears what describes the drive and writes a full-size volume, which
+// is what gives a drive its size back.
+func (s *Server) repair(w http.ResponseWriter, r *http.Request) {
+	req, ok := decode(w, r)
+	if !ok {
+		return
+	}
+	label, err := imaging.NormaliseLabel(req.Name)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	dev, err := s.prepare(req, "repair")
+	if err != nil {
+		failRefusal(w, err)
+		return
+	}
+	before, err := imaging.Diagnose(dev.Path)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+
+	job, err := s.start("repair", dev, "", func(ctx context.Context, j *Job) error {
+		wiped, err := imaging.Wipe(ctx, dev.Path, imaging.WipeOptions{Progress: j.progress})
+		if err != nil {
+			return err
+		}
+		j.setPhase("formatting")
+		formatted, err := imaging.FormatFAT32(dev.Path, imaging.FormatOptions{Label: label})
+		if err != nil {
+			return err
+		}
+		result := &imaging.RepairResult{Before: before, Format: formatted, Cleared: wiped.Bytes}
+		summary := formatSummary(formatted)
+		if recovered := result.Recovered(); recovered > 0 {
+			summary += ", and " + imaging.HumanBytes(recovered) +
+				" the drive was not admitting to is usable again"
+		}
+		j.finishWith(nil, summary)
 		return nil
 	})
 	if err != nil {

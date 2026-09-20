@@ -270,7 +270,7 @@ func Wipe(ctx context.Context, devicePath string, opt WipeOptions) (*Result, err
 	var cleared int64
 
 	if opt.Full {
-		cleared, err = zeroRange(ctx, f, 0, capacity, opt, capacity)
+		cleared, err = zeroRange(ctx, f, 0, capacity, opt, capacity, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -278,17 +278,20 @@ func Wipe(ctx context.Context, devicePath string, opt WipeOptions) (*Result, err
 		// 4 MiB covers the MBR, a GPT with a full entry array, and the
 		// superblocks of every common filesystem.
 		head := min64(4<<20, capacity)
-		n, err := zeroRange(ctx, f, 0, head, opt, capacity)
-		if err != nil {
-			return nil, err
-		}
-		cleared = n
-
 		// The backup GPT lives in the last sectors, and a drive left holding
 		// one comes back with its old partitions.
 		tail := min64(1<<20, capacity-head)
+
+		// Progress counts the bytes being cleared, not where on the drive they
+		// are. Counting position would report a quick wipe of a 512 GB drive
+		// as having erased 512 GB, which is neither true nor what was asked.
+		total := head + tail
+		cleared, err = zeroRange(ctx, f, 0, head, opt, total, 0)
+		if err != nil {
+			return nil, err
+		}
 		if tail > 0 {
-			n, err := zeroRange(ctx, f, capacity-tail, tail, opt, capacity)
+			n, err := zeroRange(ctx, f, capacity-tail, tail, opt, total, cleared)
 			if err != nil {
 				return nil, err
 			}
@@ -303,8 +306,9 @@ func Wipe(ctx context.Context, devicePath string, opt WipeOptions) (*Result, err
 	return &Result{Bytes: cleared, Duration: time.Since(started)}, nil
 }
 
-// zeroRange writes zeroes over [offset, offset+length).
-func zeroRange(ctx context.Context, f *os.File, offset, length int64, opt WipeOptions, total int64) (int64, error) {
+// zeroRange writes zeroes over [offset, offset+length), reporting progress as
+// done bytes out of total, counting alreadyDone from earlier ranges.
+func zeroRange(ctx context.Context, f *os.File, offset, length int64, opt WipeOptions, total, alreadyDone int64) (int64, error) {
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
 		return 0, err
 	}
@@ -333,9 +337,9 @@ func zeroRange(ctx context.Context, f *os.File, offset, length int64, opt WipeOp
 		if err != nil {
 			return done, fmt.Errorf("erasing at %s: %w", HumanBytes(offset+done), err)
 		}
-		report(Progress{Phase: PhaseErasing, Done: offset + done, Total: total, Elapsed: time.Since(started)}, false)
+		report(Progress{Phase: PhaseErasing, Done: alreadyDone + done, Total: total, Elapsed: time.Since(started)}, false)
 	}
-	report(Progress{Phase: PhaseErasing, Done: offset + done, Total: total, Elapsed: time.Since(started)}, true)
+	report(Progress{Phase: PhaseErasing, Done: alreadyDone + done, Total: total, Elapsed: time.Since(started)}, true)
 	return done, nil
 }
 

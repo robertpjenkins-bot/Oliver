@@ -46,6 +46,7 @@ COMMANDS
   erase        erase a drive and leave an empty one behind
   format       put one empty FAT32 volume on a drive
   verify       check a drive against the image that should be on it
+  repair       work out why a drive misbehaves, and put it right
   device       expose one of this machine's drives to a Windows program
   doctor       check this system and report what is missing
   log          show the output of the last program that ran
@@ -147,6 +148,8 @@ func run(args []string) error {
 		return a.cmdFormat(rest)
 	case "verify":
 		return a.cmdVerify(rest)
+	case "repair", "fix":
+		return a.cmdRepair(rest)
 	case "doctor":
 		return a.cmdDoctor(rest)
 	case "log", "logs":

@@ -169,6 +169,42 @@ $ oliver ui -save drives.html
 Open it in a browser. It will ask for the address `oliver ui` prints.
 ```
 
+**It can tell you why a drive is misbehaving, and put it right.** The usual
+complaint: a 64 GB stick that shows up as 2 GB, or read-only, or that a
+partitioning tool refuses to touch. The drive is rarely broken. What is broken
+is the handful of sectors describing it, and after an installation image has
+been written over them, what they describe is a disc:
+
+```console
+$ oliver repair -check /dev/sdb
+Drive
+  /dev/sdb  32.0 GB
+  holds ISO 9660 "UBUNTU 24.04.1 LTS AMD64"
+  described by its partition table: 1.4 GB
+
+• the drive holds 32.0 GB but only 1.4 GB of it is described
+  Everything that reads this drive will show it as 1.4 GB, because that is all
+  its partition table accounts for. The remaining 30.6 GB is still there and
+  still works; nothing on the drive knows about it.
+
+• a disc image is still written across the drive
+  The drive carries an ISO 9660 descriptor, so it was written from an
+  installation image. Until that is cleared, systems will keep reading the
+  drive as a disc — read-only, and the size of the image rather than the size
+  of the drive.
+
+Put it right with: oliver repair /dev/sdb
+```
+
+`-check` looks and changes nothing. Without it, Oliver clears those sectors and
+writes a fresh full-size volume, and says how much of the drive it got back. It
+also spots a partition claiming space past the end of the drive, and a GPT
+whose backup copy at the far end has gone missing — the thing that makes
+partitioning tools refuse to work at all.
+
+It does not recover files. Repairing a drive means making the drive usable, and
+the way it does that is by overwriting what is on it.
+
 **It gets the stick back afterwards.** A drive holding an image is no longer
 usable for ordinary files, and the tools that say so are not always the ones
 that fix it:
@@ -321,6 +357,7 @@ oliver write <image.iso> [drive]          write an image to a drive, and verify 
 oliver erase [drive] -name NAME           erase a drive, leave an empty named one
 oliver format [drive] -name NAME          one empty FAT32 volume, filling the drive
 oliver verify <image.iso> <drive>         check a drive against the image
+oliver repair [drive] [-check]            why a drive misbehaves, and the fix
 oliver doctor                             what is missing, and how to fix it
 oliver desktop install                    open .exe files by double-clicking
 ```

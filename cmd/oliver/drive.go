@@ -65,6 +65,28 @@ exceed four gigabytes.
 This writes a fresh partition table and filesystem. It does not overwrite the
 data that was there — use "oliver erase -full" for that.`
 
+const repairSynopsis = `oliver repair [drive]
+
+Works out why a drive is behaving oddly, and puts it right.
+
+  oliver repair                 choose the drive from a list
+  oliver repair /dev/sdb        name it outright
+  oliver repair /dev/sdb -check look, report, change nothing
+
+The usual complaint this answers: a stick that used to be 64 GB now shows up
+as 2 GB, or turns up read-only, or a partitioning tool refuses to touch it.
+None of that is the drive failing. It is the few sectors that describe the
+drive disagreeing with the drive — normally because an installation image was
+written over them, and an image describes a disc.
+
+Repair says what it found, then clears those sectors and writes a fresh
+full-size FAT32 volume, so every tool sees the whole drive again.
+
+It does not recover files. There is no undoing a repair: what it fixes is the
+drive, and the way it fixes it is by overwriting what is on it. If the files
+matter, copy them off first — a drive that mounts read-only will usually still
+let you read them.`
+
 const verifySynopsis = `oliver verify <image.iso> <drive>
 
 Compares a drive with the image that should be on it.
@@ -289,6 +311,140 @@ func (a *app) cmdVerify(args []string) error {
 	u.Info("%s %s holds %s, byte for byte", u.Green("✓"), dev.Path, baseName(fs.Arg(0)))
 	u.Info("  %s", u.Dim("sha256 "+res.Source))
 	return nil
+}
+
+func (a *app) cmdRepair(args []string) error {
+	fs := a.newFlagSet("repair", repairSynopsis)
+	checkOnly := fs.Bool("check", false, "report what is wrong and change nothing")
+	name := fs.String("name", "", "name for the repaired volume (up to 11 characters)")
+	asJSON := fs.Bool("json", false, "print the result as JSON")
+	g := guardFlags(fs)
+	if err := parseFlagsAnywhere(fs, args); err != nil {
+		return err
+	}
+
+	label, err := imaging.NormaliseLabel(*name)
+	if err != nil {
+		return err
+	}
+
+	// Looking costs nothing and changes nothing, so -check does not need the
+	// permission a repair does.
+	if *checkOnly {
+		dev, err := newScanner().Find(fs.Arg(0))
+		if err != nil {
+			return err
+		}
+		return a.diagnose(dev, *asJSON)
+	}
+
+	dev, err := a.chooseDrive("repair", fs.Arg(0), *g)
+	if err != nil {
+		return err
+	}
+	diagnosis, err := imaging.Diagnose(dev.Path)
+	if err != nil {
+		return err
+	}
+	a.printFaults(diagnosis)
+
+	u := a.ui.OnStderr()
+	if diagnosis.Healthy() {
+		u.Printf("")
+		u.Printf("%s", u.Dim("Nothing here needs repairing. Repairing it anyway would erase it for no reason."))
+		if !g.force && !u.Confirm("Erase and rebuild it regardless?", false) {
+			return errCancelled
+		}
+	}
+
+	if err := checkBusy(dev, "repair", *g); err != nil {
+		return err
+	}
+	if err := a.confirmDestruction(dev, fmt.Sprintf("Repair %s?", dev.Path), *g); err != nil {
+		return err
+	}
+	if err := a.release(dev, *g); err != nil {
+		return err
+	}
+
+	ctx, stop := interruptible()
+	defer stop()
+
+	rep := newReporter(a.ui)
+	wiped, err := imaging.Wipe(ctx, dev.Path, imaging.WipeOptions{Progress: rep.report})
+	rep.close()
+	if err != nil {
+		return writeError(err, dev)
+	}
+	formatted, err := imaging.FormatFAT32(dev.Path, imaging.FormatOptions{Label: label})
+	if err != nil {
+		return err
+	}
+
+	result := &imaging.RepairResult{Before: diagnosis, Format: formatted, Cleared: wiped.Bytes}
+	if *asJSON {
+		return a.printJSON(result)
+	}
+	ui := a.ui
+	volume := formatted.Label
+	if volume == "" {
+		volume = "unnamed"
+	}
+	ui.Info("%s repaired %s", ui.Green("✓"), dev.Path)
+	ui.Info("  one FAT32 volume %q filling the drive, %s usable", volume, humanBytes(formatted.Usable))
+	if recovered := result.Recovered(); recovered > 0 {
+		ui.Info("  %s", ui.Green(fmt.Sprintf("%s that the drive was not admitting to is usable again",
+			humanBytes(recovered))))
+	}
+	return nil
+}
+
+// diagnose reports on a drive without touching it.
+func (a *app) diagnose(dev *device.Device, asJSON bool) error {
+	diagnosis, err := imaging.Diagnose(dev.Path)
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		return a.printJSON(diagnosis)
+	}
+	a.printDiagnosis(diagnosis)
+	if !diagnosis.Healthy() {
+		a.ui.Info("")
+		a.ui.Info("%s", a.ui.Dim(fmt.Sprintf("Put it right with: oliver repair %s", dev.Path)))
+	}
+	return nil
+}
+
+func (a *app) printDiagnosis(d *imaging.Diagnosis) {
+	u := a.ui.OnStderr()
+	u.Printf("%s", u.Bold("Drive"))
+	u.Printf("  %s  %s", d.Path, humanBytes(d.Capacity))
+	if !d.Volume.Empty() {
+		u.Printf("  %s %s", u.Dim("holds"), d.Volume.String())
+	}
+	if d.Described > 0 {
+		u.Printf("  %s %s", u.Dim("described by its partition table:"), humanBytes(d.Described))
+	}
+	u.Printf("")
+	a.printFaults(d)
+}
+
+// printFaults reports the findings alone, for when the drive itself is about
+// to be described again by the confirmation.
+func (a *app) printFaults(d *imaging.Diagnosis) {
+	u := a.ui.OnStderr()
+	if d.Healthy() {
+		u.Printf("%s %s", u.Green("✓"), "Nothing wrong with how this drive describes itself.")
+		return
+	}
+	for _, f := range d.Faults {
+		u.Printf("%s %s", u.Yellow("•"), u.Bold(f.Summary))
+		for _, line := range wrap(f.Detail, 72) {
+			u.Printf("  %s", u.Dim(line))
+		}
+		u.Printf("")
+	}
 }
 
 func guardFlags(fs *flag.FlagSet) *guard {
