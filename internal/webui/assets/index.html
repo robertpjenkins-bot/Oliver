@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Nothing here is fetched from anywhere: no fonts, no scripts, no styles.
+     A tool that writes boot media has to work on a machine with no network. -->
+<meta name="referrer" content="no-referrer">
+<title>Oliver — Drives</title>
+<style>
+:root {
+  --bg: #f6f6f4;
+  --panel: #ffffff;
+  --panel-2: #fbfbfa;
+  --ink: #1d1d1b;
+  --ink-dim: #6b6b66;
+  --line: #e2e2dd;
+  --accent: #2f6f4f;
+  --accent-ink: #ffffff;
+  --danger: #a4331f;
+  --danger-bg: #fdf1ef;
+  --warn: #8a6100;
+  --warn-bg: #fdf8ec;
+  --radius: 10px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a;
+    --panel: #1f2023;
+    --panel-2: #26282b;
+    --ink: #e8e8e4;
+    --ink-dim: #9a9a94;
+    --line: #34363a;
+    --accent: #5fbf8f;
+    --accent-ink: #10221a;
+    --danger: #ff8f7a;
+    --danger-bg: #2b1b18;
+    --warn: #e3b25c;
+    --warn-bg: #2a2317;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+header h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+header .sub { color: var(--ink-dim); font-size: 13px; }
+header .spacer { flex: 1; }
+main {
+  display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
+  gap: 20px; padding: 20px 24px 48px; max-width: 1180px; margin: 0 auto; align-items: start;
+}
+@media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.card > h2 {
+  margin: 0; padding: 13px 16px; font-size: 13px; font-weight: 650;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-dim);
+  border-bottom: 1px solid var(--line);
+}
+.card > .body { padding: 16px; }
+.mono { font-family: var(--mono); font-size: 13px; }
+.dim { color: var(--ink-dim); }
+
+/* Drives */
+.drive {
+  display: block; width: 100%; text-align: left; font: inherit; color: inherit;
+  background: var(--panel); border: 0; border-bottom: 1px solid var(--line);
+  padding: 14px 16px; cursor: pointer;
+}
+.drive:last-child { border-bottom: 0; }
+.drive:hover:not(.locked) { background: var(--panel-2); }
+.drive.selected { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }
+.drive.locked { cursor: not-allowed; opacity: 0.72; }
+.drive .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.drive .path { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.drive .size { font-variant-numeric: tabular-nums; }
+.drive .meta { margin-top: 4px; font-size: 13px; color: var(--ink-dim); }
+.drive .parts { margin-top: 8px; font-size: 12.5px; color: var(--ink-dim); font-family: var(--mono); }
+.drive .parts div { padding: 1px 0; }
+.badge {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-dim);
+}
+.badge.good { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.badge.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.badge.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.note { border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-top: 10px; }
+.note.warn { background: var(--warn-bg); color: var(--warn); }
+.note.bad { background: var(--danger-bg); color: var(--danger); }
+
+/* Controls */
+.tabs { display: flex; gap: 4px; padding: 10px 10px 0; border-bottom: 1px solid var(--line); }
+.tab {
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-dim);
+  background: transparent; border: 0; border-bottom: 2px solid transparent;
+  padding: 8px 12px 9px; cursor: pointer;
+}
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+label.field { display: block; margin-bottom: 14px; }
+label.field > span { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-dim); margin-bottom: 5px; }
+input[type=text] {
+  width: 100%; font: inherit; font-family: var(--mono); font-size: 13px;
+  padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--ink);
+}
+input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.check { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 10px; font-size: 13.5px; }
+.check input { margin-top: 3px; }
+.check .hint { display: block; color: var(--ink-dim); font-size: 12.5px; }
+button.action {
+  width: 100%; font: inherit; font-weight: 650; font-size: 14px; padding: 11px;
+  border-radius: 8px; border: 1px solid transparent; cursor: pointer;
+  background: var(--accent); color: var(--accent-ink);
+}
+button.action.danger { background: var(--danger); color: #fff; }
+/* A disabled button must not read as an armed one: the danger colour is
+   reserved for the button that is actually about to destroy something. */
+button.action:disabled {
+  background: var(--panel-2); color: var(--ink-dim); border-color: var(--line); cursor: not-allowed;
+}
+button.ghost {
+  font: inherit; font-size: 13px; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); cursor: pointer;
+}
+.row { display: flex; gap: 8px; align-items: center; }
+.row > :first-child { flex: 1; }
+
+/* Image summary */
+.imgsum { font-size: 13px; }
+.imgsum .name { font-family: var(--mono); font-weight: 600; word-break: break-all; }
+.imgsum .facts { color: var(--ink-dim); margin-top: 3px; }
+
+/* Dialog */
+dialog {
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel);
+  color: var(--ink); padding: 0; width: min(560px, 92vw); max-height: 82vh;
+}
+dialog::backdrop { background: rgba(0,0,0,0.45); }
+dialog .head { padding: 14px 16px; border-bottom: 1px solid var(--line); font-weight: 650; }
+dialog .body { padding: 16px; overflow: auto; max-height: 56vh; }
+dialog .foot { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; }
+.entry {
+  display: flex; gap: 10px; width: 100%; text-align: left; font: inherit; color: inherit;
+  background: transparent; border: 0; border-radius: 7px; padding: 8px 10px; cursor: pointer;
+}
+.entry:hover { background: var(--panel-2); }
+.entry .n { flex: 1; font-family: var(--mono); font-size: 13px; word-break: break-all; }
+.entry .s { color: var(--ink-dim); font-size: 12.5px; }
+
+/* Progress */
+.bar { height: 9px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.15s linear; }
+.prog-line { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 7px; }
+.prog-line .phase { font-weight: 650; text-transform: capitalize; }
+.prog-line .nums { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.result { font-size: 13.5px; }
+.result .line { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 6px; }
+.result .tick { color: var(--accent); font-weight: 700; }
+.result .cross { color: var(--danger); font-weight: 700; }
+.result .digest { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); word-break: break-all; }
+.empty { padding: 28px 16px; text-align: center; color: var(--ink-dim); font-size: 13.5px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Oliver</h1>
+  <span class="sub">drives on this machine</span>
+  <span class="spacer"></span>
+  <span class="sub" id="status">scanning…</span>
+  <button class="ghost" id="refresh">Rescan</button>
+</header>
+
+<main>
+  <section class="card" aria-labelledby="drives-h">
+    <h2 id="drives-h">Drives</h2>
+    <div id="drives"><div class="empty">scanning…</div></div>
+  </section>
+
+  <section class="card">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="write" aria-selected="true">Write image</button>
+      <button class="tab" role="tab" data-tab="erase" aria-selected="false">Erase</button>
+      <button class="tab" role="tab" data-tab="format" aria-selected="false">Format</button>
+    </div>
+    <div class="body">
+      <div id="target" class="imgsum" style="margin-bottom:16px">
+        <div class="dim">No drive selected. Pick one on the left.</div>
+      </div>
+
+      <div data-panel="write">
+        <label class="field">
+          <span>Image file</span>
+          <div class="row">
+            <input type="text" id="image" placeholder="/home/you/Downloads/ubuntu.iso" spellcheck="false">
+            <button class="ghost" id="browse">Browse…</button>
+          </div>
+        </label>
+        <div id="imginfo"></div>
+        <div class="check">
+          <input type="checkbox" id="verify" checked>
+          <label for="verify">Verify after writing
+            <span class="hint">Reads the drive back and compares it with the image. A failing stick
+              accepts every byte and hands back something else.</span></label>
+        </div>
+      </div>
+
+      <div data-panel="erase" hidden>
+        <label class="field">
+          <span>Name for the new volume</span>
+          <input type="text" id="erase-name" placeholder="WORK" maxlength="11" spellcheck="false">
+        </label>
+        <div class="check">
+          <input type="checkbox" id="full">
+          <label for="full">Overwrite every byte
+            <span class="hint">Takes as long as writing an image of the same size. Without it, only the
+              partition tables and filesystem signatures are cleared.</span></label>
+        </div>
+        <div class="check">
+          <input type="checkbox" id="raw">
+          <label for="raw">Leave unformatted
+            <span class="hint">Erase only — no partition table, no filesystem.</span></label>
+        </div>
+      </div>
+
+      <div data-panel="format" hidden>
+        <label class="field">
+          <span>Name for the volume</span>
+          <input type="text" id="format-name" placeholder="BACKUP" maxlength="11" spellcheck="false">
+        </label>
+        <p class="dim" style="font-size:13px;margin:0 0 14px">
+          One FAT32 volume filling the drive. Linux, macOS, Windows and the firmware of a machine
+          being installed can all read it; no single file may exceed four gigabytes.
+        </p>
+      </div>
+
+      <div id="options"></div>
+      <button class="action danger" id="go" disabled>Select a drive</button>
+      <div id="progress" hidden style="margin-top:16px">
+        <div class="prog-line"><span class="phase" id="phase">starting</span><span class="nums" id="nums"></span></div>
+        <div class="bar"><i id="fill"></i></div>
+        <button class="ghost" id="cancel" style="margin-top:10px">Stop</button>
+      </div>
+      <div id="result" class="result" style="margin-top:16px"></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="confirm">
+  <div class="head">This destroys everything on the drive</div>
+  <div class="body">
+    <div id="confirm-what"></div>
+    <label class="field" style="margin-top:14px">
+      <span id="confirm-label">Type the drive's name to continue</span>
+      <input type="text" id="confirm-word" spellcheck="false" autocomplete="off">
+    </label>
+  </div>
+  <div class="foot">
+    <button class="ghost" id="confirm-cancel">Cancel</button>
+    <button class="action danger" id="confirm-go" style="width:auto" disabled>Continue</button>
+  </div>
+</dialog>
+
+<dialog id="picker">
+  <div class="head" id="picker-dir">Choose an image</div>
+  <div class="body" id="picker-body"></div>
+  <div class="foot"><button class="ghost" id="picker-cancel">Cancel</button></div>
+</dialog>
+
+<script>
+"use strict";
+const TOKEN = "__OLIVER_TOKEN__";
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: { "X-Oliver-Token": TOKEN, "Content-Type": "application/json", ...(options.headers || {}) },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(body.error || `request failed (${res.status})`);
+    err.reason = body.reason;
+    err.overridable = body.overridable;
+    throw err;
+  }
+  return body;
+}
+
+const state = { drives: [], selected: null, tab: "write", image: null, job: null, allowFixed: false, unmount: false };
+
+/* ---- drives ------------------------------------------------------------ */
+
+async function loadDrives() {
+  try {
+    state.drives = await api("/api/drives");
+    $("status").textContent = state.drives.length + (state.drives.length === 1 ? " drive" : " drives");
+  } catch (e) {
+    $("status").textContent = "could not read the drives: " + e.message;
+    return;
+  }
+  // A drive that has gone away must not stay selected and armed.
+  if (state.selected && !state.drives.some((d) => d.path === state.selected.path)) {
+    state.selected = null;
+  } else if (state.selected) {
+    state.selected = state.drives.find((d) => d.path === state.selected.path);
+  }
+  renderDrives();
+  renderTarget();
+}
+
+function renderDrives() {
+  const list = $("drives");
+  list.textContent = "";
+  if (!state.drives.length) {
+    list.append(el("div", "empty", "No drives found."));
+    return;
+  }
+  for (const d of state.drives) {
+    const locked = d.reason === "system_disk";
+    const node = el("button", "drive" + (locked ? " locked" : "") + (state.selected && state.selected.path === d.path ? " selected" : ""));
+    node.type = "button";
+    if (locked) node.disabled = true;
+
+    const top = el("div", "top");
+    top.append(el("span", "path", d.path), el("span", "size", d.size_human));
+    top.append(el("span", "badge" + (d.removable ? " good" : ""), d.removable ? "removable" : "fixed"));
+    if (d.system_disk) top.append(el("span", "badge bad", "running system"));
+    else if (d.busy) top.append(el("span", "badge warn", "mounted"));
+    node.append(top);
+
+    const meta = [d.model, d.contents].filter(Boolean).join(" · ");
+    if (meta) node.append(el("div", "meta", meta));
+
+    if (d.partitions && d.partitions.length) {
+      const parts = el("div", "parts");
+      for (const p of d.partitions) {
+        const bits = [p.path, p.size_human, p.contents].filter(Boolean).join("  ");
+        parts.append(el("div", null, bits + (p.mounted_at ? "  → " + p.mounted_at : "")));
+      }
+      node.append(parts);
+    }
+    if (locked) node.append(el("div", "note bad", d.refusal));
+
+    node.addEventListener("click", () => {
+      state.selected = d;
+      state.allowFixed = false;
+      state.unmount = false;
+      $("result").textContent = "";
+      renderDrives();
+      renderTarget();
+    });
+    list.append(node);
+  }
+}
+
+/* ---- the selected drive and the options it needs ----------------------- */
+
+function renderTarget() {
+  const box = $("target");
+  box.textContent = "";
+  const opts = $("options");
+  opts.textContent = "";
+  const d = state.selected;
+
+  if (!d) {
+    box.append(el("div", "dim", "No drive selected. Pick one on the left."));
+    updateButton();
+    return;
+  }
+
+  const name = el("div", "name", d.path + "  ·  " + d.size_human);
+  const facts = el("div", "facts", [d.model, d.contents].filter(Boolean).join(" · "));
+  box.append(name, facts);
+  box.append(el("div", "note bad", "Everything on this drive will be destroyed."));
+
+  // The refusals that have a way past are offered as a deliberate choice,
+  // never assumed. The system disk has none and cannot be selected at all.
+  if (d.reason === "fixed_disk") {
+    opts.append(checkbox("allowFixed", "Allow this fixed disk",
+      "It is not removable media. Check the model and size above: " + (d.model || "unnamed") + ", " + d.size_human + "."));
+  }
+  if (d.busy) {
+    opts.append(checkbox("unmount", "Unmount it first",
+      "The system is still reading from this drive: " + d.mounts.map((m) => m.target).join(", ") +
+      ". Writing underneath a mounted filesystem corrupts the drive."));
+  }
+  updateButton();
+}
+
+function checkbox(key, label, hint) {
+  const wrap = el("div", "check");
+  const input = el("input");
+  input.type = "checkbox";
+  input.id = "opt-" + key;
+  input.checked = !!state[key];
+  input.addEventListener("change", () => { state[key] = input.checked; updateButton(); });
+  const lab = el("label", null, label);
+  lab.htmlFor = input.id;
+  lab.append(el("span", "hint", hint));
+  wrap.append(input, lab);
+  return wrap;
+}
+
+function blocked() {
+  const d = state.selected;
+  if (!d) return "Select a drive";
+  if (d.reason === "system_disk") return "This drive cannot be used";
+  if (d.reason === "not_writable") return "No permission to write to this drive";
+  if (d.reason === "fixed_disk" && !state.allowFixed) return "Allow the fixed disk to continue";
+  if (d.busy && !state.unmount) return "Unmount the drive to continue";
+  if (state.tab === "write" && !$("image").value.trim()) return "Choose an image";
+  return null;
+}
+
+function updateButton() {
+  const go = $("go");
+  const why = blocked();
+  go.disabled = !!why || !!state.job;
+  if (why) { go.textContent = why; return; }
+  const verb = { write: "Write image to ", erase: "Erase ", format: "Format " }[state.tab];
+  go.textContent = verb + (state.selected ? state.selected.name : "");
+}
+
+/* ---- tabs -------------------------------------------------------------- */
+
+for (const tab of document.querySelectorAll(".tab")) {
+  tab.addEventListener("click", () => {
+    state.tab = tab.dataset.tab;
+    for (const t of document.querySelectorAll(".tab")) t.setAttribute("aria-selected", String(t === tab));
+    for (const p of document.querySelectorAll("[data-panel]")) p.hidden = p.dataset.panel !== state.tab;
+    $("result").textContent = "";
+    updateButton();
+  });
+}
+
+/* ---- the image --------------------------------------------------------- */
+
+let inspectTimer = null;
+$("image").addEventListener("input", () => {
+  updateButton();
+  clearTimeout(inspectTimer);
+  inspectTimer = setTimeout(inspectImage, 400);
+});
+
+async function inspectImage() {
+  const path = $("image").value.trim();
+  const box = $("imginfo");
+  box.textContent = "";
+  state.image = null;
+  if (!path) return;
+  try {
+    const img = await api("/api/image?path=" + encodeURIComponent(path));
+    state.image = img;
+    box.append(el("div", "imgsum", img.summary));
+    for (const w of img.warnings || []) box.append(el("div", "note warn", w));
+  } catch (e) {
+    box.append(el("div", "note bad", e.message));
+  }
+  box.style.marginBottom = "12px";
+  updateButton();
+}
+
+$("browse").addEventListener("click", () => openPicker());
+
+async function openPicker(dir) {
+  const body = $("picker-body");
+  body.textContent = "loading…";
+  $("picker").showModal();
+  let data;
+  try {
+    data = await api("/api/browse" + (dir ? "?dir=" + encodeURIComponent(dir) : ""));
+  } catch (e) {
+    body.textContent = "";
+    body.append(el("div", "note bad", e.message));
+    return;
+  }
+  $("picker-dir").textContent = data.dir;
+  body.textContent = "";
+  if (data.parent) {
+    const up = el("button", "entry");
+    up.type = "button";
+    up.append(el("span", "n", "../"));
+    up.addEventListener("click", () => openPicker(data.parent));
+    body.append(up);
+  }
+  if (!data.entries.length) body.append(el("div", "empty", "No folders or images here."));
+  for (const entry of data.entries) {
+    const row = el("button", "entry");
+    row.type = "button";
+    row.append(el("span", "n", entry.dir ? entry.name + "/" : entry.name));
+    if (entry.size_human) row.append(el("span", "s", entry.size_human));
+    row.addEventListener("click", () => {
+      if (entry.dir) { openPicker(entry.path); return; }
+      $("image").value = entry.path;
+      $("picker").close();
+      inspectImage();
+    });
+    body.append(row);
+  }
+}
+$("picker-cancel").addEventListener("click", () => $("picker").close());
+
+/* ---- confirmation ------------------------------------------------------ */
+
+$("go").addEventListener("click", () => {
+  const d = state.selected;
+  if (!d || blocked()) return;
+  const what = $("confirm-what");
+  what.textContent = "";
+  what.append(el("div", "name", d.path + "  ·  " + d.size_human));
+  what.append(el("div", "facts", [d.model, d.contents].filter(Boolean).join(" · ")));
+  const doing = {
+    write: "Writing " + ($("image").value.trim() || "an image") + " to this drive",
+    erase: "Erasing this drive",
+    format: "Formatting this drive as FAT32",
+  }[state.tab];
+  what.append(el("div", "note bad", doing + " destroys everything on it. This cannot be undone."));
+  $("confirm-label").textContent = 'Type "' + d.name + '" to continue';
+  $("confirm-word").value = "";
+  $("confirm-go").disabled = true;
+  $("confirm").showModal();
+  $("confirm-word").focus();
+});
+
+$("confirm-word").addEventListener("input", () => {
+  const typed = $("confirm-word").value.trim().toLowerCase();
+  $("confirm-go").disabled = !state.selected || typed !== state.selected.name.toLowerCase();
+});
+$("confirm-cancel").addEventListener("click", () => $("confirm").close());
+$("confirm-go").addEventListener("click", () => { $("confirm").close(); begin(); });
+
+/* ---- running it -------------------------------------------------------- */
+
+async function begin() {
+  const d = state.selected;
+  const body = {
+    device: d.path,
+    confirm: $("confirm-word").value.trim(),
+    allow_fixed: state.allowFixed,
+    unmount: state.unmount,
+  };
+  let path = "/api/" + state.tab;
+  if (state.tab === "write") {
+    body.image = $("image").value.trim();
+    body.verify = $("verify").checked;
+  } else if (state.tab === "erase") {
+    body.full = $("full").checked;
+    body.raw = $("raw").checked;
+    body.name = $("erase-name").value.trim();
+  } else {
+    body.name = $("format-name").value.trim();
+  }
+
+  $("result").textContent = "";
+  try {
+    const job = await api(path, { method: "POST", body: JSON.stringify(body) });
+    follow(job);
+  } catch (e) {
+    showResult({ error: e.message });
+  }
+}
+
+function follow(job) {
+  state.job = job;
+  $("progress").hidden = false;
+  updateButton();
+  render(job);
+
+  const source = new EventSource("/api/jobs/" + job.id + "/events?t=" + encodeURIComponent(TOKEN));
+  source.onmessage = (ev) => {
+    const st = JSON.parse(ev.data);
+    render(st);
+    if (st.finished) {
+      source.close();
+      state.job = null;
+      $("progress").hidden = true;
+      showResult(st);
+      loadDrives();
+    }
+  };
+  source.onerror = () => {
+    // The stream dropped; the work carries on in Oliver either way.
+    source.close();
+    state.job = null;
+    $("progress").hidden = true;
+    updateButton();
+    loadDrives();
+  };
+}
+
+function render(st) {
+  $("phase").textContent = st.phase || "working";
+  $("fill").style.width = (st.percent || 0).toFixed(1) + "%";
+  const bits = [];
+  if (st.total) bits.push(Math.round(st.percent) + "%");
+  if (st.rate_human) bits.push(st.rate_human);
+  if (st.remaining) bits.push(st.remaining + " left");
+  $("nums").textContent = bits.join("  ·  ");
+}
+
+$("cancel").addEventListener("click", async () => {
+  if (!state.job) return;
+  try { await api("/api/jobs/" + state.job.id + "/cancel", { method: "POST" }); } catch (e) { /* it may have just ended */ }
+});
+
+function showResult(st) {
+  const box = $("result");
+  box.textContent = "";
+  if (st.error) {
+    const line = el("div", "line");
+    line.append(el("span", "cross", "✕"), el("span", null, st.error));
+    box.append(line);
+    return;
+  }
+  const line = el("div", "line");
+  line.append(el("span", "tick", "✓"), el("span", null, st.summary || "done"));
+  box.append(line);
+  if (st.digest) box.append(el("div", "digest", "sha256 " + st.digest));
+  if (st.kind === "write" && !st.verified && st.summary && st.summary.includes("not verified")) {
+    box.append(el("div", "note warn", "The drive was not read back, so nothing here proves it holds the image."));
+  }
+}
+
+/* ---- keep the list fresh ----------------------------------------------- */
+
+$("refresh").addEventListener("click", loadDrives);
+loadDrives();
+setInterval(() => { if (!state.job && !$("confirm").open && !$("picker").open) loadDrives(); }, 5000);
+</script>
+</body>
+</html>

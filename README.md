@@ -133,6 +133,30 @@ the reboot — an ISO with no partition table was built to be burned to a disc,
 and a Windows installation image is never hybrid, so raw-writing one produces a
 stick most firmware will not boot.
 
+**And the same thing in a browser, if you would rather point at it.** `oliver
+ui` opens the drives as a page:
+
+```console
+$ oliver ui
+Oliver is serving its drives at http://127.0.0.1:41273/?t=6f3a…
+The link carries a one-time token; anything without it is refused.
+Press Ctrl-C to stop.
+```
+
+The page is only a front end. No page in a browser can open a raw device, so
+every drive is read, written, erased and verified by Oliver itself, over a
+socket bound to loopback and nothing else. The rules are the same ones the
+commands use — the same code, not a second copy of it — and they are enforced
+in Oliver rather than in the page, because a check a front end makes is a check
+anything reaching the socket can skip. The system disk is shown, greyed, with
+the reason; a fixed disk or a mounted one needs the choice ticked deliberately;
+and the confirmation is the drive's own name, typed, and checked again at the
+other end.
+
+The address carries a one-time token, and requests must present it in a header
+that no other site can set. A program on your machine that guesses the port, or
+a page you happen to have open in another tab, gets nothing.
+
 **It gets the stick back afterwards.** A drive holding an image is no longer
 usable for ordinary files, and the tools that say so are not always the ones
 that fix it:
@@ -256,6 +280,7 @@ oliver info <program.exe>                 what it is and what it needs
 oliver why <program.exe>                  how every runtime scored, and why
 oliver backends                           what is installed on this machine
 oliver prefix list                        the Windows environments Oliver made
+oliver ui                                 open the drives in a browser
 oliver drives                             this machine's drives, and what is on them
 oliver write <image.iso> [drive]          write an image to a drive, and verify it
 oliver erase [drive] -name NAME           erase a drive, leave an empty named one

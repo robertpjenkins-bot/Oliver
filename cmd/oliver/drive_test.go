@@ -593,3 +593,14 @@ func TestJSONOutputIsNotMixedWithTheHumanReadableReport(t *testing.T) {
 		t.Errorf("the human-readable summary went missing from stderr:\n%s", m.err.String())
 	}
 }
+
+func TestUIRefusesAPortItCannotHave(t *testing.T) {
+	m := newMachine(t)
+	_, err := m.run("ui", "-port", "-1", "-no-open")
+	if err == nil {
+		t.Fatal("the server started on an impossible port")
+	}
+	if !strings.Contains(err.Error(), "could not start the server") {
+		t.Errorf("error = %v", err)
+	}
+}

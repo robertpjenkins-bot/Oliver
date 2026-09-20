@@ -40,6 +40,7 @@ COMMANDS
   why          explain how every installed runtime scores for a program
   backends     list the compatibility runtimes found on this system
   prefix       list, inspect and remove the Windows environments Oliver made
+  ui           open this machine's drives in a browser
   drives       show this machine's drives and what is on them
   write        write a disc image to a drive, and verify it arrived
   erase        erase a drive and leave an empty one behind
@@ -133,6 +134,8 @@ func run(args []string) error {
 		return a.cmdPrefix(rest)
 	case "device", "devices":
 		return a.cmdDevice(rest)
+	case "ui", "gui", "web":
+		return a.cmdUI(rest)
 	case "drives", "disks":
 		return a.deviceList(a.wantsJSON(rest))
 	case "write", "burn", "flash":

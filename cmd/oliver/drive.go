@@ -127,7 +127,7 @@ func (a *app) cmdWrite(args []string) error {
 			dev.Path, humanBytes(dev.Size), humanBytes(img.Size))
 	}
 
-	if err := checkBusy(dev, *g); err != nil {
+	if err := checkBusy(dev, "write to", *g); err != nil {
 		return err
 	}
 	if err := a.confirmDestruction(dev, fmt.Sprintf("Write %s to %s?", baseName(fs.Arg(0)), dev.Path), *g); err != nil {
@@ -184,7 +184,7 @@ func (a *app) cmdErase(args []string) error {
 	if *full {
 		question = fmt.Sprintf("Erase every byte of %s?", dev.Path)
 	}
-	if err := checkBusy(dev, *g); err != nil {
+	if err := checkBusy(dev, "erase", *g); err != nil {
 		return err
 	}
 	if err := a.confirmDestruction(dev, question, *g); err != nil {
@@ -235,7 +235,7 @@ func (a *app) cmdFormat(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := checkBusy(dev, *g); err != nil {
+	if err := checkBusy(dev, "format", *g); err != nil {
 		return err
 	}
 	if err := a.confirmDestruction(dev, fmt.Sprintf("Format %s as FAT32?", dev.Path), *g); err != nil {
@@ -318,25 +318,30 @@ func (a *app) chooseDrive(action, arg string, g guard) (*device.Device, error) {
 		}
 	}
 
-	// The one refusal with no override: the drive this system is running from.
-	// A flag to bypass it would eventually be typed by somebody in a hurry.
-	if dev.SystemCritical() {
-		return nil, fmt.Errorf(
-			"refusing to %s %s: it holds the running system (%s).\n"+
-				"There is no flag for this. Do it from a live USB, where this disk is not in use",
-			action, dev.Path, strings.Join(dev.CriticalMounts(), ", "))
-	}
-	if !dev.Removable && !g.allowFixed {
-		return nil, fmt.Errorf(
-			"%s is a fixed disk, not removable media.\n"+
-				"If it really is the drive you mean — an internal disk you are reimaging, say — "+
-				"pass -allow-fixed. Check the model and size first: %s",
-			dev.Path, dev.Describe())
-	}
-	if !dev.Writable {
-		return nil, fmt.Errorf("cannot write to %s. %s", dev.Path, device.AccessAdvice(dev))
+	if err := device.CheckWritable(dev, action, g.allowFixed); err != nil {
+		return nil, withFlagHint(err)
 	}
 	return dev, nil
+}
+
+// withFlagHint adds the way past a refusal, in the terms this front end
+// offers: a flag to type. The rule itself is shared with every other caller,
+// so only the phrasing lives here.
+func withFlagHint(err error) error {
+	reason, ok := device.RefusedFor(err)
+	if !ok {
+		return err
+	}
+	switch reason {
+	case device.SystemDisk:
+		return fmt.Errorf("%w.\nThere is no flag for this. Do it from a live USB, where this disk is not in use", err)
+	case device.FixedDisk:
+		return fmt.Errorf("%w.\nIf it really is the drive you mean — an internal disk you are reimaging, say — "+
+			"pass -allow-fixed. Check the model and size first", err)
+	case device.Mounted:
+		return fmt.Errorf("%w.\nClose anything using it and unmount it, or pass -unmount to have Oliver do it", err)
+	}
+	return err
 }
 
 // pickDrive shows the drives and asks which one. Drives that hold the running
@@ -405,6 +410,9 @@ func describeContents(d *device.Device) string {
 		}
 	}
 	if len(parts) == 0 {
+		if len(d.Partitions) == 1 {
+			return "1 partition"
+		}
 		return fmt.Sprintf("%d partitions", len(d.Partitions))
 	}
 	return strings.Join(parts, ", ")
@@ -447,19 +455,11 @@ func (a *app) confirmDestruction(d *device.Device, question string, g guard) err
 // checkBusy refuses a drive the system is still reading from. It runs before
 // the confirmation prompt, so a write that cannot proceed is not preceded by a
 // question about destroying a drive.
-func checkBusy(d *device.Device, g guard) error {
-	if !d.Busy() || g.unmount {
+func checkBusy(d *device.Device, action string, g guard) error {
+	if g.unmount {
 		return nil
 	}
-	var where []string
-	for _, m := range d.Mounts {
-		where = append(where, m.Source+" at "+m.Target)
-	}
-	return fmt.Errorf(
-		"%s is in use (%s).\n"+
-			"Writing to a drive the system is reading from produces a corrupt drive. "+
-			"Close anything using it and unmount it, or pass -unmount to have Oliver do it",
-		d.Path, strings.Join(where, ", "))
+	return withFlagHint(device.CheckIdle(d, action))
 }
 
 // release unmounts what is on the drive, once the user has agreed to destroy
