@@ -725,3 +725,81 @@ func TestTheSavedPageAsksForAnAddressInsteadOfAssumingOne(t *testing.T) {
 		}
 	}
 }
+
+/* ---- write protection -------------------------------------------------- */
+
+// protect marks a drive read-only the way the kernel does.
+func (h *harness) protect(name string) {
+	h.t.Helper()
+	path := filepath.Join(h.root, "sys", "block", name, "ro")
+	if err := os.WriteFile(path, []byte("1\n"), 0o644); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+func TestADriveThatWillNotTakeWritesSaysWhyOnItsCard(t *testing.T) {
+	h := newHarness(t)
+	h.drive("sdb", 64<<20, true, "Cruzer")
+	h.protect("sdb")
+
+	drives := h.list("/api/drives")
+	protections, _ := drives[0]["protections"].([]any)
+	if len(protections) != 1 {
+		t.Fatalf("the card says nothing about it: %+v", drives[0])
+	}
+	p := protections[0].(map[string]any)
+	if p["kind"] != "kernel-flag" || p["clearable"] != true {
+		t.Errorf("protection = %+v", p)
+	}
+}
+
+func TestClearingTheFlagNeedsNoConfirmationBecauseItChangesNoData(t *testing.T) {
+	h := newHarness(t)
+	node := h.drive("sdb", 64<<20, true, "Cruzer")
+	h.protect("sdb")
+	before := contentsOf(t, node, 512)
+
+	// No confirm field: unprotecting destroys nothing, so demanding the
+	// ritual for a destructive call would be theatre.
+	// The ioctl behind this only answers for a real block device, and these
+	// drives are files.
+	original := device.ClearReadOnly
+	t.Cleanup(func() { device.ClearReadOnly = original })
+	var cleared []string
+	device.ClearReadOnly = func(path string) error {
+		cleared = append(cleared, path)
+		return nil
+	}
+
+	res, body := h.do("POST", "/api/unprotect", map[string]any{"device": "sdb"})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %+v", res.StatusCode, body)
+	}
+	if len(cleared) != 1 || cleared[0] != node {
+		t.Errorf("cleared %v, want the drive itself", cleared)
+	}
+	if !bytes.Equal(contentsOf(t, node, 512), before) {
+		t.Error("unprotecting wrote to the drive")
+	}
+}
+
+func TestTheSystemDiskCannotBeUnprotectedEither(t *testing.T) {
+	h := newHarness(t)
+	h.drive("sda", 64<<20, false, "System SSD")
+	h.mount("sda", "/")
+
+	res, body := h.do("POST", "/api/unprotect", map[string]any{"device": "sda"})
+	if res.StatusCode != http.StatusForbidden || body["reason"] != "system_disk" {
+		t.Errorf("status %d, body %+v", res.StatusCode, body)
+	}
+}
+
+func TestAnUnprotectedDriveReportsNothingInTheWay(t *testing.T) {
+	h := newHarness(t)
+	h.drive("sdb", 64<<20, true, "Cruzer")
+
+	drives := h.list("/api/drives")
+	if p, ok := drives[0]["protections"]; ok && p != nil {
+		t.Errorf("a writable drive was reported as protected: %+v", p)
+	}
+}

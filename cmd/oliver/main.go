@@ -47,6 +47,7 @@ COMMANDS
   format       put one empty FAT32 volume on a drive
   verify       check a drive against the image that should be on it
   repair       work out why a drive misbehaves, and put it right
+  unprotect    work out why a drive will not take writes, and clear it
   device       expose one of this machine's drives to a Windows program
   doctor       check this system and report what is missing
   log          show the output of the last program that ran
@@ -150,6 +151,8 @@ func run(args []string) error {
 		return a.cmdVerify(rest)
 	case "repair", "fix":
 		return a.cmdRepair(rest)
+	case "unprotect", "unlock":
+		return a.cmdUnprotect(rest)
 	case "doctor":
 		return a.cmdDoctor(rest)
 	case "log", "logs":

@@ -402,6 +402,30 @@ function renderDrives() {
       }
       node.append(parts);
     }
+    for (const p of d.protections || []) {
+      const note = el("div", p.clearable ? "note warn" : "note bad");
+      note.append(el("strong", null, p.summary));
+      note.append(el("div", null, p.detail));
+      if (p.clearable && p.kind === "kernel-flag") {
+        const fix = el("button", "ghost", "Clear it");
+        fix.type = "button";
+        fix.style.marginTop = "8px";
+        fix.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          fix.disabled = true;
+          fix.textContent = "clearing…";
+          try {
+            const res = await api("/api/unprotect", { method: "POST", body: JSON.stringify({ device: d.path }) });
+            if (!res.free) note.append(el("div", null, "Still refusing. " + (res.remaining || []).map((r) => r.summary).join("; ")));
+          } catch (e) {
+            note.append(el("div", null, e.message));
+          }
+          loadDrives();
+        });
+        note.append(fix);
+      }
+      node.append(note);
+    }
     for (const fault of d.faults || []) {
       const note = el("div", "note warn");
       note.append(el("strong", null, fault.summary));

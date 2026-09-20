@@ -205,6 +205,34 @@ partitioning tools refuse to work at all.
 It does not recover files. Repairing a drive means making the drive usable, and
 the way it does that is by overwriting what is on it.
 
+**And when a drive says it is write-protected, it says which kind.** That
+message has four causes and they are not equally fixable, which is why the
+advice people are usually given is a list of things to try:
+
+```console
+$ oliver unprotect /dev/sdb
+Drive
+  /dev/sdb  16.0 GB  Kingston DataTraveler  removable
+
+• the kernel is holding this device read-only
+  A flag on the device itself is refusing writes before they reach the drive.
+  It is set by `blockdev --setro`, by some udev rules, and by the kernel after
+  a device has thrown errors. Clearing it takes a moment and changes nothing
+  on the drive.
+
+✓ cleared the kernel's read-only flag on /dev/sdb
+✓ /dev/sdb now takes writes
+```
+
+The two that are flags — the kernel's read-only flag, and a filesystem mounted
+read-only — clear in a second and change nothing on the drive. A read-only
+filesystem, which is what an installation image leaves, is `oliver repair`'s
+job. And when every flag is clear and the drive still refuses, Oliver says so
+instead of offering another thing to try: that is either a lock switch on the
+side of the stick or a controller that has put worn-out flash beyond writing
+for good, and no software fixes either. If it is the second, the drive is
+finished — copy what you need off it while it still reads.
+
 **It gets the stick back afterwards.** A drive holding an image is no longer
 usable for ordinary files, and the tools that say so are not always the ones
 that fix it:
@@ -358,6 +386,7 @@ oliver erase [drive] -name NAME           erase a drive, leave an empty named on
 oliver format [drive] -name NAME          one empty FAT32 volume, filling the drive
 oliver verify <image.iso> <drive>         check a drive against the image
 oliver repair [drive] [-check]            why a drive misbehaves, and the fix
+oliver unprotect [drive] [-check]         why a drive will not take writes
 oliver doctor                             what is missing, and how to fix it
 oliver desktop install                    open .exe files by double-clicking
 ```

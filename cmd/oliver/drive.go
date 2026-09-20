@@ -87,6 +87,26 @@ drive, and the way it fixes it is by overwriting what is on it. If the files
 matter, copy them off first — a drive that mounts read-only will usually still
 let you read them.`
 
+const unprotectSynopsis = `oliver unprotect [drive]
+
+Works out why a drive will not take writes, and clears what can be cleared.
+
+  oliver unprotect              choose the drive from a list
+  oliver unprotect /dev/sdb     name it outright
+  oliver unprotect /dev/sdb -check   look, report, change nothing
+
+"The disk is write-protected" has four causes and they are not equally
+fixable. Two are flags: the kernel's read-only flag on the device, and a
+filesystem mounted read-only. Both clear in a second, and clearing them
+changes nothing on the drive.
+
+The third is the filesystem itself — an installation image leaves one that
+cannot be written to by its nature. "oliver repair" is what clears that.
+
+The fourth is the drive refusing: a lock switch on the side of the stick, or a
+controller that has put worn-out flash beyond writing for good. Nothing here
+can change either, and Oliver says so rather than pretending.`
+
 const verifySynopsis = `oliver verify <image.iso> <drive>
 
 Compares a drive with the image that should be on it.
@@ -311,6 +331,112 @@ func (a *app) cmdVerify(args []string) error {
 	u.Info("%s %s holds %s, byte for byte", u.Green("✓"), dev.Path, baseName(fs.Arg(0)))
 	u.Info("  %s", u.Dim("sha256 "+res.Source))
 	return nil
+}
+
+func (a *app) cmdUnprotect(args []string) error {
+	fs := a.newFlagSet("unprotect", unprotectSynopsis)
+	checkOnly := fs.Bool("check", false, "report what is protecting it and change nothing")
+	asJSON := fs.Bool("json", false, "print the result as JSON")
+	g := guardFlags(fs)
+	if err := parseFlagsAnywhere(fs, args); err != nil {
+		return err
+	}
+
+	scanner := newScanner()
+	var dev *device.Device
+	var err error
+	if *checkOnly || fs.Arg(0) != "" {
+		dev, err = scanner.Find(fs.Arg(0))
+	} else {
+		dev, err = a.pickDrive(scanner, "unprotect")
+	}
+	if err != nil {
+		return err
+	}
+	// A drive the running system lives on is not one to unlock, whatever else
+	// is true of it.
+	if dev.SystemCritical() && !*checkOnly {
+		return withFlagHint(device.CheckWritable(dev, "unprotect", g.allowFixed))
+	}
+
+	protections := scanner.WriteProtection(dev)
+	if *asJSON && *checkOnly {
+		return a.printJSON(protections)
+	}
+
+	u := a.ui.OnStderr()
+	u.Printf("%s", u.Bold("Drive"))
+	u.Printf("  %s", dev.Describe())
+	u.Printf("")
+
+	if len(protections) == 0 {
+		// Nothing in software is in the way. Either it takes writes already,
+		// or the refusal is coming from the drive.
+		if dev.Writable && !dev.ReadOnly {
+			u.Printf("%s Nothing is write-protecting this drive.", u.Green("✓"))
+			if !dev.Writable {
+				u.Printf("  %s", u.Dim(device.AccessAdvice(dev)))
+			}
+			return nil
+		}
+		hardware := device.HardwareProtection(dev)
+		a.printProtection(hardware)
+		return nil
+	}
+
+	for _, p := range protections {
+		a.printProtection(p)
+	}
+	if *checkOnly {
+		u.Printf("%s", u.Dim("Clear what can be cleared with: oliver unprotect "+dev.Path))
+		return nil
+	}
+
+	clearable := 0
+	for _, p := range protections {
+		if p.Clearable && p.Kind == device.KernelFlag {
+			clearable++
+		}
+	}
+	if clearable == 0 {
+		u.Printf("%s", u.Dim("None of these is a flag Oliver can clear."))
+		return nil
+	}
+	if !g.force && !u.Confirm(fmt.Sprintf("Clear the read-only flag on %s?", dev.Path), true) {
+		return errCancelled
+	}
+
+	done, err := device.Unprotect(dev, protections)
+	for _, line := range done {
+		a.ui.Info("%s %s", a.ui.Green("✓"), line)
+	}
+	if err != nil {
+		return err
+	}
+
+	// Look again: the drive has the last word on whether it worked.
+	after := newScanner()
+	fresh, findErr := after.Find(dev.Path)
+	if findErr == nil && len(after.WriteProtection(fresh)) == 0 && !fresh.ReadOnly {
+		a.ui.Info("%s %s now takes writes", a.ui.Green("✓"), dev.Path)
+		return nil
+	}
+	a.ui.Info("%s", a.ui.Yellow("the flag was cleared but the drive is still refusing"))
+	a.printProtection(device.HardwareProtection(dev))
+	return nil
+}
+
+func (a *app) printProtection(p device.Protection) {
+	u := a.ui.OnStderr()
+	marker := u.Yellow("•")
+	if !p.Clearable {
+		marker = u.Red("•")
+	}
+	u.Printf("%s %s", marker, u.Bold(p.Summary))
+	for _, line := range wrap(p.Detail, 72) {
+		u.Printf("  %s", u.Dim(line))
+	}
+	u.Printf("")
 }
 
 func (a *app) cmdRepair(args []string) error {

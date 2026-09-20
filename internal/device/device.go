@@ -19,6 +19,10 @@ import (
 type Mount struct {
 	Source string `json:"source"`
 	Target string `json:"target"`
+	// ReadOnly reports whether this mount refuses writes, which is one of the
+	// reasons a drive appears write-protected when the drive is nothing of
+	// the kind.
+	ReadOnly bool `json:"read_only,omitempty"`
 }
 
 // Partition is one slice of a device, such as /dev/sda1.
@@ -39,6 +43,9 @@ type Device struct {
 	Removable  bool        `json:"removable"`
 	Mounts     []Mount     `json:"mounts,omitempty"`
 	Partitions []Partition `json:"partitions,omitempty"`
+
+	// ReadOnly is the kernel's own read-only flag for this device.
+	ReadOnly bool `json:"read_only,omitempty"`
 
 	// LogicalBlockSize is the sector size the kernel addresses this device in,
 	// almost always 512. A drive that reports anything else needs a filesystem
@@ -183,6 +190,7 @@ func (s *Scanner) describe(name string, mounts []Mount) *Device {
 	if raw, err := os.ReadFile(filepath.Join(base, "device", "model")); err == nil {
 		d.Model = strings.TrimSpace(string(raw))
 	}
+	d.ReadOnly = s.readOnlyFlag(name)
 	if raw, err := os.ReadFile(filepath.Join(base, "queue", "logical_block_size")); err == nil {
 		if size, err := strconv.Atoi(strings.TrimSpace(string(raw))); err == nil {
 			d.LogicalBlockSize = size
@@ -262,7 +270,18 @@ func (s *Scanner) readMounts() []Mount {
 		if len(fields) < 2 || !strings.HasPrefix(fields[0], s.Dev+"/") {
 			continue
 		}
-		out = append(out, Mount{Source: fields[0], Target: unescapeMount(fields[1])})
+		m := Mount{Source: fields[0], Target: unescapeMount(fields[1])}
+		// Field four is the mount options; "ro" among them is why a drive
+		// that is perfectly writable will not take a write.
+		if len(fields) > 3 {
+			for _, opt := range strings.Split(fields[3], ",") {
+				if opt == "ro" {
+					m.ReadOnly = true
+					break
+				}
+			}
+		}
+		out = append(out, m)
 	}
 	return out
 }

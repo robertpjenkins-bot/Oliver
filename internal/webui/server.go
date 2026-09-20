@@ -86,6 +86,7 @@ func (s *Server) Handler() http.Handler {
 		"GET /api/jobs":              s.listJobs,
 		"POST /api/jobs/{id}/cancel": s.cancelJob,
 		"GET /api/diagnose":          s.diagnose,
+		"POST /api/unprotect":        s.unprotect,
 		"POST /api/write":            s.write,
 		"POST /api/repair":           s.repair,
 		"POST /api/erase":            s.erase,
@@ -238,6 +239,9 @@ type driveView struct {
 	Busy       bool            `json:"busy"`
 	Mounts     []device.Mount  `json:"mounts,omitempty"`
 	Partitions []partitionView `json:"partitions,omitempty"`
+	// Protections are the reasons the drive will not take writes, if any.
+	Protections []device.Protection `json:"protections,omitempty"`
+
 	// Faults are what is wrong with how the drive describes itself: the
 	// reason a stick turns up at a fraction of its size, or read-only.
 	Faults []imaging.Fault `json:"faults,omitempty"`
@@ -260,7 +264,8 @@ type partitionView struct {
 }
 
 func (s *Server) drives(w http.ResponseWriter, r *http.Request) {
-	devices, err := s.Scanner().List()
+	scanner := s.Scanner()
+	devices, err := scanner.List()
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err)
 		return
@@ -299,6 +304,12 @@ func (s *Server) drives(w http.ResponseWriter, r *http.Request) {
 			}
 			v.Partitions = append(v.Partitions, pv)
 		}
+		// "The disk is write-protected" is the other complaint people arrive
+		// with, and the drive should say which kind it is on its own card.
+		if !v.SystemDisk {
+			v.Protections = scanner.WriteProtection(d)
+		}
+
 		// Reading a few sectors is cheap, and a drive that is lying about its
 		// size should say so on the card rather than only when asked.
 		if !v.SystemDisk {
@@ -589,6 +600,47 @@ func (s *Server) diagnose(w http.ResponseWriter, r *http.Request) {
 		DescribedHuman string `json:"described_human,omitempty"`
 		Healthy        bool   `json:"healthy"`
 	}{d, imaging.HumanBytes(d.Capacity), imaging.HumanBytes(d.Described), d.Healthy()})
+}
+
+// unprotect clears the flags keeping a drive read-only. It changes no data,
+// so it asks for none of the confirmation a destructive call does.
+func (s *Server) unprotect(w http.ResponseWriter, r *http.Request) {
+	req, ok := decode(w, r)
+	if !ok {
+		return
+	}
+	scanner := s.Scanner()
+	dev, err := scanner.Find(req.Device)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+	if dev.SystemCritical() {
+		failRefusal(w, device.CheckWritable(dev, "unprotect", true))
+		return
+	}
+
+	protections := scanner.WriteProtection(dev)
+	done, err := device.Unprotect(dev, protections)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err)
+		return
+	}
+
+	// The drive has the last word on whether it worked.
+	after := s.Scanner()
+	remaining := protections
+	if fresh, err := after.Find(dev.Path); err == nil {
+		remaining = after.WriteProtection(fresh)
+		if len(remaining) == 0 && fresh.ReadOnly {
+			remaining = []device.Protection{device.HardwareProtection(fresh)}
+		}
+	}
+	send(w, struct {
+		Cleared   []string            `json:"cleared"`
+		Remaining []device.Protection `json:"remaining,omitempty"`
+		Free      bool                `json:"free"`
+	}{done, remaining, len(remaining) == 0})
 }
 
 // repair clears what describes the drive and writes a full-size volume, which
