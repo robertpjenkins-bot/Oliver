@@ -32,6 +32,15 @@ const (
 	// Hardware is the drive itself refusing: a physical switch, or a
 	// controller that has locked the flash. Nothing here can change it.
 	Hardware ProtectionKind = "hardware"
+	// GPTAttribute is the read-only bit a GPT entry can carry, which every
+	// operating system obeys and almost nothing reports.
+	GPTAttribute ProtectionKind = "gpt-attribute"
+	// DirtyFilesystem is a filesystem that marked itself unsafe to write to
+	// after an unclean unmount.
+	DirtyFilesystem ProtectionKind = "dirty-filesystem"
+	// FilesystemErrors is a filesystem the kernel stopped writing to because
+	// it found something wrong with it.
+	FilesystemErrors ProtectionKind = "filesystem-errors"
 )
 
 // Protection is one reason a drive will not take writes.
@@ -46,6 +55,10 @@ type Protection struct {
 
 // WriteProtection reports every reason this drive will not take writes, most
 // easily fixed first. An empty result means nothing is standing in the way.
+//
+// It looks in three places, because the causes live in three places and a tool
+// that checks only one leaves people trying things at random: the kernel's own
+// flags, the mounts in front of the drive, and the drive itself.
 func (s *Scanner) WriteProtection(d *Device) []Protection {
 	var out []Protection
 
@@ -82,10 +95,22 @@ func (s *Scanner) WriteProtection(d *Device) []Protection {
 			Detail: "The drive will take writes; this mount will not pass them on. Unmounting it " +
 				"is enough, and is what has to happen before writing to the whole drive anyway.",
 			Clearable: true,
-			Where:     m.Target,
+			Where:     m.Source,
 		})
 	}
-	return out
+
+	return append(out, s.OnDiskProtection(d)...)
+}
+
+// Clearable reports how many of these Oliver can do something about.
+func Clearable(protections []Protection) int {
+	n := 0
+	for _, p := range protections {
+		if p.Clearable {
+			n++
+		}
+	}
+	return n
 }
 
 // readOnlyFlag reads the ro flag /sys keeps for a device or partition.
@@ -113,28 +138,76 @@ func HardwareProtection(d *Device) Protection {
 	}
 }
 
+// openHint turns the kernel's refusal to open a device into the reason for it.
+func openHint(path string, err error) error {
+	if os.IsPermission(err) {
+		return fmt.Errorf("permission denied: writing to %s needs root", path)
+	}
+	return err
+}
+
 // ClearReadOnly clears the kernel's read-only flag on a device. It is a
 // variable so that tests can describe a machine that has no real block device
 // on it, since the ioctl behind it only answers for one.
 var ClearReadOnly = clearReadOnly
 
-// Unprotect clears the flags that can be cleared, and reports what it did.
-// It does not touch the contents of the drive.
-func Unprotect(d *Device, protections []Protection) ([]string, error) {
+// ClearGPTReadOnly and ClearDirtyFlag are variables for the same reason: the
+// drives a test describes are files, and these write to real ones.
+var (
+	ClearGPTReadOnly = clearGPTReadOnly
+	ClearDirtyFlag   = clearDirtyFlag
+)
+
+// Unprotect clears everything standing between the drive and a write that can
+// be cleared, and reports what it did. It changes no file on the drive: every
+// step here rewrites a flag, not data.
+//
+// Clearing a dirty filesystem's mark is the one step with a cost worth
+// knowing: it tells the system the volume is clean without checking that it
+// is. Callers gate it behind their own consent, which is what force is for.
+func Unprotect(d *Device, protections []Protection, force bool) ([]string, error) {
 	var done []string
 	var failed []string
+
+	fail := func(where string, err error) {
+		failed = append(failed, fmt.Sprintf("%s: %v", where, err))
+	}
 
 	for _, p := range protections {
 		switch p.Kind {
 		case KernelFlag:
 			if err := ClearReadOnly(p.Where); err != nil {
-				failed = append(failed, fmt.Sprintf("%s: %v", p.Where, err))
+				fail(p.Where, err)
 				continue
 			}
 			done = append(done, "cleared the kernel's read-only flag on "+p.Where)
+
 		case ReadOnlyMount:
-			// Unmounting is handled with the rest of the mounts, since a write
-			// needs them gone whether they are read-only or not.
+			if err := unmountOne(p.Where); err != nil {
+				fail(p.Where, err)
+				continue
+			}
+			done = append(done, "unmounted "+p.Where)
+
+		case GPTAttribute:
+			if err := ClearGPTReadOnly(p.Where); err != nil {
+				fail(p.Where, err)
+				continue
+			}
+			done = append(done, "cleared the read-only attribute in the partition table of "+p.Where)
+
+		case DirtyFilesystem:
+			if !p.Clearable {
+				continue // NTFS: the flag is not ours to clear
+			}
+			if !force {
+				continue // marking a volume clean without checking it is the caller's call
+			}
+			if err := ClearDirtyFlag(p.Where); err != nil {
+				fail(p.Where, err)
+				continue
+			}
+			done = append(done, "marked the filesystem on "+p.Where+" clean")
 		}
 	}
 	if len(failed) > 0 {

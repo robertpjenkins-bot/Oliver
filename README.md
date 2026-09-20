@@ -205,33 +205,56 @@ partitioning tools refuse to work at all.
 It does not recover files. Repairing a drive means making the drive usable, and
 the way it does that is by overwriting what is on it.
 
-**And when a drive says it is write-protected, it says which kind.** That
-message has four causes and they are not equally fixable, which is why the
-advice people are usually given is a list of things to try:
+**And when a drive says it is write-protected, it finds out which kind.**
+That message has six causes, in three different places, and the reason people
+are handed a list of things to try is that nothing tells them which one they
+have. Oliver looks in all three — the kernel's flags, the mounts in front of
+the drive, and the drive itself — and reports every one it finds:
+
+| What | Where it lives | What Oliver does |
+| --- | --- | --- |
+| The kernel's read-only flag | the block device | clears it |
+| A read-only mount | /proc/mounts | unmounts it |
+| The GPT read-only attribute | the partition table | clears it, and repairs both checksums |
+| A dirty FAT or exFAT volume | the filesystem header | marks it clean, if you ask twice |
+| A dirty or hibernated NTFS volume | NTFS metadata | says how, and why it will not |
+| An ext filesystem with errors | the superblock | says how, and why it will not |
+
+The third of those is the one nobody finds. `diskpart`'s `attributes disk set
+readonly` sets a bit in the GPT entry, every operating system obeys it, and
+almost nothing reports it — so a drive comes back from a Windows machine
+permanently read-only with no explanation on this side. Clearing it means
+rewriting the entry and repairing the two checksums that describe it, in both
+copies of the table, or the next tool to look will restore the flag from the
+other one.
+
+Two of them Oliver will not do for you. Clearing a dirty filesystem's mark
+says the volume is clean without checking that it is, so it needs `-force`, or
+the second button in the page. And clearing an ext filesystem's error state
+would only hide what the kernel found — `fsck` is the answer there, and Oliver
+says so rather than pretending otherwise.
+
+When all of it is clear, Oliver writes a sector back to the drive to check. It
+writes the bytes that were already there, so nothing changes, but a drive that
+takes that write takes any write — and one that refuses it is refusing in
+hardware:
 
 ```console
 $ oliver unprotect /dev/sdb
-Drive
-  /dev/sdb  16.0 GB  Kingston DataTraveler  removable
-
 • the kernel is holding this device read-only
-  A flag on the device itself is refusing writes before they reach the drive.
-  It is set by `blockdev --setro`, by some udev rules, and by the kernel after
-  a device has thrown errors. Clearing it takes a moment and changes nothing
-  on the drive.
+• the partition table marks partition 1 read-only
+• the FAT32 volume on /dev/sdb1 is marked dirty
 
 ✓ cleared the kernel's read-only flag on /dev/sdb
-✓ /dev/sdb now takes writes
+✓ cleared the read-only attribute in the partition table of /dev/sdb
+✓ /dev/sdb takes writes now, tested
 ```
 
-The two that are flags — the kernel's read-only flag, and a filesystem mounted
-read-only — clear in a second and change nothing on the drive. A read-only
-filesystem, which is what an installation image leaves, is `oliver repair`'s
-job. And when every flag is clear and the drive still refuses, Oliver says so
-instead of offering another thing to try: that is either a lock switch on the
-side of the stick or a controller that has put worn-out flash beyond writing
-for good, and no software fixes either. If it is the second, the drive is
-finished — copy what you need off it while it still reads.
+That last case is where it stops and says so, rather than offering another
+thing to try: either a lock switch on the side of the stick, or a controller
+that has put worn-out flash beyond writing to protect what is still readable.
+No software fixes either. If it is the second, the drive is finished — copy
+what you need off it while it still reads.
 
 **It gets the stick back afterwards.** A drive holding an image is no longer
 usable for ordinary files, and the tools that say so are not always the ones

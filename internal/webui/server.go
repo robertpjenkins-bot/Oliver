@@ -460,6 +460,9 @@ type request struct {
 	Full       bool   `json:"full"`
 	Raw        bool   `json:"raw"`
 	Name       string `json:"name"`
+	// Force permits the steps that have a cost of their own, such as marking
+	// a dirty filesystem clean without checking it.
+	Force bool `json:"force"`
 }
 
 // prepare resolves and checks a request's drive. Every rule the command line
@@ -621,7 +624,9 @@ func (s *Server) unprotect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	protections := scanner.WriteProtection(dev)
-	done, err := device.Unprotect(dev, protections)
+	// Marking a dirty filesystem clean says it is safe without checking, so
+	// the page asks for that one separately rather than folding it in.
+	done, err := device.Unprotect(dev, protections, req.Force)
 	if err != nil {
 		fail(w, http.StatusBadRequest, err)
 		return
@@ -632,8 +637,12 @@ func (s *Server) unprotect(w http.ResponseWriter, r *http.Request) {
 	remaining := protections
 	if fresh, err := after.Find(dev.Path); err == nil {
 		remaining = after.WriteProtection(fresh)
-		if len(remaining) == 0 && fresh.ReadOnly {
-			remaining = []device.Protection{device.HardwareProtection(fresh)}
+		// Flags reading clear proves only that the flags changed. A write
+		// proves the drive takes writes, which is the actual question.
+		if len(remaining) == 0 {
+			if err := device.TestWrite(dev.Path); err != nil {
+				remaining = []device.Protection{device.HardwareProtection(fresh)}
+			}
 		}
 	}
 	send(w, struct {

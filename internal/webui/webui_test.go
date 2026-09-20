@@ -3,6 +3,7 @@ package webui
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -791,6 +792,64 @@ func TestTheSystemDiskCannotBeUnprotectedEither(t *testing.T) {
 	res, body := h.do("POST", "/api/unprotect", map[string]any{"device": "sda"})
 	if res.StatusCode != http.StatusForbidden || body["reason"] != "system_disk" {
 		t.Errorf("status %d, body %+v", res.StatusCode, body)
+	}
+}
+
+func TestTheDrivesListCarriesEveryKindOfProtection(t *testing.T) {
+	h := newHarness(t)
+	node := h.drive("sdb", 64<<20, true, "Cruzer")
+
+	// A dirty FAT32 volume, which is the cause nothing else reports.
+	f, err := os.OpenFile(node, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boot := make([]byte, 512)
+	copy(boot[82:90], "FAT32   ")
+	binary.LittleEndian.PutUint16(boot[14:], 32)
+	boot[0x41] = 0x01 // not unmounted cleanly
+	f.WriteAt(boot, 0)
+	f.Close()
+
+	drives := h.list("/api/drives")
+	protections, _ := drives[0]["protections"].([]any)
+	if len(protections) == 0 {
+		t.Fatalf("a dirty volume was not reported: %+v", drives[0])
+	}
+	p := protections[0].(map[string]any)
+	if p["kind"] != "dirty-filesystem" {
+		t.Errorf("kind = %v", p["kind"])
+	}
+	if p["clearable"] != true {
+		t.Error("a FAT dirty flag is clearable and should say so")
+	}
+}
+
+func TestADirtyVolumeIsOnlyMarkedCleanWhenAskedTwice(t *testing.T) {
+	h := newHarness(t)
+	node := h.drive("sdb", 64<<20, true, "Cruzer")
+	f, _ := os.OpenFile(node, os.O_RDWR, 0)
+	boot := make([]byte, 512)
+	copy(boot[82:90], "FAT32   ")
+	binary.LittleEndian.PutUint16(boot[14:], 32)
+	boot[0x41] = 0x01
+	f.WriteAt(boot, 0)
+	f.Close()
+
+	// Without force it is reported and left alone: saying a volume is clean
+	// without checking is not something to do on somebody's behalf.
+	if res, body := h.do("POST", "/api/unprotect", map[string]any{"device": "sdb"}); res.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %+v", res.StatusCode, body)
+	}
+	if got := contentsOf(t, node, 512)[0x41]; got != 0x01 {
+		t.Error("the volume was marked clean without being asked")
+	}
+
+	if res, body := h.do("POST", "/api/unprotect", map[string]any{"device": "sdb", "force": true}); res.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %+v", res.StatusCode, body)
+	}
+	if got := contentsOf(t, node, 512)[0x41]; got&0x03 != 0 {
+		t.Error("asking explicitly did not clear it")
 	}
 }
 

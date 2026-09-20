@@ -31,10 +31,3 @@ func clearReadOnly(path string) error {
 	}
 	return nil
 }
-
-func openHint(path string, err error) error {
-	if os.IsPermission(err) {
-		return fmt.Errorf("permission denied: this needs root")
-	}
-	return err
-}

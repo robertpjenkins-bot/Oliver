@@ -336,6 +336,7 @@ func (a *app) cmdVerify(args []string) error {
 func (a *app) cmdUnprotect(args []string) error {
 	fs := a.newFlagSet("unprotect", unprotectSynopsis)
 	checkOnly := fs.Bool("check", false, "report what is protecting it and change nothing")
+	force := fs.Bool("force", false, "also mark a dirty filesystem clean, without checking that it is")
 	asJSON := fs.Bool("json", false, "print the result as JSON")
 	g := guardFlags(fs)
 	if err := parseFlagsAnywhere(fs, args); err != nil {
@@ -370,17 +371,25 @@ func (a *app) cmdUnprotect(args []string) error {
 	u.Printf("")
 
 	if len(protections) == 0 {
-		// Nothing in software is in the way. Either it takes writes already,
-		// or the refusal is coming from the drive.
-		if dev.Writable && !dev.ReadOnly {
-			u.Printf("%s Nothing is write-protecting this drive.", u.Green("✓"))
-			if !dev.Writable {
-				u.Printf("  %s", u.Dim(device.AccessAdvice(dev)))
+		// Nothing findable is in the way. Either the drive takes writes
+		// already, or the refusal is the drive's own.
+		if !dev.Writable {
+			u.Printf("%s", u.Yellow("Nothing is write-protecting this drive, but this user cannot write to it."))
+			for _, line := range wrap(device.AccessAdvice(dev), 72) {
+				u.Printf("  %s", u.Dim(line))
 			}
 			return nil
 		}
-		hardware := device.HardwareProtection(dev)
-		a.printProtection(hardware)
+		if *checkOnly {
+			u.Printf("%s Nothing found that would stop a write.", u.Green("✓"))
+			return nil
+		}
+		if err := device.TestWrite(dev.Path); err != nil {
+			u.Printf("%s %v", u.Yellow("nothing findable is in the way, yet the drive refuses:"), err)
+			a.printProtection(device.HardwareProtection(dev))
+			return nil
+		}
+		u.Printf("%s Nothing is write-protecting this drive; a test write succeeded.", u.Green("✓"))
 		return nil
 	}
 
@@ -392,21 +401,22 @@ func (a *app) cmdUnprotect(args []string) error {
 		return nil
 	}
 
-	clearable := 0
-	for _, p := range protections {
-		if p.Clearable && p.Kind == device.KernelFlag {
-			clearable++
-		}
-	}
-	if clearable == 0 {
-		u.Printf("%s", u.Dim("None of these is a flag Oliver can clear."))
+	if device.Clearable(protections) == 0 {
+		u.Printf("%s", u.Dim("None of these is something Oliver can clear; the advice above is the way through."))
 		return nil
 	}
-	if !g.force && !u.Confirm(fmt.Sprintf("Clear the read-only flag on %s?", dev.Path), true) {
+	// A dirty filesystem is the one cause whose fix has a cost of its own, so
+	// it is never cleared by simply running the command.
+	if dirty := countKind(protections, device.DirtyFilesystem); dirty > 0 && !*force {
+		u.Printf("%s", u.Yellow("Not marking the filesystem clean: that says it is safe without checking."))
+		u.Printf("%s", u.Dim("Run a filesystem check first, then pass -force to do it anyway."))
+		u.Printf("")
+	}
+	if !g.force && !u.Confirm(fmt.Sprintf("Clear what is protecting %s?", dev.Path), true) {
 		return errCancelled
 	}
 
-	done, err := device.Unprotect(dev, protections)
+	done, err := device.Unprotect(dev, protections, *force)
 	for _, line := range done {
 		a.ui.Info("%s %s", a.ui.Green("✓"), line)
 	}
@@ -414,16 +424,26 @@ func (a *app) cmdUnprotect(args []string) error {
 		return err
 	}
 
-	// Look again: the drive has the last word on whether it worked.
-	after := newScanner()
-	fresh, findErr := after.Find(dev.Path)
-	if findErr == nil && len(after.WriteProtection(fresh)) == 0 && !fresh.ReadOnly {
-		a.ui.Info("%s %s now takes writes", a.ui.Green("✓"), dev.Path)
+	// The drive has the last word. Reading flags back proves only that the
+	// flags changed; a write proves the drive takes writes.
+	if err := device.TestWrite(dev.Path); err != nil {
+		a.ui.Info("")
+		a.ui.Info("%s %v", a.ui.Yellow("the drive still refuses a write:"), err)
+		a.printProtection(device.HardwareProtection(dev))
 		return nil
 	}
-	a.ui.Info("%s", a.ui.Yellow("the flag was cleared but the drive is still refusing"))
-	a.printProtection(device.HardwareProtection(dev))
+	a.ui.Info("%s %s takes writes now, tested", a.ui.Green("✓"), dev.Path)
 	return nil
+}
+
+func countKind(protections []device.Protection, kind device.ProtectionKind) int {
+	n := 0
+	for _, p := range protections {
+		if p.Kind == kind {
+			n++
+		}
+	}
+	return n
 }
 
 func (a *app) printProtection(p device.Protection) {
