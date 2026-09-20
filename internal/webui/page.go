@@ -18,6 +18,13 @@ var pageHTML string
 // The token is hex, so it cannot break out of the string it lands in.
 const tokenPlaceholder = "__OLIVER_TOKEN__"
 
+// Page returns the page as a file, with the placeholder left in it.
+//
+// Saved somewhere and opened on its own, it asks for the address of a running
+// Oliver instead of assuming it was served by one — so the same one file is
+// both the served page and a copy you can keep.
+func Page() string { return pageHTML }
+
 func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 	if !loopbackHost(r.Host) {
 		fail(w, http.StatusForbidden, fmt.Errorf("this server answers only on localhost"))

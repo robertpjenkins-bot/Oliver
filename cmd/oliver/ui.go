@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"time"
 
@@ -16,14 +17,20 @@ const uiSynopsis = `oliver ui
 
 Opens Oliver's drives in a browser.
 
-  oliver ui                  start it and open a browser
-  oliver ui -no-open         start it and print the address
-  oliver ui -port 8731       ask for a particular port
+  oliver ui                       start it and open a browser
+  oliver ui -no-open              start it and print the address
+  oliver ui -port 8731            ask for a particular port
+  oliver ui -save drives.html     write the page out as a file and stop
 
 The page is served from this program on the loopback interface only, and does
 nothing by itself: every drive is read, written and verified here, because no
 page in a browser can open a raw device. The rules about which drives may be
 touched are the same ones the commands use.
+
+The page is one self-contained HTML file with nothing fetched from anywhere
+else, so it works on a machine with no network. Saved with -save it can be
+opened on its own — from a download, or off the stick it is sitting on — and
+asks for the address of a running Oliver.
 
 The address carries a one-time token. Anything reaching the port without it is
 refused, so another program on this machine — or a web page you happen to have
@@ -34,8 +41,18 @@ func (a *app) cmdUI(args []string) error {
 	fs := a.newFlagSet("ui", uiSynopsis)
 	port := fs.Int("port", 0, "port to listen on (default: any free one)")
 	noOpen := fs.Bool("no-open", false, "do not open a browser")
+	save := fs.String("save", "", "write the page to this file and stop")
 	if err := parseFlagsAnywhere(fs, args); err != nil {
 		return err
+	}
+
+	if *save != "" {
+		if err := os.WriteFile(*save, []byte(webui.Page()), 0o644); err != nil {
+			return fmt.Errorf("writing %s: %w", *save, err)
+		}
+		a.ui.Info("%s wrote %s", a.ui.Green("✓"), *save)
+		a.ui.Info("%s", a.ui.Dim("Open it in a browser. It will ask for the address `oliver ui` prints."))
+		return nil
 	}
 
 	server := webui.New()

@@ -157,6 +157,18 @@ The address carries a one-time token, and requests must present it in a header
 that no other site can set. A program on your machine that guesses the port, or
 a page you happen to have open in another tab, gets nothing.
 
+The page is one self-contained HTML file — no fonts, scripts or styles fetched
+from anywhere, so it works on a machine with no network at all. `oliver ui
+-save drives.html` writes it out. Opened on its own, from a download or off the
+stick it is sitting on, it asks for the address a running Oliver printed and
+then works exactly as it does when served:
+
+```console
+$ oliver ui -save drives.html
+✓ wrote drives.html
+Open it in a browser. It will ask for the address `oliver ui` prints.
+```
+
 **It gets the stick back afterwards.** A drive holding an image is no longer
 usable for ordinary files, and the tools that say so are not always the ones
 that fix it:

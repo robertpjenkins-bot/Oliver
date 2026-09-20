@@ -97,7 +97,60 @@ func (s *Server) Handler() http.Handler {
 	// cannot set a header, so its token travels in the query string. It is
 	// read-only, and reports on a job the caller must already have started.
 	mux.HandleFunc("GET /api/jobs/{id}/events", s.check(s.jobEvents, queryToken))
-	return mux
+	return s.preflight(mux)
+}
+
+// preflight answers the permission question a browser asks before sending a
+// request that carries a custom header.
+//
+// It cannot require the token, because the token is exactly what the browser
+// is asking permission to send. That costs nothing: a preflight grants only
+// the right to try, and the request that follows is checked like any other.
+func (s *Server) preflight(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodOptions || !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		origin, ok := s.allowedOrigin(r)
+		if !ok || origin == "" || !loopbackHost(r.Host) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		allowFrom(w, origin)
+		w.Header().Set("Access-Control-Allow-Headers", "X-Oliver-Token, Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Max-Age", "600")
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// allowedOrigin reports which origins may be answered, and what to echo back.
+//
+// Two are allowed. The page Oliver served itself, which is same-origin. And a
+// page opened from a file rather than from a server — the standalone copy of
+// this same page, downloaded or carried on a stick — which every browser
+// labels "null".
+//
+// Allowing "null" gives away nothing. Authority here is the token: it is not
+// a cookie the browser attaches on its own, it is never sent anywhere else,
+// and a page that does not have it gets a refusal whatever its origin says.
+func (s *Server) allowedOrigin(r *http.Request) (string, bool) {
+	switch origin := r.Header.Get("Origin"); {
+	case origin == "":
+		return "", true // not a cross-origin request at all
+	case origin == "null":
+		return "null", true
+	case sameOrigin(origin, r.Host):
+		return origin, true
+	default:
+		return "", false
+	}
+}
+
+func allowFrom(w http.ResponseWriter, origin string) {
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Add("Vary", "Origin")
 }
 
 // tokenIn says where a route accepts its token.
@@ -112,18 +165,24 @@ const (
 //
 // Three checks, each closing a different door. The token proves the caller was
 // told the URL. The custom header it arrives in cannot be set by a form on
-// another site without a preflight this server never approves, so a page you
-// happen to be visiting cannot drive this one. The Host check closes DNS
-// rebinding, where a name an attacker controls is pointed at 127.0.0.1.
+// another site, and the preflight that would let one try is answered for two
+// origins only, so a page you happen to be visiting cannot drive this one. The
+// Host check closes DNS rebinding, where a name an attacker controls is
+// pointed at 127.0.0.1.
 func (s *Server) check(next http.HandlerFunc, where tokenIn) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !loopbackHost(r.Host) {
 			fail(w, http.StatusForbidden, fmt.Errorf("this server answers only on localhost"))
 			return
 		}
-		if origin := r.Header.Get("Origin"); origin != "" && !sameOrigin(origin, r.Host) {
-			fail(w, http.StatusForbidden, fmt.Errorf("refusing a request from %s", origin))
+		origin, ok := s.allowedOrigin(r)
+		if !ok {
+			fail(w, http.StatusForbidden, fmt.Errorf("refusing a request from %s", r.Header.Get("Origin")))
 			return
+		}
+		if origin != "" {
+			// Without this the browser will not let the page read the answer.
+			allowFrom(w, origin)
 		}
 		token := r.Header.Get("X-Oliver-Token")
 		if where == queryToken && token == "" {

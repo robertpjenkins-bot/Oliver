@@ -616,3 +616,112 @@ func TestAnImageIsDescribedBeforeItIsWritten(t *testing.T) {
 		t.Errorf("a missing image returned %d", res.StatusCode)
 	}
 }
+
+/* ---- the page as a file ------------------------------------------------ */
+
+func TestAPageOpenedFromAFileCanTalkToTheServer(t *testing.T) {
+	h := newHarness(t)
+	h.drive("sdb", 64<<20, true, "stick")
+
+	// Every browser labels a page loaded from disk "null". That is the saved
+	// copy of this same page, and it must work.
+	req, _ := http.NewRequest("GET", h.http.URL+"/api/drives", nil)
+	req.Header.Set("X-Oliver-Token", h.server.Token)
+	req.Header.Set("Origin", "null")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+	// Without this header the browser will not let the page read the answer.
+	if got := res.Header.Get("Access-Control-Allow-Origin"); got != "null" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want \"null\"", got)
+	}
+	if !strings.Contains(res.Header.Get("Vary"), "Origin") {
+		t.Errorf("the answer does not vary by origin: %q", res.Header.Get("Vary"))
+	}
+}
+
+func TestThePermissionQuestionIsAnsweredForAFileAndRefusedForASite(t *testing.T) {
+	h := newHarness(t)
+
+	// A preflight carries no token; it is asking permission to send one.
+	req, _ := http.NewRequest("OPTIONS", h.http.URL+"/api/write", nil)
+	req.Header.Set("Origin", "null")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "x-oliver-token")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("preflight from a file = %d, want 204", res.StatusCode)
+	}
+	if !strings.Contains(strings.ToLower(res.Header.Get("Access-Control-Allow-Headers")), "x-oliver-token") {
+		t.Errorf("the token header was not permitted: %q", res.Header.Get("Access-Control-Allow-Headers"))
+	}
+
+	// A site, though, is refused the permission outright — which is what stops
+	// a page you happen to be visiting from even trying.
+	req, _ = http.NewRequest("OPTIONS", h.http.URL+"/api/write", nil)
+	req.Header.Set("Origin", "https://example.invalid")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Errorf("preflight from a site = %d, want 403", res.StatusCode)
+	}
+	if res.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Error("a site was told it may send requests")
+	}
+}
+
+func TestAFileWithoutTheTokenStillGetsNothing(t *testing.T) {
+	h := newHarness(t)
+	node := h.drive("sdb", 64<<20, true, "stick")
+
+	// Origin "null" is not a way in: it only says where the page came from.
+	req, _ := http.NewRequest("POST", h.http.URL+"/api/erase",
+		strings.NewReader(`{"device":"sdb","confirm":"sdb"}`))
+	req.Header.Set("Origin", "null")
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", res.StatusCode)
+	}
+	if got := contentsOf(t, node, 512); !bytes.Equal(got, make([]byte, 512)) {
+		t.Error("the drive was erased")
+	}
+}
+
+func TestTheSavedPageAsksForAnAddressInsteadOfAssumingOne(t *testing.T) {
+	page := Page()
+
+	// Saved to a file, the placeholder is still in it: that is how the page
+	// knows it was not served, and must ask where Oliver is.
+	if !strings.Contains(page, tokenPlaceholder) {
+		t.Error("the saved page carries no placeholder, so it cannot tell it was opened on its own")
+	}
+	for _, needed := range []string{`id="connect"`, "parseLink", "oliver ui"} {
+		if !strings.Contains(page, needed) {
+			t.Errorf("the saved page has no %s, so there is no way to point it at a running Oliver", needed)
+		}
+	}
+	// Nothing may be fetched from anywhere else: this has to work offline.
+	for _, forbidden := range []string{"http://fonts.", "https://fonts.", "cdn.", "<script src=", "<link rel=\"stylesheet\""} {
+		if strings.Contains(page, forbidden) {
+			t.Errorf("the page loads something external (%s); it must be self-contained", forbidden)
+		}
+	}
+}
