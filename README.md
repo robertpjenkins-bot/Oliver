@@ -269,6 +269,12 @@ them without rebuilding its environment.
 
 [umu-launcher]: https://github.com/Open-Wine-Components/umu-launcher
 
+## Also in this repository
+
+[`js-academy/`](js-academy/) is a separate desktop app for learning JavaScript:
+500 interactive lessons, a playground for your own projects, and a button that
+packs any project into its own AppImage. See its [README](js-academy/README.md).
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).

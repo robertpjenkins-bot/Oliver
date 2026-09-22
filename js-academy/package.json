@@ -1,0 +1,74 @@
+{
+  "name": "js-academy",
+  "productName": "JS Academy",
+  "version": "1.0.0",
+  "description": "Learn JavaScript with 500 interactive lessons, build your own projects in a playground, and pack them as AppImages.",
+  "main": "src/main/main.js",
+  "author": "JS Academy",
+  "license": "MIT",
+  "homepage": "https://github.com/robertpjenkins-bot/Oliver",
+  "scripts": {
+    "start": "electron .",
+    "fetch-tools": "node scripts/fetch-tools.js",
+    "validate": "node scripts/validate-lessons.js",
+    "test": "node scripts/validate-lessons.js && node scripts/test-packager.js",
+    "dist": "node scripts/fetch-tools.js && electron-builder --linux AppImage --publish never",
+    "icon": "electron scripts/make-icon.js"
+  },
+  "dependencies": {
+    "codemirror": "^5.65.18"
+  },
+  "devDependencies": {
+    "electron": "^44.4.4",
+    "electron-builder": "^26.15.3",
+    "jsdom": "^26.1.0"
+  },
+  "build": {
+    "appId": "io.github.jsacademy",
+    "productName": "JS Academy",
+    "artifactName": "JS-Academy-${version}-${arch}.AppImage",
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!node_modules/codemirror/{demo,doc,test,src,bin,keymap,theme}/**",
+      "!node_modules/codemirror/mode/!(javascript|xml|css|htmlmixed)/**",
+      "!node_modules/codemirror/addon/!(edit|comment|selection|runmode|hint)/**"
+    ],
+    "extraResources": [
+      {
+        "from": "build-tools",
+        "to": "tools",
+        "filter": [
+          "appimagetool-*",
+          "runtime-*"
+        ]
+      }
+    ],
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Education",
+      "icon": "build/icon.png",
+      "executableName": "js-academy",
+      "synopsis": "Learn JavaScript and ship your own apps",
+      "syncDesktopName": true
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "publish": null
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robertpjenkins-bot/Oliver.git",
+    "directory": "js-academy"
+  },
+  "desktopName": "js-academy.desktop"
+}

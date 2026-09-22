@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>JS Academy</title>
+  <link rel="stylesheet" href="../../node_modules/codemirror/lib/codemirror.css">
+  <link rel="stylesheet" href="../../node_modules/codemirror/addon/hint/show-hint.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo">JS</span> Academy</div>
+    <nav class="tabs">
+      <button class="tab active" data-view="learn">📚 Learn</button>
+      <button class="tab" data-view="playground">🛠️ Playground</button>
+    </nav>
+    <div class="overall">
+      <div class="overall-text"><span id="overall-count">0</span> / <span id="overall-total">500</span> lessons</div>
+      <div class="bar"><div class="bar-fill" id="overall-bar"></div></div>
+    </div>
+  </header>
+
+  <!-- ─────────────── Learn ─────────────── -->
+  <main id="view-learn" class="view active">
+    <aside class="sidebar">
+      <input id="lesson-search" class="search" type="search" placeholder="Search 500 lessons…">
+      <div id="module-list" class="module-list"></div>
+    </aside>
+
+    <section class="lesson">
+      <div class="lesson-text" id="lesson-text">
+        <div class="crumbs" id="lesson-crumbs"></div>
+        <h1 id="lesson-title"></h1>
+        <div class="md" id="lesson-body"></div>
+        <div class="task" id="lesson-task-box">
+          <div class="task-head">🎯 Your task</div>
+          <ul class="checks" id="lesson-checks"></ul>
+        </div>
+        <div class="lesson-actions">
+          <button class="ghost" id="btn-hint">💡 Hint</button>
+          <button class="ghost" id="btn-solution">👀 Show solution</button>
+        </div>
+        <div class="hint md" id="lesson-hint" hidden></div>
+        <div class="lesson-nav">
+          <button class="ghost" id="btn-prev">← Previous</button>
+          <button class="primary" id="btn-next">Next lesson →</button>
+        </div>
+      </div>
+
+      <div class="lesson-work">
+        <div class="toolbar">
+          <button class="primary" id="btn-run" title="Ctrl+Enter">▶ Run &amp; check</button>
+          <button class="ghost" id="btn-reset" title="Put the starting code back">↺ Reset</button>
+          <button class="ghost" id="btn-to-playground" title="Copy this code into a new playground project">⤴ Open in Playground</button>
+          <span class="spacer"></span>
+          <span class="status" id="run-status"></span>
+        </div>
+        <div class="editor-wrap" id="lesson-editor"></div>
+        <div class="dom-preview" id="dom-preview" hidden>
+          <div class="pane-title">Page preview</div>
+          <div id="dom-frame-holder"></div>
+        </div>
+        <div class="console" id="lesson-console">
+          <div class="pane-title">Console <button class="tiny" id="btn-clear-console">clear</button></div>
+          <div class="console-lines" id="lesson-output"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ─────────────── Playground ─────────────── -->
+  <main id="view-playground" class="view">
+    <aside class="sidebar">
+      <button class="primary wide" id="btn-new-project">＋ New project</button>
+      <div class="project-list" id="project-list"></div>
+    </aside>
+
+    <section class="pg">
+      <div class="toolbar">
+        <input id="project-name" class="name-input" placeholder="Project name" spellcheck="false">
+        <button class="primary" id="btn-pg-run" title="Ctrl+Enter">▶ Run</button>
+        <label class="toggle"><input type="checkbox" id="pg-autorun" checked> Auto-run</label>
+        <button class="ghost" id="btn-pg-save" title="Ctrl+S">💾 Save</button>
+        <span class="spacer"></span>
+        <button class="ghost" id="btn-pg-export">⬇ Export HTML</button>
+        <button class="accent" id="btn-pg-pack">📦 Pack as AppImage</button>
+        <button class="ghost danger" id="btn-pg-delete" title="Delete project">🗑</button>
+      </div>
+      <div class="pg-body">
+        <div class="pg-editors">
+          <div class="editor-tabs">
+            <button class="etab active" data-file="js">script.js</button>
+            <button class="etab" data-file="html">index.html</button>
+            <button class="etab" data-file="css">style.css</button>
+          </div>
+          <div class="editor-wrap" id="pg-editor"></div>
+        </div>
+        <div class="pg-right">
+          <div class="pane-title">Preview <span class="save-state" id="pg-save-state"></span></div>
+          <div class="pg-frame-holder" id="pg-frame-holder"></div>
+          <div class="console pg-console">
+            <div class="pane-title">Console <button class="tiny" id="btn-pg-clear">clear</button></div>
+            <div class="console-lines" id="pg-output"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ─────────────── Dialogs ─────────────── -->
+  <div class="modal" id="modal-new" hidden>
+    <div class="modal-card">
+      <h2>New project</h2>
+      <label>Name <input id="new-name" value="My App" spellcheck="false"></label>
+      <div class="templates" id="template-list"></div>
+      <div class="modal-actions">
+        <button class="ghost" data-close>Cancel</button>
+        <button class="primary" id="btn-create-project">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="modal-pack" hidden>
+    <div class="modal-card">
+      <h2>📦 Pack as AppImage</h2>
+      <p>Turns <b id="pack-name"></b> into a single file that runs on any 64-bit Linux desktop — double-click it, no install needed.</p>
+      <div class="row">
+        <label>Window width <input type="number" id="pack-width" min="200" max="4000" value="900"></label>
+        <label>Window height <input type="number" id="pack-height" min="200" max="4000" value="700"></label>
+      </div>
+      <pre class="pack-log" id="pack-log" hidden></pre>
+      <div class="modal-actions">
+        <button class="ghost" data-close id="btn-pack-close">Close</button>
+        <button class="ghost" id="btn-pack-show" hidden>Show in folder</button>
+        <button class="accent" id="btn-pack-go">Choose where to save…</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="../../node_modules/codemirror/lib/codemirror.js"></script>
+  <script src="../../node_modules/codemirror/mode/javascript/javascript.js"></script>
+  <script src="../../node_modules/codemirror/mode/xml/xml.js"></script>
+  <script src="../../node_modules/codemirror/mode/css/css.js"></script>
+  <script src="../../node_modules/codemirror/mode/htmlmixed/htmlmixed.js"></script>
+  <script src="../../node_modules/codemirror/addon/edit/closebrackets.js"></script>
+  <script src="../../node_modules/codemirror/addon/edit/matchbrackets.js"></script>
+  <script src="../../node_modules/codemirror/addon/edit/closetag.js"></script>
+  <script src="../../node_modules/codemirror/addon/comment/comment.js"></script>
+  <script src="../../node_modules/codemirror/addon/selection/active-line.js"></script>
+  <script src="../../node_modules/codemirror/addon/runmode/runmode.js"></script>
+  <script src="../../node_modules/codemirror/addon/hint/show-hint.js"></script>
+  <script src="../../node_modules/codemirror/addon/hint/javascript-hint.js"></script>
+
+  <script src="runner-core.js"></script>
+  <script src="markdown.js"></script>
+  <script src="../lessons/registry.js"></script>
+  <script src="../lessons/modules/01-getting-started.js"></script>
+  <script src="../lessons/modules/02-variables.js"></script>
+  <script src="../lessons/modules/03-numbers.js"></script>
+  <script src="../lessons/modules/04-strings.js"></script>
+  <script src="../lessons/modules/05-booleans.js"></script>
+  <script src="../lessons/modules/06-conditionals.js"></script>
+  <script src="../lessons/modules/07-loops.js"></script>
+  <script src="../lessons/modules/08-functions.js"></script>
+  <script src="../lessons/modules/09-arrays.js"></script>
+  <script src="../lessons/modules/10-array-methods.js"></script>
+  <script src="../lessons/modules/11-objects.js"></script>
+  <script src="../lessons/modules/12-scope-closures.js"></script>
+  <script src="../lessons/modules/13-modern-syntax.js"></script>
+  <script src="../lessons/modules/14-recursion.js"></script>
+  <script src="../lessons/modules/15-errors.js"></script>
+  <script src="../lessons/modules/16-classes.js"></script>
+  <script src="../lessons/modules/17-maps-sets.js"></script>
+  <script src="../lessons/modules/18-iterators-generators.js"></script>
+  <script src="../lessons/modules/19-regex.js"></script>
+  <script src="../lessons/modules/20-dates-json.js"></script>
+  <script src="../lessons/modules/21-async.js"></script>
+  <script src="../lessons/modules/22-functional.js"></script>
+  <script src="../lessons/modules/23-dom.js"></script>
+  <script src="../lessons/modules/24-events.js"></script>
+  <script src="../lessons/modules/25-algorithms.js"></script>
+  <script src="templates.js"></script>
+  <script src="learn.js"></script>
+  <script src="playground.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

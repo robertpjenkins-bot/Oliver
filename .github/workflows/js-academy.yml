@@ -1,0 +1,39 @@
+name: JS Academy
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["js-academy/**", ".github/workflows/js-academy.yml"]
+  pull_request:
+    paths: ["js-academy/**", ".github/workflows/js-academy.yml"]
+
+defaults:
+  run:
+    working-directory: js-academy
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: js-academy/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Install a virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: Check all lessons
+        run: npm run validate
+      - name: Fetch appimagetool
+        run: npm run fetch-tools
+      - name: Pack and launch a test project
+        run: node scripts/test-packager.js
+      - name: Build the AppImage
+        run: npx electron-builder --linux AppImage --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: js-academy-appimage
+          path: js-academy/dist/*.AppImage
