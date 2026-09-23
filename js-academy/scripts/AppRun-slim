@@ -67,12 +67,34 @@ install_engine() {
 	rm -rf "$tmp"
 }
 
+# A Python that has Tk, for the setup window.
+find_tk_python() {
+	for py in python3 python3.13 python3.12 python3.11 python3.10 python3.9; do
+		if command -v "$py" >/dev/null 2>&1 && "$py" -c "import tkinter" >/dev/null 2>&1; then
+			echo "$py"
+			return 0
+		fi
+	done
+	return 1
+}
+
 if [ ! -x "$ENGINE/electron" ]; then
-	if [ ! -t 2 ] && command -v zenity >/dev/null 2>&1; then
+	mkdir -p "$CACHE"
+	if [ -n "$DISPLAY$WAYLAND_DISPLAY" ] && py="$(find_tk_python)"; then
+		# A window with a real progress bar.
+		"$py" "$HERE/engine-setup.py" "$URL" "$ENGINE"
+		rc=$?
+		[ $rc -eq 2 ] && exit 0
+		# Python's own download can fail where curl works (missing CA certificates).
+		[ $rc -ne 0 ] && install_engine 2>/dev/null
+	elif [ ! -t 2 ] && command -v zenity >/dev/null 2>&1; then
 		# Double-clicked: show a progress window while downloading.
 		install_engine 2>/dev/null | zenity --progress --pulsate --auto-close --no-cancel \
 			--title "JS Academy" --text "Setting up JS Academy for the first time (downloading about 110 MB)…" 2>/dev/null
 	else
+		if [ ! -t 2 ] && command -v notify-send >/dev/null 2>&1; then
+			notify-send "JS Academy" "Setting up for the first time: downloading about 110 MB…"
+		fi
 		install_engine
 	fi
 	if [ ! -x "$ENGINE/electron" ]; then

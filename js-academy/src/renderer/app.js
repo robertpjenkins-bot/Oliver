@@ -19,5 +19,15 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// Offer to install when running from an AppImage that is not installed yet.
+const installBtn = document.getElementById('btn-install');
+installBtn.onclick = () => window.api.openInstaller();
+const checkInstalled = () =>
+  window.api.installStatus().then((st) => {
+    installBtn.hidden = !(st.canInstall && !st.installed);
+  });
+checkInstalled();
+window.addEventListener('focus', checkInstalled);
+
 Learn.init();
 Playground.init();

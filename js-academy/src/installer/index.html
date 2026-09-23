@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Install JS Academy</title>
+  <style>
+    :root { --bg: #0f1420; --bg2: #151b2b; --bg3: #1c2436; --line: #273149; --text: #dbe2f0; --muted: #8a96b0; --accent: #f7df1e; --green: #3ddc84; --blue: #5aa9ff; --red: #ff6b6b; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { background: var(--bg); color: var(--text); font: 14px/1.5 Inter, "Segoe UI", Ubuntu, Cantarell, "Noto Sans", system-ui, sans-serif; display: flex; flex-direction: column; user-select: none; }
+    header { display: flex; align-items: center; gap: 16px; padding: 26px 30px 10px; }
+    header img { width: 64px; height: 64px; }
+    h1 { margin: 0; font-size: 22px; }
+    .sub { color: var(--muted); }
+    main { flex: 1; padding: 10px 30px; }
+    label.opt { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; margin-bottom: 8px; background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+    label.opt input { flex: none; margin-top: 4px; accent-color: var(--accent); width: 16px; height: 16px; }
+    label.opt b { display: block; }
+    label.opt span { color: var(--muted); font-size: 12.5px; }
+    footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 30px 22px; }
+    button { font: inherit; border-radius: 6px; padding: 8px 18px; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--text); }
+    button.primary { background: var(--accent); color: #1a1a1a; border-color: var(--accent); font-weight: 700; }
+    button:disabled { opacity: .5; cursor: default; }
+    ul.done { list-style: none; padding: 0; margin: 12px 0; }
+    ul.done li { padding: 6px 0; }
+    ul.done li::before { content: "✓"; color: var(--green); font-weight: 700; margin-right: 10px; }
+    .error { color: var(--red); white-space: pre-wrap; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="../renderer/icon.png" alt="">
+    <div>
+      <h1 id="title">Install JS Academy</h1>
+      <div class="sub" id="subtitle">500 JavaScript lessons and a playground for your own apps.</div>
+    </div>
+  </header>
+
+  <main id="choose">
+    <label class="opt"><input type="checkbox" id="opt-menu" checked>
+      <div><b>Add to my applications menu</b><span>Find JS Academy with your other apps.</span></div></label>
+    <label class="opt"><input type="checkbox" id="opt-shortcut" checked>
+      <div><b>Create a desktop shortcut</b><span id="shortcut-where"></span></div></label>
+    <label class="opt"><input type="checkbox" id="opt-copy" checked>
+      <div><b>Keep a copy in my Applications folder</b><span id="copy-where"></span></div></label>
+    <p class="error" id="error" hidden></p>
+  </main>
+
+  <main id="finished" hidden>
+    <ul class="done" id="done-list"></ul>
+    <p class="sub">To remove it later, run the app with <code>--uninstall</code>. Your lesson progress and projects are always kept.</p>
+  </main>
+
+  <footer>
+    <button id="skip">Just run it</button>
+    <button class="primary" id="install">Install</button>
+    <button class="primary" id="open" hidden>Open JS Academy</button>
+  </footer>
+
+  <script src="installer.js"></script>
+</body>
+</html>

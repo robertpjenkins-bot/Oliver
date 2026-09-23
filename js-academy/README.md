@@ -25,14 +25,23 @@ $ chmod +x JS-Academy-1.0.0-x86_64.AppImage
 $ ./JS-Academy-1.0.0-x86_64.AppImage
 ```
 
-Progress and projects are kept in `~/.config/JS Academy/`.
+The first time it runs from an AppImage, JS Academy opens an installer. It can
+add the app to your applications menu, put a shortcut on your desktop, and keep
+a copy in `~/Applications`, all inside your home folder, so it needs no
+password. Choose **Just run it** to skip this; the **Install** button in the
+top bar brings it back. `--install` does the same without the window, and
+`--uninstall` removes it again.
+
+Progress and projects are kept in `~/.config/JS Academy/` and are never
+removed by uninstalling.
 
 ### Small download
 
 `npm run dist:small` builds `JS-Academy-<version>-small-x86_64.AppImage`
 (about 16 MB). It is the same app without the Electron engine. On the first
 launch it downloads Electron once (about 110 MB) into `~/.cache/js-academy`,
-then works offline, including **Pack as AppImage**.
+then works offline, including **Pack as AppImage**. When Python's Tk is
+available, the download shows a progress window.
 
 ## The modules
 

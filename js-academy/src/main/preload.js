@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('pack:progress', listener);
   },
 
+  installStatus: () => ipcRenderer.invoke('installer:status'),
+  openInstaller: () => ipcRenderer.invoke('installer:open'),
+
   showItem: (p) => ipcRenderer.invoke('shell:showItem', p),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 });

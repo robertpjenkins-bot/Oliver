@@ -27,6 +27,7 @@ cp build-tools/appimagetool-x86_64.AppImage build-tools/runtime-x86_64 "${app}/b
 
 echo "${electron}" > "${appdir}/electron-version"
 install -m 0755 scripts/AppRun-slim "${appdir}/AppRun"
+install -m 0755 scripts/engine-setup.py "${appdir}/engine-setup.py"
 install -m 0644 build/icon.png "${appdir}/js-academy.png"
 ln -s js-academy.png "${appdir}/.DirIcon"
 cat > "${appdir}/js-academy.desktop" <<DESKTOP
