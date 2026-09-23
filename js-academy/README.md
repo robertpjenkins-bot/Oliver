@@ -27,6 +27,13 @@ $ ./JS-Academy-1.0.0-x86_64.AppImage
 
 Progress and projects are kept in `~/.config/JS Academy/`.
 
+### Small download
+
+`npm run dist:small` builds `JS-Academy-<version>-small-x86_64.AppImage`
+(about 16 MB). It is the same app without the Electron engine. On the first
+launch it downloads Electron once (about 110 MB) into `~/.cache/js-academy`,
+then works offline, including **Pack as AppImage**.
+
 ## The modules
 
 | # | Module | # | Module |

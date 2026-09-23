@@ -13,7 +13,8 @@
     "validate": "node scripts/validate-lessons.js",
     "test": "node scripts/validate-lessons.js && node scripts/test-packager.js",
     "dist": "node scripts/fetch-tools.js && electron-builder --linux AppImage --publish never",
-    "icon": "electron scripts/make-icon.js"
+    "icon": "electron scripts/make-icon.js",
+    "dist:small": "bash scripts/build-slim-appimage.sh"
   },
   "dependencies": {
     "codemirror": "^5.65.18"

@@ -1,0 +1,84 @@
+#!/bin/sh
+# JS Academy (small download).
+#
+# This AppImage carries the app but not the Electron browser engine it runs
+# on, so it fits in a small download. The first launch fetches Electron once
+# into ~/.cache/js-academy and every later launch uses that copy offline.
+HERE="$(dirname "$(readlink -f "$0")")"
+VERSION="$(cat "$HERE/electron-version")"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/js-academy"
+ENGINE="$CACHE/electron-v$VERSION"
+URL="https://github.com/electron/electron/releases/download/v$VERSION/electron-v$VERSION-linux-x64.zip"
+
+say() {
+	if [ -t 2 ]; then
+		echo "$*" >&2
+	elif command -v zenity >/dev/null 2>&1; then
+		zenity --info --title "JS Academy" --text "$*" 2>/dev/null
+	elif command -v kdialog >/dev/null 2>&1; then
+		kdialog --title "JS Academy" --msgbox "$*" 2>/dev/null
+	elif command -v notify-send >/dev/null 2>&1; then
+		notify-send "JS Academy" "$*"
+	else
+		echo "$*" >&2
+	fi
+}
+
+fetch() {
+	if command -v curl >/dev/null 2>&1; then
+		curl -fL --retry 3 -o "$2" "$1"
+	elif command -v wget >/dev/null 2>&1; then
+		wget -O "$2" "$1"
+	else
+		return 1
+	fi
+}
+
+extract() {
+	if command -v unzip >/dev/null 2>&1; then
+		unzip -q -o "$1" -d "$2"
+	elif command -v bsdtar >/dev/null 2>&1; then
+		bsdtar -xf "$1" -C "$2"
+	elif command -v python3 >/dev/null 2>&1; then
+		python3 -m zipfile -e "$1" "$2"
+	else
+		return 1
+	fi
+	# Some extractors drop the executable bits.
+	chmod +x "$2/electron" "$2/chrome_crashpad_handler" "$2/chrome-sandbox" 2>/dev/null
+	return 0
+}
+
+install_engine() {
+	mkdir -p "$CACHE" || return 1
+	tmp="$(mktemp -d "$CACHE/download.XXXXXX")" || return 1
+	echo "Downloading the JS Academy engine (Electron $VERSION, about 110 MB). This only happens once…" >&2
+	if ! fetch "$URL" "$tmp/electron.zip"; then
+		rm -rf "$tmp"
+		return 1
+	fi
+	mkdir -p "$tmp/engine"
+	if ! extract "$tmp/electron.zip" "$tmp/engine" || [ ! -x "$tmp/engine/electron" ]; then
+		rm -rf "$tmp"
+		return 1
+	fi
+	rm -rf "$ENGINE"
+	mv "$tmp/engine" "$ENGINE"
+	rm -rf "$tmp"
+}
+
+if [ ! -x "$ENGINE/electron" ]; then
+	if [ ! -t 2 ] && command -v zenity >/dev/null 2>&1; then
+		# Double-clicked: show a progress window while downloading.
+		install_engine 2>/dev/null | zenity --progress --pulsate --auto-close --no-cancel \
+			--title "JS Academy" --text "Setting up JS Academy for the first time (downloading about 110 MB)…" 2>/dev/null
+	else
+		install_engine
+	fi
+	if [ ! -x "$ENGINE/electron" ]; then
+		say "JS Academy could not download its engine. Check your internet connection and try again. (Needs curl or wget, and unzip or python3.)"
+		exit 1
+	fi
+fi
+
+exec "$ENGINE/electron" --no-sandbox "$HERE/app" "$@"
