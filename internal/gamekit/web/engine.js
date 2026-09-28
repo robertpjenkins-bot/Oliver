@@ -422,6 +422,292 @@
 
   // ----------------------------------------------------------------- engine
 
+  // ----------------------------------------------------------------- script
+  //
+  // A game's own code. Rules cover what most games need without anybody
+  // typing anything; this is for the rest, and for people who would rather
+  // write it than click it.
+  //
+  // The script is handed a small set of functions rather than the engine, and
+  // is compiled once. Nothing it does can stop the game: every call into it is
+  // guarded, the first failure of each kind is reported, and a handler that
+  // keeps throwing is retired rather than allowed to fail sixty times a
+  // second. A game with a mistake in its code is a game with a mistake in its
+  // code, not a black screen.
+  function Script(engine, source) {
+    this.engine = engine;
+    this.source = source || '';
+    this.handlers = {};     // event name -> [ {a, b, fn} ]
+    this.updates = [];
+    this.timers = [];
+    this.errors = [];
+    this.retired = [];
+    this.ready = false;
+    if (this.source.trim()) this.compile();
+  }
+
+  Script.prototype.on = function (event, spec) {
+    (this.handlers[event] = this.handlers[event] || []).push(spec);
+  };
+
+  // report keeps the first of each distinct complaint. A loop that throws on
+  // every frame should say so once, with a line worth reading.
+  Script.prototype.report = function (where, err) {
+    var text = where + ': ' + (err && err.message ? err.message : String(err));
+    for (var i = 0; i < this.errors.length; i++) if (this.errors[i] === text) return;
+    this.errors.push(text);
+    if (this.engine && this.engine.onEvent) this.engine.onEvent({ event: 'scripterror', text: text });
+  };
+
+  Script.prototype.compile = function () {
+    var self = this;
+    var api = this.api();
+    var names = Object.keys(api);
+    var values = names.map(function (n) { return api[n]; });
+    try {
+      // Named arguments rather than a shared object: the script can call
+      // spawn() and say() directly, and nothing outside this list is offered.
+      // Function takes its parameter names as separate arguments, so the
+      // list has to be spread rather than handed over as an array: an array
+      // becomes one comma-joined body and nothing is a parameter at all.
+      /* jshint evil:true */
+      var fn = Function.apply(null, names.concat(['"use strict";\n' + this.source]));
+      fn.apply(null, values);
+      this.ready = true;
+    } catch (err) {
+      this.report('your code', err);
+    }
+  };
+
+  // run calls one handler, and takes it out of service if it keeps failing.
+  Script.prototype.run = function (spec, where, args) {
+    if (spec.dead) return;
+    try {
+      spec.fn.apply(null, args || []);
+      spec.fails = 0;
+    } catch (err) {
+      this.report(where, err);
+      spec.fails = (spec.fails || 0) + 1;
+      if (spec.fails >= 5) {
+        spec.dead = true;
+        this.retired.push(where);
+        this.report(where, new Error('stopped running this after five failures'));
+      }
+    }
+  };
+
+  Script.prototype.fire = function (ev) {
+    var list = this.handlers[ev.event];
+    if (!list) return;
+    for (var i = 0; i < list.length; i++) {
+      var h = list[i];
+      if (h.a && h.a !== ev.a) continue;
+      if (h.b && h.b !== ev.b) continue;
+      this.run(h, 'when.' + ev.event, [ev]);
+    }
+  };
+
+  Script.prototype.step = function (dt) {
+    var i;
+    for (i = 0; i < this.updates.length; i++) this.run(this.updates[i], 'when.update', [dt]);
+    for (i = this.timers.length - 1; i >= 0; i--) {
+      var t = this.timers[i];
+      t.left -= dt;
+      if (t.left > 0) continue;
+      this.run(t, t.repeat ? 'every' : 'after');
+      if (t.repeat) t.left += t.period;
+      else this.timers.splice(i, 1);
+    }
+  };
+
+  // api is everything a script can reach. It is deliberately small, named for
+  // what it does rather than for how the engine is built, and it is the only
+  // way in: there is no handle to the engine itself anywhere in it.
+  Script.prototype.api = function () {
+    var self = this;
+    var e = this.engine;
+    var tile = function () { return e.game.screen.tile; };
+
+    function entityOf(thing) {
+      if (!thing) return null;
+      if (thing && thing.__entity) return thing.__entity;
+      if (typeof thing === 'string') return e.find(thing);
+      return thing;
+    }
+
+    // A live view of a thing in the game. The values are read and written
+    // straight through, so setting x moves it, and in tiles rather than
+    // pixels because a level is built in tiles.
+    //
+    // It is built around a function that fetches the thing rather than the
+    // thing itself, because "the player" is not one object for the life of a
+    // game: a level load replaces it, and a script holding the old one would
+    // be moving somebody who is no longer in the game. wrap() pins a view to
+    // one entity; live() follows whatever the function returns now.
+    function wrap(ent) { return ent ? live(function () { return ent; }) : null; }
+
+    function live(get) {
+      function need() {
+        var e2 = get();
+        if (!e2) throw new Error('there is nobody here to do that yet');
+        return e2;
+      }
+      var ent = { };
+      Object.defineProperty(ent, 'x', { get: function () { return need().x; }, set: function (v) { need().x = v; } });
+      Object.defineProperty(ent, 'y', { get: function () { return need().y; }, set: function (v) { need().y = v; } });
+      Object.defineProperty(ent, 'vx', { get: function () { return need().vx; }, set: function (v) { need().vx = v; } });
+      Object.defineProperty(ent, 'vy', { get: function () { return need().vy; }, set: function (v) { need().vy = v; } });
+      Object.defineProperty(ent, 'hp', { get: function () { return need().hp; }, set: function (v) { need().hp = v; } });
+      Object.defineProperty(ent, 'dir', { get: function () { return need().dir; }, set: function (v) { need().dir = v; } });
+      Object.defineProperty(ent, 'proto', { get: function () { return need().proto; } });
+      Object.defineProperty(ent, 'grounded', { get: function () { return need().grounded; } });
+      Object.defineProperty(ent, 'alive', { get: function () { return !!(get() && get().alive); } });
+      Object.defineProperty(ent, '__get', { value: get });
+      return viewOf(ent, get);
+    }
+
+    function viewOf(ent, get) {
+      var view = {
+        get __entity() { return get(); },
+        get alive() { return ent.alive; },
+        get x() { return ent.x / tile(); },
+        set x(v) { ent.x = v * tile(); },
+        get y() { return ent.y / tile(); },
+        set y(v) { ent.y = v * tile(); },
+        get vx() { return ent.vx / tile(); },
+        set vx(v) { ent.vx = v * tile(); },
+        get vy() { return ent.vy / tile(); },
+        set vy(v) { ent.vy = v * tile(); },
+        get hp() { return ent.hp; },
+        set hp(v) { ent.hp = v; },
+        get facing() { return ent.dir < 0 ? 'left' : 'right'; },
+        set facing(v) { ent.dir = v === 'left' ? -1 : 1; },
+        get grounded() { return ent.grounded; },
+        push: function (dx, dy) {
+          ent.vx += (dx || 0) * tile();
+          ent.vy += (dy || 0) * tile();
+        },
+        jump: function (strength) {
+          ent.vy = -(strength || ent.proto.jump || 12) * tile();
+          get().grounded = false;
+        },
+        hurt: function (n) { e.damage(get(), n == null ? 1 : n, null); },
+        heal: function (n) { ent.hp += (n == null ? 1 : n); },
+        remove: function () { e.destroy(get()); },
+        distanceTo: function (other) {
+          var o = entityOf(other);
+          if (!o) return Infinity;
+          return Math.hypot(ent.x - o.x, ent.y - o.y) / tile();
+        }
+      };
+      Object.defineProperty(view, 'id', { get: function () { return ent.proto.id; } });
+      Object.defineProperty(view, 'kind', { get: function () { return ent.proto.kind; } });
+      return view;
+    }
+
+    var when = {
+      start: function (fn) { self.on('start', { fn: fn }); },
+      update: function (fn) { self.updates.push({ fn: fn }); },
+      collide: function (a, b, fn) { self.on('collide', { a: a, b: b, fn: fn }); },
+      collect: function (a, fn) { self.on('collect', { a: a, fn: fn }); },
+      destroy: function (a, fn) { self.on('destroy', { a: a, fn: fn }); },
+      grant: function (a, fn) { self.on('grant', { a: a, fn: fn }); },
+      tile: function (a, fn) { self.on('tile', { a: a, fn: fn }); },
+      key: function (name, fn) { self.on('key', { a: name, fn: fn }); },
+      count: function (a, fn) { self.on('count', { a: a, fn: fn }); },
+      health: function (fn) { self.on('health', { fn: fn }); },
+      score: function (fn) { self.on('score', { fn: fn }); },
+      levelClear: function (fn) { self.on('levelclear', { fn: fn }); }
+    };
+
+    return {
+      when: when,
+
+      every: function (seconds, fn) {
+        self.timers.push({ period: Math.max(0.016, seconds), left: Math.max(0.016, seconds), repeat: true, fn: fn });
+      },
+      after: function (seconds, fn) {
+        self.timers.push({ left: Math.max(0, seconds), repeat: false, fn: fn });
+      },
+
+      spawn: function (id, x, y) {
+        var proto = e.protoOf(id);
+        if (!proto) { self.report('spawn', new Error('there is no object called "' + id + '"')); return null; }
+        return wrap(e.spawn(proto, x * tile(), y * tile()));
+      },
+      find: function (id) { return wrap(e.find(id)); },
+      all: function (idOrKind) {
+        var out = [];
+        for (var i = 0; i < e.entities.length; i++) {
+          var ent = e.entities[i];
+          if (!ent.alive) continue;
+          if (idOrKind && ent.proto.id !== idOrKind && ent.proto.kind !== idOrKind) continue;
+          out.push(wrap(ent));
+        }
+        return out;
+      },
+      count: function (id) { return e.countOf(id); },
+
+      say: function (text, seconds) {
+        e.messages.push({ text: String(text), t: seconds == null ? 2 : seconds });
+      },
+      sound: function (name) { e.audio.play(name); },
+      shake: function (amount) { e.level.shake = Math.max(e.level.shake || 0, amount == null ? 1 : amount); },
+
+      score: function (n) {
+        if (n == null) return e.score;
+        e.score += n;
+        e.checkScore();
+        return e.score;
+      },
+      lives: function (n) {
+        if (n == null) return e.lives;
+        e.lives = n;
+        return e.lives;
+      },
+      give: function (name) { e.grant(name, true); },
+      has: function (name) { return e.has(name); },
+      get: function (name) { return e.vars[name]; },
+      set: function (name, value) { e.vars[name] = value; },
+
+      goTo: function (levelId) { e.loadLevel(levelId); },
+      win: function () { e.win(); },
+      lose: function () { e.killPlayer(); },
+
+      tiles: {
+        at: function (x, y) { return e.level.kindAt(Math.floor(x), Math.floor(y)); },
+        set: function (x, y, kind) {
+          var ch = e.level.charOfKind(kind);
+          if (ch) e.level.setTile(Math.floor(x), Math.floor(y), ch);
+        },
+        clear: function (x, y) { e.level.setTile(Math.floor(x), Math.floor(y), '.'); }
+      },
+
+      random: function (n) { return Math.floor(Math.random() * (n == null ? 2 : n)); },
+      pick: function (list) { return list[Math.floor(Math.random() * list.length)]; },
+
+      // player is one object for the whole game, following whoever the player
+      // is now. It cannot be a getter on this object: the api is handed to
+      // the script as named arguments, which are worked out once, and at that
+      // moment no level has loaded and there is no player yet.
+      player: live(function () { return e.player; }),
+      get level() {
+        return {
+          get id() { return e.level.def.id; },
+          get name() { return e.level.def.name || e.level.def.id; },
+          get width() { return e.level.def.width; },
+          get height() { return e.level.def.height; },
+          get time() { return e.level.time; }
+        };
+      },
+      log: function () {
+        if (typeof console !== 'undefined' && console.log) {
+          console.log.apply(console, ['[game]'].concat(Array.prototype.slice.call(arguments)));
+        }
+      }
+    };
+  };
+
   function Engine(canvas, game, options) {
     options = options || {};
     this.canvas = canvas;
@@ -457,6 +743,10 @@
     this.running = true;
     this.paused = false;
     this.onEvent = options.onEvent || function () {};
+
+    // The script is compiled before the first level so that its when.start
+    // handler exists by the time that level starts.
+    this.script = new Script(this, game.code);
 
     this.loadLevel(options.level || game.settings.startLevel || (game.levels[0] && game.levels[0].id));
     this.camera = this.cameraFor(this.player, 0);
@@ -510,6 +800,17 @@
     this.messages = [];
     this.intro = def.intro ? 2.2 : 0;
     this.runRules({ event: 'start' });
+  };
+
+  // find returns the first living thing of a given id or kind. The script
+  // asks for things by name, and this is how a name becomes a thing.
+  Engine.prototype.find = function (idOrKind) {
+    for (var i = 0; i < this.entities.length; i++) {
+      var e = this.entities[i];
+      if (!e.alive) continue;
+      if (e.proto.id === idOrKind || e.proto.kind === idOrKind) return e;
+    }
+    return null;
   };
 
   Engine.prototype.protoOf = function (id) {
@@ -573,6 +874,7 @@
 
     this.collisions();
     this.timers();
+    if (this.script) this.script.step(dt);
     this.camera = this.cameraFor(this.player, dt);
     // On a level that scrolls itself, being left behind by the screen is as
     // fatal as falling: there is nothing back there to go back to.
@@ -1127,6 +1429,9 @@
   // ------------------------------------------------------------------ rules
 
   Engine.prototype.runRules = function (ev) {
+    // The script listens to the same events the rules do, and after them: a
+    // rule is the game's plain statement of what happens, and code is there
+    // to have the last word.
     var rules = this.game.rules || [];
     for (var i = 0; i < rules.length; i++) {
       var r = rules[i];
@@ -1140,6 +1445,7 @@
       }
       this.apply(r);
     }
+    if (this.script) this.script.fire(ev);
   };
 
   Engine.prototype.matches = function (when, ev) {

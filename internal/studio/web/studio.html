@@ -27,6 +27,7 @@
     <button data-tab="sprites">sprites</button>
     <button data-tab="objects">objects</button>
     <button data-tab="rules">rules</button>
+    <button data-tab="code">code</button>
     <button data-tab="settings">settings</button>
   </nav>
 
@@ -182,6 +183,33 @@
       </div>
     </div>
 
+    <div class="tabpage" id="tab-code" hidden>
+      <div class="split">
+        <aside class="side">
+          <div class="listhead">starters</div>
+          <ul id="snippets" class="list"></ul>
+          <div class="listhead">what you can call</div>
+          <div id="apiref" class="apiref"></div>
+        </aside>
+        <div class="codewrap">
+          <div class="toolbar">
+            <button id="runcode" class="tool">▶ run it</button>
+            <button id="checkcode" class="tool">check</button>
+            <span class="note" id="codenote"></span>
+          </div>
+          <textarea id="codetext" spellcheck="false" autocomplete="off"
+            placeholder="// Your game's own code. Try:
+//
+//   when.start(function () {
+//     say('here we go', 2);
+//   });
+//
+// Click a starter on the left to drop one in."></textarea>
+          <pre id="codeerr" class="codeerr" hidden></pre>
+        </div>
+      </div>
+    </div>
+
     <div class="tabpage" id="tab-settings" hidden>
       <div class="form" id="settingsform"></div>
     </div>
@@ -192,6 +220,7 @@
 <footer id="status"><span id="statustext">ready</span></footer>
 
 <script src="/paintops.js"></script>
+<script src="/codecheck.js"></script>
 <script src="/engine.js"></script>
 <script src="/studio.js"></script>
 </body>

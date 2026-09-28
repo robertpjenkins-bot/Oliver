@@ -746,6 +746,7 @@
     renderObjects();
     renderRules();
     renderSettings();
+    renderCode();
     renderPlayLevels();
   }
 
@@ -763,6 +764,7 @@
       else stopPlaying();
       if (b.dataset.tab === 'levels') drawLevel();
       if (b.dataset.tab === 'sprites') drawSpriteEditor();
+      if (b.dataset.tab === 'code') renderCode();
     });
   });
 
@@ -886,7 +888,10 @@
     runtime = window.OliverEngine.start(canvas, playableGame(), {
       skipTitle: true,
       scale: scale,
-      level: $('playlevel').value || undefined
+      level: $('playlevel').value || undefined,
+      onEvent: function (ev) {
+        if (ev && ev.event === 'scripterror') noteScriptTrouble(ev.text);
+      }
     });
     canvas.focus();
   }
@@ -2074,6 +2079,243 @@
     });
     form.appendChild(palette);
     renderShortcuts(form);
+  }
+
+  // ------------------------------------------------------------------ code
+  //
+  // A game's own script. Rules are the game saying what happens in its own
+  // data; this is for the things nobody thought to make a rule for — a boss
+  // that changes at half health, a lift waiting on two switches, a counter of
+  // your own invention.
+  //
+  // The reference on the left is the whole API. It is written down here rather
+  // than generated because the useful half of a reference is the sentence
+  // after the name, and only a person can write that.
+  var API = [
+    ['when something happens', [
+      ['when.start(fn)', 'the level begins, and again for every level after it'],
+      ['when.update(fn)', 'every frame — fn(dt) gets the seconds since the last one'],
+      ['when.collide(a, b, fn)', 'two things touch, named by id or by kind'],
+      ['when.collect(id, fn)', 'the player picks something up'],
+      ['when.destroy(id, fn)', 'something is destroyed'],
+      ['when.grant(name, fn)', 'the player gains an ability'],
+      ['when.tile(kind, fn)', 'the player steps on a kind of tile'],
+      ['when.key(name, fn)', 'a key is pressed: jump, fire, up, down, left, right'],
+      ['when.count(id, fn)', 'the last one of something is gone'],
+      ['when.health(fn)', 'the player is hurt'],
+      ['when.levelClear(fn)', 'the level is finished']
+    ]],
+    ['later', [
+      ['every(seconds, fn)', 'run it again and again, this often'],
+      ['after(seconds, fn)', 'run it once, this long from now']
+    ]],
+    ['the player', [
+      ['player.x, player.y', 'where, in tiles — set them to move'],
+      ['player.vx, player.vy', 'how fast, in tiles a second'],
+      ['player.hp', 'health left'],
+      ['player.facing', '"left" or "right"'],
+      ['player.grounded', 'true when standing on something'],
+      ['player.jump(n)', 'send it upward'],
+      ['player.push(x, y)', 'add to its speed'],
+      ['player.hurt(n)', 'take health off it'],
+      ['player.heal(n)', 'put health back'],
+      ['player.distanceTo(t)', 'how far away something is, in tiles']
+    ]],
+    ['things in the level', [
+      ['spawn(id, x, y)', 'put one there, and hand it back'],
+      ['find(id)', 'the first one of these, or null'],
+      ['all(idOrKind)', 'every one of them, as a list'],
+      ['count(id)', 'how many are left'],
+      ['t.remove()', 'take one out of the game']
+    ]],
+    ['the game', [
+      ['score(n)', 'add to the score — score() reads it'],
+      ['lives(n)', 'set lives — lives() reads them'],
+      ['give(name)', 'give the player an ability'],
+      ['has(name)', 'true if the player has it'],
+      ['set(name, v)', 'remember something'],
+      ['get(name)', 'read it back'],
+      ['goTo(levelId)', 'move to another level'],
+      ['win()', 'the game is won'],
+      ['lose()', 'the player dies']
+    ]],
+    ['saying and hearing', [
+      ['say(text, seconds)', 'put words on the screen'],
+      ['sound(name)', 'play one of the game’s sounds'],
+      ['shake(n)', 'shake the screen'],
+      ['log(...)', 'print to the browser console, for finding things out']
+    ]],
+    ['the map', [
+      ['tiles.at(x, y)', 'what kind of tile is there'],
+      ['tiles.set(x, y, kind)', 'put a tile there'],
+      ['tiles.clear(x, y)', 'take it away'],
+      ['level.id, level.name', 'which level this is'],
+      ['level.width, level.height', 'how big it is, in tiles'],
+      ['level.time', 'seconds since it started']
+    ]],
+    ['odds and ends', [
+      ['random(n)', 'a whole number from 0 to n-1'],
+      ['pick(list)', 'one of them, at random']
+    ]]
+  ];
+
+  // Starters are whole small ideas rather than single calls: the point of one
+  // is to be changed, so each has something obvious to change in it.
+  var SNIPPETS = [
+    ['say hello', 'when.start(function () {\n  say("here we go", 2);\n});\n'],
+    ['a boss that speeds up', 'when.update(function () {\n  var boss = find("boss");\n  if (!boss) return;\n  if (boss.hp <= 2) boss.vx = boss.vx * 1.01;\n});\n'],
+    ['drop something every few seconds', 'every(3, function () {\n  spawn("coin", random(level.width), 1);\n});\n'],
+    ['a double jump', 'var jumps = 0;\nwhen.update(function () {\n  if (player.grounded) jumps = 0;\n});\nwhen.key("jump", function () {\n  jumps = jumps + 1;\n  if (jumps === 2) player.jump(11);\n});\n'],
+    ['chase the player', 'when.update(function () {\n  all("enemy").forEach(function (foe) {\n    foe.vx = player.x > foe.x ? 3 : -3;\n  });\n});\n'],
+    ['a key that opens the way', 'when.collect("key", function () {\n  give("the key");\n  say("the gate is open", 2);\n  tiles.clear(18, 8);\n});\n'],
+    ['count what is left', 'when.update(function () {\n  set("left", count("coin"));\n});\nwhen.count("coin", function () {\n  say("all of them!", 2);\n  win();\n});\n'],
+    ['hurt the player on a tile', 'when.tile("water", function () {\n  player.hurt(1);\n});\n'],
+    ['a shop, sort of', 'when.collide("player", "shopkeeper", function () {\n  if (score() >= 50) {\n    score(-50);\n    give("boots");\n    say("boots bought", 2);\n  } else {\n    say("fifty coins, no less", 2);\n  }\n});\n']
+  ];
+
+  function renderCode() {
+    if (!G) return;
+    var box = $('codetext');
+    if (document.activeElement !== box) box.value = G.code || '';
+
+    var list = $('snippets');
+    list.innerHTML = '';
+    SNIPPETS.forEach(function (row) {
+      list.appendChild(el('li', {
+        title: 'put this into your code',
+        onclick: function () { insertCode('\n' + row[1]); }
+      }, [el('span', { text: row[0] })]));
+    });
+
+    var ref = $('apiref');
+    ref.innerHTML = '';
+    API.forEach(function (group) {
+      ref.appendChild(el('h4', { text: group[0] }));
+      group[1].forEach(function (row) {
+        ref.appendChild(el('div', {}, [
+          el('code', {
+            text: row[0],
+            title: 'put this into your code',
+            onclick: function () { insertCode(callOf(row[0])); }
+          }),
+          el('span', { text: '  ' + row[1] })
+        ]));
+      });
+    });
+    checkCode(true);
+  }
+
+  // callOf turns a reference line into something worth typing: a listener
+  // arrives with its function already open, so there is somewhere to write.
+  function callOf(signature) {
+    var name = signature.split('(')[0];
+    if (signature.indexOf('fn)') >= 0) {
+      var args = signature.slice(signature.indexOf('(') + 1, signature.lastIndexOf(')'))
+        .split(',').map(function (a) { return a.trim(); }).filter(function (a) { return a !== 'fn'; });
+      var head = args.length ? args.map(function (a) { return '"' + a + '"'; }).join(', ') + ', ' : '';
+      return name + '(' + head + 'function () {\n  \n});\n';
+    }
+    if (signature.indexOf('(') < 0) return name;
+    return signature + ';\n';
+  }
+
+  function insertCode(text) {
+    var box = $('codetext');
+    var at = box.selectionStart == null ? box.value.length : box.selectionStart;
+    var end = box.selectionEnd == null ? at : box.selectionEnd;
+    change('edit the code', true);
+    box.value = box.value.slice(0, at) + text + box.value.slice(end);
+    box.focus();
+    box.selectionStart = box.selectionEnd = at + text.length;
+    saveCode();
+  }
+
+  function saveCode() {
+    if (!G) return;
+    G.code = $('codetext').value;
+    checkCode(true);
+    markDirty(true);
+  }
+
+  // checkCode compiles the script without running it, so a typo is caught
+  // here rather than by a black screen in the play tab. The names the engine
+  // gives a script are declared as arguments, so a call to one of them reads
+  // as a call rather than as an unknown variable.
+  var SCRIPT_NAMES = ['when', 'every', 'after', 'spawn', 'find', 'all', 'count',
+    'say', 'sound', 'shake', 'score', 'lives', 'give', 'has', 'get', 'set',
+    'goTo', 'win', 'lose', 'tiles', 'random', 'pick', 'player', 'level', 'log'];
+
+  function checkCode(quiet) {
+    var box = $('codeerr');
+    var source = ($('codetext').value || '').trim();
+    if (!source) {
+      box.hidden = true;
+      $('codenote').textContent = 'no code yet — the game runs on its rules alone';
+      return true;
+    }
+    try {
+      /* jshint evil:true */
+      Function.apply(null, SCRIPT_NAMES.concat(['"use strict";\n' + source]));
+      box.hidden = quiet;
+      box.className = 'codeerr good';
+      box.textContent = 'This reads as valid code. Press "run it" to see what it does.';
+      $('codenote').textContent = source.split('\n').length + ' lines';
+      return true;
+    } catch (err) {
+      box.hidden = false;
+      box.className = 'codeerr';
+      box.textContent = explainCodeError(err, source);
+      $('codenote').textContent = 'there is a mistake in it';
+      return false;
+    }
+  }
+
+  // Where a mistake is, rather than only that there is one. The finding is
+  // its own file so it can be tested without a browser.
+  function explainCodeError(err, source) {
+    return window.CodeCheck.explain(err, source);
+  }
+
+  $('codetext').addEventListener('input', function () {
+    change('edit the code', true);
+    saveCode();
+  });
+
+  // Tab indents rather than leaving the box, because leaving the box in the
+  // middle of writing a function is never what was wanted.
+  $('codetext').addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    var at = this.selectionStart, end = this.selectionEnd;
+    this.value = this.value.slice(0, at) + '  ' + this.value.slice(end);
+    this.selectionStart = this.selectionEnd = at + 2;
+    saveCode();
+  });
+
+  $('checkcode').addEventListener('click', function () {
+    if (checkCode(false)) status('the code reads as valid');
+    else status('there is a mistake in the code', 'warn');
+  });
+
+  $('runcode').addEventListener('click', function () {
+    if (!checkCode(false)) { status('fix the mistake first', 'warn'); return; }
+    scriptTrouble = [];
+    playThisLevel(null);
+  });
+
+  // What the script complained about while the game was running. A mistake
+  // that only shows up on the twentieth frame is the hardest kind to find, so
+  // it is carried back to the editor rather than left in the console.
+  var scriptTrouble = [];
+
+  function noteScriptTrouble(text) {
+    if (scriptTrouble.indexOf(text) >= 0) return;
+    scriptTrouble.push(text);
+    var box = $('codeerr');
+    box.hidden = false;
+    box.className = 'codeerr';
+    box.textContent = 'While the game was running:\n\n' + scriptTrouble.join('\n');
+    status('the code ran into trouble — see the code tab', 'warn');
   }
 
   // ------------------------------------------------------------------ boot

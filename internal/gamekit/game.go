@@ -53,7 +53,23 @@ type Game struct {
 	Levels  []Level  `json:"levels"`
 	Rules   []Rule   `json:"rules"`
 	Sounds  []Sound  `json:"sounds"`
+
+	// Code is the game's own script, run by the engine alongside the rules.
+	//
+	// Rules cover what most games need and need no typing; code is for the
+	// rest — a boss that changes pattern at half health, a lift that waits
+	// for two switches, a counter nobody thought to make a rule for. It is
+	// part of the game rather than a file beside it, so an exported game is
+	// still one HTML file with everything in it.
+	Code string `json:"code,omitempty"`
 }
+
+// MaxCode is as long as a game's script may be.
+//
+// A limit exists so that a runaway generator or a pasted-in library cannot
+// turn a game file into something a browser struggles to open. It is far more
+// than any hand-written game script needs.
+const MaxCode = 200 * 1024
 
 // Screen is the game's resolution in pixels. Retro games are drawn small and
 // scaled up with no smoothing, which is what gives them crisp square pixels.
@@ -564,6 +580,10 @@ func (g *Game) Validate() []string {
 	}
 	if g.PlayerObject() == nil {
 		problems = append(problems, "no object has kind \"player\", so there is nobody to control")
+	}
+	if len(g.Code) > MaxCode {
+		problems = append(problems, fmt.Sprintf("the game's code is %d characters, and the limit is %d",
+			len(g.Code), MaxCode))
 	}
 
 	sprites := map[string]bool{}
