@@ -10,6 +10,8 @@
 <header id="bar">
   <span class="brand">Oliver <b>Studio</b></span>
   <select id="gamelist" title="open a game"></select>
+  <button id="undo" class="mini" title="undo (ctrl+Z)" disabled>undo</button>
+  <button id="redo" class="mini" title="redo (ctrl+shift+Z)" disabled>redo</button>
   <span class="grow"></span>
   <button id="assistant" class="badge" title="click to connect Claude">…</button>
   <button id="save">save</button>
@@ -124,14 +126,17 @@
         <aside class="side">
           <div class="listhead">levels <button id="addlevel" class="mini">+</button></div>
           <ul id="levellist" class="list"></ul>
-          <div class="listhead">paint</div>
+          <div class="listhead">paint <button id="addtile" class="mini" title="a new kind of tile">+</button></div>
           <ul id="tilepalette" class="palette"></ul>
+          <div id="tiledef" class="props"></div>
           <div class="listhead">place</div>
           <ul id="objectpalette" class="palette"></ul>
+          <div id="spawnprops" class="props"></div>
           <div id="levelprops" class="props"></div>
         </aside>
         <div class="canvaswrap">
-          <div class="hint">left click paints · right click erases · shift+drag scrolls</div>
+          <div class="toolbar" id="leveltools"></div>
+          <div class="hint" id="levelhint"></div>
           <canvas id="levelcanvas"></canvas>
         </div>
       </div>
@@ -144,10 +149,13 @@
           <ul id="spritelist" class="list"></ul>
           <div class="listhead">colours</div>
           <ul id="swatches" class="palette"></ul>
+          <div id="paletteedit" class="props"></div>
           <div id="spriteprops" class="props"></div>
         </aside>
         <div class="canvaswrap">
-          <div class="hint">left click draws · right click erases</div>
+          <div class="toolbar" id="spritetools"></div>
+          <div class="toolbar" id="spriteshapes"></div>
+          <div class="hint" id="spritehint"></div>
           <canvas id="spritecanvas"></canvas>
           <div id="frames" class="frames"></div>
         </div>
@@ -183,6 +191,7 @@
 <div id="alert" class="alert" hidden><button id="alertclose" title="close">×</button><pre id="alerttext"></pre></div>
 <footer id="status"><span id="statustext">ready</span></footer>
 
+<script src="/paintops.js"></script>
 <script src="/engine.js"></script>
 <script src="/studio.js"></script>
 </body>

@@ -113,6 +113,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.page)
 	mux.HandleFunc("/studio.css", s.asset("studio.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("/studio.js", s.asset("studio.js", "text/javascript; charset=utf-8"))
+	mux.HandleFunc("/paintops.js", s.asset("paintops.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("/engine.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		_, _ = w.Write([]byte(gamekit.EngineJS()))

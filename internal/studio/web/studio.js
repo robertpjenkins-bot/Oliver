@@ -14,7 +14,8 @@
   var runtime = null;    // the running engine, when the play tab is open
   var sel = {
     level: 0, sprite: 0, frame: 0, object: 0, rule: 0,
-    tile: '#', place: null, color: 1, zoom: 2
+    tile: '#', place: null, color: 1, zoom: 2,
+    spawn: -1, onion: false
   };
 
   // ------------------------------------------------------------------ util
@@ -99,6 +100,7 @@
     return api('/api/game?name=' + encodeURIComponent(name)).then(function (game) {
       G = game;
       NAME = name;
+      forgetHistory();
       sel.level = 0; sel.sprite = 0; sel.frame = 0; sel.object = 0; sel.rule = 0;
       sel.tile = (G.levels[0] && G.levels[0].tiles[0] && G.levels[0].tiles[0].char) || '#';
       sel.place = null;
@@ -161,8 +163,584 @@
     return c;
   }
 
+  // ---------------------------------------------------------------- history
+  //
+  // Undo covers the whole project rather than the canvas alone. Painting is
+  // only one of the ways to change a game, and an editor where the brush can
+  // be taken back but renaming a level cannot is an editor you are afraid to
+  // touch. Every change goes through change(), so everything is undoable for
+  // the same reason and by the same code.
+  //
+  // What is kept is the project as it was, as text. It is more than a diff
+  // would cost and it is worth it: nothing has to describe how to reverse
+  // itself, so no edit can ever be undone wrongly.
+  var past = [], future = [], HISTORY = 80;
+
+  // change records the state before an edit. Call it, then make the edit.
+  //
+  // A label that repeats while the same gesture is in progress — one stroke of
+  // a brush, one drag of a slider — is folded into the first: a stroke is one
+  // thing to take back, not forty.
+  var lastLabel = '', lastAt = 0;
+  function change(label, coalesce) {
+    if (!G) return;
+    var now = Date.now();
+    if (coalesce && label === lastLabel && now - lastAt < 900 && past.length) {
+      lastAt = now;
+      future.length = 0;
+      return;
+    }
+    past.push({ label: label, json: JSON.stringify(G) });
+    if (past.length > HISTORY) past.shift();
+    future.length = 0;
+    lastLabel = label;
+    lastAt = now;
+    updateHistoryButtons();
+  }
+
+  function stepTo(from, to, verb) {
+    if (!from.length) { status('nothing to ' + verb); return; }
+    var entry = from.pop();
+    to.push({ label: entry.label, json: JSON.stringify(G) });
+    G = JSON.parse(entry.json);
+    // A selection or a frame that no longer exists would leave the editor
+    // pointing at nothing, so every index is pulled back into range.
+    clampSelection();
+    selection = null;
+    floating = null;
+    sel.spawn = -1;
+    lastLabel = '';
+    renderAll();
+    drawLevel();
+    drawSpriteEditor();
+    updateHistoryButtons();
+    markSaved();
+    status(verb + ' ' + entry.label);
+  }
+
+  function undo() { stepTo(past, future, 'undo'); }
+
+  // forgetHistory is for when the project itself is replaced rather than
+  // edited. Undoing across that boundary would restore part of one game into
+  // another, which is not an undo by any reading of the word.
+  function forgetHistory() {
+    past.length = 0;
+    future.length = 0;
+    floating = null;
+    selection = null;
+    sel.spawn = -1;
+    lastLabel = '';
+    updateHistoryButtons();
+  }
+
+  function redo() { stepTo(future, past, 'redo'); }
+
+  function clampSelection() {
+    sel.level = Math.max(0, Math.min(sel.level, G.levels.length - 1));
+    sel.sprite = Math.max(0, Math.min(sel.sprite, G.sprites.length - 1));
+    sel.object = Math.max(0, Math.min(sel.object, G.objects.length - 1));
+    sel.rule = Math.max(0, Math.min(sel.rule, (G.rules || []).length - 1));
+    var s = G.sprites[sel.sprite];
+    sel.frame = s ? Math.max(0, Math.min(sel.frame, s.frames.length - 1)) : 0;
+  }
+
+  function updateHistoryButtons() {
+    $('undo').disabled = !past.length;
+    $('redo').disabled = !future.length;
+    $('undo').title = past.length ? 'undo ' + past[past.length - 1].label + ' (ctrl+Z)' : 'nothing to undo';
+    $('redo').title = future.length ? 'redo ' + future[future.length - 1].label + ' (ctrl+shift+Z)' : 'nothing to redo';
+  }
+
+  // markSaved exists so undo does not have to pretend nothing happened: the
+  // project on disk is behind again, and saving is how it catches up.
+  function markSaved() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 1200);
+  }
+
+  $('undo').addEventListener('click', undo);
+  $('redo').addEventListener('click', redo);
+
+  // ------------------------------------------------------------------ tools
+  //
+  // One set of tools serves both canvases. A level map and a sprite frame are
+  // both grids of characters — what differs is only what a character means and
+  // how big a cell is drawn — so a surface says how to read and write its
+  // rows, and every tool is written once against that.
+  var P = window.PaintOps;
+
+  var TOOLS = [
+    { id: 'pencil', key: 'b', label: 'pencil', hint: 'drag to draw' },
+    { id: 'line', key: 'l', label: 'line', hint: 'drag from one end to the other' },
+    { id: 'rect', key: 'r', label: 'box', hint: 'drag a box · hold shift to fill it' },
+    { id: 'ellipse', key: 'o', label: 'oval', hint: 'drag a box · hold shift to fill it' },
+    { id: 'fill', key: 'g', label: 'fill', hint: 'click an area to flood it' },
+    { id: 'pick', key: 'i', label: 'pick', hint: 'click to take what is already there' },
+    { id: 'select', key: 'm', label: 'select', hint: 'drag a region · drag inside it to move · ctrl+C, ctrl+V, delete' }
+  ];
+
+  var tool = 'pencil';
+  var preview = null;     // the shape under the cursor, not yet committed
+  var selection = null;   // { x0, y0, x1, y1 } in cells, on the surface named below
+  var selectionOn = '';
+  var clip = null;        // { rows, from } — what was copied, and from which surface
+  var floating = null;    // a selection picked up and being dragged
+
+  function toolById(id) {
+    for (var i = 0; i < TOOLS.length; i++) if (TOOLS[i].id === id) return TOOLS[i];
+    return TOOLS[0];
+  }
+
+  function setTool(id) {
+    tool = id;
+    dropFloating();
+    renderToolbars();
+    drawLevel();
+    drawSpriteEditor();
+  }
+
+  function renderToolbars() {
+    ['leveltools', 'spritetools'].forEach(function (where) {
+      var box = $(where);
+      if (!box) return;
+      box.innerHTML = '';
+      TOOLS.forEach(function (t) {
+        box.appendChild(el('button', {
+          class: 'tool' + (tool === t.id ? ' on' : ''),
+          text: t.label,
+          title: t.label + '  (' + t.key.toUpperCase() + ') — ' + t.hint,
+          onclick: function () { setTool(t.id); }
+        }));
+      });
+    });
+    var lvbox = $('leveltools');
+    if (lvbox) {
+      lvbox.appendChild(el('span', { class: 'toolgap' }));
+      lvbox.appendChild(el('button', {
+        class: 'tool', text: '▶ test',
+        title: 'play this level from its own start  (T)',
+        onclick: function () { playThisLevel(null); }
+      }));
+      lvbox.appendChild(el('button', {
+        class: 'tool', text: '▶ from here',
+        title: 'play this level starting where you last clicked on the map  (shift+T) — the game is not changed',
+        onclick: function () { playThisLevel(lastCell); }
+      }));
+    }
+
+    var t = toolById(tool);
+    // The cursor readout is appended to this text, and remembers it to put it
+    // back; a new tool means a new sentence to remember.
+    if ($('levelhint')) {
+      $('levelhint').textContent = t.label + ': ' + t.hint +
+        ' · right button erases · middle-drag or shift+drag scrolls';
+      delete $('levelhint').dataset.base;
+    }
+    if ($('spritehint')) {
+      $('spritehint').textContent = t.label + ': ' + t.hint + ' · right button erases';
+      delete $('spritehint').dataset.base;
+    }
+  }
+
+  // ------------------------------------------------------------- a surface
+  //
+  // A surface is everything a tool needs to know about the thing being drawn
+  // on: how to read its rows, how to put rows back, what a cell means, and how
+  // big a cell is on screen. The level editor and the sprite editor each
+  // describe themselves this way, and then share every tool below.
+  function levelSurface() {
+    var lv = level();
+    if (!lv) return null;
+    return {
+      name: 'level',
+      canvas: $('levelcanvas'),
+      rows: function () { return lv.map; },
+      put: function (rows) { lv.map = rows; },
+      cellSize: function () { return G.screen.tile * sel.zoom; },
+      paint: function () { return sel.tile; },
+      empty: '.',
+      w: lv.width, h: lv.height,
+      redraw: drawLevel,
+      // Picking on a level takes the tile under the cursor, and picking an
+      // object spawn selects that instead: both are "what is already here".
+      pick: function (x, y) {
+        var sp = spawnAt(lv, x, y);
+        if (sp >= 0) { sel.spawn = sp; sel.place = lv.spawns[sp].object; renderLevels(); return; }
+        var ch = P.at(lv.map, x, y);
+        if (ch && ch !== '.') { sel.place = null; sel.tile = ch; }
+        renderLevels();
+      }
+    };
+  }
+
+  function spriteSurface() {
+    var s = sprite();
+    if (!s) return null;
+    return {
+      name: 'sprite',
+      canvas: $('spritecanvas'),
+      rows: function () { return s.frames[sel.frame]; },
+      put: function (rows) { s.frames[sel.frame] = rows; },
+      cellSize: function () { return parseInt($('spritecanvas').dataset.zoom, 10) || 8; },
+      paint: function () { return sel.color.toString(16); },
+      empty: '.',
+      w: s.w, h: s.h,
+      redraw: drawSpriteEditor,
+      pick: function (x, y) {
+        var ch = P.at(s.frames[sel.frame], x, y);
+        var idx = parseInt(ch, 16);
+        if (!isNaN(idx)) { sel.color = idx; renderSprites(); }
+      }
+    };
+  }
+
+  function cellOf(surface, e) {
+    var canvas = surface.canvas;
+    var rect = canvas.getBoundingClientRect();
+    var size = surface.cellSize();
+    return {
+      x: Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / size),
+      y: Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / size)
+    };
+  }
+
+  function inside(box, x, y) {
+    return x >= Math.min(box.x0, box.x1) && x <= Math.max(box.x0, box.x1) &&
+      y >= Math.min(box.y0, box.y1) && y <= Math.max(box.y0, box.y1);
+  }
+
+  // drawOverlay paints what the tools want shown on top of a surface: the
+  // shape being dragged, and the edge of a selection. Both are drawn rather
+  // than written, so nothing is committed until the button comes up.
+  function drawOverlay(ctx, surface) {
+    var size = surface.cellSize();
+    if (preview && preview.on === surface.name) {
+      ctx.globalAlpha = 0.55;
+      preview.points.forEach(function (p) {
+        ctx.fillStyle = preview.color;
+        ctx.fillRect(p.x * size, p.y * size, size, size);
+      });
+      ctx.globalAlpha = 1;
+    }
+    if (selection && selectionOn === surface.name) {
+      var x = Math.min(selection.x0, selection.x1) * size;
+      var y = Math.min(selection.y0, selection.y1) * size;
+      var w = (Math.abs(selection.x1 - selection.x0) + 1) * size;
+      var h = (Math.abs(selection.y1 - selection.y0) + 1) * size;
+      ctx.save();
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = '#f2c94c';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.restore();
+    }
+  }
+
+  // The colour a preview is drawn in, so a shape can be seen before it lands.
+  function previewColor(surface, erase) {
+    if (erase) return '#ff6b8a';
+    if (surface.name === 'sprite') return G.palette[sel.color] || '#fff';
+    return 'rgba(242,201,76,.9)';
+  }
+
+  // dropFloating puts a picked-up selection back down wherever it now is.
+  function dropFloating() {
+    if (!floating) return;
+    var surface = floating.on === 'level' ? levelSurface() : spriteSurface();
+    if (surface) {
+      surface.put(P.write(surface.rows(), floating.rows, floating.x, floating.y, null));
+      surface.redraw();
+    }
+    floating = null;
+  }
+
+  // bindPaint wires one canvas to every tool. Which tool is running is decided
+  // on the way down and kept for the whole gesture: changing tool mid-drag
+  // would finish a shape nobody started.
+  function bindPaint(canvasId, surfaceFor) {
+    var canvas = $(canvasId);
+    var drag = null;
+
+    canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+    canvas.addEventListener('mousedown', function (e) {
+      if (!G) return;
+      var surface = surfaceFor();
+      if (!surface) return;
+
+      // Scrolling a map bigger than the window: the middle button, or shift,
+      // because a level worth building is wider than the screen.
+      if (e.button === 1 || (e.shiftKey && tool !== 'rect' && tool !== 'ellipse')) {
+        e.preventDefault();
+        startPanning(canvas, e);
+        return;
+      }
+      e.preventDefault();
+
+      var c = cellOf(surface, e);
+      var erase = e.button === 2;
+      var t = tool;
+
+      if (t === 'pick') { surface.pick(c.x, c.y); return; }
+
+      // Dragging a placed object moves it — but only while objects are what
+      // is being placed. With a tile in hand the pencil paints, always, even
+      // over an object: otherwise there is no way to lay ground under
+      // anything standing on it, which is most of a level.
+      if (surface.name === 'level' && t === 'pencil' && !erase && sel.place) {
+        var hit = spawnAt(level(), c.x, c.y);
+        if (hit >= 0) {
+          sel.spawn = hit;
+          change('move ' + (objectById(level().spawns[hit].object) || {}).id);
+          drag = { kind: 'spawn', index: hit, surface: surface };
+          renderLevels();
+          return;
+        }
+      }
+
+      if (t === 'select') {
+        if (selection && selectionOn === surface.name && inside(selection, c.x, c.y) && !erase) {
+          // Picking a selection up leaves a hole, which is what moving means.
+          change('move a region');
+          var lox = Math.min(selection.x0, selection.x1), loy = Math.min(selection.y0, selection.y1);
+          floating = {
+            on: surface.name,
+            rows: P.read(surface.rows(), selection.x0, selection.y0, selection.x1, selection.y1),
+            x: lox, y: loy
+          };
+          surface.put(P.clear(surface.rows(), selection.x0, selection.y0, selection.x1, selection.y1, surface.empty));
+          drag = { kind: 'float', grabX: c.x - lox, grabY: c.y - loy, surface: surface };
+          surface.redraw();
+          return;
+        }
+        dropFloating();
+        selection = { x0: c.x, y0: c.y, x1: c.x, y1: c.y };
+        selectionOn = surface.name;
+        drag = { kind: 'select', surface: surface };
+        surface.redraw();
+        return;
+      }
+
+      dropFloating();
+
+      if (t === 'fill') {
+        change('fill');
+        surface.put(P.fill(surface.rows(), c.x, c.y, erase ? surface.empty : surface.paint()));
+        surface.redraw();
+        markDirty(true);
+        return;
+      }
+
+      if (t === 'pencil') {
+        change('draw', true);
+        if (surface.name === 'level' && sel.place && !erase) {
+          placeSpawn(level(), sel.place, c.x, c.y);
+        } else if (surface.name === 'level' && sel.place && erase) {
+          eraseSpawn(level(), c.x, c.y);
+        } else {
+          surface.put(P.set(surface.rows(), c.x, c.y, erase ? surface.empty : surface.paint()));
+        }
+        drag = { kind: 'pencil', last: c, erase: erase, surface: surface };
+        surface.redraw();
+        markDirty(true);
+        return;
+      }
+
+      // Everything else is a shape: remember where it started and show it
+      // following the cursor until the button comes up.
+      drag = { kind: 'shape', tool: t, from: c, erase: erase, surface: surface };
+      preview = { on: surface.name, points: [c], color: previewColor(surface, erase) };
+      surface.redraw();
+    });
+
+    canvas.addEventListener('mousemove', function (e) {
+      if (!G) return;
+      var surface = surfaceFor();
+      if (!surface) return;
+      var c = cellOf(surface, e);
+      showCursorAt(surface, c);
+      if (!drag) return;
+
+      if (drag.kind === 'pencil') {
+        // Between two mouse events the cursor may have crossed several cells,
+        // so the gap is drawn in: a fast stroke is a line, not a dotted one.
+        var pts = P.line(drag.last.x, drag.last.y, c.x, c.y);
+        if (surface.name === 'level' && sel.place) {
+          pts.forEach(function (p) {
+            if (drag.erase) eraseSpawn(level(), p.x, p.y);
+            else if (p.x !== drag.last.x || p.y !== drag.last.y) placeSpawn(level(), sel.place, p.x, p.y);
+          });
+        } else {
+          surface.put(P.plot(surface.rows(), pts, drag.erase ? surface.empty : surface.paint()));
+        }
+        drag.last = c;
+        surface.redraw();
+        markDirty(true);
+        return;
+      }
+
+      if (drag.kind === 'spawn') {
+        var sp = level().spawns[drag.index];
+        if (sp && (sp.x !== c.x || sp.y !== c.y)) {
+          sp.x = Math.max(0, Math.min(c.x, level().width - 1));
+          sp.y = Math.max(0, Math.min(c.y, level().height - 1));
+          surface.redraw();
+          renderSpawnProps();
+          markDirty(true);
+        }
+        return;
+      }
+
+      if (drag.kind === 'select') {
+        selection.x1 = Math.max(0, Math.min(c.x, surface.w - 1));
+        selection.y1 = Math.max(0, Math.min(c.y, surface.h - 1));
+        surface.redraw();
+        return;
+      }
+
+      if (drag.kind === 'float' && floating) {
+        floating.x = c.x - drag.grabX;
+        floating.y = c.y - drag.grabY;
+        selection = {
+          x0: floating.x, y0: floating.y,
+          x1: floating.x + P.width(floating.rows) - 1,
+          y1: floating.y + P.height(floating.rows) - 1
+        };
+        surface.redraw();
+        return;
+      }
+
+      if (drag.kind === 'shape') {
+        preview = {
+          on: surface.name,
+          points: shapePoints(drag.tool, drag.from, c, e.shiftKey),
+          color: previewColor(surface, drag.erase)
+        };
+        surface.redraw();
+      }
+    });
+
+    window.addEventListener('mouseup', function (e) {
+      if (!drag) return;
+      var surface = drag.surface;
+      if (drag.kind === 'shape') {
+        var c = cellOf(surface, e);
+        var pts = shapePoints(drag.tool, drag.from, c, e.shiftKey);
+        change(drag.tool === 'line' ? 'a line' : drag.tool === 'rect' ? 'a box' : 'an oval');
+        surface.put(P.plot(surface.rows(), pts, drag.erase ? surface.empty : surface.paint()));
+        preview = null;
+        surface.redraw();
+        markDirty(true);
+      }
+      if (drag.kind === 'float') {
+        // The floating region stays floating until something else happens to
+        // it, so it can be nudged again without being cut out twice.
+        surface.redraw();
+        markDirty(true);
+      }
+      if (drag.kind === 'select' || drag.kind === 'spawn' || drag.kind === 'pencil') {
+        surface.redraw();
+      }
+      drag = null;
+    });
+
+    canvas.addEventListener('mouseleave', function () {
+      if (!drag) { preview = null; showCursorAt(null); }
+    });
+  }
+
+  function shapePoints(which, from, to, shift) {
+    if (which === 'line') return P.line(from.x, from.y, to.x, to.y);
+    if (which === 'rect') return P.rect(from.x, from.y, to.x, to.y, shift);
+    if (which === 'ellipse') return P.ellipse(from.x, from.y, to.x, to.y, shift);
+    return [to];
+  }
+
+  // Where the cursor is, in cells. Building a level means counting tiles —
+  // how wide a gap is, how high a ledge — and counting them by eye is the
+  // difference between a jump that works and one that does not.
+  var lastCell = { x: 2, y: 2 };
+
+  function showCursorAt(surface, c) {
+    if (surface && surface.name === 'level' && c &&
+        c.x >= 0 && c.y >= 0 && c.x < surface.w && c.y < surface.h) {
+      lastCell = { x: c.x, y: c.y };
+    }
+    var box = surface && surface.name === 'level' ? $('levelhint') : $('spritehint');
+    if (!box) return;
+    if (!box.dataset.base) box.dataset.base = box.textContent;
+    if (!surface || !c || c.x < 0 || c.y < 0 || c.x >= surface.w || c.y >= surface.h) {
+      box.textContent = box.dataset.base;
+      return;
+    }
+    var extra = '';
+    if (selection && selectionOn === surface.name) {
+      extra = ' · selection ' + (Math.abs(selection.x1 - selection.x0) + 1) +
+        '×' + (Math.abs(selection.y1 - selection.y0) + 1);
+    }
+    box.textContent = box.dataset.base + '  —  ' + c.x + ', ' + c.y + extra;
+  }
+
+  function startPanning(canvas, e) {
+    var wrap = canvas.parentNode;
+    var fromX = e.clientX, fromY = e.clientY;
+    var left = wrap.scrollLeft, top = wrap.scrollTop;
+    function move(ev) {
+      wrap.scrollLeft = left - (ev.clientX - fromX);
+      wrap.scrollTop = top - (ev.clientY - fromY);
+    }
+    function up() {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    }
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+
+  // ------------------------------------------------------- spawns on a map
+  //
+  // An object on a level is a spawn: which object, and where. They are a list
+  // rather than part of the map because two can share a tile and because each
+  // carries its own facing.
+  function spawnAt(lv, x, y) {
+    var list = lv.spawns || [];
+    // Last drawn is first picked: what is on top is what you meant to click.
+    for (var i = list.length - 1; i >= 0; i--) {
+      if (Math.round(list[i].x) === x && Math.round(list[i].y) === y) return i;
+    }
+    return -1;
+  }
+
+  function placeSpawn(lv, id, x, y) {
+    if (x < 0 || y < 0 || x >= lv.width || y >= lv.height) return;
+    lv.spawns = lv.spawns || [];
+    if (spawnAt(lv, x, y) >= 0) return;   // one per cell, or a drag leaves a pile
+    var o = objectById(id);
+    // A game can only have one player, and placing a second one silently is
+    // how a level ends up with two and starts at the wrong one.
+    if (o && o.kind === 'player') {
+      lv.spawns = lv.spawns.filter(function (sp) {
+        var other = objectById(sp.object);
+        return !other || other.kind !== 'player';
+      });
+    }
+    lv.spawns.push({ object: id, x: x, y: y, dir: 1 });
+    sel.spawn = lv.spawns.length - 1;
+    renderSpawnProps();
+  }
+
+  function eraseSpawn(lv, x, y) {
+    var hit = spawnAt(lv, x, y);
+    if (hit < 0) return;
+    lv.spawns.splice(hit, 1);
+    if (sel.spawn === hit) sel.spawn = -1;
+    renderSpawnProps();
+  }
+
   function renderAll() {
     if (!G) return;
+    renderToolbars();
+    updateHistoryButtons();
     renderLevels();
     renderSprites();
     renderObjects();
@@ -235,6 +813,7 @@
     api('/api/design', { method: 'POST', body: JSON.stringify({ prompt: prompt }) })
       .then(function (res) {
         G = res.game; NAME = res.name;
+        forgetHistory();
         sel.level = 0; sel.sprite = 0; sel.object = 0; sel.rule = 0;
         sel.tile = (G.levels[0] && G.levels[0].tiles[0] && G.levels[0].tiles[0].char) || '#';
         renderAll();
@@ -256,6 +835,7 @@
     if (!text) return;
     status('working…');
     logEntry('you', text, 'you');
+    change('ask: ' + text.slice(0, 30));
     api('/api/assist', {
       method: 'POST',
       body: JSON.stringify({ name: NAME, instruction: text, game: G })
@@ -303,7 +883,7 @@
     stopPlaying();
     var canvas = $('screen');
     var scale = Math.max(1, Math.min(3, Math.floor((window.innerWidth - 320) / G.screen.width)));
-    runtime = window.OliverEngine.start(canvas, G, {
+    runtime = window.OliverEngine.start(canvas, playableGame(), {
       skipTitle: true,
       scale: scale,
       level: $('playlevel').value || undefined
@@ -311,9 +891,58 @@
     canvas.focus();
   }
 
+  // --------------------------------------------------------- try it now
+  //
+  // Building a level by hand is a loop: move a ledge, see whether the jump
+  // works, move it again. Anything between those two halves is friction, so
+  // the level being edited can be played from the editor, and played from the
+  // exact spot being worked on.
+  //
+  // Testing from a spot does not move the player in the project. The engine is
+  // handed a copy with the player put where you asked, and the game on disk
+  // never hears about it: a test is a question, not an edit.
+  var testFrom = null;
+
+  function playThisLevel(from) {
+    if (!G) return;
+    var lv = level();
+    if (!lv) return;
+    testFrom = from || null;
+    $('playlevel').value = lv.id;
+    showTab('play');
+    Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
+      b.classList.toggle('on', b.dataset.tab === 'play');
+    });
+    startPlaying();
+    status(from ? 'testing ' + (lv.name || lv.id) + ' from ' + from.x + ', ' + from.y
+      : 'testing ' + (lv.name || lv.id));
+  }
+
+  // playableGame is the project as the engine should see it for this run.
+  function playableGame() {
+    if (!testFrom) return G;
+    var copy = JSON.parse(JSON.stringify(G));
+    var lv = null;
+    for (var i = 0; i < copy.levels.length; i++) {
+      if (copy.levels[i].id === level().id) lv = copy.levels[i];
+    }
+    if (!lv) return G;
+    var player = null;
+    for (var j = 0; j < copy.objects.length; j++) {
+      if (copy.objects[j].kind === 'player') player = copy.objects[j];
+    }
+    if (!player) return G;
+    lv.spawns = (lv.spawns || []).filter(function (sp) { return sp.object !== player.id; });
+    lv.spawns.push({ object: player.id, x: testFrom.x, y: testFrom.y, dir: 1 });
+    return copy;
+  }
+
   function stopPlaying() {
     if (runtime) { runtime.stop(); runtime = null; }
   }
+
+  // Choosing a level by hand is a fresh start, not a continuation of a test.
+  $('playlevel').addEventListener('change', function () { testFrom = null; startPlaying(); });
 
   $('restart').addEventListener('click', startPlaying);
 
@@ -327,7 +956,14 @@
     G.levels.forEach(function (l, i) {
       list.appendChild(el('li', {
         class: i === sel.level ? 'on' : '',
-        onclick: function () { sel.level = i; renderLevels(); drawLevel(); }
+        onclick: function () {
+          sel.level = i;
+          sel.spawn = -1;
+          selection = null;
+          dropFloating();
+          renderLevels();
+          drawLevel();
+        }
       }, [
         el('span', { text: l.name || l.id }),
         el('small', { text: l.width + '×' + l.height })
@@ -361,6 +997,8 @@
       }, [thumb(spriteById(o.sprite), 1), el('span', { text: o.name || o.id })]));
     });
 
+    renderTileDef();
+    renderSpawnProps();
     renderLevelProps();
   }
 
@@ -387,6 +1025,7 @@
 
   function resizeLevel(lv, w, h) {
     if (!w || !h || w < 4 || h < 4 || w > 400 || h > 400) return;
+    if (w === lv.width && h === lv.height) return;
     var rows = [];
     for (var y = 0; y < h; y++) {
       var old = lv.map[y] || '';
@@ -399,6 +1038,7 @@
   }
 
   function duplicateLevel() {
+    change('add a level');
     var copy = JSON.parse(JSON.stringify(level()));
     copy.id = 'level' + (G.levels.length + 1);
     copy.name = (copy.name || copy.id) + ' again';
@@ -411,6 +1051,7 @@
 
   function deleteLevel() {
     if (G.levels.length < 2) { status('a game needs at least one level', 'warn'); return; }
+    change('delete a level');
     var gone = G.levels.splice(sel.level, 1)[0];
     G.levels.forEach(function (l, i) {
       if (l.next === gone.id) l.next = (G.levels[i + 1] || {}).id || 'win';
@@ -421,6 +1062,7 @@
   }
 
   $('addlevel').addEventListener('click', duplicateLevel);
+  $('addtile').addEventListener('click', addTileDef);
 
   function drawLevel() {
     var lv = level();
@@ -448,13 +1090,35 @@
         }
       }
     }
-    (lv.spawns || []).forEach(function (sp) {
+    // A region picked up with the select tool rides above the map until it is
+    // put down, so it can be seen against what it is being moved onto.
+    if (floating && floating.on === 'level') {
+      var fdefs = defs;
+      for (var fy = 0; fy < floating.rows.length; fy++) {
+        for (var fx = 0; fx < floating.rows[fy].length; fx++) {
+          var fdef = fdefs[floating.rows[fy][fx]];
+          if (!fdef) continue;
+          drawSprite(ctx, spriteById(fdef.sprite), 0,
+            (floating.x + fx) * tile * z, (floating.y + fy) * tile * z, z);
+        }
+      }
+    }
+    (lv.spawns || []).forEach(function (sp, i) {
       var o = objectById(sp.object);
       if (!o) return;
       drawSprite(ctx, spriteById(o.sprite), 0, sp.x * tile * z, sp.y * tile * z, z);
       if (o.kind === 'player') {
         ctx.strokeStyle = '#f2c94c';
         ctx.strokeRect(sp.x * tile * z + 0.5, sp.y * tile * z + 0.5, tile * z - 1, tile * z - 1);
+      }
+      // Which object is selected has to be visible on the map, not only in a
+      // list: it is the one whose facing and patrol the side panel is editing.
+      if (i === sel.spawn) {
+        ctx.save();
+        ctx.strokeStyle = '#7ee0ff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(sp.x * tile * z - 1, sp.y * tile * z - 1, tile * z + 2, tile * z + 2);
+        ctx.restore();
       }
     });
     // A grid at the tile size, faint enough to read the level through.
@@ -463,48 +1127,10 @@
     for (var gx = 0; gx <= lv.width; gx++) { ctx.moveTo(gx * tile * z, 0); ctx.lineTo(gx * tile * z, canvas.height); }
     for (var gy = 0; gy <= lv.height; gy++) { ctx.moveTo(0, gy * tile * z); ctx.lineTo(canvas.width, gy * tile * z); }
     ctx.stroke();
+    drawOverlay(ctx, { name: 'level', cellSize: function () { return tile * z; } });
   }
 
-  (function bindLevelCanvas() {
-    var canvas = $('levelcanvas');
-    var painting = 0;
-    function cellOf(e) {
-      var rect = canvas.getBoundingClientRect();
-      var tile = G.screen.tile * sel.zoom;
-      return {
-        x: Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / tile),
-        y: Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / tile)
-      };
-    }
-    function paint(e, erase) {
-      var lv = level();
-      var c = cellOf(e);
-      if (c.x < 0 || c.y < 0 || c.x >= lv.width || c.y >= lv.height) return;
-      if (sel.place && !erase) {
-        lv.spawns = lv.spawns || [];
-        lv.spawns.push({ object: sel.place, x: c.x, y: c.y, dir: 1 });
-      } else if (sel.place && erase) {
-        lv.spawns = (lv.spawns || []).filter(function (sp) {
-          return Math.abs(sp.x - c.x) > 0.9 || Math.abs(sp.y - c.y) > 0.9;
-        });
-      } else {
-        var row = lv.map[c.y];
-        lv.map[c.y] = row.slice(0, c.x) + (erase ? '.' : sel.tile) + row.slice(c.x + 1);
-      }
-      drawLevel();
-      markDirty();
-    }
-    canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-    canvas.addEventListener('mousedown', function (e) {
-      if (!G) return;
-      painting = e.button === 2 ? 2 : 1;
-      paint(e, painting === 2);
-    });
-    canvas.addEventListener('mousemove', function (e) {
-      if (painting) paint(e, painting === 2);
-    });
-    window.addEventListener('mouseup', function () { painting = 0; });
-  })();
+  bindPaint('levelcanvas', levelSurface);
 
   // --------------------------------------------------------------- sprites
 
@@ -548,13 +1174,34 @@
     props.appendChild(field('fps', 'number', s.fps || 0, function (v) { s.fps = parseFloat(v) || 0; markDirty(true); }));
     props.appendChild(el('div', { class: 'row' }, [
       el('button', { text: 'clear', onclick: function () { clearFrame(); } }),
+      el('button', {
+        text: 'duplicate',
+        onclick: function () {
+          change('duplicate a sprite');
+          var copy = JSON.parse(JSON.stringify(s));
+          copy.id = uniqueSpriteId(s.id);
+          G.sprites.push(copy);
+          sel.sprite = G.sprites.length - 1;
+          sel.frame = 0;
+          renderSprites(); drawSpriteEditor(); markDirty();
+        }
+      }),
       el('button', { class: 'danger', text: 'delete', onclick: function () { deleteSprite(); } })
     ]));
+    renderPaletteEdit();
+    renderSpriteShapes();
+  }
+
+  function uniqueSpriteId(base) {
+    var n = 2;
+    while (spriteById(base + n)) n++;
+    return base + n;
   }
 
   function renameSprite(s, name) {
     name = (name || '').trim();
     if (!name || spriteById(name)) { status('that name is taken', 'warn'); return; }
+    if (name === s.id) return;
     var old = s.id;
     s.id = name;
     G.objects.forEach(function (o) { if (o.sprite === old) o.sprite = name; });
@@ -581,6 +1228,7 @@
   }
 
   function clearFrame() {
+    change('clear a frame');
     var s = sprite();
     s.frames[sel.frame] = s.frames[sel.frame].map(function (row) { return row.replace(/./g, '.'); });
     drawSpriteEditor(); markDirty(true);
@@ -590,12 +1238,14 @@
     var s = sprite();
     var used = G.objects.some(function (o) { return o.sprite === s.id; });
     if (used) { status('that sprite is in use by an object', 'warn'); return; }
+    change('delete a sprite');
     G.sprites.splice(sel.sprite, 1);
     sel.sprite = Math.max(0, sel.sprite - 1);
     renderSprites(); drawSpriteEditor(); markDirty(true);
   }
 
   $('addsprite').addEventListener('click', function () {
+    change('add a sprite');
     var size = G.screen.tile;
     var rows = [];
     for (var y = 0; y < size; y++) rows.push(new Array(size + 1).join('.'));
@@ -623,13 +1273,25 @@
         if ((x + y) % 2) ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
       }
     }
+    // Onion skin: the frame before this one, faintly, so an animation can be
+    // drawn against the pose it follows instead of from memory.
+    if (sel.onion && s.frames.length > 1) {
+      ctx.globalAlpha = 0.28;
+      drawSprite(ctx, s, (sel.frame + s.frames.length - 1) % s.frames.length, 0, 0, zoom);
+      ctx.globalAlpha = 1;
+    }
     drawSprite(ctx, s, sel.frame, 0, 0, zoom);
+    if (floating && floating.on === 'sprite') {
+      drawSprite(ctx, { w: P.width(floating.rows), h: P.height(floating.rows), frames: [floating.rows] },
+        0, floating.x * zoom, floating.y * zoom, zoom);
+    }
     ctx.strokeStyle = 'rgba(255,255,255,.07)';
     ctx.beginPath();
     for (var gx = 0; gx <= s.w; gx++) { ctx.moveTo(gx * zoom, 0); ctx.lineTo(gx * zoom, canvas.height); }
     for (var gy = 0; gy <= s.h; gy++) { ctx.moveTo(0, gy * zoom); ctx.lineTo(canvas.width, gy * zoom); }
     ctx.stroke();
     canvas.dataset.zoom = zoom;
+    drawOverlay(ctx, { name: 'sprite', cellSize: function () { return zoom; } });
     renderFrames();
   }
 
@@ -646,6 +1308,7 @@
     box.appendChild(el('button', {
       text: '+ frame',
       onclick: function () {
+        change('add a frame');
         s.frames.push(s.frames[sel.frame].slice());
         sel.frame = s.frames.length - 1;
         if (!s.fps) s.fps = 8;
@@ -656,6 +1319,7 @@
       box.appendChild(el('button', {
         class: 'danger', text: '− frame',
         onclick: function () {
+          change('delete a frame');
           s.frames.splice(sel.frame, 1);
           sel.frame = Math.max(0, sel.frame - 1);
           drawSpriteEditor(); markDirty(true);
@@ -664,37 +1328,462 @@
     }
   }
 
-  (function bindSpriteCanvas() {
-    var canvas = $('spritecanvas');
-    var drawing = 0;
-    function paint(e, erase) {
-      var s = sprite();
-      var zoom = parseInt(canvas.dataset.zoom, 10) || 8;
-      var rect = canvas.getBoundingClientRect();
-      var x = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / zoom);
-      var y = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / zoom);
-      if (x < 0 || y < 0 || x >= s.w || y >= s.h) return;
-      var row = s.frames[sel.frame][y];
-      var ch = erase ? '.' : sel.color.toString(16);
-      s.frames[sel.frame][y] = row.slice(0, x) + ch + row.slice(x + 1);
+  bindPaint('spritecanvas', spriteSurface);
+
+  // ------------------------------------------------------- tile definitions
+  //
+  // A tile kind is one character in a map row plus what that character means.
+  // Making them editable is what turns the level editor from "arrange what you
+  // were given" into "build what you want": a new kind of ground, a hazard
+  // that looks like yours, a door that needs the key you invented.
+  var TILEKINDS = ['solid', 'platform', 'hazard', 'ladder', 'water', 'exit',
+    'breakable', 'checkpoint', 'locked', 'door', 'empty'];
+
+  // Characters a map may use. Dot is empty and cannot be taken, and the rest
+  // are chosen to stay readable when a map is looked at as text.
+  var TILECHARS = '#=^%~xoTbLdBHWMNSCPRGKJZ0123456789abcefghijklmnpqrstuvwyz'.split('');
+
+  function freeTileChar(lv) {
+    var taken = {};
+    lv.tiles.forEach(function (t) { taken[t.char] = 1; });
+    for (var i = 0; i < TILECHARS.length; i++) {
+      if (!taken[TILECHARS[i]]) return TILECHARS[i];
+    }
+    return '';
+  }
+
+  function tileDef(lv, ch) {
+    for (var i = 0; i < lv.tiles.length; i++) if (lv.tiles[i].char === ch) return lv.tiles[i];
+    return null;
+  }
+
+  function renderTileDef() {
+    var box = $('tiledef');
+    if (!box) return;
+    box.innerHTML = '';
+    var lv = level();
+    if (!lv || sel.place) return;
+    var def = tileDef(lv, sel.tile);
+    if (!def) return;
+
+    box.appendChild(el('div', { class: 'listhead' }, [el('span', { text: 'this tile' })]));
+    box.appendChild(field('name', 'text', def.name || '', function (v) {
+      def.name = v; renderLevels(); markDirty();
+    }));
+    box.appendChild(select_('kind', TILEKINDS, def.kind || 'solid', function (v) {
+      def.kind = v; renderLevels(); markDirty(true);
+    }));
+    box.appendChild(select_('picture', G.sprites.map(function (s) { return s.id; }), def.sprite || '', function (v) {
+      def.sprite = v; renderLevels(); drawLevel(); markDirty(true);
+    }));
+    if (def.kind === 'door') {
+      box.appendChild(field('needs', 'text', def.needs || '', function (v) {
+        def.needs = v.trim(); markDirty(true);
+      }));
+    }
+    box.appendChild(el('div', { class: 'row' }, [
+      el('button', {
+        text: 'edit picture', title: 'open this tile’s sprite in the sprite editor',
+        onclick: function () { editSprite(def.sprite); }
+      }),
+      el('button', {
+        class: 'danger', text: 'delete',
+        title: 'remove this kind of tile, and clear it off the map',
+        onclick: function () { deleteTileDef(lv, def); }
+      })
+    ]));
+    var used = countChar(lv.map, def.char);
+    box.appendChild(el('p', { class: 'note', text: used + ' on this map · character "' + def.char + '"' }));
+  }
+
+  function countChar(rows, ch) {
+    var n = 0;
+    rows.forEach(function (row) {
+      for (var i = 0; i < row.length; i++) if (row[i] === ch) n++;
+    });
+    return n;
+  }
+
+  function addTileDef() {
+    var lv = level();
+    if (!lv) return;
+    var ch = freeTileChar(lv);
+    if (!ch) { status('this level has as many kinds of tile as a map can hold', 'warn'); return; }
+    change('add a tile');
+    lv.tiles.push({
+      char: ch, kind: 'solid', name: 'tile ' + (lv.tiles.length + 1),
+      sprite: (G.sprites[0] || {}).id || ''
+    });
+    sel.place = null;
+    sel.tile = ch;
+    renderLevels();
+    markDirty(true);
+  }
+
+  function deleteTileDef(lv, def) {
+    if (lv.tiles.length < 2) { status('a level needs at least one kind of tile', 'warn'); return; }
+    change('delete a tile');
+    lv.map = P.replace(lv.map, def.char, '.');
+    lv.tiles = lv.tiles.filter(function (t) { return t !== def; });
+    sel.tile = lv.tiles[0].char;
+    renderLevels();
+    drawLevel();
+    markDirty(true);
+  }
+
+  // editSprite jumps to the sprite editor with a given sprite open. Going
+  // looking for it in a list of thirty is the sort of small friction that
+  // stops people changing things they should be changing.
+  function editSprite(id) {
+    for (var i = 0; i < G.sprites.length; i++) {
+      if (G.sprites[i].id === id) {
+        sel.sprite = i;
+        sel.frame = 0;
+        showTab('sprites');
+        renderSprites();
+        drawSpriteEditor();
+        return;
+      }
+    }
+    status('that tile has no picture yet — pick one first', 'warn');
+  }
+
+  function showTab(name) {
+    Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
+      b.classList.toggle('on', b.dataset.tab === name);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.tabpage'), function (page) {
+      page.hidden = page.id !== 'tab-' + name;
+    });
+    if (name !== 'play') stopPlaying();
+  }
+
+  // -------------------------------------------------------- a placed object
+  //
+  // Placing an object is half the job; which way it faces and how far it walks
+  // is the other half, and until now there was nowhere to say either.
+  function renderSpawnProps() {
+    var box = $('spawnprops');
+    if (!box) return;
+    box.innerHTML = '';
+    var lv = level();
+    if (!lv || sel.spawn < 0 || !lv.spawns || !lv.spawns[sel.spawn]) return;
+    var sp = lv.spawns[sel.spawn];
+    var o = objectById(sp.object);
+
+    box.appendChild(el('div', { class: 'listhead' }, [
+      el('span', { text: 'placed: ' + (o ? (o.name || o.id) : sp.object) })
+    ]));
+    box.appendChild(field('x', 'number', sp.x, function (v) {
+      sp.x = clampNum(v, 0, lv.width - 1); drawLevel(); markDirty(true);
+    }));
+    box.appendChild(field('y', 'number', sp.y, function (v) {
+      sp.y = clampNum(v, 0, lv.height - 1); drawLevel(); markDirty(true);
+    }));
+    box.appendChild(select_('facing', ['right', 'left'], sp.dir < 0 ? 'left' : 'right', function (v) {
+      sp.dir = v === 'left' ? -1 : 1; markDirty(true);
+    }));
+    box.appendChild(el('div', { class: 'row' }, [
+      el('button', { text: 'edit this kind', onclick: function () { editObject(sp.object); } }),
+      el('button', {
+        class: 'danger', text: 'remove',
+        onclick: function () {
+          change('remove an object');
+          lv.spawns.splice(sel.spawn, 1);
+          sel.spawn = -1;
+          renderSpawnProps(); drawLevel(); markDirty(true);
+        }
+      })
+    ]));
+  }
+
+  function clampNum(v, lo, hi) {
+    var n = parseFloat(v);
+    if (isNaN(n)) return lo;
+    return Math.max(lo, Math.min(hi, n));
+  }
+
+  function editObject(id) {
+    for (var i = 0; i < G.objects.length; i++) {
+      if (G.objects[i].id === id) {
+        sel.object = i;
+        showTab('objects');
+        renderObjects();
+        return;
+      }
+    }
+  }
+
+  // ------------------------------------------------------------- the palette
+  //
+  // Every colour in the game comes from this list, and a sprite stores an
+  // index into it rather than a colour. Changing one entry repaints everything
+  // drawn in it at once, which is the whole reason it works this way.
+  function renderPaletteEdit() {
+    var box = $('paletteedit');
+    if (!box) return;
+    box.innerHTML = '';
+    var i = sel.color;
+    var current = G.palette[i] || '#000000';
+    box.appendChild(el('div', { class: 'listhead' }, [el('span', { text: 'colour ' + i.toString(16) })]));
+    box.appendChild(field('colour', 'color', current, function (v) {
+      G.palette[i] = v;
+      renderSprites(); drawSpriteEditor(); drawLevel(); markDirty(true);
+    }));
+    box.appendChild(el('p', {
+      class: 'note',
+      text: 'Every pixel drawn in this colour changes with it, everywhere in the game.'
+    }));
+    if (G.palette.length < 16) {
+      box.appendChild(el('div', { class: 'row' }, [
+        el('button', {
+          text: '+ colour',
+          onclick: function () {
+            change('add a colour');
+            G.palette.push('#ffffff');
+            sel.color = G.palette.length - 1;
+            renderSprites(); markDirty(true);
+          }
+        })
+      ]));
+    }
+  }
+
+  // ---------------------------------------------------------- sprite shapes
+  //
+  // Turning, flipping and nudging a drawing. Every one of these is minutes of
+  // clicking done by hand, and each is a single pass over the rows.
+  function renderSpriteShapes() {
+    var box = $('spriteshapes');
+    if (!box) return;
+    box.innerHTML = '';
+    var s = sprite();
+    if (!s) return;
+
+    function act(label, title, fn) {
+      box.appendChild(el('button', { class: 'tool', text: label, title: title, onclick: fn }));
+    }
+    function onFrame(label, fn) {
+      change(label);
+      s.frames[sel.frame] = fn(s.frames[sel.frame]);
+      drawSpriteEditor(); markDirty(true);
+    }
+
+    act('flip ↔', 'mirror this frame left to right', function () {
+      onFrame('flip a frame', P.flipH);
+    });
+    act('flip ↕', 'mirror this frame top to bottom', function () {
+      onFrame('flip a frame', P.flipV);
+    });
+    act('turn ⟳', 'rotate this frame a quarter turn', function () {
+      var rows = P.rotate(s.frames[sel.frame]);
+      change('turn a frame');
+      if (P.width(rows) !== s.w || P.height(rows) !== s.h) {
+        // A rotation of a non-square sprite changes its shape, and every frame
+        // has to keep the same shape as the rest.
+        s.frames = s.frames.map(function (f, i) {
+          return i === sel.frame ? rows : P.resize(P.rotate(f), P.width(rows), P.height(rows), '.');
+        });
+        s.w = P.width(rows);
+        s.h = P.height(rows);
+      } else {
+        s.frames[sel.frame] = rows;
+      }
+      renderSprites(); drawSpriteEditor(); markDirty(true);
+    });
+    ['←', '→', '↑', '↓'].forEach(function (arrow, i) {
+      var d = [[-1, 0], [1, 0], [0, -1], [0, 1]][i];
+      act(arrow, 'nudge this frame one pixel (hold shift to wrap it round)', function (e) {
+        onFrame('nudge a frame', function (rows) {
+          return P.shift(rows, d[0], d[1], '.', e.shiftKey);
+        });
+      });
+    });
+    act('outline', 'draw a border round everything in this frame', function () {
+      onFrame('outline a frame', function (rows) {
+        return P.plot(rows, P.outline(rows, '.'), sel.color.toString(16));
+      });
+    });
+    act('onion', 'show the frame before this one faintly underneath', function () {
+      sel.onion = !sel.onion;
+      renderSpriteShapes();
       drawSpriteEditor();
+    });
+    if (sel.onion) box.lastChild.classList.add('on');
+    act('copy ▸', 'copy this frame over the next one', function () {
+      if (s.frames.length < 2) { status('there is only one frame', 'warn'); return; }
+      change('copy a frame');
+      s.frames[(sel.frame + 1) % s.frames.length] = s.frames[sel.frame].slice();
+      drawSpriteEditor(); markDirty(true);
+    });
+  }
+
+  // ------------------------------------------------------ copy, cut, paste
+  //
+  // A selection can be copied between the two editors, because both hold the
+  // same kind of grid. What the characters mean changes, so pasting a sprite
+  // into a level would be nonsense — and is refused rather than silently
+  // making a map out of colour numbers.
+  function activeSurface() {
+    if (!$('tab-levels').hidden) return levelSurface();
+    if (!$('tab-sprites').hidden) return spriteSurface();
+    return null;
+  }
+
+  function copySelection(cut) {
+    var surface = activeSurface();
+    if (!surface || !selection || selectionOn !== surface.name) {
+      status('select a region first (the select tool, or press M)', 'warn');
+      return;
+    }
+    clip = {
+      from: surface.name,
+      rows: P.read(surface.rows(), selection.x0, selection.y0, selection.x1, selection.y1)
+    };
+    if (cut) {
+      change('cut');
+      surface.put(P.clear(surface.rows(), selection.x0, selection.y0, selection.x1, selection.y1, surface.empty));
+      surface.redraw();
       markDirty(true);
     }
-    canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-    canvas.addEventListener('mousedown', function (e) {
-      if (!G) return;
-      drawing = e.button === 2 ? 2 : 1;
-      paint(e, drawing === 2);
-    });
-    canvas.addEventListener('mousemove', function (e) { if (drawing) paint(e, drawing === 2); });
-    window.addEventListener('mouseup', function () { drawing = 0; });
-  })();
+    status((cut ? 'cut ' : 'copied ') + P.width(clip.rows) + '×' + P.height(clip.rows));
+  }
+
+  function pasteClip() {
+    var surface = activeSurface();
+    if (!surface) return;
+    if (!clip) { status('nothing copied yet', 'warn'); return; }
+    if (clip.from !== surface.name) {
+      status('that was copied from the ' + clip.from + ' editor, where the characters mean something else', 'warn');
+      return;
+    }
+    change('paste');
+    // Paste lands where the selection is, or at the corner when there is none,
+    // and becomes the new selection so it can be dragged into place.
+    var x = selection && selectionOn === surface.name ? Math.min(selection.x0, selection.x1) : 0;
+    var y = selection && selectionOn === surface.name ? Math.min(selection.y0, selection.y1) : 0;
+    surface.put(P.write(surface.rows(), clip.rows, x, y, null));
+    selection = { x0: x, y0: y, x1: x + P.width(clip.rows) - 1, y1: y + P.height(clip.rows) - 1 };
+    selectionOn = surface.name;
+    surface.redraw();
+    markDirty(true);
+  }
+
+  function deleteSelection() {
+    var surface = activeSurface();
+    if (!surface || !selection || selectionOn !== surface.name) return;
+    change('clear a region');
+    surface.put(P.clear(surface.rows(), selection.x0, selection.y0, selection.x1, selection.y1, surface.empty));
+    // On a level, clearing a region takes the objects standing in it too:
+    // leaving them floating over cleared ground is never what was meant.
+    if (surface.name === 'level') {
+      var lv = level();
+      lv.spawns = (lv.spawns || []).filter(function (sp) {
+        return !inside(selection, Math.round(sp.x), Math.round(sp.y));
+      });
+      sel.spawn = -1;
+      renderSpawnProps();
+    }
+    surface.redraw();
+    markDirty(true);
+  }
+
+  function selectAll() {
+    var surface = activeSurface();
+    if (!surface) return;
+    dropFloating();
+    selection = { x0: 0, y0: 0, x1: surface.w - 1, y1: surface.h - 1 };
+    selectionOn = surface.name;
+    setTool('select');
+    surface.redraw();
+  }
+
+  // ---------------------------------------------------------------- keys
+  //
+  // Everything here has a button somewhere; these are for the hand that is not
+  // on the mouse. They are deliberately the keys other pixel editors use, so
+  // nobody has to learn a new set for this one.
+  document.addEventListener('keydown', function (e) {
+    if (!G) return;
+    var t = e.target;
+    // Never steal a key from something being typed into.
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+
+    var mod = e.ctrlKey || e.metaKey;
+    if (mod) {
+      var k = e.key.toLowerCase();
+      if (k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+      if (k === 'y') { e.preventDefault(); redo(); return; }
+      if (k === 'c') { e.preventDefault(); copySelection(false); return; }
+      if (k === 'x') { e.preventDefault(); copySelection(true); return; }
+      if (k === 'v') { e.preventDefault(); pasteClip(); return; }
+      if (k === 'a') { e.preventDefault(); selectAll(); return; }
+      if (k === 's') { e.preventDefault(); save(); return; }
+      return;
+    }
+
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (selection) { e.preventDefault(); deleteSelection(); }
+      return;
+    }
+    if (e.key === 'Escape') {
+      dropFloating();
+      selection = null;
+      sel.spawn = -1;
+      preview = null;
+      drawLevel(); drawSpriteEditor(); renderSpawnProps();
+      return;
+    }
+
+    if (e.key.toLowerCase() === 't' && !$('tab-levels').hidden) {
+      playThisLevel(e.shiftKey ? lastCell : null);
+      return;
+    }
+
+    // A tool by its letter.
+    for (var i = 0; i < TOOLS.length; i++) {
+      if (e.key.toLowerCase() === TOOLS[i].key) { setTool(TOOLS[i].id); return; }
+    }
+
+    // Square brackets zoom the level, which is how you go from placing a tile
+    // to seeing whether a jump looks possible.
+    if (!$('tab-levels').hidden) {
+      if (e.key === '[') { sel.zoom = Math.max(1, sel.zoom - 1); renderLevelProps(); drawLevel(); return; }
+      if (e.key === ']') { sel.zoom = Math.min(6, sel.zoom + 1); renderLevelProps(); drawLevel(); return; }
+    }
+
+    // Numbers pick a colour while drawing, or a tile while building.
+    if (/^[0-9a-f]$/.test(e.key)) {
+      if (!$('tab-sprites').hidden) {
+        var idx = parseInt(e.key, 16);
+        if (idx < G.palette.length) { sel.color = idx; renderSprites(); }
+      } else if (!$('tab-levels').hidden) {
+        var lv = level();
+        var n = parseInt(e.key, 16);
+        if (lv && lv.tiles[n]) { sel.place = null; sel.tile = lv.tiles[n].char; renderLevels(); }
+      }
+      return;
+    }
+
+    // Comma and full stop step through the frames of an animation.
+    if (!$('tab-sprites').hidden && (e.key === ',' || e.key === '.')) {
+      var s = sprite();
+      if (!s) return;
+      sel.frame = (sel.frame + (e.key === '.' ? 1 : s.frames.length - 1)) % s.frames.length;
+      drawSpriteEditor();
+    }
+  });
 
   // --------------------------------------------------------------- widgets
 
+  // Every panel in the studio is built from these three, which is why undo is
+  // recorded here rather than at each of the hundred places that change
+  // something. A field cannot be edited without the state before it being
+  // kept, so there is no way to add a setting that quietly is not undoable.
   function field(label, type, value, onchange) {
     var input = el('input', { type: type, value: value == null ? '' : value });
     input.addEventListener('change', function () {
+      change('change ' + label, type === 'color' || type === 'range');
       onchange(type === 'checkbox' ? input.checked : input.value);
     });
     if (type === 'checkbox') input.checked = !!value;
@@ -704,7 +1793,10 @@
   function check(label, value, onchange) {
     var input = el('input', { type: 'checkbox' });
     input.checked = !!value;
-    input.addEventListener('change', function () { onchange(input.checked); });
+    input.addEventListener('change', function () {
+      change('change ' + label);
+      onchange(input.checked);
+    });
     return el('div', { class: 'field' }, [el('label', { text: label }), input]);
   }
 
@@ -713,7 +1805,10 @@
     options.forEach(function (o) {
       s.appendChild(el('option', { value: o, text: o, selected: o === value }));
     });
-    s.addEventListener('change', function () { onchange(s.value); });
+    s.addEventListener('change', function () {
+      change('change ' + label);
+      onchange(s.value);
+    });
     return el('div', { class: 'field' }, [el('label', { text: label }), s]);
   }
 
@@ -906,6 +2001,33 @@
 
   // -------------------------------------------------------------- settings
 
+  // Every shortcut the editor has, written down where it can be found. A key
+  // nobody knows about is the same as a key that does not exist.
+  var SHORTCUTS = [
+    ['B  L  R  O  G  I  M', 'pencil · line · box · oval · fill · pick · select'],
+    ['shift while dragging', 'fill the box or oval being drawn'],
+    ['right button', 'erase with whatever tool is in hand'],
+    ['middle-drag, shift+drag', 'scroll a map wider than the window'],
+    ['ctrl+Z · ctrl+shift+Z', 'undo · redo, over anything in the editor'],
+    ['ctrl+C · ctrl+X · ctrl+V', 'copy · cut · paste a selected region'],
+    ['ctrl+A · delete · escape', 'select everything · clear it · drop the selection'],
+    ['0–9, a–f', 'a colour while drawing, a tile while building'],
+    ['[  ]', 'zoom the level out and in'],
+    [',  .', 'step back and forward through animation frames'],
+    ['T · shift+T', 'test this level · test it from where the cursor is'],
+    ['ctrl+S', 'save now, rather than waiting for the studio to do it']
+  ];
+
+  function renderShortcuts(form) {
+    form.appendChild(el('h3', { text: 'keys' }));
+    var table = el('div', { class: 'keys' });
+    SHORTCUTS.forEach(function (row) {
+      table.appendChild(el('kbd', { text: row[0] }));
+      table.appendChild(el('span', { text: row[1] }));
+    });
+    form.appendChild(table);
+  }
+
   function renderSettings() {
     var form = $('settingsform');
     form.innerHTML = '';
@@ -951,6 +2073,7 @@
       palette.appendChild(input);
     });
     form.appendChild(palette);
+    renderShortcuts(form);
   }
 
   // ------------------------------------------------------------------ boot
