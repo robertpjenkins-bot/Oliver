@@ -269,6 +269,12 @@ them without rebuilding its environment.
 
 [umu-launcher]: https://github.com/Open-Wine-Components/umu-launcher
 
+## Ollie OS
+
+[`os/`](os/README.md) builds Ollie OS, a bootable desktop built around Oliver.
+It is sized for a 32 GB drive, ready for Steam, and double-clicking an `.exe`
+runs it.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).

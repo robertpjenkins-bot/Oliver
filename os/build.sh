@@ -1,0 +1,146 @@
+#!/bin/bash
+# Build the Ollie OS ISO.
+#
+# Runs as root inside an Arch Linux container (see .github/workflows/os-iso.yml):
+#
+#   docker run --rm --privileged -v "$PWD:/src" -w /src archlinux:latest bash os/build.sh
+#
+# The ISO and its checksum land in os/out/.
+#
+# The profile starts from archiso's own "releng" profile for the boot loader
+# configuration, which tracks the installed archiso version, and layers
+# os/profile on top for everything that makes the system Ollie OS.
+set -euo pipefail
+
+repo="$(cd "$(dirname "$0")/.." && pwd)"
+os="$repo/os"
+out="$os/out"
+work=/tmp/ollie-work
+profile=/tmp/ollie-profile
+localrepo=/tmp/ollie-repo
+
+step() { printf '\n\e[1;36m==> %s\e[0m\n' "$*"; }
+# Package lists: one name per line, # starts a comment.
+list() { sed -e 's/#.*//' -e 's/[[:space:]]//g' -e '/^$/d' "$1"; }
+
+step "Preparing the build container"
+# The container image strips man pages and translations from everything it
+# installs; the ISO must not inherit that.
+sed -i '/^NoExtract/d' /etc/pacman.conf
+sed -i '/^#\[multilib\]/,/^#Include/ s/^#//' /etc/pacman.conf
+pacman-key --init >/dev/null
+pacman -Sy --noconfirm --needed archlinux-keyring
+pacman -Su --noconfirm
+pacman -S --noconfirm --needed archiso base-devel git go librsvg sudo
+
+git config --global --add safe.directory "$repo"
+version="$(git -C "$repo" describe --tags --always --dirty 2>/dev/null || echo dev)"
+
+step "Assembling the profile"
+rm -rf "$profile" "$work"
+cp -a /usr/share/archiso/configs/releng "$profile"
+rm -rf /tmp/releng-airootfs
+mv "$profile/airootfs" /tmp/releng-airootfs
+mkdir -p "$profile/airootfs"
+# Ollie OS ships its own live initramfs hooks (os/profile/airootfs/etc/
+# mkinitcpio.conf.d); of releng's root filesystem it only keeps a kernel
+# preset, in archiso versions that still provide one.
+if [[ -f /tmp/releng-airootfs/etc/mkinitcpio.d/linux.preset ]]; then
+    install -D -m 0644 /tmp/releng-airootfs/etc/mkinitcpio.d/linux.preset \
+        "$profile/airootfs/etc/mkinitcpio.d/linux.preset"
+fi
+rm -rf /tmp/releng-airootfs
+cp -a "$os/profile/airootfs/." "$profile/airootfs/"
+
+# Name the ISO and boot menus Ollie OS.
+sed -i \
+    -e 's/^iso_name=.*/iso_name="ollie-os"/' \
+    -e 's/^iso_label="ARCH_/iso_label="OLLIE_/' \
+    -e 's|^iso_publisher=.*|iso_publisher="Ollie OS"|' \
+    -e 's|^iso_application=.*|iso_application="Ollie OS live and installer"|' \
+    "$profile/profiledef.sh"
+# releng's permission list names files that Ollie OS leaves out.
+sed -i '/^file_permissions=(/,/^)/d' "$profile/profiledef.sh"
+cat >>"$profile/profiledef.sh" <<'EOF'
+file_permissions=(
+  ["/etc/sudoers.d"]="0:0:750"
+  ["/etc/sudoers.d/10-wheel"]="0:0:440"
+  ["/usr/local/bin/oliver"]="0:0:755"
+  ["/usr/local/bin/ollie-install"]="0:0:755"
+  ["/usr/local/bin/ollie-write"]="0:0:755"
+  ["/usr/local/bin/ollie-add-to-bar"]="0:0:755"
+  ["/usr/local/bin/ollie-live-setup"]="0:0:755"
+)
+EOF
+find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true
+grep -rlZ 'Arch Linux' "$profile/efiboot" "$profile/syslinux" "$profile/grub" 2>/dev/null |
+    xargs -0r sed -i -e 's/Arch Linux install medium/Ollie OS/g' -e 's/Arch Linux/Ollie OS/g'
+
+step "Building Oliver $version"
+(cd "$repo" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$version" \
+    -o "$profile/airootfs/usr/local/bin/oliver" ./cmd/oliver)
+install -D -m 0644 "$repo/packaging/oliver.desktop" "$profile/airootfs/usr/share/applications/oliver.desktop"
+install -D -m 0644 "$repo/packaging/oliver.svg" "$profile/airootfs/usr/share/icons/hicolor/scalable/apps/oliver.svg"
+install -D -m 0755 "$os/ollie-write" "$profile/airootfs/usr/local/bin/ollie-write"
+
+step "Drawing the logo and wallpaper"
+install -D -m 0644 "$os/art/ollie-os.svg" "$profile/airootfs/usr/share/icons/hicolor/scalable/apps/ollie-os.svg"
+images="$profile/airootfs/usr/share/wallpapers/OllieOS/contents/images"
+mkdir -p "$images"
+for size in 1280x720 1920x1080 2560x1440 3840x2160; do
+    rsvg-convert -w "${size%x*}" -h "${size#*x}" -o "$images/$size.png" "$os/art/wallpaper.svg"
+done
+# The BIOS boot menu background; syslinux wants exactly 640x480.
+rsvg-convert -w 640 -h 480 -o "$profile/syslinux/splash.png" "$os/art/splash.svg"
+
+step "Building AUR packages: $(list "$os/profile/aur-packages.txt" | tr '\n' ' ')"
+id builder &>/dev/null || useradd -m builder
+echo 'builder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/builder
+rm -rf "$localrepo"
+install -d -o builder "$localrepo"
+while read -r pkg; do
+    rm -rf "/home/builder/$pkg"
+    sudo -u builder git clone --depth 1 "https://aur.archlinux.org/$pkg.git" "/home/builder/$pkg"
+    (cd "/home/builder/$pkg" && sudo -u builder PKGEXT=.pkg.tar.zst PKGDEST="$localrepo" \
+        makepkg --syncdeps --noconfirm --needed)
+    rm -rf "/home/builder/$pkg"
+done < <(list "$os/profile/aur-packages.txt")
+repo-add "$localrepo/ollie-local.db.tar.gz" "$localrepo"/*.pkg.tar.zst
+
+step "Writing package lists and pacman configuration"
+{
+    list "$os/profile/packages.x86_64"
+    while read -r pkg; do
+        if pacman -Si "$pkg" &>/dev/null; then
+            echo "$pkg"
+        else
+            echo "note: optional package $pkg is not in the repositories, leaving it out" >&2
+        fi
+    done < <(list "$os/profile/packages-optional.x86_64")
+    list "$os/profile/aur-packages.txt"
+} | sort -u >"$profile/packages.x86_64"
+
+# The installed system gets the container's pacman setup (with multilib) and
+# its working mirror list; the build additionally sees the local AUR repo.
+install -D -m 0644 /etc/pacman.conf "$profile/airootfs/etc/pacman.conf"
+install -D -m 0644 /etc/pacman.d/mirrorlist "$profile/airootfs/etc/pacman.d/mirrorlist"
+cp /etc/pacman.conf "$profile/pacman.conf"
+cat >>"$profile/pacman.conf" <<EOF
+
+[ollie-local]
+SigLevel = Optional TrustAll
+Server = file://$localrepo
+EOF
+
+step "Building the ISO"
+mkdir -p "$out"
+rm -f "$out"/ollie-os-*.iso "$out"/ollie-os-*.iso.sha256
+mkarchiso -v -w "$work" -o "$out" "$profile"
+rm -rf "$work"
+
+cd "$out"
+for iso in ollie-os-*.iso; do
+    sha256sum "$iso" >"$iso.sha256"
+done
+step "Done"
+ls -lh "$out"

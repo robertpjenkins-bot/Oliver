@@ -1,0 +1,174 @@
+#!/bin/bash
+# Install Ollie OS from the live USB onto a drive.
+#
+# The installed system takes 25 GB: a 512 MB boot partition and a 24.5 GB
+# compressed btrfs partition. Anything left on a bigger drive (about 4 GB on a
+# "29 GB" / 32 GB stick) stays free and unpartitioned.
+#
+# Run from the "Install Ollie OS" icon, or: sudo ollie-install
+set -euo pipefail
+
+readonly BOOT_SIZE=512M
+readonly ROOT_SIZE=24.5G
+readonly NEED_BYTES=$((25 * 1024 * 1024 * 1024 + 64 * 1024 * 1024))
+readonly SOURCE=/run/archiso/airootfs
+readonly BOOTMNT=/run/archiso/bootmnt
+readonly TARGET=/mnt/ollie
+
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' reset=$'\e[0m'
+say() { printf '%s==>%s %s\n' "$teal$bold" "$reset" "$*"; }
+die() {
+    printf '%sError:%s %s\n' "$red$bold" "$reset" "$*" >&2
+    exit 1
+}
+
+cleanup() {
+    if mountpoint -q "$TARGET"; then
+        umount -R "$TARGET" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
+[[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
+[[ -d "$SOURCE/usr" ]] || die "this only works when started from the Ollie OS live USB."
+
+# The drive the live USB itself is on, so it is never offered as a target.
+live_disk=""
+# An ISO written to a USB stick is mounted from the whole disk (/dev/sdb), a
+# partitioned one from a partition (/dev/sdb1); walk up to the disk either way.
+if src="$(findmnt -no SOURCE "$BOOTMNT" 2>/dev/null)"; then
+    live_disk="$(lsblk -sno NAME,TYPE "$src" 2>/dev/null |
+        awk '$2 == "disk" {gsub(/[^A-Za-z0-9]/, "", $1); print $1; exit}')"
+fi
+
+echo
+printf '%s  Ollie OS installer%s\n\n' "$bold" "$reset"
+say "Drives you can install onto (needs at least 25.1 GB):"
+echo
+
+declare -a disks=()
+while read -r name type; do
+    [[ "$type" == disk ]] || continue
+    [[ "$name" == "$live_disk" ]] && continue
+    case "$name" in loop* | zram* | sr* | ram*) continue ;; esac
+    bytes="$(lsblk -bdno SIZE "/dev/$name")"
+    ((bytes >= NEED_BYTES)) || continue
+    disks+=("$name")
+    printf '  %d) /dev/%-10s %8s  %-5s %s\n' "${#disks[@]}" "$name" \
+        "$(lsblk -dno SIZE "/dev/$name")" "$(lsblk -dno TRAN "/dev/$name")" "$(lsblk -dno MODEL "/dev/$name")"
+done < <(lsblk -dnro NAME,TYPE)
+
+((${#disks[@]} > 0)) || die "no drive of at least 25.1 GB found (the live USB itself is not listed)."
+echo
+read -rp "Install onto which drive? [1-${#disks[@]}] " pick
+[[ "$pick" =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#disks[@]})) || die "no such drive."
+disk="/dev/${disks[pick - 1]}"
+
+echo
+lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS "$disk"
+echo
+printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$disk" "$reset"
+read -rp "Type ERASE to continue: " answer
+[[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+
+echo
+read -rp "Your name for logging in (lowercase, e.g. alex): " username
+[[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "use lowercase letters, digits, - and _ only."
+while true; do
+    read -rsp "Password: " password
+    echo
+    read -rsp "Password again: " password2
+    echo
+    [[ -n "$password" && "$password" == "$password2" ]] && break
+    echo "The passwords were empty or did not match, try again."
+done
+read -rp "Computer name [ollie]: " hostname
+hostname="${hostname:-ollie}"
+[[ "$hostname" =~ ^[A-Za-z0-9-]{1,63}$ ]] || die "the computer name may only use letters, digits and -."
+read -rp "Time zone, e.g. America/New_York or Europe/London [UTC]: " timezone
+timezone="${timezone:-UTC}"
+[[ -f "/usr/share/zoneinfo/$timezone" ]] || die "unknown time zone '$timezone'."
+
+echo
+say "Partitioning $disk"
+for part in $(lsblk -lnpo NAME "$disk" | tail -n +2); do
+    umount "$part" 2>/dev/null || true
+    swapoff "$part" 2>/dev/null || true
+done
+wipefs -af "$disk" >/dev/null
+sgdisk --zap-all "$disk" >/dev/null
+sgdisk -n "1:0:+$BOOT_SIZE" -t 1:ef00 -c 1:OLLIE_BOOT \
+    -n "2:0:+$ROOT_SIZE" -t 2:8304 -c 2:OLLIE_ROOT "$disk" >/dev/null
+partprobe "$disk" 2>/dev/null || true
+udevadm settle
+
+# /dev/sda -> /dev/sda1, /dev/nvme0n1 and /dev/mmcblk0 -> ...p1
+if [[ "$disk" =~ [0-9]$ ]]; then sep=p; else sep=; fi
+boot_part="${disk}${sep}1"
+root_part="${disk}${sep}2"
+
+say "Formatting"
+mkfs.fat -F 32 -n OLLIE_BOOT "$boot_part" >/dev/null
+mkfs.btrfs -f -L OLLIE "$root_part" >/dev/null
+
+mkdir -p "$TARGET"
+mount "$root_part" "$TARGET"
+btrfs subvolume create "$TARGET/@" >/dev/null
+btrfs subvolume create "$TARGET/@home" >/dev/null
+umount "$TARGET"
+
+opts=noatime,compress=zstd:3
+mount -o "$opts,subvol=@" "$root_part" "$TARGET"
+mount --mkdir -o "$opts,subvol=@home" "$root_part" "$TARGET/home"
+mount --mkdir "$boot_part" "$TARGET/boot"
+
+say "Copying Ollie OS (this takes a few minutes)"
+rsync -aAXH --info=progress2 --exclude=/boot/ "$SOURCE/" "$TARGET/"
+
+# The image keeps its kernel on the USB's boot partition, not inside itself.
+cp "$BOOTMNT/arch/boot/x86_64/vmlinuz-linux" "$TARGET/boot/vmlinuz-linux"
+
+say "Setting up the installed system"
+# Undo what makes the image a live USB.
+rm -f "$TARGET/etc/mkinitcpio.conf.d/archiso.conf" \
+    "$TARGET/etc/systemd/system/multi-user.target.wants/ollie-live-setup.service" \
+    "$TARGET/usr/share/applications/ollie-install.desktop"
+cat >"$TARGET/etc/mkinitcpio.d/linux.preset" <<'EOF'
+ALL_kver="/boot/vmlinuz-linux"
+PRESETS=('default')
+default_image="/boot/initramfs-linux.img"
+EOF
+
+genfstab -U "$TARGET" >"$TARGET/etc/fstab"
+echo "$hostname" >"$TARGET/etc/hostname"
+ln -sf "/usr/share/zoneinfo/$timezone" "$TARGET/etc/localtime"
+sed -i 's/^#\(en_US.UTF-8 UTF-8\)/\1/' "$TARGET/etc/locale.gen"
+echo LANG=en_US.UTF-8 >"$TARGET/etc/locale.conf"
+
+root_uuid="$(blkid -s UUID -o value "$root_part")"
+
+arch-chroot "$TARGET" /bin/bash -euo pipefail -s -- "$username" "$hostname" <<'CHROOT'
+username="$1"
+locale-gen >/dev/null
+useradd -m -G wheel,video,audio,input,storage -s /bin/bash "$username"
+passwd -l root >/dev/null
+mkinitcpio -P
+bootctl install --esp-path=/boot 2>/dev/null || bootctl install --esp-path=/boot --no-variables
+CHROOT
+printf '%s:%s\n' "$username" "$password" | arch-chroot "$TARGET" chpasswd
+
+cat >"$TARGET/boot/loader/loader.conf" <<'EOF'
+default ollie.conf
+timeout 2
+editor no
+EOF
+cat >"$TARGET/boot/loader/entries/ollie.conf" <<EOF
+title   Ollie OS
+linux   /vmlinuz-linux
+initrd  /initramfs-linux.img
+options root=UUID=$root_uuid rootflags=subvol=@ rw quiet
+EOF
+
+sync
+say "Done. Ollie OS is installed on $disk."
+echo "    Remove the live USB and restart. Log in as '$username'."

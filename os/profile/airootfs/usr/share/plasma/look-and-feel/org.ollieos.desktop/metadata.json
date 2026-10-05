@@ -1,0 +1,12 @@
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Id": "org.ollieos.desktop",
+        "Name": "Ollie OS",
+        "Description": "Teal cube wallpaper, Google search on the left of the bar, pinned apps on the right",
+        "Authors": [{ "Name": "Ollie OS" }],
+        "License": "MIT",
+        "Version": "1.0"
+    },
+    "X-Plasma-APIVersion": "2"
+}

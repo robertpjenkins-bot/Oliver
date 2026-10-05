@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Steam (Game Mode)
+Comment=Steam Big Picture in full screen, like a Steam Deck
+Exec=gamescope -e -f -- steam -gamepadui
+Type=Application
+DesktopNames=gamescope

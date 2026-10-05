@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Install Ollie OS
+Comment=Install Ollie OS onto a drive (uses 25 GB)
+Exec=konsole --hold -e sudo /usr/local/bin/ollie-install
+Icon=ollie-os
+Terminal=false
+Categories=System;

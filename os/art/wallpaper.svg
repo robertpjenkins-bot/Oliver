@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="75%">
+      <stop offset="0" stop-color="#14b8a6"/>
+      <stop offset="0.55" stop-color="#0f766e"/>
+      <stop offset="1" stop-color="#083c38"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#5eead4" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#5eead4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <circle cx="960" cy="450" r="330" fill="url(#glow)"/>
+  <g transform="translate(960 450) scale(1.9)" stroke="#0b4f4a" stroke-width="3" stroke-linejoin="round">
+    <polygon points="0,-100 86.6,-50 0,0 -86.6,-50" fill="#ffffff"/>
+    <polygon points="-86.6,-50 0,0 0,100 -86.6,50" fill="#9eeee4"/>
+    <polygon points="0,0 86.6,-50 86.6,50 0,100" fill="#2dd4bf"/>
+  </g>
+  <text x="960" y="760" text-anchor="middle" font-family="Noto Sans, DejaVu Sans, sans-serif"
+        font-size="84" font-weight="700" fill="#ffffff" letter-spacing="6">Ollie OS</text>
+</svg>

@@ -1,0 +1,14 @@
+[Unit]
+Description=Prepare the Ollie OS live session
+# Only on the live USB: an installed system has no archiso boot mount.
+ConditionPathIsMountPoint=/run/archiso/bootmnt
+After=systemd-sysusers.service
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ollie-live-setup
+
+[Install]
+WantedBy=multi-user.target

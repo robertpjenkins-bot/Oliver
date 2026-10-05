@@ -2,3 +2,4 @@
 *.AppImage
 *.AppDir/
 coverage.out
+os/out/

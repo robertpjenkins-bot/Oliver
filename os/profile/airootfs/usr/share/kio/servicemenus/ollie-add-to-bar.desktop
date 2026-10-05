@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Service
+MimeType=application/x-desktop;application/x-ms-dos-executable;application/x-msdownload;application/vnd.microsoft.portable-executable;application/x-msi;
+Actions=addToBar;
+X-KDE-Priority=TopLevel
+
+[Desktop Action addToBar]
+Name=Add to bar
+Icon=list-add
+Exec=ollie-add-to-bar %f

@@ -1,0 +1,22 @@
+#!/bin/bash
+# Prepare the live USB session: a user called "ollie" (password "ollie") who
+# is logged in automatically, can use sudo without a password, and finds the
+# installer on the desktop. None of this reaches an installed system: the
+# installer copies the untouched image, not the running session.
+set -euo pipefail
+
+if ! id ollie &>/dev/null; then
+    useradd -m -G wheel,video,audio,input,storage -s /bin/bash -c "Ollie" ollie
+fi
+echo 'ollie:ollie' | chpasswd
+
+install -m 0440 /dev/stdin /etc/sudoers.d/90-live <<<'ollie ALL=(ALL:ALL) NOPASSWD: ALL'
+
+install -D -m 0644 /dev/stdin /etc/sddm.conf.d/90-live-autologin.conf <<'CONF'
+[Autologin]
+User=ollie
+Session=plasma
+CONF
+
+install -d -o ollie -g ollie /home/ollie/Desktop
+install -m 0755 -o ollie -g ollie /usr/share/applications/ollie-install.desktop /home/ollie/Desktop/

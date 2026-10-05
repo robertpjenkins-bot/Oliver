@@ -1,0 +1,8 @@
+{
+    "KPlugin": {
+        "Id": "OllieOS",
+        "Name": "Ollie OS",
+        "Authors": [{ "Name": "Ollie OS" }],
+        "License": "MIT"
+    }
+}

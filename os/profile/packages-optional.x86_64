@@ -1,0 +1,6 @@
+# Added to the image only when the repositories carry them, so a package
+# being renamed or dropped upstream doesn't break the whole build.
+umu-launcher
+winetricks
+gamemode
+lib32-gamemode
