@@ -27,7 +27,12 @@ step "Preparing the build container"
 # The container image strips man pages and translations from everything it
 # installs; the ISO must not inherit that.
 sed -i '/^NoExtract/d' /etc/pacman.conf
+# Steam, Wine and the 32-bit drivers live in multilib. Uncomment it, or add it
+# if this pacman.conf has no multilib section at all.
 sed -i '/^#\[multilib\]/,/^#Include/ s/^#//' /etc/pacman.conf
+if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
+    printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >>/etc/pacman.conf
+fi
 pacman-key --init >/dev/null
 pacman -Sy --noconfirm --needed archlinux-keyring
 pacman -Su --noconfirm
