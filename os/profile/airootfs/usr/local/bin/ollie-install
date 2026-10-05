@@ -135,8 +135,10 @@ rm -f "$TARGET/etc/mkinitcpio.conf.d/archiso.conf" \
     "$TARGET/usr/share/applications/ollie-install.desktop"
 cat >"$TARGET/etc/mkinitcpio.d/linux.preset" <<'EOF'
 ALL_kver="/boot/vmlinuz-linux"
-PRESETS=('default')
+PRESETS=('default' 'fallback')
 default_image="/boot/initramfs-linux.img"
+fallback_image="/boot/initramfs-linux-fallback.img"
+fallback_options="-S autodetect"
 EOF
 
 genfstab -U "$TARGET" >"$TARGET/etc/fstab"
@@ -167,6 +169,13 @@ title   Ollie OS
 linux   /vmlinuz-linux
 initrd  /initramfs-linux.img
 options root=UUID=$root_uuid rootflags=subvol=@ rw quiet
+EOF
+# Every driver, for when the drive is moved to a different computer.
+cat >"$TARGET/boot/loader/entries/ollie-fallback.conf" <<EOF
+title   Ollie OS (safe mode)
+linux   /vmlinuz-linux
+initrd  /initramfs-linux-fallback.img
+options root=UUID=$root_uuid rootflags=subvol=@ rw
 EOF
 
 sync
