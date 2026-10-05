@@ -1,0 +1,322 @@
+#!/bin/bash
+# Ollie OS USB Maker: put Ollie OS onto a single drive that it then runs from.
+#
+# Nothing else is needed: no second drive, no separate installer. The drive
+# is laid out in 25 GB, with whatever is left over shared with other systems:
+#
+#   OLLIE_BOOT   5 GB    FAT32  the Ollie OS files and boot loader
+#   OLLIE_DATA   20 GB   ext4   everything you save and install in Ollie OS
+#   OLLIE_SHARE  the rest       exFAT or FAT32, readable by Windows, macOS,
+#                               SteamOS and cameras (about 4 GB on a 32 GB stick)
+#
+#   ollie-usb [ISO]
+#
+# Run from a terminal or by double-clicking (it opens a terminal window). It
+# asks which drive, which format for the shared space, and a username and
+# password for the login screen.
+set -euo pipefail
+
+readonly BOOT_SIZE_GIB=5
+readonly DATA_SIZE_GIB=20
+readonly MIN_SHARE_MIB=256
+readonly FAT32_MAX_FILE=$((4 * 1024 * 1024 * 1024 - 1))
+
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' reset=$'\e[0m'
+say() { printf '%s==>%s %s\n' "$teal$bold" "$reset" "$*"; }
+die() {
+    printf '\n%sError:%s %s\n' "$red$bold" "$reset" "$*" >&2
+    exit 1
+}
+ask() { # ask VAR "question" [default]
+    local reply
+    read -rp "$2${3:+ [$3]} " reply
+    printf -v "$1" '%s' "${reply:-${3:-}}"
+}
+
+pick="" fmt="" username="" answer=""
+
+# --- 1. Make sure there is a terminal to talk in --------------------------------
+# Double-clicked from a file manager there is none, so open one and start again.
+if [[ ! -t 0 && -z "${OLLIE_USB_IN_TERMINAL:-}" ]]; then
+    export OLLIE_USB_IN_TERMINAL=1
+    self="${APPIMAGE:-$(realpath -- "$0")}"
+    for term in konsole gnome-terminal kgx xfce4-terminal xterm; do
+        command -v "$term" >/dev/null || continue
+        case "$term" in
+        konsole) exec konsole --hold -e "$self" "$@" ;;
+        gnome-terminal | kgx) exec "$term" -- "$self" "$@" ;;
+        *) exec "$term" -hold -e "$self" "$@" ;;
+        esac
+    done
+    msg="No terminal program found. Run this from a terminal instead."
+    command -v kdialog >/dev/null && kdialog --error "$msg"
+    command -v zenity >/dev/null && zenity --error --text="$msg"
+    die "$msg"
+fi
+
+# --- 2. Become root ---------------------------------------------------------------
+if [[ $EUID -ne 0 ]]; then
+    printf '\n%s  Ollie OS USB Maker%s\n\n' "$bold" "$reset"
+
+    # Find the ISO now, while the user's home folder and the AppImage's own
+    # folder are still the ones in view.
+    iso="${1:-}"
+    if [[ -z "$iso" ]]; then
+        for f in "$PWD"/ollie-os-*.iso "$HOME"/Downloads/ollie-os-*.iso "$HOME"/Desktop/ollie-os-*.iso \
+            ${APPIMAGE:+"$(dirname -- "$APPIMAGE")"/ollie-os-*.iso}; do
+            [[ -f "$f" ]] && iso="$f"
+        done
+    fi
+    if [[ -z "$iso" ]]; then
+        echo "Could not find an ollie-os-*.iso file in Downloads or next to this app."
+        ask iso "Drag the ISO file into this window (or type its path) and press Enter:"
+        iso="${iso//\'/}"
+    fi
+    [[ -f "$iso" ]] || die "no ISO file at '$iso'."
+    iso="$(realpath -- "$iso")"
+
+    # Inside an AppImage this script lives on a mount only this user can
+    # read, so root runs a copy of it.
+    copy="$(mktemp /tmp/ollie-usb.XXXXXX)"
+    cat -- "${BASH_SOURCE[0]}" >"$copy"
+    chmod 755 "$copy"
+
+    say "Writing to a drive needs administrator rights."
+    if command -v sudo >/dev/null; then
+        if ! sudo -v; then
+            echo
+            echo "On a Steam Deck or SteamOS, set a password first: open Konsole,"
+            echo "type  passwd  and press Enter, then run this app again."
+            exit 1
+        fi
+        exec sudo OLLIE_USB_IN_TERMINAL=1 bash "$copy" "$iso"
+    fi
+    exec pkexec env OLLIE_USB_IN_TERMINAL=1 bash "$copy" "$iso"
+fi
+
+iso="${1:-}"
+[[ -f "$iso" ]] || die "usage: ollie-usb ISO (no ISO file at '$iso')."
+[[ "${BASH_SOURCE[0]}" == /tmp/ollie-usb.* ]] && rm -f -- "${BASH_SOURCE[0]}"
+
+# --- 3. Check the tools this computer has ------------------------------------------------
+for tool in sfdisk mkfs.vfat mkfs.ext4 blkid lsblk mount umount findmnt; do
+    command -v "$tool" >/dev/null || die "this computer is missing '$tool', which is needed to set up the drive."
+done
+
+work="$(mktemp -d /tmp/ollie-usb-work.XXXXXX)"
+cleanup() {
+    for m in "$work/boot" "$work/iso"; do
+        if mountpoint -q "$m"; then umount "$m"; fi
+    done
+    rm -rf -- "$work"
+}
+trap cleanup EXIT
+
+say "Image: $iso"
+mkdir -p "$work/iso" "$work/boot"
+# Open the ISO directly when the kernel can; otherwise it is unpacked onto
+# the drive later with bsdtar or xorriso.
+iso_mounted=false
+if mount -o loop,ro -- "$iso" "$work/iso" 2>/dev/null; then
+    iso_mounted=true
+    [[ -d "$work/iso/arch" && -d "$work/iso/loader/entries" ]] || die "this is not an Ollie OS ISO."
+    sfs="$(find "$work/iso/arch" -name 'airootfs.*' -size +1M | head -n1)"
+    [[ -n "$sfs" ]] || die "this ISO has no system image inside."
+    (($(stat -c %s "$sfs") <= FAT32_MAX_FILE)) ||
+        die "the system image in this ISO is over 4 GB, which a FAT32 boot partition cannot hold."
+elif ! command -v bsdtar >/dev/null && ! command -v xorriso >/dev/null; then
+    die "could not open the ISO file (and neither bsdtar nor xorriso is installed to unpack it)."
+fi
+iso_mib=$(($(stat -c %s "$iso") / 1024 / 1024 + 64))
+((iso_mib < BOOT_SIZE_GIB * 1024)) || die "the ISO is bigger than the ${BOOT_SIZE_GIB} GB boot partition."
+
+# --- 4. Choose the drive --------------------------------------------------------------
+# The disk(s) a path lives on.
+disks_of() {
+    local src
+    src="$(findmnt -no SOURCE --target "$1" 2>/dev/null)" || return 0
+    src="${src%%\[*}"
+    [[ -b "$src" ]] || return 0
+    lsblk -sno NAME,TYPE "$src" | awk '$2 == "disk" {gsub(/[^A-Za-z0-9]/, "", $1); print $1}'
+}
+# Never the drive this computer is running from.
+protected=()
+for m in / /home /boot /boot/efi /var /run/archiso/bootmnt; do
+    while read -r d; do [[ -n "$d" ]] && protected+=("$d"); done < <(disks_of "$m")
+done
+is_protected() {
+    local p
+    for p in "${protected[@]}"; do [[ "$p" == "$1" ]] && return 0; done
+    return 1
+}
+
+need_bytes=$(((BOOT_SIZE_GIB + DATA_SIZE_GIB) * 1024 * 1024 * 1024 + 16 * 1024 * 1024))
+echo
+say "Drives you can put Ollie OS on (needs at least 25 GB):"
+echo
+disks=()
+while read -r name type; do
+    [[ "$type" == disk ]] || continue
+    case "$name" in loop* | zram* | sr* | ram*) continue ;; esac
+    is_protected "$name" && continue
+    (($(lsblk -bdno SIZE "/dev/$name") >= need_bytes)) || continue
+    disks+=("$name")
+    printf '  %d) /dev/%-10s %8s  %s\n' "${#disks[@]}" "$name" \
+        "$(lsblk -dno SIZE "/dev/$name")" "$(lsblk -dno MODEL "/dev/$name")"
+done < <(lsblk -dnro NAME,TYPE)
+((${#disks[@]} > 0)) || die "no drive of 25 GB or more found. Plug in the drive and try again."
+echo
+ask pick "Which drive? [1-${#disks[@]}]"
+[[ "$pick" =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#disks[@]})) || die "no such drive."
+dev="/dev/${disks[pick - 1]}"
+if disks_of "$iso" | grep -qx "${dev#/dev/}"; then
+    die "the ISO file is on $dev itself. Copy it to this computer (for example Downloads) and run this again."
+fi
+
+dev_mib=$(($(lsblk -bdno SIZE "$dev") / 1024 / 1024))
+share_mib=$((dev_mib - (BOOT_SIZE_GIB + DATA_SIZE_GIB) * 1024 - 8))
+
+# --- 5. Choose the format of the shared space -----------------------------------------
+share_fs=none
+if ((share_mib >= MIN_SHARE_MIB)); then
+    echo
+    say "About $((share_mib / 1024)).$(((share_mib % 1024) * 10 / 1024)) GB is left over for a shared folder that other computers can read."
+    echo "  1) exFAT   (recommended: Windows, macOS, SteamOS; files of any size)"
+    echo "  2) FAT32   (works everywhere, even old devices; files up to 4 GB)"
+    echo "  3) leave it empty"
+    ask fmt "Format?" 1
+    case "$fmt" in
+    1) share_fs=exfat ;;
+    2) share_fs=fat32 ;;
+    3) share_fs=none ;;
+    *) die "no such choice." ;;
+    esac
+    if [[ "$share_fs" == exfat ]] && ! command -v mkfs.exfat >/dev/null; then
+        echo "This computer cannot make exFAT drives (no mkfs.exfat); using FAT32 instead."
+        share_fs=fat32
+    fi
+fi
+
+# --- 6. The account for the login screen ------------------------------------------------
+echo
+say "Your account on Ollie OS"
+ask username "Username (lowercase, e.g. alex):"
+[[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "use lowercase letters, digits, - and _ only."
+[[ "$username" != root ]] || die "pick a different username."
+while true; do
+    read -rsp "Password: " password
+    echo
+    read -rsp "Password again: " password2
+    echo
+    [[ -n "$password" && "$password" == "$password2" ]] && break
+    echo "The passwords were empty or did not match, try again."
+done
+if command -v openssl >/dev/null; then
+    hash="$(printf '%s' "$password" | openssl passwd -6 -stdin)"
+elif command -v mkpasswd >/dev/null; then
+    hash="$(printf '%s' "$password" | mkpasswd -m sha-512 -s)"
+else
+    die "this computer has neither openssl nor mkpasswd to protect the password."
+fi
+unset password password2
+
+# --- 7. Last chance ---------------------------------------------------------------
+echo
+lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL,MOUNTPOINTS "$dev"
+echo
+printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$dev" "$reset"
+ask answer "Type ERASE to continue:"
+[[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+
+# --- 8. Partition and format -------------------------------------------------------------
+echo
+say "Partitioning $dev"
+for part in $(lsblk -lnpo NAME "$dev" | tail -n +2); do
+    umount "$part" 2>/dev/null || true
+done
+wipefs -af "$dev" >/dev/null 2>&1 || true
+{
+    echo "label: gpt"
+    echo "size=${BOOT_SIZE_GIB}GiB, type=uefi, name=OLLIE_BOOT"
+    echo "size=${DATA_SIZE_GIB}GiB, type=linux, name=OLLIE_DATA"
+    # Microsoft basic data, so Windows and macOS mount it.
+    [[ "$share_fs" != none ]] && echo "type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, name=OLLIE_SHARE"
+} | sfdisk --quiet --wipe always --wipe-partitions always "$dev"
+partprobe "$dev" 2>/dev/null || true
+udevadm settle 2>/dev/null || sleep 2
+
+if [[ "$dev" =~ [0-9]$ ]]; then sep=p; else sep=; fi
+boot_part="${dev}${sep}1" data_part="${dev}${sep}2" share_part="${dev}${sep}3"
+# Give the system up to 10 seconds to notice the new partitions.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [[ -b "$boot_part" && -b "$data_part" ]] && break
+    partx -u "$dev" 2>/dev/null || true
+    sleep 1
+done
+for p in "$boot_part" "$data_part"; do
+    [[ -b "$p" ]] || die "the new partition $p did not appear. Unplug the drive, plug it back in and try again."
+done
+
+say "Formatting"
+mkfs.vfat -F 32 -n OLLIE_BOOT "$boot_part" >/dev/null
+mkfs.ext4 -q -F -L OLLIE_DATA "$data_part"
+case "$share_fs" in
+exfat) mkfs.exfat -n OLLIE_SHARE "$share_part" >/dev/null ;;
+fat32) mkfs.vfat -F 32 -n OLLIE_SHARE "$share_part" >/dev/null ;;
+esac
+
+# --- 9. Copy Ollie OS and point its boot menu at this drive ------------------------------------
+say "Copying Ollie OS (a few minutes; USB 2 sticks are slower)"
+mount "$boot_part" "$work/boot" || die "could not open the new boot partition."
+if $iso_mounted; then
+    if command -v rsync >/dev/null; then
+        rsync -r --info=progress2 --no-perms --no-owner --no-group "$work/iso/" "$work/boot/"
+    else
+        cp -r --no-preserve=all "$work/iso/." "$work/boot/"
+    fi
+elif command -v bsdtar >/dev/null; then
+    bsdtar -x --no-same-owner --no-same-permissions -f "$iso" -C "$work/boot"
+else
+    xorriso -osirrox on -indev "$iso" -extract / "$work/boot" 2>&1 | grep -iE 'error|fail' || true
+    chmod -R u+w "$work/boot" 2>/dev/null || true
+fi
+[[ -d "$work/boot/arch" && -d "$work/boot/loader/entries" ]] || die "this is not an Ollie OS ISO."
+
+# The ISO finds itself by the ISO's own ID; on this drive it must look for the
+# FAT32 partition instead, and keep everything you change on OLLIE_DATA.
+boot_uuid="$(blkid -s UUID -o value "$boot_part")"
+edited=0
+while IFS= read -r -d '' cfg; do
+    if grep -qE 'archisosearchuuid=|archisolabel=|archisodevice=' "$cfg"; then
+        sed -i -E \
+            -e 's/(archisosearchuuid|archisolabel|archisodevice)=[^ ]*/archisodevice=UUID='"$boot_uuid"' cow_label=OLLIE_DATA/' \
+            "$cfg"
+        edited=$((edited + 1))
+    fi
+done < <(find "$work/boot/loader" "$work/boot/boot" -type f \( -name '*.conf' -o -name '*.cfg' \) -print0 2>/dev/null)
+((edited > 0)) || die "could not find the boot menu in the ISO to update."
+# Boot straight into Ollie OS rather than waiting on the menu.
+if [[ -f "$work/boot/loader/loader.conf" ]]; then
+    sed -i -E 's/^timeout.*/timeout 3/' "$work/boot/loader/loader.conf"
+fi
+
+# Ollie OS reads this on its first start, creates the account, then deletes it.
+printf 'USERNAME=%s\nPASSWORD_HASH=%s\n' "$username" "$hash" >"$work/boot/ollie-user.conf"
+
+say "Finishing (writing everything out to the drive)"
+sync
+umount "$work/boot"
+if $iso_mounted; then umount "$work/iso"; fi
+
+echo
+say "Done. Ollie OS is on $dev."
+cat <<EOF
+
+  Boot from the drive to start Ollie OS, then log in as '$username'.
+    Steam Deck / Steam Machine:  hold Volume Down, press Power, pick the drive.
+    PC:                          press F12, F11, F8 or Esc while it starts.
+
+  Your files, settings and installed games are kept on the drive.
+EOF
+[[ "$share_fs" != none ]] && echo "  The OLLIE_SHARE part ($share_fs) opens on Windows, macOS and SteamOS too."
+echo

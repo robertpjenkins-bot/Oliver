@@ -13,6 +13,17 @@ on:
     tags: ["os-v*"]
 
 jobs:
+  usb-maker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Ollie OS USB Maker
+        run: bash os/usb/build-appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ollie-os-usb-maker
+          path: os/out/Ollie-OS-USB-Maker-x86_64.AppImage
+
   iso:
     runs-on: ubuntu-latest
     timeout-minutes: 240
@@ -42,11 +53,16 @@ jobs:
           compression-level: 0
           retention-days: 14
 
+      - name: Build Ollie OS USB Maker for the release
+        if: startsWith(github.ref, 'refs/tags/os-v')
+        run: sudo bash os/usb/build-appimage.sh
+
       - name: Publish a release for os-v* tags
         if: startsWith(github.ref, 'refs/tags/os-v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             os/out/*.iso
+            os/out/*.AppImage
             os/out/*.sha256
             os/ollie-write

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS USB Maker
+Comment=Put Ollie OS on a drive and run it from there (uses 25 GB)
+Exec=ollie-usb %f
+Icon=ollie-os
+Terminal=false
+Categories=System;
+MimeType=application/x-cd-image;application/x-iso9660-image;

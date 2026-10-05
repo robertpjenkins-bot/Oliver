@@ -61,6 +61,42 @@ $ ls os/out/
 ollie-os-2026.10.05-x86_64.iso  ollie-os-2026.10.05-x86_64.iso.sha256
 ```
 
+## Only one drive? Use Ollie OS USB Maker
+
+**Ollie OS USB Maker** is an AppImage that puts Ollie OS on a single drive
+and runs it from there. It keeps your files, settings and installed games,
+and gives you a login screen. You don't need a second drive.
+
+1. Download `Ollie-OS-USB-Maker-x86_64.AppImage` (**Actions → Ollie OS ISO →
+   Artifacts → `ollie-os-usb-maker`**) and the ISO, and put them both in
+   **Downloads**.
+2. Right-click the AppImage → **Properties → Permissions → Is executable**,
+   then double-click it. In a terminal, run `chmod +x` on it and start it.
+3. It asks:
+   - **which drive** to use (it never offers the one your computer is
+     running from),
+   - **exFAT or FAT32** for the leftover space,
+   - a **username and password** for the login screen,
+   - and for you to type `ERASE`.
+
+It lays the drive out like this:
+
+| Partition   | Size   | Format       | What                                        |
+|-------------|--------|--------------|---------------------------------------------|
+| OLLIE_BOOT  | 5 GB   | FAT32        | Ollie OS and its boot loader                |
+| OLLIE_DATA  | 20 GB  | ext4         | everything you save and install             |
+| OLLIE_SHARE | rest   | exFAT/FAT32  | shared folder for Windows, macOS, SteamOS   |
+
+Ollie OS itself uses 25 GB. On a 32 GB ("29 GB") stick about 4 GB is left
+for OLLIE_SHARE.
+
+On a Steam Deck or SteamOS, set a password first: open Konsole and run
+`passwd`. Writing to a drive needs administrator rights, and SteamOS has no
+password until you set one.
+
+Running from the drive this way, the kernel is not updated: the
+`linux` package is held back automatically. Everything else updates normally.
+
 ## Writing it to a drive
 
 `ollie-write` copies the ISO onto a USB stick or drive. It runs on any Linux,
@@ -105,6 +141,7 @@ instead.
 os/
 ├── build.sh                 builds the ISO (runs inside an Arch container)
 ├── ollie-write              writes an ISO to a drive
+├── usb/                     Ollie OS USB Maker (AppImage): run from one drive
 ├── art/                     cube logo, wallpaper, boot menu splash (SVG)
 └── profile/
     ├── packages.x86_64            packages from the Arch repositories

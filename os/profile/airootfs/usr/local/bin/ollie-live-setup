@@ -1,14 +1,60 @@
 #!/bin/bash
-# Prepare the live USB session: a user called "ollie" (password "ollie") who
-# is logged in automatically, can use sudo without a password, and finds the
-# installer on the desktop. None of this reaches an installed system: the
-# installer copies the untouched image, not the running session.
+# Prepare a session that runs from the USB drive, in one of two ways.
+#
+# Made by Ollie OS USB Maker (ollie-usb): the drive keeps every change on its
+# OLLIE_DATA partition, and its boot partition carries ollie-user.conf with
+# the account to create. That account gets the normal login screen.
+#
+# Written straight from the ISO: nothing is kept between starts, so a user
+# called "ollie" (password "ollie") is logged in automatically, can use sudo
+# without a password, and finds the installer on the desktop. None of this
+# reaches an installed system: the installer copies the untouched image.
 set -euo pipefail
+
+bootmnt=/run/archiso/bootmnt
+conf="$bootmnt/ollie-user.conf"
+
+persistent=false
+grep -qE '(^| )cow_(label|device)=' /proc/cmdline && persistent=true
+
+if $persistent; then
+    # The kernel lives on the boot partition and is not updated by pacman,
+    # so updating the kernel package would leave it without its modules.
+    if ! grep -q '^IgnorePkg *= *linux$' /etc/pacman.conf; then
+        sed -i 's/^#\?IgnorePkg *=.*/IgnorePkg = linux/' /etc/pacman.conf
+    fi
+
+    if [[ -f "$conf" ]]; then
+        username="" hash=""
+        while IFS='=' read -r key value; do
+            case "$key" in
+            USERNAME) username="$value" ;;
+            PASSWORD_HASH) hash="$value" ;;
+            esac
+        done <"$conf"
+        if [[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ && -n "$hash" ]] && ! id "$username" &>/dev/null; then
+            useradd -m -G wheel,video,audio,input,storage -s /bin/bash "$username"
+            usermod -p "$hash" "$username"
+        fi
+        # The boot partition is mounted read-only; open it just long enough
+        # to remove the password hash.
+        if mount -o remount,rw "$bootmnt" 2>/dev/null; then
+            rm -f -- "$conf"
+            mount -o remount,ro "$bootmnt" || true
+        fi
+    fi
+
+    # Once the drive has a real account, it gets the login screen.
+    if awk -F: '$3 >= 1000 && $3 < 60000 && $1 != "ollie"' /etc/passwd | grep -q .; then
+        rm -f /etc/sddm.conf.d/90-live-autologin.conf /etc/sudoers.d/90-live
+        exit 0
+    fi
+fi
 
 if ! id ollie &>/dev/null; then
     useradd -m -G wheel,video,audio,input,storage -s /bin/bash -c "Ollie" ollie
+    echo 'ollie:ollie' | chpasswd
 fi
-echo 'ollie:ollie' | chpasswd
 
 install -m 0440 /dev/stdin /etc/sudoers.d/90-live <<<'ollie ALL=(ALL:ALL) NOPASSWD: ALL'
 
@@ -18,5 +64,7 @@ User=ollie
 Session=plasma
 CONF
 
-install -d -o ollie -g ollie /home/ollie/Desktop
-install -m 0755 -o ollie -g ollie /usr/share/applications/ollie-install.desktop /home/ollie/Desktop/
+if ! $persistent; then
+    install -d -o ollie -g ollie /home/ollie/Desktop
+    install -m 0755 -o ollie -g ollie /usr/share/applications/ollie-install.desktop /home/ollie/Desktop/
+fi
