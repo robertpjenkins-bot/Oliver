@@ -292,13 +292,13 @@ fat_part_of() { # the first FAT32 filesystem on the drive (or the drive itself)
     lsblk -lnpo NAME,FSTYPE "$dev" | awk '$2 == "vfat" {print $1; exit}'
 }
 install_by_copying() {
-    local part mnt uuid free
+    local part mnt uuid free need part_bytes
     part="$(fat_part_of)"
     [[ -n "$part" ]] || return 1
     have udisksctl || have gio || return 1
 
     echo
-    say "Copying Ollie OS onto the FAT32 drive ($part); nothing on it is erased"
+    say "Opening the FAT32 drive ($part)"
     mnt="$(findmnt -no TARGET "$part" 2>/dev/null | head -n1)"
     if [[ -z "$mnt" ]]; then
         if have udisksctl; then
@@ -312,17 +312,40 @@ install_by_copying() {
         echo "Could not open the drive. Click it once in the file manager to open it, then run this again."
         return 1
     fi
+    need=$(($(stat -c %s "$iso") + 100 * MIB))
     free="$(df --output=avail -B1 "$mnt" | tail -n1 | tr -d ' ')"
-    if ((free <= $(stat -c %s "$iso") + 100 * MIB)); then
-        echo "Not enough free space on the drive: Ollie OS needs $(($(stat -c %s "$iso") / MIB + 100)) MB,"
-        echo "and the FAT32 part has $((free / MIB)) MB free. If an ISO was written to this drive"
-        echo "before, it only has a small FAT32 part left. Format the whole drive as FAT32:"
-        echo "  Mac:      Disk Utility > View > Show All Devices > the drive > Erase >"
-        echo "            Format: MS-DOS (FAT), Scheme: Master Boot Record"
+    part_bytes="$(lsblk -bdno SIZE "$part" | tr -d ' ')"
+    if ((free <= need && part_bytes > need)); then
+        # Room enough once the files already on it are gone; deleting files
+        # on a USB drive needs no password.
+        echo
+        echo "The drive is full of other files: Ollie OS needs $((need / MIB)) MB, only $((free / MIB)) MB is free."
+        printf '%sDelete EVERYTHING on %s to make room?%s\n' "$red$bold" "$dev" "$reset"
+        ask answer "Type ERASE to delete it all (Enter cancels):"
+        [[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+        # Only ever inside the drive's own FAT32 part, mounted where udisks put it.
+        [[ "$mnt" == /run/media/* || "$mnt" == /media/* || "$mnt" == "${OLLIE_USB_TEST_MNT:-/nonexistent}"/* ]] ||
+            die "the drive is open at an unexpected place ($mnt); delete its files yourself and run this again."
+        [[ "$(findmnt -no SOURCE "$mnt" 2>/dev/null)" == "$part" || -n "${OLLIE_USB_TEST_MNT:-}" ]] ||
+            die "could not confirm that $mnt is the USB drive; delete its files yourself and run this again."
+        say "Deleting the old files"
+        find "$mnt" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>/dev/null || true
+        sync
+        free="$(df --output=avail -B1 "$mnt" | tail -n1 | tr -d ' ')"
+    fi
+    if ((free <= need)); then
+        echo
+        echo "Not enough room: Ollie OS needs $((need / MIB)) MB, and the drive's FAT32 part is"
+        echo "only $((part_bytes / MIB)) MB in all. This happens after an ISO has been written to the"
+        echo "drive with another tool. Making the whole drive one big FAT32 part is a"
+        echo "reformat, which this computer only allows with an administrator password,"
+        echo "so do it on another computer, then plug it back in here and run this again:"
+        echo "  Mac:      Terminal > diskutil list (find the ~31 GB external disk, e.g. disk4) >"
+        echo "            diskutil eraseDisk FAT32 OLLIE MBRFormat /dev/disk4"
         echo "  Windows:  right-click the drive in File Explorer > Format > FAT32"
-        echo "then plug it back in here and run this app again."
         exit 1
     fi
+    say "Copying Ollie OS onto it"
     unpack_iso "$mnt" || die "could not unpack the ISO (bsdtar or xorriso is needed)."
     uuid="$(lsblk -no UUID "$part" | head -n1)"
     [[ -n "$uuid" ]] || die "could not read the drive's ID."
@@ -434,10 +457,12 @@ fat="$(fat_part_of)"
 fat_bytes=0
 [[ -n "$fat" ]] && fat_bytes="$(lsblk -bdno SIZE "$fat" | tr -d ' ')"
 
-# A FAT32 drive with room for it: copy Ollie OS on. No password, nothing erased.
-if ((fat_bytes > $(stat -c %s "$iso") + 100 * MIB)); then
+# A FAT32 drive: copy Ollie OS on. No password; nothing is erased unless the
+# drive is full and you say so. (A FAT32 part too small for it is explained
+# there too.)
+if ((fat_bytes > 0)); then
     echo
-    echo "Ollie OS will be copied onto $dev ($size ${model:-drive}). Nothing on it is erased."
+    echo "Ollie OS will be copied onto $dev ($size ${model:-drive})."
     ask answer "Press Enter to start, or type q to quit:"
     [[ "$answer" == [qQ]* ]] && die "cancelled, nothing was changed."
     install_by_copying && exit 0
