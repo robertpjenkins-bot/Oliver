@@ -69,7 +69,7 @@ handed_over=false
 [[ -n "$dev" ]] && handed_over=true
 
 [[ $EUID -eq 0 && "${BASH_SOURCE[0]}" == /tmp/ollie-usb.* ]] && rm -f -- "${BASH_SOURCE[0]}"
-$handed_over || printf '\n%s  Ollie OS USB Maker%s\n\n' "$bold" "$reset"
+$handed_over || printf '\n%s  Ollie OS USB Maker%s  (no-password edition: asks only which drive)\n\n' "$bold" "$reset"
 
 # --- 2. Find and check the ISO --------------------------------------------------------
 iso="${1:-}"
