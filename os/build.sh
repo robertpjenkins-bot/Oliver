@@ -36,7 +36,9 @@ fi
 pacman-key --init >/dev/null
 pacman -Sy --noconfirm --needed archlinux-keyring
 pacman -Su --noconfirm
-pacman -S --noconfirm --needed archiso base-devel git go librsvg sudo
+# noto-fonts: rsvg-convert draws the "Ollie OS" text on the wallpaper with it;
+# without any font installed the letters come out as boxes.
+pacman -S --noconfirm --needed archiso base-devel git go librsvg noto-fonts sudo
 
 git config --global --add safe.directory "$repo"
 version="$(git -C "$repo" describe --tags --always --dirty 2>/dev/null || echo dev)"
