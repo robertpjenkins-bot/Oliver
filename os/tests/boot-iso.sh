@@ -30,16 +30,18 @@ entry="$(ls "$boot"/entries/*.conf | head -n1)"
 options="$(awk '$1 == "options" {$1 = ""; print substr($0, 2)}' "$entry")"
 echo "boot options: $options"
 
-accel=tcg
-[[ -w /dev/kvm ]] && accel=kvm
+# With KVM the guest gets the host's CPU as it is; "max" can expose features
+# KVM cannot back, which hangs the guest kernel early.
+accel=tcg cpu=max
+if [[ -w /dev/kvm ]]; then accel=kvm cpu=host; fi
 echo "acceleration: $accel"
 
 mon="$out/monitor.sock"
 rm -f "$mon"
 qemu-system-x86_64 \
-    -machine q35,accel=$accel -cpu max -smp 2 -m 4096 \
+    -machine q35,accel=$accel -cpu $cpu -smp 2 -m 4096 \
     -kernel "$boot/vmlinuz-linux" -initrd "$boot/initramfs-linux.img" \
-    -append "$options console=tty0 console=ttyS0,115200 systemd.show_status=1" \
+    -append "$options console=tty0 console=ttyS0,115200 loglevel=6 systemd.show_status=1" \
     -cdrom "$iso" \
     -device virtio-vga -display none \
     -serial file:"$out/serial.log" \
@@ -75,17 +77,21 @@ done
 kill $qemu 2>/dev/null || true
 wait $qemu 2>/dev/null || true
 
+# Each grep may find nothing; that must not end the script before it reports.
 {
     echo "== Reached"
-    grep -aoE 'Reached target [^.]*' "$out/serial.log" | sed 's/\x1b\[[0-9;]*m//g' | sort -u
+    grep -aoE 'Reached target [^.]*' "$out/serial.log" | sed 's/\x1b\[[0-9;]*m//g' | sort -u || true
     echo
     echo "== Failed"
     grep -aE 'FAILED|Failed to start|failed with result|Dependency failed|ERROR|emergency mode|Kernel panic' "$out/serial.log" |
-        sed 's/\x1b\[[0-9;]*m//g' | sort -u | head -n 60
+        sed 's/\x1b\[[0-9;]*m//g' | sort -u | head -n 60 || true
     echo
     echo "== Ollie OS services"
     grep -aE 'ollie-|Prepare the Ollie OS|package signing keys|Simple Desktop Display Manager|sddm' "$out/serial.log" |
-        sed 's/\x1b\[[0-9;]*m//g' | sort -u | head -n 30
+        sed 's/\x1b\[[0-9;]*m//g' | sort -u | head -n 30 || true
+    echo
+    echo "== Last lines the system printed"
+    sed 's/\x1b\[[0-9;]*m//g' "$out/serial.log" | tr -d '\r' | tail -n 60 || true
 } >"$out/summary.txt"
 cat "$out/summary.txt"
 
