@@ -100,9 +100,11 @@ It lays the drive out like this:
 Ollie OS itself uses 25 GB. On a 32 GB ("29 GB") stick about 4 GB is left
 for OLLIE_SHARE.
 
-On a Steam Deck or SteamOS, set a password first: open Konsole and run
-`passwd`. Writing to a drive needs administrator rights, and SteamOS has no
-password until you set one.
+No administrator password is needed for a USB drive. The app works through
+udisks, the same service the file manager uses to format USB sticks, which
+lets whoever is using the computer change removable drives. Only if that is
+refused does it ask for an administrator password (on SteamOS, set one with
+`passwd` in Konsole).
 
 Running from the drive this way, the kernel is not updated: the
 `linux` package is held back automatically. Everything else updates normally.

@@ -17,8 +17,9 @@ permissions:
   actions: read
 
 jobs:
-  # When a push changes only the tests, test the newest ISO already built for
-  # this branch instead of spending an hour building an identical one.
+  # When a push changes only the tests, the README or the USB Maker (none of
+  # them part of the ISO), test the newest ISO already built for this branch
+  # instead of spending an hour building an identical one.
   plan:
     runs-on: ubuntu-latest
     outputs:
@@ -37,7 +38,7 @@ jobs:
              git cat-file -e "$BEFORE" 2>/dev/null; then
             changed="$(git diff --name-only "$BEFORE" "$GITHUB_SHA")"
             echo "changed:"; echo "$changed"
-            if [[ -n "$changed" ]] && ! grep -qvE '^(os/tests/|\.github/workflows/os-iso\.yml$)' <<<"$changed"; then
+            if [[ -n "$changed" ]] && ! grep -qvE '^(os/tests/|os/usb/|os/README\.md$|\.github/workflows/os-iso\.yml$)' <<<"$changed"; then
               reuse="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=ollie-os-iso&per_page=30" \
                 --jq "[.artifacts[] | select(.expired == false and .workflow_run.head_branch == \"$GITHUB_REF_NAME\")][0].workflow_run.id // empty")"
             fi
