@@ -65,12 +65,15 @@ for ((s = 30, n = 1; s <= minutes * 60; s += 30, n++)); do
         break
     }
     shot "$(printf %03d "$n")"
-    if [[ -z "$reached" ]] && grep -q 'Reached target.*Graphical Interface' "$out/serial.log"; then
+    # Once a getty owns the serial console systemd stops printing targets
+    # there, so a started desktop session counts as reaching the desktop.
+    if [[ -z "$reached" ]] && grep -aqE 'Reached target.*Graphical Interface|Started Session [0-9]+ of User' "$out/serial.log"; then
         reached=$s
-        echo "reached the desktop target after ${s}s"
+        echo "reached the desktop after ${s}s"
     fi
-    # Give the desktop a minute to appear after the system says it is ready.
-    if [[ -n "$reached" ]] && ((s >= reached + 60)); then
+    # Give the desktop 90 seconds to draw, and stop well before the idle
+    # timeout turns the screen off.
+    if [[ -n "$reached" ]] && ((s >= reached + 90)); then
         break
     fi
 done
@@ -79,6 +82,9 @@ wait $qemu 2>/dev/null || true
 
 # Each grep may find nothing; that must not end the script before it reports.
 {
+    echo "== Desktop"
+    if [[ -n "$reached" ]]; then echo "desktop session started after ${reached}s"; else echo "no desktop session started"; fi
+    echo
     echo "== Reached"
     grep -aoE 'Reached target [^.]*' "$out/serial.log" | sed 's/\x1b\[[0-9;]*m//g' | sort -u || true
     echo

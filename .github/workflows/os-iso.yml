@@ -12,7 +12,39 @@ on:
       - ".github/workflows/os-iso.yml"
     tags: ["os-v*"]
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
+  # When a push changes only the tests, test the newest ISO already built for
+  # this branch instead of spending an hour building an identical one.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      reuse_run: ${{ steps.plan.outputs.reuse_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          reuse=""
+          if [[ "${{ github.event_name }}" == push && -n "$BEFORE" && ! "$BEFORE" =~ ^0+$ ]] &&
+             git cat-file -e "$BEFORE" 2>/dev/null; then
+            changed="$(git diff --name-only "$BEFORE" "$GITHUB_SHA")"
+            echo "changed:"; echo "$changed"
+            if [[ -n "$changed" ]] && ! grep -qvE '^(os/tests/|\.github/workflows/os-iso\.yml$)' <<<"$changed"; then
+              reuse="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=ollie-os-iso&per_page=30" \
+                --jq "[.artifacts[] | select(.expired == false and .workflow_run.head_branch == \"$GITHUB_REF_NAME\")][0].workflow_run.id // empty")"
+            fi
+          fi
+          echo "reuse_run=$reuse" >>"$GITHUB_OUTPUT"
+          echo "reusing the ISO from run: ${reuse:-none, building a new one}"
+
   usb-maker:
     runs-on: ubuntu-latest
     steps:
@@ -25,6 +57,8 @@ jobs:
           path: os/out/Ollie-OS-USB-Maker-x86_64.AppImage
 
   iso:
+    needs: plan
+    if: needs.plan.outputs.reuse_run == ''
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -68,7 +102,8 @@ jobs:
             os/ollie-write
 
   test:
-    needs: iso
+    needs: [plan, iso]
+    if: always() && (needs.iso.result == 'success' || needs.plan.outputs.reuse_run != '')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -78,6 +113,8 @@ jobs:
         with:
           name: ollie-os-iso
           path: iso
+          run-id: ${{ needs.plan.outputs.reuse_run || github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Make room on the runner
         run: |
