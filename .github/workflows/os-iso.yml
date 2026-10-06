@@ -66,3 +66,52 @@ jobs:
             os/out/*.AppImage
             os/out/*.sha256
             os/ollie-write
+
+  test:
+    needs: iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ollie-os-iso
+          path: iso
+
+      - name: Install test tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xorriso squashfs-tools qemu-system-x86 socat imagemagick
+          # Let the test use hardware virtualisation.
+          sudo chmod 666 /dev/kvm || true
+
+      - name: Check what is inside the ISO
+        run: sudo bash os/tests/check-iso.sh "$(find iso -name '*.iso' | head -n1)"
+
+      - name: Boot the ISO
+        if: always()
+        run: bash os/tests/boot-iso.sh "$(find iso -name '*.iso' | head -n1)" boot 15
+
+      - name: Show the last screenshots
+        if: always()
+        run: |
+          # Printed into the log as base64 so they can be read without
+          # downloading the artifact.
+          for f in $(ls boot/screen-*.png 2>/dev/null | tail -n 3); do
+            convert "$f" -resize 960x -quality 60 "${f%.png}.jpg"
+            echo "=== SCREENSHOT $(basename "${f%.png}") BEGIN"
+            base64 -w 0 "${f%.png}.jpg"
+            echo
+            echo "=== SCREENSHOT END"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ollie-os-boot-test
+          path: |
+            boot/*.png
+            boot/serial.log
+            boot/summary.txt
+          retention-days: 14

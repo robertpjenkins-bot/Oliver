@@ -1,30 +1,46 @@
 #!/bin/bash
-# Boot an Ollie OS ISO in a virtual machine (UEFI, like a Steam Deck) and
-# take screenshots, to see that it reaches the desktop.
+# Boot an Ollie OS ISO in a virtual machine and record what happens.
 #
 #   os/tests/boot-iso.sh ISO OUTDIR [MINUTES]
 #
-# Writes OUTDIR/serial.log and OUTDIR/screen-NN.png every 2 minutes.
-# Without KVM the machine is emulated, so give it 20+ minutes.
+# Boots the ISO's own kernel and boot options with the console copied to a
+# serial log, takes a screenshot every 30 seconds, and stops once the desktop
+# has had a minute to settle (or after MINUTES). Leaves in OUTDIR:
+#   serial.log            everything the system printed while starting
+#   screen-NNN.png        the screenshots
+#   summary.txt           what started, what failed
+# Exits non-zero if the system never reached the desktop.
 set -euo pipefail
 
 iso="$(realpath "${1:?usage: boot-iso.sh ISO OUTDIR [MINUTES]}")"
 out="$(realpath -m "${2:?}")"
-minutes="${3:-25}"
+minutes="${3:-15}"
 mkdir -p "$out"
+rm -f "$out"/screen-*.png "$out/serial.log" "$out/summary.txt"
 
-vars="$out/OVMF_VARS.fd"
-cp /usr/share/OVMF/OVMF_VARS_4M.fd "$vars"
+# The kernel, initramfs and boot options, exactly as the ISO's UEFI menu has them.
+boot="$out/bootfiles"
+rm -rf "$boot"
+mkdir -p "$boot"
+xorriso -osirrox on -indev "$iso" \
+    -extract /arch/boot/x86_64/vmlinuz-linux "$boot/vmlinuz-linux" \
+    -extract /arch/boot/x86_64/initramfs-linux.img "$boot/initramfs-linux.img" \
+    -extract /loader/entries "$boot/entries" >/dev/null 2>&1
+entry="$(ls "$boot"/entries/*.conf | head -n1)"
+options="$(awk '$1 == "options" {$1 = ""; print substr($0, 2)}' "$entry")"
+echo "boot options: $options"
+
 accel=tcg
 [[ -w /dev/kvm ]] && accel=kvm
+echo "acceleration: $accel"
 
 mon="$out/monitor.sock"
 rm -f "$mon"
 qemu-system-x86_64 \
-    -machine q35,accel=$accel -cpu max -smp 4 -m 6144 \
-    -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
-    -drive if=pflash,format=raw,file="$vars" \
-    -cdrom "$iso" -boot d \
+    -machine q35,accel=$accel -cpu max -smp 2 -m 4096 \
+    -kernel "$boot/vmlinuz-linux" -initrd "$boot/initramfs-linux.img" \
+    -append "$options console=tty0 console=ttyS0,115200 systemd.show_status=1" \
+    -cdrom "$iso" \
     -device virtio-vga -display none \
     -serial file:"$out/serial.log" \
     -monitor unix:"$mon",server,nowait \
@@ -32,13 +48,45 @@ qemu-system-x86_64 \
 qemu=$!
 trap 'kill $qemu 2>/dev/null || true' EXIT
 
-for ((i = 1; i <= minutes / 2; i++)); do
-    sleep 120
-    kill -0 $qemu 2>/dev/null || { echo "VM stopped"; break; }
-    printf 'screendump %s/screen-%02d.ppm\n' "$out" "$i" | socat - UNIX-CONNECT:"$mon" >/dev/null 2>&1 || true
-    sleep 2
-    if [[ -f "$out/screen-$(printf %02d "$i").ppm" ]]; then
-        convert "$out/screen-$(printf %02d "$i").ppm" "$out/screen-$(printf %02d "$i").png" && rm -f "$out/screen-$(printf %02d "$i").ppm"
+shot() {
+    local ppm="$out/screen-$1.ppm"
+    printf 'screendump %s\n' "$ppm" | socat - UNIX-CONNECT:"$mon" >/dev/null 2>&1 || return 0
+    sleep 1
+    [[ -f "$ppm" ]] && convert "$ppm" "$out/screen-$1.png" && rm -f "$ppm"
+}
+
+reached=""
+for ((s = 30, n = 1; s <= minutes * 60; s += 30, n++)); do
+    sleep 30
+    kill -0 $qemu 2>/dev/null || {
+        echo "the virtual machine stopped"
+        break
+    }
+    shot "$(printf %03d "$n")"
+    if [[ -z "$reached" ]] && grep -q 'Reached target.*Graphical Interface' "$out/serial.log"; then
+        reached=$s
+        echo "reached the desktop target after ${s}s"
     fi
-    echo "screenshot $i taken"
+    # Give the desktop a minute to appear after the system says it is ready.
+    if [[ -n "$reached" ]] && ((s >= reached + 60)); then
+        break
+    fi
 done
+kill $qemu 2>/dev/null || true
+wait $qemu 2>/dev/null || true
+
+{
+    echo "== Reached"
+    grep -aoE 'Reached target [^.]*' "$out/serial.log" | sed 's/\x1b\[[0-9;]*m//g' | sort -u
+    echo
+    echo "== Failed"
+    grep -aE 'FAILED|Failed to start|failed with result|Dependency failed|ERROR|emergency mode|Kernel panic' "$out/serial.log" |
+        sed 's/\x1b\[[0-9;]*m//g' | sort -u | head -n 60
+    echo
+    echo "== Ollie OS services"
+    grep -aE 'ollie-|Prepare the Ollie OS|package signing keys|Simple Desktop Display Manager|sddm' "$out/serial.log" |
+        sed 's/\x1b\[[0-9;]*m//g' | sort -u | head -n 30
+} >"$out/summary.txt"
+cat "$out/summary.txt"
+
+[[ -n "$reached" ]]
