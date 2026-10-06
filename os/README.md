@@ -92,6 +92,16 @@ and goes straight to the desktop. You don't need a second drive.
    - Any other drive is reformatted (type `ERASE`) into the layout below,
      which keeps your files and games between starts.
 
+When it has finished, it offers to **scan the drive and fix problems**. The scan:
+- checks that every Ollie OS file is there and complete, and copies any missing ones again;
+- checks that the boot menu starts Ollie OS from this drive;
+- removes leftovers from other systems;
+- checks that the drive saves files correctly.
+
+If it finds a username and password left by an older USB Maker, it asks
+whether to **remove** them (the default: straight to the desktop) or **set**
+a new username and password, which brings back a login screen.
+
 It lays the drive out like this:
 
 | Partition   | Size   | Format       | What                                        |

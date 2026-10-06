@@ -35,7 +35,7 @@ die() {
 }
 ask() { # ask VAR "question" [default]
     local reply
-    read -rp "$2${3:+ [$3]} " reply
+    read -rp "$2${3:+ [$3]} " reply || die "no answer, stopped."
     printf -v "$1" '%s' "${reply:-${3:-}}"
 }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -183,6 +183,7 @@ finish_boot_partition() { # finish_boot_partition DIR BOOT_UUID [live]
     while IFS= read -r -d '' cfg; do
         if grep -qE 'archisosearchuuid=|archisolabel=|archisodevice=' "$cfg"; then
             sed -i -E \
+                -e 's/ cow_label=[^ ]*//g' \
                 -e 's/(archisosearchuuid|archisolabel|archisodevice)=[^ ]*/archisodevice=UUID='"$uuid$extra"'/' \
                 "$cfg"
             edited=$((edited + 1))
@@ -193,8 +194,132 @@ finish_boot_partition() { # finish_boot_partition DIR BOOT_UUID [live]
     if [[ -f "$dir/loader/loader.conf" ]]; then
         sed -i -E 's/^timeout.*/timeout 3/' "$dir/loader/loader.conf"
     fi
-    # No account file: Ollie OS logs in by itself as "ollie".
+}
+
+# --- After writing: scan the drive and fix what is wrong ----------------------------------
+# Size of a file inside the ISO, or nothing when that cannot be read.
+iso_file_size() { # iso_file_size PATH
+    have bsdtar || return 0
+    bsdtar -tvf "$iso" "$1" 2>/dev/null | awk 'NR == 1 {print $5}'
+}
+
+# A username and password left on the drive (ollie-user.conf from an older
+# USB Maker, or ollie-account.conf from this one): set a new one or remove it.
+fix_account() { # fix_account DIR
+    local dir="$1" name pw pw2 hash
+    if [[ ! -f "$dir/ollie-user.conf" && ! -f "$dir/ollie-account.conf" ]]; then
+        echo "  ok    no username or password: Ollie OS goes straight to the desktop"
+        return 0
+    fi
+    echo "  FOUND a username and password on the drive (from an older USB Maker)."
+    ask answer "        Press Enter to REMOVE it, or type S to SET a new one:"
+    if [[ "$answer" != [sS]* ]]; then
+        rm -f -- "$dir/ollie-user.conf" "$dir/ollie-account.conf"
+        echo "  fixed removed it: Ollie OS goes straight to the desktop, no password"
+        return 0
+    fi
+    have openssl || { rm -f -- "$dir/ollie-user.conf" "$dir/ollie-account.conf"
+        echo "  fixed removed it (this computer cannot make a password, openssl is missing)"; return 0; }
+    while :; do
+        ask name "        New username (small letters and digits):" ollie
+        [[ "$name" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$name" != root ]] && break
+        echo "        Use small letters, digits, - and _ only, starting with a letter."
+    done
+    while :; do
+        read -rsp "        New password: " pw || die "cancelled."; echo
+        read -rsp "        Same password again: " pw2 || die "cancelled."; echo
+        [[ -n "$pw" && "$pw" == "$pw2" ]] && break
+        echo "        They did not match (or were empty). Try again."
+    done
+    hash="$(printf '%s' "$pw" | openssl passwd -6 -stdin)"
     rm -f -- "$dir/ollie-user.conf"
+    # Only the scrambled form of the password is stored, never the password.
+    printf 'USERNAME=%s\nPASSWORD_HASH=%s\n' "$name" "$hash" >"$dir/ollie-account.conf"
+    echo "  fixed Ollie OS will show a login screen for $name with that password"
+}
+
+scan_and_fix() { # scan_and_fix DIR BOOT_UUID [live]
+    local dir="$1" uuid="$2" mode="${3:-}" f want got bad=0 fixed=0 cfg test
+    echo
+    ask answer "Run a scan to check the drive and fix any problems? [Y/n]"
+    if [[ "$answer" == [nN]* ]]; then
+        # Not scanned: still never leave an old username and password behind.
+        rm -f -- "$dir/ollie-user.conf" "$dir/ollie-account.conf"
+        return 0
+    fi
+    echo
+    say "Scanning the drive"
+
+    # 1. Every Ollie OS file is there and complete.
+    for f in EFI/BOOT/BOOTx64.EFI arch/boot/x86_64/vmlinuz-linux \
+        arch/boot/x86_64/initramfs-linux.img arch/x86_64/airootfs.sfs; do
+        want="$(iso_file_size "$f")"
+        got="$(stat -c %s "$dir/$f" 2>/dev/null || echo 0)"
+        if [[ "$got" == 0 || (-n "$want" && "$want" != "$got") ]]; then
+            echo "  FOUND $f is missing or incomplete"
+            bad=$((bad + 1))
+        fi
+    done
+    if ((bad > 0)); then
+        say "Copying Ollie OS onto the drive again"
+        if unpack_iso "$dir" && finish_boot_partition "$dir" "$uuid" ${mode:+"$mode"}; then
+            fixed=$((fixed + bad))
+            echo "  fixed copied the missing files again"
+        fi
+    else
+        echo "  ok    all Ollie OS files are there and complete"
+    fi
+
+    # 2. The boot menu starts Ollie OS from this drive.
+    local menu_ok=true
+    for cfg in "$dir"/loader/entries/*.conf; do
+        [[ -f "$cfg" ]] || continue
+        if ! grep -q "archisodevice=UUID=$uuid" "$cfg" ||
+            { [[ "$mode" == live ]] && grep -q 'cow_label=' "$cfg"; } ||
+            { [[ "$mode" != live ]] && ! grep -q 'cow_label=OLLIE_DATA' "$cfg"; }; then
+            echo "  FOUND the boot menu entry $(basename -- "$cfg") points at the wrong place"
+            menu_ok=false
+            bad=$((bad + 1))
+            finish_boot_partition "$dir" "$uuid" ${mode:+"$mode"} && fixed=$((fixed + 1)) &&
+                echo "  fixed pointed it at this drive"
+            break
+        fi
+    done
+    if $menu_ok; then echo "  ok    the boot menu starts Ollie OS from this drive"; fi
+
+    # 3. Leftovers from other systems that confuse the computer's boot menu.
+    for f in "$dir"/autorun.inf "$dir"/.disk/info; do
+        [[ -e "$f" ]] || continue
+        echo "  FOUND a leftover file from another system: ${f#"$dir"/}"
+        bad=$((bad + 1))
+        rm -f -- "$f" && fixed=$((fixed + 1)) && echo "  fixed removed it"
+    done
+
+    # 4. The drive can really be written to and read back.
+    test="$dir/.ollie-scan-$$"
+    if head -c $((4 * MIB)) /dev/urandom >"$test" 2>/dev/null && sync &&
+        [[ "$(stat -c %s "$test")" == $((4 * MIB)) ]]; then
+        echo "  ok    the drive saves and reads files correctly"
+    else
+        echo "  FOUND the drive could not save a test file: it may be worn out or failing"
+        bad=$((bad + 1))
+    fi
+    rm -f -- "$test"
+
+    # 5. Usernames and passwords.
+    if [[ -f "$dir/ollie-user.conf" || -f "$dir/ollie-account.conf" ]]; then
+        bad=$((bad + 1))
+        fix_account "$dir" && fixed=$((fixed + 1))
+    else
+        fix_account "$dir"
+    fi
+
+    echo
+    if ((bad == 0)); then
+        say "Scan done: no problems found."
+    else
+        say "Scan done: $bad problem(s) found, $fixed fixed."
+    fi
 }
 
 all_done() {
@@ -277,6 +402,7 @@ install_with_udisks() {
     boot_uuid="$(ud_prop "/org/freedesktop/UDisks2/block_devices/$(basename -- "$boot_part")" Block IdUUID)"
     [[ -n "$boot_uuid" ]] || boot_uuid="$(lsblk -no UUID "$boot_part")"
     finish_boot_partition "$mnt" "$boot_uuid"
+    scan_and_fix "$mnt" "$boot_uuid"
 
     say "Finishing (writing everything out to the drive)"
     sync
@@ -358,6 +484,7 @@ install_by_copying() {
     uuid="$(lsblk -no UUID "$part" | head -n1)"
     [[ -n "$uuid" ]] || die "could not read the drive's ID."
     finish_boot_partition "$mnt" "$uuid" live
+    scan_and_fix "$mnt" "$uuid" live
 
     say "Finishing (writing everything out to the drive)"
     sync
@@ -435,6 +562,7 @@ install_as_root() {
         rmdir "$work.iso"
     fi
     finish_boot_partition "$work" "$(blkid -s UUID -o value "$boot_part")"
+    scan_and_fix "$work" "$(blkid -s UUID -o value "$boot_part")"
 
     say "Finishing (writing everything out to the drive)"
     sync

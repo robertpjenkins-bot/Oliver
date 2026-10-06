@@ -1,5 +1,6 @@
 #!/bin/bash
-# Make sure the "ollie" account exists, with no password. Ollie OS logs in
+# Make sure the "ollie" account exists, with no password (or the account set
+# in the USB Maker's scan, if one was). Ollie OS logs in
 # by itself (/etc/sddm.conf.d/20-autologin.conf), and admin tasks never ask
 # for a password (/etc/sudoers.d/10-wheel and the polkit rule).
 #
@@ -18,13 +19,33 @@ else
     persistent=false
 fi
 
-if ! id ollie &>/dev/null; then
-    useradd -m -G wheel,video,audio,input,storage -s /bin/bash -c "Ollie" ollie
+# A username and password chosen in the USB Maker's scan (ollie-account.conf
+# on the drive's boot partition). Only the scrambled password is stored there.
+user=ollie hash=""
+account=/run/archiso/bootmnt/ollie-account.conf
+if [[ -f "$account" ]]; then
+    name="$(sed -n 's/^USERNAME=//p' "$account" | head -n1)"
+    hash="$(sed -n 's/^PASSWORD_HASH=//p' "$account" | head -n1)"
+    if [[ "$name" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$name" != root && "$hash" == '$'* ]]; then
+        user="$name"
+    else
+        hash=""
+    fi
 fi
-passwd -d ollie >/dev/null
+
+if ! id "$user" &>/dev/null; then
+    useradd -m -G wheel,video,audio,input,storage -s /bin/bash -c "Ollie" "$user"
+fi
+if [[ -n "$hash" ]]; then
+    usermod -p "$hash" "$user"
+    # With a password, show the login screen instead of logging in by itself.
+    rm -f /etc/sddm.conf.d/20-autologin.conf
+else
+    passwd -d "$user" >/dev/null
+fi
 
 # The installer is offered on the desktop of a plain live USB.
 if ! $persistent; then
-    install -d -o ollie -g ollie /home/ollie/Desktop
-    install -m 0755 -o ollie -g ollie /usr/share/applications/ollie-install.desktop /home/ollie/Desktop/
+    install -d -o "$user" -g "$user" "/home/$user/Desktop"
+    install -m 0755 -o "$user" -g "$user" /usr/share/applications/ollie-install.desktop "/home/$user/Desktop/"
 fi

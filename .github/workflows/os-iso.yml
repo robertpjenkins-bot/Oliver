@@ -22,12 +22,29 @@ jobs:
   # instead of spending an hour building an identical one.
   plan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     outputs:
       reuse_run: ${{ steps.plan.outputs.reuse_run }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # Each ISO is about 3 GB and the account's artifact storage is limited:
+      # keep only the newest ISO, USB Maker and boot test, delete the rest.
+      - name: Delete old builds to make room
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for name in ollie-os-iso ollie-os-usb-maker ollie-os-boot-test; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$name&per_page=100" \
+              --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | reverse | .[1:][] | .id' |
+              while read -r id; do
+                echo "deleting old $name artifact $id"
+                gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" || true
+              done
+          done
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -47,6 +64,7 @@ jobs:
           echo "reusing the ISO from run: ${reuse:-none, building a new one}"
 
   usb-maker:
+    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +104,7 @@ jobs:
             os/out/*.sha256
             os/ollie-write
           compression-level: 0
-          retention-days: 14
+          retention-days: 7
 
       - name: Build Ollie OS USB Maker for the release
         if: startsWith(github.ref, 'refs/tags/os-v')
@@ -163,4 +181,4 @@ jobs:
             boot/*.png
             boot/serial.log
             boot/summary.txt
-          retention-days: 14
+          retention-days: 7

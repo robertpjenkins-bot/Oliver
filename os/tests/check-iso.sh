@@ -107,6 +107,7 @@ check "admin tasks need no password (sudo)" grep -q 'NOPASSWD' "$r/etc/sudoers.d
 check "admin tasks need no password (polkit)" test -f "$r/etc/polkit-1/rules.d/49-ollie-no-password.rules"
 check "straight to the desktop (autologin)" grep -q '^User=ollie' "$r/etc/sddm.conf.d/20-autologin.conf"
 check "screen never locks" grep -q '^Autolock=false' "$r/etc/xdg/kscreenlockerrc"
+check "USB Maker's account choice is honoured" grep -q 'ollie-account.conf' "$r/usr/local/bin/ollie-live-setup"
 check "installer asks for no password" bash -c "! grep -q 'read -rsp' '$r/usr/local/bin/ollie-install'"
 check "translations kept (NoExtract removed)" compgen -G "$r/usr/share/locale/de/LC_MESSAGES/*"
 
