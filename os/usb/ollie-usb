@@ -41,7 +41,7 @@ ask() { # ask VAR "question" [default]
 }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-pick="" fmt="" username="" answer=""
+pick="" fmt="" username="" answer="" how=""
 
 # --- 1. Make sure there is a terminal to talk in --------------------------------
 # Double-clicked from a file manager there is none, so open one and start again.
@@ -223,15 +223,17 @@ unpack_iso() { # unpack_iso DIR
 }
 
 # Point the boot menu at this drive and leave the account for first start.
-finish_boot_partition() { # finish_boot_partition DIR BOOT_UUID
-    local dir="$1" uuid="$2" edited=0 cfg
+finish_boot_partition() { # finish_boot_partition DIR BOOT_UUID [live]
+    # With "live" nothing is kept between starts (no OLLIE_DATA partition).
+    local dir="$1" uuid="$2" edited=0 cfg extra=" cow_label=OLLIE_DATA"
+    [[ "${3:-}" == live ]] && extra=""
     [[ -d "$dir/arch" && -d "$dir/loader/entries" ]] || die "this is not an Ollie OS ISO."
     # The ISO finds itself by the ISO's own ID; on this drive it must look for
     # the FAT32 partition instead, and keep everything you change on OLLIE_DATA.
     while IFS= read -r -d '' cfg; do
         if grep -qE 'archisosearchuuid=|archisolabel=|archisodevice=' "$cfg"; then
             sed -i -E \
-                -e 's/(archisosearchuuid|archisolabel|archisodevice)=[^ ]*/archisodevice=UUID='"$uuid"' cow_label=OLLIE_DATA/' \
+                -e 's/(archisosearchuuid|archisolabel|archisodevice)=[^ ]*/archisodevice=UUID='"$uuid$extra"'/' \
                 "$cfg"
             edited=$((edited + 1))
         fi
@@ -241,8 +243,13 @@ finish_boot_partition() { # finish_boot_partition DIR BOOT_UUID
     if [[ -f "$dir/loader/loader.conf" ]]; then
         sed -i -E 's/^timeout.*/timeout 3/' "$dir/loader/loader.conf"
     fi
-    # Ollie OS reads this on its first start, creates the account, then deletes it.
-    printf 'USERNAME=%s\nPASSWORD_HASH=%s\n' "$username" "$hash" >"$dir/ollie-user.conf"
+    # Ollie OS reads this on its first start, creates the account, then deletes
+    # it. A live drive keeps nothing, so it uses the automatic live login.
+    if [[ "${3:-}" == live ]]; then
+        rm -f -- "$dir/ollie-user.conf"
+    else
+        printf 'USERNAME=%s\nPASSWORD_HASH=%s\n' "$username" "$hash" >"$dir/ollie-user.conf"
+    fi
 }
 
 all_done() {
@@ -330,7 +337,71 @@ install_with_udisks() {
     all_done
 }
 
-# --- 7b. With administrator rights ---------------------------------------------------------
+# --- 7b. Without a password, without erasing: copy onto an existing FAT32 drive ----------
+# Mounting a USB drive and copying files onto it never needs a password, and
+# a computer's firmware starts Ollie OS from any FAT32 drive that has its
+# files on it. Nothing is erased, but nothing is kept between starts either,
+# because keeping changes needs a Linux partition, which means reformatting.
+fat_part_of() { # the first FAT32 filesystem on the drive (or the drive itself)
+    lsblk -lnpo NAME,FSTYPE "$dev" | awk '$2 == "vfat" {print $1; exit}'
+}
+install_by_copying() {
+    local part mnt uuid free
+    part="$(fat_part_of)"
+    [[ -n "$part" ]] || return 1
+    have udisksctl || have gio || return 1
+
+    echo
+    say "Copying Ollie OS onto the FAT32 drive ($part); nothing on it is erased"
+    mnt="$(findmnt -no TARGET "$part" 2>/dev/null | head -n1)"
+    if [[ -z "$mnt" ]]; then
+        if have udisksctl; then
+            udisksctl mount --no-user-interaction -b "$part" >/dev/null 2>&1 || true
+        else
+            gio mount -d "$part" >/dev/null 2>&1 || true
+        fi
+        mnt="$(findmnt -no TARGET "$part" 2>/dev/null | head -n1)"
+    fi
+    if [[ -z "$mnt" || ! -w "$mnt" ]]; then
+        echo "Could not open the drive. Click it once in the file manager to open it, then run this again."
+        return 1
+    fi
+    free="$(df --output=avail -B1 "$mnt" | tail -n1 | tr -d ' ')"
+    if ((free <= $(stat -c %s "$iso") + 100 * MIB)); then
+        echo "Not enough free space on the drive: Ollie OS needs $(($(stat -c %s "$iso") / MIB + 100)) MB,"
+        echo "and the FAT32 part has $((free / MIB)) MB free. If an ISO was written to this drive"
+        echo "before, it only has a small FAT32 part left. Format the whole drive as FAT32:"
+        echo "  Mac:      Disk Utility > View > Show All Devices > the drive > Erase >"
+        echo "            Format: MS-DOS (FAT), Scheme: Master Boot Record"
+        echo "  Windows:  right-click the drive in File Explorer > Format > FAT32"
+        echo "then plug it back in here and run this app again."
+        exit 1
+    fi
+    unpack_iso "$mnt" || die "could not unpack the ISO (bsdtar or xorriso is needed)."
+    uuid="$(lsblk -no UUID "$part" | head -n1)"
+    [[ -n "$uuid" ]] || die "could not read the drive's ID."
+    finish_boot_partition "$mnt" "$uuid" live
+
+    say "Finishing (writing everything out to the drive)"
+    sync
+    if have udisksctl; then
+        udisksctl unmount --no-user-interaction -b "$part" >/dev/null 2>&1 || true
+    fi
+    echo
+    say "Done. Ollie OS is on $dev."
+    echo
+    echo "  Boot from the drive to start Ollie OS. It logs in by itself as 'ollie'"
+    echo "  (password: ollie)."
+    echo "    Steam Machine / PC:  press Esc (or F12, F11, F8) while it starts and pick the drive."
+    echo "    Steam Deck:          hold Volume Down, press Power, pick the drive."
+    echo
+    echo "  Because the drive was not reformatted, Ollie OS runs fresh every time:"
+    echo "  files and installed apps are not kept after you turn it off. To keep"
+    echo "  them, run this app again with an administrator password."
+    echo
+}
+
+# --- 7c. With administrator rights ---------------------------------------------------------
 install_as_root() {
     local tool part boot_part data_part share_part sep work
     for tool in sfdisk mkfs.vfat mkfs.ext4 blkid lsblk mount umount findmnt; do
@@ -405,9 +476,32 @@ if install_with_udisks; then
     exit 0
 fi
 
-# udisks would not do it without a password; ask for administrator rights.
+# Reformatting needs a password here. Without one, Ollie OS can still go onto
+# a FAT32 drive by copying.
 echo
-say "This computer wants an administrator password to change the drive."
+say "This computer wants an administrator password to reformat the drive."
+if [[ -n "$(fat_part_of)" ]]; then
+    echo "Without one, Ollie OS can be copied onto the drive as it is (FAT32),"
+    echo "erasing nothing, but it then starts fresh every time and keeps no files."
+    echo "  1) copy it onto the drive without a password"
+    echo "  2) use an administrator password and keep my files"
+    ask how "Which?" 1
+    if [[ "$how" == 1 ]]; then
+        install_by_copying && exit 0
+        die "copying did not work; see the message above."
+    fi
+else
+    echo
+    echo "Without a password, Ollie OS can only be copied onto a drive that is"
+    echo "formatted FAT32 (also called MS-DOS FAT). This drive is not. To fix that"
+    echo "without a password, format it as FAT32 on another computer:"
+    echo "  Mac:      Disk Utility > View > Show All Devices > the drive > Erase >"
+    echo "            Format: MS-DOS (FAT), Scheme: Master Boot Record"
+    echo "  Windows:  right-click the drive in File Explorer > Format > FAT32"
+    echo "then plug it back in here and run this app again."
+    echo
+    echo "Or continue with an administrator password now."
+fi
 # Inside an AppImage this script lives on a mount only this user can read,
 # so root runs a copy of it.
 copy="$(mktemp /tmp/ollie-usb.XXXXXX)"
