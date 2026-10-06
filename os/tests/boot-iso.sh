@@ -67,7 +67,10 @@ for ((s = 30, n = 1; s <= minutes * 60; s += 30, n++)); do
     shot "$(printf %03d "$n")"
     # Once a getty owns the serial console systemd stops printing targets
     # there, so a started desktop session counts as reaching the desktop.
-    if [[ -z "$reached" ]] && grep -aqE 'Reached target.*Graphical Interface|Started Session [0-9]+ of User' "$out/serial.log"; then
+    # systemd colours the unit name inside each status line, so strip the
+    # escape codes before matching.
+    if [[ -z "$reached" ]] && sed 's/\x1b\[[0-9;]*m//g' "$out/serial.log" |
+        grep -aqE 'Reached target.*Graphical Interface|Started Session [0-9]+ of User'; then
         reached=$s
         echo "reached the desktop after ${s}s"
     fi
