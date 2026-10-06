@@ -33,13 +33,15 @@ Steam Deck.
   graphics, Broadcom Wi-Fi, sound, printers, scanners, Logitech receivers,
   drawing tablets, virtual machines) and installs the drivers it needs.
 - **Bibata cursor:** a rounded white mouse pointer with smooth animations,
-  on the desktop, the login screen and in games.
+  on the desktop and in games.
 - **Steam Machine and Steam Deck support:** AMD graphics drivers (32- and
   64-bit), Steam's controller rules, Deck audio firmware, and a
-  **Steam (Game Mode)** session. Pick it on the login screen to boot straight
-  into Big Picture, like a Deck.
-- **A login screen** on the installed system. The live USB logs in
-  automatically as `ollie` (password `ollie`).
+  **Steam Game Mode** app
+  in the menu that opens Big Picture full screen, like a Deck.
+- **No usernames or passwords anywhere.** Ollie OS goes straight to the
+  desktop as `ollie`, the screen never locks, and admin tasks (DC, the
+  Driver Installer, updates, formatting drives) never ask for a password.
+  The flip side: anyone with the computer in their hands can use all of it.
 
 ## Built for a 29 GB drive
 
@@ -75,7 +77,7 @@ ollie-os-2026.10.05-x86_64.iso  ollie-os-2026.10.05-x86_64.iso.sha256
 
 **Ollie OS USB Maker** is an AppImage that puts Ollie OS on a single drive
 and runs it from there. It keeps your files, settings and installed games,
-and gives you a login screen. You don't need a second drive.
+and goes straight to the desktop. You don't need a second drive.
 
 1. Download `Ollie-OS-USB-Maker-x86_64.AppImage` (**Actions → Ollie OS ISO →
    Artifacts → `ollie-os-usb-maker`**) and the ISO, and put them both in
@@ -144,8 +146,8 @@ instead.
 3. Choose the drive to install onto. The USB stick you booted from is not
    offered, so you need a second drive (for example the internal SSD, or
    another USB stick).
-4. Type `ERASE`, then pick a username, password, computer name and time
-   zone.
+4. Type `ERASE`, then pick a computer name and time zone. There is no
+   username or password: it starts straight into the desktop.
 5. Restart and log in.
 
 ## How it is put together
@@ -161,7 +163,7 @@ os/
     ├── packages-optional.x86_64   added only if the repositories carry them
     ├── aur-packages.txt           built from the AUR (Chrome, Proton-GE)
     └── airootfs/                  files copied into the system
-        ├── etc/                   login screen, services, defaults
+        ├── etc/                   autologin, services, defaults
         └── usr/
             ├── local/bin/         ollie-install, ollie-add-to-bar, ...
             └── share/plasma/      the bar layout and the Google search box

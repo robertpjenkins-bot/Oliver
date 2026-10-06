@@ -202,8 +202,8 @@ all_done() {
     say "Done. Ollie OS is on $dev."
     cat <<EOF
 
-  Boot from the drive to start Ollie OS. It logs in by itself as 'ollie'
-  (password, if anything asks: ollie).
+  Boot from the drive to start Ollie OS. It goes straight to the desktop:
+  no login, no password.
     Steam Machine / PC:  press Esc (or F12, F11, F8) while it starts and pick the drive.
     Steam Deck:          hold Volume Down, press Power, pick the drive.
 
@@ -359,8 +359,8 @@ install_by_copying() {
     echo
     say "Done. Ollie OS is on $dev."
     echo
-    echo "  Boot from the drive to start Ollie OS. It logs in by itself as 'ollie'"
-    echo "  (password: ollie)."
+    echo "  Boot from the drive to start Ollie OS. It goes straight to the desktop:"
+    echo "  no login, no password."
     echo "    Steam Machine / PC:  press Esc (or F12, F11, F8) while it starts and pick the drive."
     echo "    Steam Deck:          hold Volume Down, press Power, pick the drive."
     echo

@@ -71,17 +71,9 @@ printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$disk" "$reset"
 read -rp "Type ERASE to continue: " answer
 [[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
 
+# No username or password: the installed system logs in by itself as "ollie",
+# whose account has no password, just like the live USB.
 echo
-read -rp "Your name for logging in (lowercase, e.g. alex): " username
-[[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "use lowercase letters, digits, - and _ only."
-while true; do
-    read -rsp "Password: " password
-    echo
-    read -rsp "Password again: " password2
-    echo
-    [[ -n "$password" && "$password" == "$password2" ]] && break
-    echo "The passwords were empty or did not match, try again."
-done
 read -rp "Computer name [ollie]: " hostname
 hostname="${hostname:-ollie}"
 [[ "$hostname" =~ ^[A-Za-z0-9-]{1,63}$ ]] || die "the computer name may only use letters, digits and -."
@@ -149,15 +141,14 @@ echo LANG=en_US.UTF-8 >"$TARGET/etc/locale.conf"
 
 root_uuid="$(blkid -s UUID -o value "$root_part")"
 
-arch-chroot "$TARGET" /bin/bash -euo pipefail -s -- "$username" "$hostname" <<'CHROOT'
-username="$1"
+arch-chroot "$TARGET" /bin/bash -euo pipefail -s <<'CHROOT'
 locale-gen >/dev/null
-useradd -m -G wheel,video,audio,input,storage -s /bin/bash "$username"
+useradd -m -G wheel,video,audio,input,storage -s /bin/bash -c "Ollie" ollie
+passwd -d ollie >/dev/null
 passwd -l root >/dev/null
 mkinitcpio -P
 bootctl install --esp-path=/boot 2>/dev/null || bootctl install --esp-path=/boot --no-variables
 CHROOT
-printf '%s:%s\n' "$username" "$password" | arch-chroot "$TARGET" chpasswd
 
 cat >"$TARGET/boot/loader/loader.conf" <<'EOF'
 default ollie.conf
@@ -180,4 +171,4 @@ EOF
 
 sync
 say "Done. Ollie OS is installed on $disk."
-echo "    Remove the live USB and restart. Log in as '$username'."
+echo "    Remove the live USB and restart. It goes straight to the desktop: no login, no password."
