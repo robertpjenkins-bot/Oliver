@@ -11,9 +11,8 @@
 #
 #   ollie-usb [ISO]
 #
-# Run from a terminal or by double-clicking (it opens a terminal window). It
-# asks which drive, which format for the shared space, and a username and
-# password for the login screen.
+# Run from a terminal or by double-clicking (it opens a terminal window). The
+# only question is which drive. Ollie OS then logs in by itself as "ollie".
 #
 # No administrator password is needed for a USB drive: the work goes through
 # udisks, the service the file manager uses to format and mount USB sticks,
@@ -41,7 +40,7 @@ ask() { # ask VAR "question" [default]
 }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-pick="" fmt="" username="" answer="" how=""
+pick="" answer=""
 
 # --- 1. Make sure there is a terminal to talk in --------------------------------
 # Double-clicked from a file manager there is none, so open one and start again.
@@ -66,10 +65,8 @@ fi
 # sudo fallback at the end); when present the questions are skipped.
 dev="${OLLIE_USB_DEV:-}"
 share_fs="${OLLIE_USB_SHARE_FS:-}"
-username="${OLLIE_USB_USERNAME:-}"
-hash="${OLLIE_USB_HASH:-}"
 handed_over=false
-[[ -n "$dev" && -n "$username" && -n "$hash" ]] && handed_over=true
+[[ -n "$dev" ]] && handed_over=true
 
 [[ $EUID -eq 0 && "${BASH_SOURCE[0]}" == /tmp/ollie-usb.* ]] && rm -f -- "${BASH_SOURCE[0]}"
 $handed_over || printf '\n%s  Ollie OS USB Maker%s\n\n' "$bold" "$reset"
@@ -153,60 +150,13 @@ dev_bytes="$(lsblk -bdno SIZE "$dev")"
 ((dev_bytes >= need_bytes)) || die "$dev is smaller than 25 GB."
 share_mib=$((dev_bytes / MIB - (BOOT_SIZE_GIB + DATA_SIZE_GIB) * 1024 - 8))
 
-# --- 4. Choose the format of the shared space -----------------------------------------
+# --- 4. The shared space: exFAT when this computer can make it, else FAT32 ----------------
 if ! $handed_over; then
     share_fs=none
     if ((share_mib >= MIN_SHARE_MIB)); then
-        echo
-        say "About $((share_mib / 1024)).$(((share_mib % 1024) * 10 / 1024)) GB is left over for a shared folder that other computers can read."
-        echo "  1) exFAT   (recommended: Windows, macOS, SteamOS; files of any size)"
-        echo "  2) FAT32   (works everywhere, even old devices; files up to 4 GB)"
-        echo "  3) leave it empty"
-        ask fmt "Format?" 1
-        case "$fmt" in
-        1) share_fs=exfat ;;
-        2) share_fs=fat32 ;;
-        3) share_fs=none ;;
-        *) die "no such choice." ;;
-        esac
-        if [[ "$share_fs" == exfat ]] && ! have mkfs.exfat; then
-            echo "This computer cannot make exFAT drives (no mkfs.exfat); using FAT32 instead."
-            share_fs=fat32
-        fi
+        share_fs=exfat
+        have mkfs.exfat || share_fs=fat32
     fi
-fi
-
-# --- 5. The account for the login screen ------------------------------------------------
-if ! $handed_over; then
-    echo
-    say "Your account on Ollie OS"
-    ask username "Username (lowercase, e.g. alex):"
-    [[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "use lowercase letters, digits, - and _ only."
-    [[ "$username" != root ]] || die "pick a different username."
-    while true; do
-        read -rsp "Password: " password
-        echo
-        read -rsp "Password again: " password2
-        echo
-        [[ -n "$password" && "$password" == "$password2" ]] && break
-        echo "The passwords were empty or did not match, try again."
-    done
-    if have openssl; then
-        hash="$(printf '%s' "$password" | openssl passwd -6 -stdin)"
-    elif have mkpasswd; then
-        hash="$(printf '%s' "$password" | mkpasswd -m sha-512 -s)"
-    else
-        die "this computer has neither openssl nor mkpasswd to protect the password."
-    fi
-    unset password password2
-
-    # --- 6. Last chance -------------------------------------------------------------
-    echo
-    lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL,MOUNTPOINTS "$dev"
-    echo
-    printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$dev" "$reset"
-    ask answer "Type ERASE to continue:"
-    [[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
 fi
 
 # --- Shared by both ways of writing the drive ------------------------------------------
@@ -243,13 +193,8 @@ finish_boot_partition() { # finish_boot_partition DIR BOOT_UUID [live]
     if [[ -f "$dir/loader/loader.conf" ]]; then
         sed -i -E 's/^timeout.*/timeout 3/' "$dir/loader/loader.conf"
     fi
-    # Ollie OS reads this on its first start, creates the account, then deletes
-    # it. A live drive keeps nothing, so it uses the automatic live login.
-    if [[ "${3:-}" == live ]]; then
-        rm -f -- "$dir/ollie-user.conf"
-    else
-        printf 'USERNAME=%s\nPASSWORD_HASH=%s\n' "$username" "$hash" >"$dir/ollie-user.conf"
-    fi
+    # No account file: Ollie OS logs in by itself as "ollie".
+    rm -f -- "$dir/ollie-user.conf"
 }
 
 all_done() {
@@ -257,7 +202,8 @@ all_done() {
     say "Done. Ollie OS is on $dev."
     cat <<EOF
 
-  Boot from the drive to start Ollie OS, then log in as '$username'.
+  Boot from the drive to start Ollie OS. It logs in by itself as 'ollie'
+  (password, if anything asks: ollie).
     Steam Machine / PC:  press Esc (or F12, F11, F8) while it starts and pick the drive.
     Steam Deck:          hold Volume Down, press Power, pick the drive.
 
@@ -467,55 +413,67 @@ install_as_root() {
     all_done
 }
 
-# --- 8. Write the drive ----------------------------------------------------------------
+# --- 5. Write the drive ----------------------------------------------------------------
 if [[ $EUID -eq 0 ]]; then
+    # Started as root directly (not handed over after a confirmation): ask now.
+    if ! $handed_over; then
+        echo
+        lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL,MOUNTPOINTS "$dev"
+        echo
+        printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$dev" "$reset"
+        ask answer "Type ERASE to continue:"
+        [[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+    fi
     install_as_root
     exit 0
 fi
-if install_with_udisks; then
-    exit 0
+
+model="$(lsblk -dno MODEL "$dev" | sed 's/ *$//')"
+size="$(lsblk -dno SIZE "$dev" | tr -d ' ')"
+fat="$(fat_part_of)"
+fat_bytes=0
+[[ -n "$fat" ]] && fat_bytes="$(lsblk -bdno SIZE "$fat" | tr -d ' ')"
+
+# A FAT32 drive with room for it: copy Ollie OS on. No password, nothing erased.
+if ((fat_bytes > $(stat -c %s "$iso") + 100 * MIB)); then
+    echo
+    echo "Ollie OS will be copied onto $dev ($size ${model:-drive}). Nothing on it is erased."
+    ask answer "Press Enter to start, or type q to quit:"
+    [[ "$answer" == [qQ]* ]] && die "cancelled, nothing was changed."
+    install_by_copying && exit 0
+    exit 1
 fi
 
-# Reformatting needs a password here. Without one, Ollie OS can still go onto
-# a FAT32 drive by copying.
+# Anything else has to be reformatted first.
+echo
+lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL,MOUNTPOINTS "$dev"
+echo
+echo "This drive is not FAT32, so it has to be reformatted for Ollie OS."
+printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$dev" "$reset"
+ask answer "Type ERASE to continue:"
+[[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+install_with_udisks && exit 0
+
 echo
 say "This computer wants an administrator password to reformat the drive."
-if [[ -n "$(fat_part_of)" ]]; then
-    echo "Without one, Ollie OS can be copied onto the drive as it is (FAT32),"
-    echo "erasing nothing, but it then starts fresh every time and keeps no files."
-    echo "  1) copy it onto the drive without a password"
-    echo "  2) use an administrator password and keep my files"
-    ask how "Which?" 1
-    if [[ "$how" == 1 ]]; then
-        install_by_copying && exit 0
-        die "copying did not work; see the message above."
-    fi
-else
-    echo
-    echo "Without a password, Ollie OS can only be copied onto a drive that is"
-    echo "formatted FAT32 (also called MS-DOS FAT). This drive is not. To fix that"
-    echo "without a password, format it as FAT32 on another computer:"
-    echo "  Mac:      Disk Utility > View > Show All Devices > the drive > Erase >"
-    echo "            Format: MS-DOS (FAT), Scheme: Master Boot Record"
-    echo "  Windows:  right-click the drive in File Explorer > Format > FAT32"
-    echo "then plug it back in here and run this app again."
-    echo
-    echo "Or continue with an administrator password now."
-fi
+echo
+echo "To do it without a password, format the drive as FAT32 on another computer"
+echo "(that erases it), plug it back in here and run this app again:"
+echo "  Mac:      Disk Utility > View > Show All Devices > the drive > Erase >"
+echo "            Format: MS-DOS (FAT), Scheme: Master Boot Record"
+echo "  Windows:  right-click the drive in File Explorer > Format > FAT32"
+echo
+ask answer "Or type P to use an administrator password now (Enter quits):"
+[[ "$answer" == [pP]* ]] || exit 1
+
 # Inside an AppImage this script lives on a mount only this user can read,
 # so root runs a copy of it.
 copy="$(mktemp /tmp/ollie-usb.XXXXXX)"
 cat -- "${BASH_SOURCE[0]}" >"$copy"
 chmod 755 "$copy"
-handover=(OLLIE_USB_IN_TERMINAL=1 "OLLIE_USB_DEV=$dev" "OLLIE_USB_SHARE_FS=$share_fs"
-    "OLLIE_USB_USERNAME=$username" "OLLIE_USB_HASH=$hash")
+handover=(OLLIE_USB_IN_TERMINAL=1 "OLLIE_USB_DEV=$dev" "OLLIE_USB_SHARE_FS=$share_fs")
 if have sudo; then
-    if ! sudo -v; then
-        echo
-        echo "On a Steam Deck or SteamOS, set a password first: open Konsole,"
-        echo "type  passwd  and press Enter, then run this app again."
-        exit 1
-    fi
+    sudo -v || die "that password did not work. On SteamOS, set one with  passwd  in Konsole."
     exec sudo "${handover[@]}" bash "$copy" "$iso"
 fi
 exec pkexec env "${handover[@]}" bash "$copy" "$iso"

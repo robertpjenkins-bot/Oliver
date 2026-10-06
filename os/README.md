@@ -82,12 +82,13 @@ and gives you a login screen. You don't need a second drive.
    **Downloads**.
 2. Right-click the AppImage → **Properties → Permissions → Is executable**,
    then double-click it. In a terminal, run `chmod +x` on it and start it.
-3. It asks:
-   - **which drive** to use (it never offers the one your computer is
-     running from),
-   - **exFAT or FAT32** for the leftover space,
-   - a **username and password** for the login screen,
-   - and for you to type `ERASE`.
+3. It asks only **which drive**. There is no username or password to set:
+   Ollie OS logs in by itself as `ollie`.
+   - On a **FAT32** drive (how most USB sticks come), it copies Ollie OS on
+     without erasing anything and without any password. Ollie OS then
+     starts fresh every time.
+   - Any other drive is reformatted (type `ERASE`) into the layout below,
+     which keeps your files and games between starts.
 
 It lays the drive out like this:
 
