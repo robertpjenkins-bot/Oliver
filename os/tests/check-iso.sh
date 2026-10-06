@@ -90,6 +90,9 @@ check "breeze login theme" test -d "$r/usr/share/sddm/themes/breeze"
 check "kwin_wayland for the login screen" test -x "$r/usr/bin/kwin_wayland"
 
 echo "== Services"
+check "no first-boot questions (systemd-firstboot masked)" test "$(readlink "$r/etc/systemd/system/systemd-firstboot.service")" = /dev/null
+check "time zone set" test -L "$r/etc/localtime"
+check "keyboard layout set" test -f "$r/etc/vconsole.conf"
 check "boots to the desktop" test "$(readlink "$r/etc/systemd/system/default.target")" = /usr/lib/systemd/system/graphical.target
 check "login screen enabled" test -e "$r/usr/lib/systemd/system/sddm.service"
 check "networking enabled" test -e "$r/usr/lib/systemd/system/NetworkManager.service"
