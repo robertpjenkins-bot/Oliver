@@ -75,6 +75,8 @@ file_permissions=(
   ["/usr/local/bin/ollie-write"]="0:0:755"
   ["/usr/local/bin/ollie-add-to-bar"]="0:0:755"
   ["/usr/local/bin/ollie-live-setup"]="0:0:755"
+  ["/usr/local/bin/ollie-dc"]="0:0:755"
+  ["/usr/local/bin/ollie-drivers"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true
@@ -89,7 +91,9 @@ install -D -m 0644 "$repo/packaging/oliver.svg" "$profile/airootfs/usr/share/ico
 install -D -m 0755 "$os/ollie-write" "$profile/airootfs/usr/local/bin/ollie-write"
 
 step "Drawing the logo and wallpaper"
-install -D -m 0644 "$os/art/ollie-os.svg" "$profile/airootfs/usr/share/icons/hicolor/scalable/apps/ollie-os.svg"
+for icon in ollie-os ollie-dc ollie-drivers; do
+    install -D -m 0644 "$os/art/$icon.svg" "$profile/airootfs/usr/share/icons/hicolor/scalable/apps/$icon.svg"
+done
 images="$profile/airootfs/usr/share/wallpapers/OllieOS/contents/images"
 mkdir -p "$images"
 for size in 1280x720 1920x1080 2560x1440 3840x2160; do

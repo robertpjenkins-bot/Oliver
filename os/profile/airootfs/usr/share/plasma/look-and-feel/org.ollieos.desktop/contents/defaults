@@ -9,7 +9,8 @@ Theme=breeze-dark
 name=breeze-dark
 
 [kcminputrc][Mouse]
-cursorTheme=breeze_cursors
+cursorTheme=Bibata-Modern-Ice
+cursorSize=24
 
 [kwinrc][org.kde.kdecoration2]
 library=org.kde.breeze

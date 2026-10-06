@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=DC - Debug Computer
+GenericName=Debug Computer
+Comment=Check everything on this computer and fix what is wrong
+Exec=konsole --hold -e /usr/local/bin/ollie-dc
+Icon=ollie-dc
+Terminal=false
+Categories=System;Monitor;
+Keywords=debug;diagnose;fix;problem;troubleshoot;dc;

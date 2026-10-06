@@ -45,7 +45,7 @@ echo "== System image"
 unsquashfs -no-progress -quiet -d "$work/root" "$sfs" >/dev/null 2>&1 || bad "unpack system image"
 r="$work/root"
 pkg() { compgen -G "$r/var/lib/pacman/local/$1-[0-9]*" >/dev/null || compgen -G "$r/var/lib/pacman/local/$1-r[0-9]*" >/dev/null; }
-for p in linux plasma-desktop sddm dolphin konsole steam wine wine-mono gamescope google-chrome proton-ge-custom-bin \
+for p in bibata-cursor-theme-bin pciutils usbutils vulkan-tools linux plasma-desktop sddm dolphin konsole steam wine wine-mono gamescope google-chrome proton-ge-custom-bin \
     networkmanager pipewire mesa vulkan-radeon lib32-vulkan-radeon zram-generator btrfs-progs arch-install-scripts; do
     check "package $p" pkg "$p"
 done
@@ -54,7 +54,8 @@ check "kernel modules present" compgen -G "$r/usr/lib/modules/*/vmlinuz"
 
 echo "== Ollie OS pieces"
 for f in /usr/local/bin/oliver /usr/local/bin/ollie-install /usr/local/bin/ollie-write \
-    /usr/local/bin/ollie-add-to-bar /usr/local/bin/ollie-live-setup; do
+    /usr/local/bin/ollie-add-to-bar /usr/local/bin/ollie-live-setup \
+    /usr/local/bin/ollie-dc /usr/local/bin/ollie-drivers; do
     check "$f is executable" test -x "$r$f"
 done
 check "oliver runs" "$r/usr/local/bin/oliver" help
@@ -63,6 +64,14 @@ check "oliver.desktop installed" test -f "$r/usr/share/applications/oliver.deskt
 check "Chrome is the default browser" grep -q 'https=google-chrome.desktop' "$r/etc/xdg/mimeapps.list"
 check "google-chrome.desktop exists" test -f "$r/usr/share/applications/google-chrome.desktop"
 check "steam.desktop exists" test -f "$r/usr/share/applications/steam.desktop"
+check "DC - Debug Computer in the menu" test -f "$r/usr/share/applications/ollie-dc.desktop"
+check "Driver Installer in the menu" test -f "$r/usr/share/applications/ollie-drivers.desktop"
+check "DC icon" test -f "$r/usr/share/icons/hicolor/scalable/apps/ollie-dc.svg"
+check "Driver Installer icon" test -f "$r/usr/share/icons/hicolor/scalable/apps/ollie-drivers.svg"
+check "Bibata cursor installed" test -d "$r/usr/share/icons/Bibata-Modern-Ice/cursors"
+check "Bibata cursor is the default" grep -q 'cursorTheme=Bibata-Modern-Ice' "$r/etc/xdg/kcminputrc"
+check "lspci for the Driver Installer" test -x "$r/usr/bin/lspci"
+check "vulkaninfo for DC" test -x "$r/usr/bin/vulkaninfo"
 check "cube logo icon" test -f "$r/usr/share/icons/hicolor/scalable/apps/ollie-os.svg"
 for s in 1280x720 1920x1080 2560x1440 3840x2160; do
     check "wallpaper $s" test -s "$r/usr/share/wallpapers/OllieOS/contents/images/$s.png"

@@ -32,6 +32,7 @@ apps.writeConfig("launchers", [
     "applications:org.kde.dolphin.desktop",
     "applications:oliver.desktop",
     "applications:org.kde.konsole.desktop",
+    "applications:ollie-dc.desktop",
     "applications:systemsettings.desktop"
 ]);
 

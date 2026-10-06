@@ -1,3 +1,4 @@
 # Built from the AUR during the image build.
 google-chrome
 proton-ge-custom-bin
+bibata-cursor-theme-bin

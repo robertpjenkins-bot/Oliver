@@ -25,6 +25,9 @@ exfatprogs
 ntfs-3g
 gptfdisk
 rsync
+pciutils
+usbutils
+vulkan-tools
 zram-generator
 pacman-contrib
 sudo

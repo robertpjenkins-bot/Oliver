@@ -24,6 +24,16 @@ Steam Deck.
 - **Preinstalled:** Google Chrome, Steam, Proton-GE, Wine (with Mono and
   Gecko), Oliver, the Dolphin file manager, Konsole, Kate and a screenshot
   tool.
+- **DC - Debug Computer** (pinned to the bar) checks everything: memory,
+  storage, temperature, internet, graphics and Vulkan, sound, Bluetooth,
+  Steam, Proton, Wine and Oliver, stuck updates, and recent errors. It
+  explains each problem in plain words, offers to fix what it can, and
+  saves a report to the desktop.
+- **Driver Installer** looks at the hardware (NVIDIA, AMD and Intel
+  graphics, Broadcom Wi-Fi, sound, printers, scanners, Logitech receivers,
+  drawing tablets, virtual machines) and installs the drivers it needs.
+- **Bibata cursor:** a rounded white mouse pointer with smooth animations,
+  on the desktop, the login screen and in games.
 - **Steam Machine and Steam Deck support:** AMD graphics drivers (32- and
   64-bit), Steam's controller rules, Deck audio firmware, and a
   **Steam (Game Mode)** session. Pick it on the login screen to boot straight
