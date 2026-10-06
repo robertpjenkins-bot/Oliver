@@ -243,7 +243,8 @@ install_with_udisks() {
 
     echo
     say "Partitioning $dev"
-    for part in $(lsblk -lnpo NAME "$dev" | tail -n +2); do
+    # An ISO written with another tool is often mounted from the whole drive.
+    for part in $(lsblk -lnpo NAME "$dev"); do
         udisksctl unmount --no-user-interaction -b "$part" >/dev/null 2>&1 || true
     done
     ud "$disk_obj" Block Format 'sa{sv}' gpt 0 >/dev/null || return 1
@@ -337,9 +338,16 @@ install_by_copying() {
         echo
         echo "Not enough room: Ollie OS needs $((need / MIB)) MB, and the drive's FAT32 part is"
         echo "only $((part_bytes / MIB)) MB in all. This happens after an ISO has been written to the"
-        echo "drive with another tool. Making the whole drive one big FAT32 part is a"
-        echo "reformat, which this computer only allows with an administrator password,"
-        echo "so do it on another computer, then plug it back in here and run this again:"
+        echo "drive with another tool, so the whole drive has to be reformatted."
+        printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$dev" "$reset"
+        ask answer "Type ERASE to reformat it (Enter cancels):"
+        [[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+        udisksctl unmount --no-user-interaction -b "$part" >/dev/null 2>&1 || true
+        install_with_udisks && exit 0
+        echo
+        echo "This computer wants an administrator password to reformat the drive."
+        echo "To do it without one, reformat it on another computer, then plug it back in"
+        echo "here and run this again:"
         echo "  Mac:      Terminal > diskutil list (find the ~31 GB external disk, e.g. disk4) >"
         echo "            diskutil eraseDisk FAT32 OLLIE MBRFormat /dev/disk4"
         echo "  Windows:  right-click the drive in File Explorer > Format > FAT32"
