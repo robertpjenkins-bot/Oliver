@@ -38,8 +38,15 @@ if ! id "$user" &>/dev/null; then
 fi
 if [[ -n "$hash" ]]; then
     usermod -p "$hash" "$user"
-    # With a password, show the login screen instead of logging in by itself.
+    # With a password, show the login screen instead of logging in by itself,
+    # with only this account on it, already picked.
     rm -f /etc/sddm.conf.d/20-autologin.conf
+    if [[ "$user" != ollie ]]; then
+        printf '[Users]\nHideUsers=ollie\n' >/etc/sddm.conf.d/30-ollie-hide-setup-user.conf
+    fi
+    mkdir -p /var/lib/sddm
+    printf '[Last]\nUser=%s\nSession=/usr/share/wayland-sessions/plasma.desktop\n' "$user" >/var/lib/sddm/state.conf
+    chown -R sddm:sddm /var/lib/sddm 2>/dev/null || true
 else
     passwd -d "$user" >/dev/null
 fi

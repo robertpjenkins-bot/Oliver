@@ -37,7 +37,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for name in ollie-os-iso ollie-os-usb-maker ollie-os-boot-test; do
+          for name in ollie-os-iso ollie-os-usb-maker ollie-os-boot-test ollie-os-virtualbox-test; do
             gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$name&per_page=100" \
               --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | reverse | .[1:][] | .id' |
               while read -r id; do
@@ -45,23 +45,10 @@ jobs:
                 gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" || true
               done
           done
+      # Every build makes a fresh ISO: reusing an older one once tested an
+      # ISO that did not have the changes being tested.
       - id: plan
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BEFORE: ${{ github.event.before }}
-        run: |
-          reuse=""
-          if [[ "${{ github.event_name }}" == push && -n "$BEFORE" && ! "$BEFORE" =~ ^0+$ ]] &&
-             git cat-file -e "$BEFORE" 2>/dev/null; then
-            changed="$(git diff --name-only "$BEFORE" "$GITHUB_SHA")"
-            echo "changed:"; echo "$changed"
-            if [[ -n "$changed" ]] && ! grep -qvE '^(os/tests/|os/usb/|os/README\.md$|\.github/workflows/os-iso\.yml$)' <<<"$changed"; then
-              reuse="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=ollie-os-iso&per_page=30" \
-                --jq "[.artifacts[] | select(.expired == false and .workflow_run.head_branch == \"$GITHUB_REF_NAME\")][0].workflow_run.id // empty")"
-            fi
-          fi
-          echo "reuse_run=$reuse" >>"$GITHUB_OUTPUT"
-          echo "reusing the ISO from run: ${reuse:-none, building a new one}"
+        run: echo "reuse_run=" >>"$GITHUB_OUTPUT"
 
   usb-maker:
     needs: plan
@@ -105,11 +92,9 @@ jobs:
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
+          # Just the one ISO file.
           name: ollie-os-iso
-          path: |
-            os/out/*.iso
-            os/out/*.sha256
-            os/ollie-write
+          path: os/out/*.iso
           compression-level: 0
           retention-days: 7
 
@@ -192,7 +177,7 @@ jobs:
       - name: Install test tools
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q xorriso squashfs-tools qemu-system-x86 socat imagemagick
+          sudo apt-get install -y -q xorriso squashfs-tools qemu-system-x86 socat imagemagick tesseract-ocr
           # Let the test use hardware virtualisation.
           sudo chmod 666 /dev/kvm || true
 
@@ -206,6 +191,22 @@ jobs:
       - name: Boot the ISO
         if: always()
         run: bash os/tests/boot-iso.sh "$(find iso -name '*.iso' | head -n1)" boot 15
+
+      - name: "First start: create a username and password, then log in (QEMU)"
+        if: always()
+        run: bash os/tests/account-flow.sh qemu "$(find iso -name '*.iso' | head -n1)" account
+
+      - name: Show the first-start screenshots
+        if: always()
+        run: |
+          for f in account/step-*.png; do
+            [[ -f "$f" ]] || continue
+            convert "$f" -resize 800x -quality 55 "${f%.png}.jpg"
+            echo "=== SCREENSHOT acct-$(basename "${f%.png}") BEGIN"
+            base64 -w 0 "${f%.png}.jpg"
+            echo
+            echo "=== SCREENSHOT END"
+          done
 
       - name: Show the last screenshots
         if: always()
@@ -229,4 +230,76 @@ jobs:
             boot/*.png
             boot/serial.log
             boot/summary.txt
+            account/step-*.png
+            account/ocr-*.txt
+            account/serial.log
+            account/summary.txt
+          retention-days: 7
+
+  # The same first start in VirtualBox, booting the ISO through its own UEFI
+  # boot menu like a real computer.
+  virtualbox:
+    needs: iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        id: artifact
+        continue-on-error: true
+        with:
+          name: ollie-os-iso
+          path: iso
+
+      - name: Get the ISO from the release instead
+        if: steps.artifact.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p iso
+          gh release download ollie-os-newest -D iso -p '*.part*'
+          first="$(ls iso/*.part0)"
+          cat iso/*.part[0-9] >"${first%.part0}"
+          rm iso/*.part[0-9]
+
+      - name: Install VirtualBox
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+            virtualbox virtualbox-dkms "linux-headers-$(uname -r)" xorriso imagemagick tesseract-ocr
+          # VirtualBox needs the processor's virtualisation to itself.
+          sudo modprobe -r kvm_amd kvm_intel kvm 2>/dev/null || true
+          sudo modprobe vboxdrv
+          VBoxManage --version
+
+      - name: "First start: create a username and password, then log in (VirtualBox)"
+        run: bash os/tests/account-flow.sh vbox "$(find iso -name '*.iso' | head -n1)" vbox
+
+      - name: Show the VirtualBox screenshots
+        if: always()
+        run: |
+          for f in vbox/step-*.png; do
+            [[ -f "$f" ]] || continue
+            convert "$f" -resize 800x -quality 55 "${f%.png}.jpg"
+            echo "=== SCREENSHOT vbox-$(basename "${f%.png}") BEGIN"
+            base64 -w 0 "${f%.png}.jpg"
+            echo
+            echo "=== SCREENSHOT END"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: ollie-os-virtualbox-test
+          path: |
+            vbox/step-*.png
+            vbox/ocr-*.txt
+            vbox/VBox.log
+            vbox/vbox-serial.log
+            vbox/summary.txt
           retention-days: 7

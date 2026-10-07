@@ -7,6 +7,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 os="$(dirname "$here")"
 out="${OUTDIR:-$os/out}"
+mkdir -p "$out"
 
 tool="${APPIMAGETOOL:-$out/appimagetool-x86_64.AppImage}"
 if [[ ! -x "$tool" ]]; then
