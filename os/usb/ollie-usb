@@ -72,33 +72,118 @@ handed_over=false
 $handed_over || printf '\n%s  Ollie OS USB Maker%s  (asks only which drive)\n\n' "$bold" "$reset"
 
 # --- 2. Find and check the ISO --------------------------------------------------------
+# The ISO can come whole, or in parts (a GitHub release file is at most 2 GB),
+# with any file names: give this app the ISO file, or the folder the parts
+# are in. The parts are recognised by what is inside them, not by their names.
+# The size of every part but the last (smaller sizes only for tests).
+readonly PART_BYTES=$((${OLLIE_USB_TEST_PART_MIB:-1900} * MIB))
+readonly MIN_PART_MIB=${OLLIE_USB_TEST_MIN_MIB:-100}
+is_iso_start() { [[ "$(dd if="$1" bs=1 skip=32769 count=5 2>/dev/null)" == CD001 ]]; }
+size_of() { stat -c %s -- "$1"; }
+
+# Print the ISO found in DIR, joining its parts first. Returns 2 when there
+# is none; any other failure has already said what is wrong.
+iso_from_dir() { # iso_from_dir DIR
+    local dir="$1" f first="" out sum want got
+    local -a rest=() wholes=()
+    [[ -d "$dir" ]] || return 2
+    while IFS= read -r -d '' f; do
+        if is_iso_start "$f"; then
+            if (($(size_of "$f") == PART_BYTES)); then first="$f"; else wholes+=("$f"); fi
+        elif (($(size_of "$f") <= PART_BYTES)); then
+            rest+=("$f")
+        fi
+    done < <(find "$dir" -maxdepth 1 -type f -size +"$MIN_PART_MIB"M ! -iname '*.appimage' ! -name '*.joining' -print0 2>/dev/null | sort -zV)
+
+    if [[ -n "$first" ]]; then
+        ((${#rest[@]} > 0)) || die "found the first part of Ollie OS in $dir, but not the second. Download both parts into the same folder."
+        sum="$(find "$dir" -maxdepth 1 -type f -name '*.sha256' 2>/dev/null | head -n1)"
+        want=""
+        [[ -n "$sum" ]] && want="$(awk '{print $1; exit}' "$sum")"
+        if ((${#rest[@]} > 1)) && [[ -z "$want" ]]; then
+            die "the folder $dir has more than one big file besides the first part, so it is not clear which is the second. Put just the two parts in a folder of their own and try again."
+        fi
+        out="$dir/ollie-os.iso"
+        [[ -w "$dir" ]] || out="$HOME/Downloads/ollie-os.iso"
+        # Usually there is exactly one second part; with a checksum file next
+        # to the parts, other big files in the folder are tried and skipped.
+        for f in "${rest[@]}"; do
+            say "Joining the two parts of Ollie OS into $out" >&2
+            cat -- "$first" "$f" >"$out.joining" || { rm -f -- "$out.joining"; die "could not join the parts (is the drive full? it needs about 3 GB free)."; }
+            if [[ -n "$want" ]] && have sha256sum; then
+                say "Checking the joined file" >&2
+                got="$(sha256sum "$out.joining" | awk '{print $1}')"
+                if [[ "$got" != "$want" ]]; then
+                    rm -f -- "$out.joining"
+                    continue
+                fi
+            fi
+            mv -f -- "$out.joining" "$out"
+            rm -f -- "$first" "$f"
+            echo "$out"
+            return 0
+        done
+        die "the parts in $dir do not fit together: one of them is incomplete or from a different build. Download both parts again."
+    fi
+
+    # A whole ISO: the newest one.
+    ((${#wholes[@]} > 0)) || return 2
+    ls -t -- "${wholes[@]}" | head -n1
+}
+
+# Folders to look in when nothing is given: here, Downloads (and the folders
+# directly inside it), the desktop, and the folder this app is in.
+search_dirs() {
+    printf '%s\n' "$PWD" "$HOME/Downloads"
+    find "$HOME/Downloads" -mindepth 1 -maxdepth 1 -type d 2>/dev/null
+    printf '%s\n' "$HOME/Desktop"
+    [[ -n "${APPIMAGE:-}" ]] && dirname -- "$APPIMAGE"
+    return 0
+}
+
 iso="${1:-}"
-if [[ -z "$iso" ]]; then
-    for f in "$PWD"/ollie-os-*.iso "$HOME"/Downloads/ollie-os-*.iso "$HOME"/Desktop/ollie-os-*.iso \
-        ${APPIMAGE:+"$(dirname -- "$APPIMAGE")"/ollie-os-*.iso}; do
-        [[ -f "$f" ]] && iso="$f"
-    done
-fi
-# The newest build comes as two parts (a GitHub release file is at most 2 GB):
-# join ollie-os-X.iso.part0 + .part1 into ollie-os-X.iso next to them.
-if [[ -z "$iso" ]]; then
-    for f in "$PWD"/ollie-os-*.iso.part0 "$HOME"/Downloads/ollie-os-*.iso.part0 "$HOME"/Desktop/ollie-os-*.iso.part0 \
-        ${APPIMAGE:+"$(dirname -- "$APPIMAGE")"/ollie-os-*.iso.part0}; do
-        [[ -f "$f" ]] || continue
-        base="${f%.part0}"
-        [[ -f "$base.part1" ]] || die "found $(basename -- "$f") but not $(basename -- "$base").part1 next to it. Download both parts."
-        say "Joining the two ISO parts into $(basename -- "$base")"
-        cat -- "$base".part[0-9] >"$base.joining" || die "could not join the parts (is the drive full?)."
-        mv -- "$base.joining" "$base"
-        rm -f -- "$base".part[0-9]
-        iso="$base"
-        break
-    done
+iso="${iso//\'/}"
+# Look in a folder; stop if something in it is wrong (already explained).
+iso_in_folder() { # iso_in_folder DIR -> sets iso, fails when there is none
+    local found rc
+    if found="$(iso_from_dir "$1")"; then
+        iso="$found"
+        return 0
+    else
+        rc=$?
+        ((rc == 2)) || exit 1
+        return 1
+    fi
+}
+if [[ -d "$iso" ]]; then
+    d="$iso"
+    iso=""
+    iso_in_folder "$d" || die "no Ollie OS ISO, or parts of one, in $d."
 fi
 if [[ -z "$iso" ]]; then
-    echo "Could not find an ollie-os-*.iso file in Downloads or next to this app."
-    ask iso "Drag the ISO file into this window (or type its path) and press Enter:"
-    iso="${iso//\'/}"
+    while IFS= read -r d; do
+        iso_in_folder "$d" && break
+    done < <(search_dirs)
+fi
+if [[ -z "$iso" ]]; then
+    echo "Could not find Ollie OS (the ISO, or its two parts) in Downloads or next to this app."
+    pick_dir=""
+    if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        if have kdialog; then
+            pick_dir="$(kdialog --title "Choose the folder with Ollie OS in it" --getexistingdirectory "$HOME/Downloads" 2>/dev/null)" || true
+        elif have zenity; then
+            pick_dir="$(zenity --file-selection --directory --title="Choose the folder with Ollie OS in it" 2>/dev/null)" || true
+        fi
+    fi
+    if [[ -z "$pick_dir" ]]; then
+        ask pick_dir "Drag the ISO, or the folder with its parts, into this window and press Enter:"
+        pick_dir="${pick_dir//\'/}"
+    fi
+    if [[ -d "$pick_dir" ]]; then
+        iso_in_folder "$pick_dir" || die "no Ollie OS ISO, or parts of one, in $pick_dir."
+    else
+        iso="$pick_dir"
+    fi
 fi
 [[ -f "$iso" ]] || die "no ISO file at '$iso'."
 iso="$(realpath -- "$iso")"

@@ -83,9 +83,12 @@ and runs it from there. It keeps your files, settings and installed games,
 and asks you to create a username and password the first time it starts.
 You don't need a second drive.
 
-1. Download `Ollie-OS-USB-Maker-x86_64.AppImage` (**Actions → Ollie OS ISO →
-   Artifacts → `ollie-os-usb-maker`**) and the ISO, and put them both in
-   **Downloads**.
+1. Download `Ollie-OS-USB-Maker-x86_64.AppImage` and the ISO from the
+   **Ollie OS (newest build)** release, and put them in **Downloads**. The
+   ISO comes in two parts there (a release file is at most 2 GB): download
+   both into the same folder, with any names. The USB Maker finds them,
+   even in a folder inside Downloads, and joins them into the ISO. You can
+   also give it the folder: drag it into its window, or pick it when asked.
 2. Right-click the AppImage → **Properties → Permissions → Is executable**,
    then double-click it. In a terminal, run `chmod +x` on it and start it.
 3. It asks only **which drive**. The username and password are made in
