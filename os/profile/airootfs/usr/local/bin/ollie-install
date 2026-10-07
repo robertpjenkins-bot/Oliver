@@ -36,7 +36,9 @@ trap cleanup EXIT
 live_disk=""
 # An ISO written to a USB stick is mounted from the whole disk (/dev/sdb), a
 # partitioned one from a partition (/dev/sdb1); walk up to the disk either way.
-if src="$(findmnt -no SOURCE "$BOOTMNT" 2>/dev/null)"; then
+# (/run/ollie-bootdev, from ollie-live-setup, also knows it when the live
+# system was copied into memory and archiso let go of the drive.)
+if src="$(findmnt -no SOURCE "$BOOTMNT" 2>/dev/null)" || src="$(cat /run/ollie-bootdev 2>/dev/null)"; then
     live_disk="$(lsblk -sno NAME,TYPE "$src" 2>/dev/null |
         awk '$2 == "disk" {gsub(/[^A-Za-z0-9]/, "", $1); print $1; exit}')"
 fi
@@ -118,7 +120,13 @@ say "Copying Ollie OS (this takes a few minutes)"
 rsync -aAXH --info=progress2 --exclude=/boot/ "$SOURCE/" "$TARGET/"
 
 # The image keeps its kernel on the USB's boot partition, not inside itself.
-cp "$BOOTMNT/arch/boot/x86_64/vmlinuz-linux" "$TARGET/boot/vmlinuz-linux"
+# The linux package keeps a copy next to its modules too, for when the
+# drive is no longer mounted.
+if [[ -f "$BOOTMNT/arch/boot/x86_64/vmlinuz-linux" ]]; then
+    cp "$BOOTMNT/arch/boot/x86_64/vmlinuz-linux" "$TARGET/boot/vmlinuz-linux"
+else
+    cp "$(ls "$TARGET"/usr/lib/modules/*/vmlinuz | head -n1)" "$TARGET/boot/vmlinuz-linux"
+fi
 
 say "Setting up the installed system"
 # Undo what makes the image a live USB.

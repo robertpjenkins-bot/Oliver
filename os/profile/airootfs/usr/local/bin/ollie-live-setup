@@ -8,6 +8,27 @@
 # that keeps changes (cow_label=), it also holds back the kernel package.
 set -euo pipefail
 
+# Where the drive's boot partition can be read: archiso's own mount, or,
+# when archiso copied everything into memory and let go of the drive, the
+# drive mounted again here. /run/ollie-bootdir points at it (if there is
+# one), /run/ollie-bootdev names the drive it is on.
+bootdir=""
+if mountpoint -q /run/archiso/bootmnt; then
+    bootdir=/run/archiso/bootmnt
+else
+    uuid="$(grep -oE 'archiso(device=UUID|searchuuid)=[^ ]+' /proc/cmdline | head -n1 | sed 's/.*=//' || true)"
+    if [[ -n "$uuid" && -e "/dev/disk/by-uuid/$uuid" ]]; then
+        mkdir -p /run/ollie-boot
+        if mount -o ro "/dev/disk/by-uuid/$uuid" /run/ollie-boot 2>/dev/null; then
+            bootdir=/run/ollie-boot
+        fi
+    fi
+fi
+if [[ -n "$bootdir" ]]; then
+    ln -sfn "$bootdir" /run/ollie-bootdir
+    findmnt -no SOURCE "$bootdir" >/run/ollie-bootdev 2>/dev/null || true
+fi
+
 if grep -qE '(^| )cow_(label|device)=' /proc/cmdline; then
     persistent=true
     # The kernel lives on the boot partition and is not updated by pacman,
@@ -22,7 +43,7 @@ fi
 # A username and password chosen in the USB Maker's scan (ollie-account.conf
 # on the drive's boot partition). Only the scrambled password is stored there.
 user=ollie hash=""
-account=/run/archiso/bootmnt/ollie-account.conf
+account=/run/ollie-bootdir/ollie-account.conf
 if [[ -f "$account" ]]; then
     name="$(sed -n 's/^USERNAME=//p' "$account" | head -n1)"
     hash="$(sed -n 's/^PASSWORD_HASH=//p' "$account" | head -n1)"

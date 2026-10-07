@@ -41,7 +41,10 @@ start_vm() {
             machine=pc gfx=(-vga qxl)
             qemu-img create -f qcow2 "$out/disk.qcow2" 30G >/dev/null
             extra=(-drive "file=$out/disk.qcow2,if=virtio")
-            append="systemd.journald.forward_to_console=1"
+            # copytoram=y: what archiso does on its own on computers with
+            # plenty of RAM (it then lets go of the boot drive), like the
+            # Steam Machine.
+            append="systemd.journald.forward_to_console=1 copytoram=y"
         fi
         rm -rf "$boot"
         mkdir -p "$boot"

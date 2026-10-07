@@ -7,7 +7,7 @@
 # "Skip" keeps it without a password and does not ask again.
 set -uo pipefail
 
-readonly BOOTMNT=/run/archiso/bootmnt
+readonly BOOTMNT=/run/ollie-bootdir # the drive's boot partition (ollie-live-setup)
 readonly TITLE="Welcome to Ollie OS"
 
 # Only once, only in the automatic "ollie" session.

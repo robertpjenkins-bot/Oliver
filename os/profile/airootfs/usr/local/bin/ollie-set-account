@@ -11,12 +11,13 @@
 # starts fresh every time still remembers it; ollie-live-setup reads it.
 set -euo pipefail
 
-readonly BOOTMNT=/run/archiso/bootmnt
+BOOTMNT="$(readlink -f /run/ollie-bootdir 2>/dev/null || true)" # set up by ollie-live-setup
+readonly BOOTMNT
 [[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
 
 # Write a file onto the USB drive's FAT32 boot partition, if there is one.
 write_to_drive() { # write_to_drive NAME CONTENT
-    mountpoint -q "$BOOTMNT" || return 0
+    [[ -n "$BOOTMNT" ]] && mountpoint -q "$BOOTMNT" || return 0
     [[ "$(findmnt -no FSTYPE "$BOOTMNT")" == vfat ]] || return 0
     mount -o remount,rw "$BOOTMNT" || return 0
     printf '%s' "$2" >"$BOOTMNT/$1" || true

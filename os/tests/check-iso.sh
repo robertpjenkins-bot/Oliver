@@ -111,6 +111,7 @@ check "live initramfs hooks" grep -q archiso "$r/etc/mkinitcpio.conf.d/archiso.c
 check "admin tasks need no password (sudo)" grep -q 'NOPASSWD' "$r/etc/sudoers.d/10-wheel"
 check "admin tasks need no password (polkit)" test -f "$r/etc/polkit-1/rules.d/49-ollie-no-password.rules"
 check "straight to the desktop (autologin)" grep -q '^User=ollie' "$r/etc/sddm.conf.d/20-autologin.conf"
+check "live setup runs even when the system was copied into memory" grep -q '^ConditionKernelCommandLine=archisobasedir' "$r/etc/systemd/system/ollie-live-setup.service"
 check "login screen waits for the graphics card" test -f "$r/etc/systemd/system/sddm.service.d/10-ollie-wait-for-graphics.conf"
 check "screen never locks" grep -q '^Autolock=false' "$r/etc/xdg/kscreenlockerrc"
 check "USB Maker's account choice is honoured" grep -q 'ollie-account.conf' "$r/usr/local/bin/ollie-live-setup"
