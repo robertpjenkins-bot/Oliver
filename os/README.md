@@ -88,7 +88,8 @@ You don't need a second drive.
    ISO comes in two parts there (a release file is at most 2 GB): download
    both into the same folder, with any names. The USB Maker finds them,
    even in a folder inside Downloads, and joins them into the ISO. You can
-   also give it the folder: drag it into its window, or pick it when asked.
+   also give it the folder, or a zip of the two parts (any names, also
+   made on a Mac): drag it into its window, or pick it when asked.
 2. Right-click the AppImage → **Properties → Permissions → Is executable**,
    then double-click it. In a terminal, run `chmod +x` on it and start it.
 3. It asks only **which drive**. The username and password are made in

@@ -79,6 +79,7 @@ $handed_over || printf '\n%s  Ollie OS USB Maker%s  (asks only which drive)\n\n'
 readonly PART_BYTES=$((${OLLIE_USB_TEST_PART_MIB:-1900} * MIB))
 readonly MIN_PART_MIB=${OLLIE_USB_TEST_MIN_MIB:-100}
 is_iso_start() { [[ "$(dd if="$1" bs=1 skip=32769 count=5 2>/dev/null)" == CD001 ]]; }
+is_zip() { [[ "$(head -c 4 -- "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')" == 504b0304 ]]; }
 size_of() { stat -c %s -- "$1"; }
 
 # Print the ISO found in DIR, joining its parts first. Returns 2 when there
@@ -88,7 +89,9 @@ iso_from_dir() { # iso_from_dir DIR
     local -a rest=() wholes=()
     [[ -d "$dir" ]] || return 2
     while IFS= read -r -d '' f; do
-        if is_iso_start "$f"; then
+        if is_zip "$f"; then
+            wholes+=("$f") # looked inside below
+        elif is_iso_start "$f"; then
             if (($(size_of "$f") == PART_BYTES)); then first="$f"; else wholes+=("$f"); fi
         elif (($(size_of "$f") <= PART_BYTES)); then
             rest+=("$f")
@@ -126,9 +129,129 @@ iso_from_dir() { # iso_from_dir DIR
         die "the parts in $dir do not fit together: one of them is incomplete or from a different build. Download both parts again."
     fi
 
-    # A whole ISO: the newest one.
+    # A whole ISO, or a zip with Ollie OS in it: the newest one first.
     ((${#wholes[@]} > 0)) || return 2
-    ls -t -- "${wholes[@]}" | head -n1
+    local rc
+    while IFS= read -r f; do
+        if is_zip "$f"; then
+            iso_from_zip "$f" && return 0
+            rc=$?
+            ((rc == 2)) || exit 1
+        else
+            echo "$f"
+            return 0
+        fi
+    done < <(ls -t -- "${wholes[@]}")
+    return 2
+}
+
+# Print the ISO inside ZIP (whole, or in parts with any names, also in
+# folders inside the zip), written next to the zip. Returns 2 when the zip
+# has no Ollie OS in it.
+iso_from_zip() { # iso_from_zip ZIP
+    local zip="$1" dir out rc x
+    dir="$(dirname -- "$zip")"
+    out="$dir/ollie-os.iso"
+    [[ -w "$dir" ]] || out="$HOME/Downloads/ollie-os.iso"
+    if have python3; then
+        say "Looking inside $(basename -- "$zip")" >&2
+        rc=0
+        python3 - "$zip" "$out" "$PART_BYTES" "$((MIN_PART_MIB * MIB))" <<'PY' || rc=$?
+import hashlib, os, sys, zipfile
+zpath, out, part, least = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+try:
+    zf = zipfile.ZipFile(zpath)
+except Exception:
+    sys.exit(2)
+first, wholes, rest, want = None, [], [], None
+for i in sorted(zf.infolist(), key=lambda i: i.filename):
+    if i.is_dir():
+        continue
+    if i.filename.endswith(".sha256") and i.file_size < 4096:
+        want = zf.read(i).split()[0].decode(errors="replace")
+        continue
+    if i.file_size <= least or i.filename.lower().endswith(".appimage"):
+        continue
+    try:
+        with zf.open(i) as f:
+            start = f.read(32774)[32769:]
+    except Exception:
+        continue
+    if start == b"CD001":
+        if i.file_size == part:
+            first = i
+        else:
+            wholes.append(i)
+    elif i.file_size <= part:
+        rest.append(i)
+if first is not None:
+    if not rest:
+        sys.exit(4)
+    if len(rest) > 1 and not want:
+        sys.exit(5)
+    tries = [[first, r] for r in rest]
+elif wholes:
+    tries = [[w] for w in wholes]
+else:
+    sys.exit(2)
+for members in tries:
+    total = sum(m.file_size for m in members)
+    done, h, tmp = 0, hashlib.sha256(), out + ".joining"
+    print("    unpacking %d MB" % (total >> 20), file=sys.stderr)
+    try:
+        with open(tmp, "wb") as o:
+            for m in members:
+                with zf.open(m) as f:
+                    while True:
+                        b = f.read(8 << 20)
+                        if not b:
+                            break
+                        o.write(b)
+                        h.update(b)
+                        done += len(b)
+                        if done % (512 << 20) < (8 << 20):
+                            print("    %d%%" % (done * 100 // total), file=sys.stderr)
+    except OSError as e:
+        print("    " + str(e), file=sys.stderr)
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        sys.exit(6)
+    except Exception as e:
+        print("    " + str(e), file=sys.stderr)
+        sys.exit(7)
+    if want and h.hexdigest() != want:
+        os.remove(tmp)
+        continue
+    os.replace(tmp, out)
+    print(out)
+    sys.exit(0)
+sys.exit(3)
+PY
+        case $rc in
+        0) return 0 ;;
+        2) return 2 ;;
+        3) die "the Ollie OS in $(basename -- "$zip") does not match its checksum: the zip is incomplete or broken. Download or make it again." ;;
+        4) die "$(basename -- "$zip") has only the first part of Ollie OS. Put both parts in the zip." ;;
+        5) die "$(basename -- "$zip") has more than one big file besides the first part, so it is not clear which is the second. Put just the two parts in the zip." ;;
+        6) die "could not unpack $(basename -- "$zip") (is the drive full? it needs about 3 GB free)." ;;
+        *) die "could not unpack $(basename -- "$zip"); it may be broken. Download or make it again." ;;
+        esac
+    fi
+    # Without Python: unpack it with another tool, then look in the folder.
+    x="$dir/ollie-os-unzipped"
+    mkdir -p -- "$x" || die "could not make a folder to unpack $(basename -- "$zip") into."
+    say "Unpacking $(basename -- "$zip")" >&2
+    if have bsdtar; then
+        bsdtar -xf "$zip" -C "$x" >&2 || die "could not unpack $(basename -- "$zip")."
+    elif have unzip; then
+        unzip -q -o "$zip" -d "$x" >&2 || die "could not unpack $(basename -- "$zip")."
+    else
+        die "this computer cannot open zip files. Unzip it in the file manager, then run this again."
+    fi
+    find "$x" -mindepth 2 -type f -exec mv -f -t "$x" -- {} + 2>/dev/null || true
+    iso_from_dir "$x"
 }
 
 # Folders to look in when nothing is given: here, Downloads (and the folders
@@ -143,9 +266,19 @@ search_dirs() {
 
 iso="${1:-}"
 iso="${iso//\'/}"
-# Look in a folder; stop if something in it is wrong (already explained).
-iso_in_folder() { # iso_in_folder DIR -> sets iso, fails when there is none
+# Look in a folder or zip; stop if something in it is wrong (already explained).
+iso_in_folder() { # iso_in_folder DIR|ZIP -> sets iso, fails when there is none
     local found rc
+    if [[ -f "$1" ]]; then
+        if found="$(iso_from_zip "$1")"; then
+            iso="$found"
+            return 0
+        else
+            rc=$?
+            ((rc == 2)) || exit 1
+            return 1
+        fi
+    fi
     if found="$(iso_from_dir "$1")"; then
         iso="$found"
         return 0
@@ -155,7 +288,7 @@ iso_in_folder() { # iso_in_folder DIR -> sets iso, fails when there is none
         return 1
     fi
 }
-if [[ -d "$iso" ]]; then
+if [[ -d "$iso" ]] || { [[ -f "$iso" ]] && is_zip "$iso"; }; then
     d="$iso"
     iso=""
     iso_in_folder "$d" || die "no Ollie OS ISO, or parts of one, in $d."
@@ -166,7 +299,7 @@ if [[ -z "$iso" ]]; then
     done < <(search_dirs)
 fi
 if [[ -z "$iso" ]]; then
-    echo "Could not find Ollie OS (the ISO, or its two parts) in Downloads or next to this app."
+    echo "Could not find Ollie OS (the ISO, its two parts, or a zip of them) in Downloads or next to this app."
     pick_dir=""
     if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
         if have kdialog; then
@@ -176,10 +309,10 @@ if [[ -z "$iso" ]]; then
         fi
     fi
     if [[ -z "$pick_dir" ]]; then
-        ask pick_dir "Drag the ISO, or the folder with its parts, into this window and press Enter:"
+        ask pick_dir "Drag the ISO, the zip, or the folder with its parts into this window and press Enter:"
         pick_dir="${pick_dir//\'/}"
     fi
-    if [[ -d "$pick_dir" ]]; then
+    if [[ -d "$pick_dir" ]] || { [[ -f "$pick_dir" ]] && is_zip "$pick_dir"; }; then
         iso_in_folder "$pick_dir" || die "no Ollie OS ISO, or parts of one, in $pick_dir."
     else
         iso="$pick_dir"
