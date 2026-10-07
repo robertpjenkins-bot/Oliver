@@ -171,4 +171,4 @@ EOF
 
 sync
 say "Done. Ollie OS is installed on $disk."
-echo "    Remove the live USB and restart. It goes straight to the desktop: no login, no password."
+echo "    Remove the live USB and restart. On its first start it asks you to create a username and password."

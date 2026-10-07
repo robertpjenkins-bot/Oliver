@@ -38,10 +38,13 @@ Steam Deck.
   64-bit), Steam's controller rules, Deck audio firmware, and a
   **Steam Game Mode** app
   in the menu that opens Big Picture full screen, like a Deck.
-- **No usernames or passwords anywhere.** Ollie OS goes straight to the
-  desktop as `ollie`, the screen never locks, and admin tasks (DC, the
-  Driver Installer, updates, formatting drives) never ask for a password.
-  The flip side: anyone with the computer in their hands can use all of it.
+- **Your own username and password, made on first start.** The first time
+  Ollie OS starts, a welcome window asks you to create a username and
+  password; from then on it shows a login screen. Choose **Skip** to keep
+  going straight to the desktop with no password. On a USB drive the choice
+  is saved on the drive itself, so it is remembered even on a drive that
+  starts fresh every time. Admin tasks (DC, the Driver Installer, updates,
+  formatting drives) never ask for a password, and the screen never locks.
 
 ## Built for a 29 GB drive
 
@@ -77,15 +80,16 @@ ollie-os-2026.10.05-x86_64.iso  ollie-os-2026.10.05-x86_64.iso.sha256
 
 **Ollie OS USB Maker** is an AppImage that puts Ollie OS on a single drive
 and runs it from there. It keeps your files, settings and installed games,
-and goes straight to the desktop. You don't need a second drive.
+and asks you to create a username and password the first time it starts.
+You don't need a second drive.
 
 1. Download `Ollie-OS-USB-Maker-x86_64.AppImage` (**Actions → Ollie OS ISO →
    Artifacts → `ollie-os-usb-maker`**) and the ISO, and put them both in
    **Downloads**.
 2. Right-click the AppImage → **Properties → Permissions → Is executable**,
    then double-click it. In a terminal, run `chmod +x` on it and start it.
-3. It asks only **which drive**. There is no username or password to set:
-   Ollie OS logs in by itself as `ollie`.
+3. It asks only **which drive**. The username and password are made in
+   Ollie OS itself, the first time it starts.
    - On a **FAT32** drive (how most USB sticks come), it copies Ollie OS on
      without erasing anything and without any password. Ollie OS then
      starts fresh every time.
@@ -99,7 +103,7 @@ When it has finished, it offers to **scan the drive and fix problems**. The scan
 - checks that the drive saves files correctly.
 
 If it finds a username and password left by an older USB Maker, it asks
-whether to **remove** them (the default: straight to the desktop) or **set**
+whether to **remove** them (the default: Ollie OS then asks for a new one when it starts) or **set**
 a new username and password, which brings back a login screen.
 
 It lays the drive out like this:

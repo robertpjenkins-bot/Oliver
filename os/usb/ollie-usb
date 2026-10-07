@@ -69,7 +69,7 @@ handed_over=false
 [[ -n "$dev" ]] && handed_over=true
 
 [[ $EUID -eq 0 && "${BASH_SOURCE[0]}" == /tmp/ollie-usb.* ]] && rm -f -- "${BASH_SOURCE[0]}"
-$handed_over || printf '\n%s  Ollie OS USB Maker%s  (no-password edition: asks only which drive)\n\n' "$bold" "$reset"
+$handed_over || printf '\n%s  Ollie OS USB Maker%s  (asks only which drive)\n\n' "$bold" "$reset"
 
 # --- 2. Find and check the ISO --------------------------------------------------------
 iso="${1:-}"
@@ -208,14 +208,14 @@ iso_file_size() { # iso_file_size PATH
 fix_account() { # fix_account DIR
     local dir="$1" name pw pw2 hash
     if [[ ! -f "$dir/ollie-user.conf" && ! -f "$dir/ollie-account.conf" ]]; then
-        echo "  ok    no username or password: Ollie OS goes straight to the desktop"
+        echo "  ok    no old username or password: Ollie OS asks you to make one when it first starts"
         return 0
     fi
     echo "  FOUND a username and password on the drive (from an older USB Maker)."
     ask answer "        Press Enter to REMOVE it, or type S to SET a new one:"
     if [[ "$answer" != [sS]* ]]; then
         rm -f -- "$dir/ollie-user.conf" "$dir/ollie-account.conf"
-        echo "  fixed removed it: Ollie OS goes straight to the desktop, no password"
+        echo "  fixed removed it: Ollie OS asks you to make a new one when it first starts"
         return 0
     fi
     have openssl || { rm -f -- "$dir/ollie-user.conf" "$dir/ollie-account.conf"
@@ -327,8 +327,8 @@ all_done() {
     say "Done. Ollie OS is on $dev."
     cat <<EOF
 
-  Boot from the drive to start Ollie OS. It goes straight to the desktop:
-  no login, no password.
+  Boot from the drive to start Ollie OS. When it first starts, it asks you
+  to create a username and password (or Skip for no password).
     Steam Machine / PC:  press Esc (or F12, F11, F8) while it starts and pick the drive.
     Steam Deck:          hold Volume Down, press Power, pick the drive.
 
@@ -494,8 +494,8 @@ install_by_copying() {
     echo
     say "Done. Ollie OS is on $dev."
     echo
-    echo "  Boot from the drive to start Ollie OS. It goes straight to the desktop:"
-    echo "  no login, no password."
+    echo "  Boot from the drive to start Ollie OS. When it first starts, it asks you"
+    echo "  to create a username and password (or Skip for no password)."
     echo "    Steam Machine / PC:  press Esc (or F12, F11, F8) while it starts and pick the drive."
     echo "    Steam Deck:          hold Volume Down, press Power, pick the drive."
     echo

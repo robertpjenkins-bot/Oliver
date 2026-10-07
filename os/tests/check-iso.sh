@@ -55,7 +55,8 @@ check "kernel modules present" compgen -G "$r/usr/lib/modules/*/vmlinuz"
 echo "== Ollie OS pieces"
 for f in /usr/local/bin/oliver /usr/local/bin/ollie-install /usr/local/bin/ollie-write \
     /usr/local/bin/ollie-add-to-bar /usr/local/bin/ollie-live-setup \
-    /usr/local/bin/ollie-dc /usr/local/bin/ollie-drivers; do
+    /usr/local/bin/ollie-dc /usr/local/bin/ollie-drivers \
+    /usr/local/bin/ollie-first-setup /usr/local/bin/ollie-set-account; do
     check "$f is executable" test -x "$r$f"
 done
 check "oliver runs" "$r/usr/local/bin/oliver" help
@@ -108,6 +109,9 @@ check "admin tasks need no password (polkit)" test -f "$r/etc/polkit-1/rules.d/4
 check "straight to the desktop (autologin)" grep -q '^User=ollie' "$r/etc/sddm.conf.d/20-autologin.conf"
 check "screen never locks" grep -q '^Autolock=false' "$r/etc/xdg/kscreenlockerrc"
 check "USB Maker's account choice is honoured" grep -q 'ollie-account.conf' "$r/usr/local/bin/ollie-live-setup"
+check "first start asks for a username and password" test -f "$r/etc/xdg/autostart/ollie-first-setup.desktop"
+check "kdialog for the first-start questions" test -x "$r/usr/bin/kdialog"
+check "chpasswd for the first-start account" test -x "$r/usr/bin/chpasswd"
 check "installer asks for no password" bash -c "! grep -q 'read -rsp' '$r/usr/local/bin/ollie-install'"
 check "translations kept (NoExtract removed)" compgen -G "$r/usr/share/locale/de/LC_MESSAGES/*"
 

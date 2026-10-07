@@ -1,0 +1,63 @@
+#!/bin/bash
+# First start of Ollie OS: ask for a username and password.
+#
+# Ollie OS starts logged in as "ollie" with no password. This window, started
+# with the desktop (/etc/xdg/autostart/ollie-first-setup.desktop), asks once
+# for a username and password. After that Ollie OS shows a login screen.
+# "Skip" keeps it without a password and does not ask again.
+set -uo pipefail
+
+readonly BOOTMNT=/run/archiso/bootmnt
+readonly TITLE="Welcome to Ollie OS"
+
+# Only once, only in the automatic "ollie" session.
+[[ "$(id -un)" == ollie ]] || exit 0
+[[ -f /etc/sddm.conf.d/20-autologin.conf ]] || exit 0
+for done in /var/lib/ollie/setup-done "$BOOTMNT/ollie-account.conf" "$BOOTMNT/ollie-setup-skipped"; do
+    [[ -e "$done" ]] && exit 0
+done
+
+skip() {
+    sudo -n /usr/local/bin/ollie-set-account --skip
+    exit 0
+}
+
+kdialog --title "$TITLE" --icon ollie-os --yes-label "Create" --no-label "Skip" --yesno \
+    "Welcome to Ollie OS!
+
+Create your username and password now. Ollie OS will then show a login
+screen when it starts.
+
+Choose Skip to keep going straight to the desktop with no password." || skip
+
+while :; do
+    name="$(kdialog --title "$TITLE" --inputbox "Username (small letters and digits, for example: alex)" "")" || skip
+    name="${name,,}"
+    if [[ "$name" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$name" != root ]]; then
+        break
+    fi
+    kdialog --title "$TITLE" --sorry "That username will not work. Use small letters, digits, - and _, starting with a letter."
+done
+
+while :; do
+    pw="$(kdialog --title "$TITLE" --password "Password for $name")" || skip
+    pw2="$(kdialog --title "$TITLE" --password "Type the same password again")" || skip
+    if [[ -z "$pw" ]]; then
+        kdialog --title "$TITLE" --sorry "The password cannot be empty."
+    elif [[ "$pw" != "$pw2" ]]; then
+        kdialog --title "$TITLE" --sorry "The two passwords were not the same. Try again."
+    else
+        break
+    fi
+done
+
+if ! printf '%s\n' "$pw" | sudo -n /usr/local/bin/ollie-set-account "$name"; then
+    kdialog --title "$TITLE" --error "Could not create the account. Ollie OS keeps working without a password; DC - Debug Computer can help find out why."
+    exit 1
+fi
+unset pw pw2
+
+kdialog --title "$TITLE" --msgbox "All set! Ollie OS will now go to the login screen.
+
+Log in as $name with your password."
+sudo -n /usr/local/bin/ollie-set-account --relogin
