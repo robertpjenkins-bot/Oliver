@@ -81,6 +81,7 @@ file_permissions=(
   ["/usr/local/bin/ollie-drivers"]="0:0:755"
   ["/usr/local/bin/ollie-first-setup"]="0:0:755"
   ["/usr/local/bin/ollie-set-account"]="0:0:755"
+  ["/usr/local/bin/ollie-get-proton-ge"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true
@@ -121,7 +122,20 @@ done < <(list "$os/profile/aur-packages.txt")
 repo-add "$localrepo/ollie-local.db.tar.gz" "$localrepo"/*.pkg.tar.zst
 
 step "Writing package lists and pacman configuration"
+# Firmware for consumer hardware only. Arch splits linux-firmware into parts;
+# the NVIDIA part (large, and for cards the Steam Machine and Deck do not
+# have) and the server network cards are left out. Without the split, the
+# whole package.
+firmware=(linux-firmware)
+if pacman -Si linux-firmware-amdgpu &>/dev/null; then
+    firmware=()
+    for part in amdgpu radeon intel realtek mediatek atheros broadcom cirrus qcom other; do
+        pacman -Si "linux-firmware-$part" &>/dev/null && firmware+=("linux-firmware-$part")
+    done
+fi
+echo "firmware: ${firmware[*]}"
 {
+    printf '%s\n' "${firmware[@]}"
     list "$os/profile/packages.x86_64"
     while read -r pkg; do
         if pacman -Si "$pkg" &>/dev/null; then

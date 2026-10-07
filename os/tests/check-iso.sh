@@ -39,24 +39,28 @@ else
     bad "system image fits on FAT32 ($((size / 1024 / 1024)) MB)"
 fi
 iso_mb=$(($(stat -c %s "$iso") / 1024 / 1024))
+if ((iso_mb < 2047)); then ok "ISO is one file under GitHub's 2 GB limit ($iso_mb MB)"; else bad "ISO is one file under GitHub's 2 GB limit ($iso_mb MB)"; fi
+echo "   What takes the room on the ISO (MB):"
+(cd "$work/iso" && du -m -a . 2>/dev/null | sort -rn | awk '$1 >= 5' | head -n 12 | sed 's/^/     /')
 if ((iso_mb < 5 * 1024)); then ok "ISO fits the USB Maker's 5 GB boot partition ($iso_mb MB)"; else bad "ISO too big for 5 GB boot partition ($iso_mb MB)"; fi
 
 echo "== System image"
 unsquashfs -no-progress -quiet -d "$work/root" "$sfs" >/dev/null 2>&1 || bad "unpack system image"
 r="$work/root"
 pkg() { compgen -G "$r/var/lib/pacman/local/$1-[0-9]*" >/dev/null || compgen -G "$r/var/lib/pacman/local/$1-r[0-9]*" >/dev/null; }
-for p in bibata-cursor-theme-bin pciutils usbutils vulkan-tools linux plasma-desktop sddm dolphin konsole steam wine wine-mono gamescope google-chrome proton-ge-custom-bin \
+for p in bibata-cursor-theme-bin pciutils usbutils vulkan-tools linux plasma-desktop sddm dolphin konsole steam wine wine-mono gamescope google-chrome \
     networkmanager pipewire mesa vulkan-radeon lib32-vulkan-radeon zram-generator btrfs-progs arch-install-scripts; do
     check "package $p" pkg "$p"
 done
-check "Proton-GE where Oliver looks for it" compgen -G "$r/usr/share/steam/compatibilitytools.d/*"
+check "Get Proton-GE in the menu" test -f "$r/usr/share/applications/ollie-get-proton-ge.desktop"
+check "graphics firmware for AMD (Steam Machine, Steam Deck)" compgen -G "$r/usr/lib/firmware/amdgpu/*"
 check "kernel modules present" compgen -G "$r/usr/lib/modules/*/vmlinuz"
 
 echo "== Ollie OS pieces"
 for f in /usr/local/bin/oliver /usr/local/bin/ollie-install /usr/local/bin/ollie-write \
     /usr/local/bin/ollie-add-to-bar /usr/local/bin/ollie-live-setup \
     /usr/local/bin/ollie-dc /usr/local/bin/ollie-drivers \
-    /usr/local/bin/ollie-first-setup /usr/local/bin/ollie-set-account; do
+    /usr/local/bin/ollie-first-setup /usr/local/bin/ollie-set-account /usr/local/bin/ollie-get-proton-ge; do
     check "$f is executable" test -x "$r$f"
 done
 check "oliver runs" "$r/usr/local/bin/oliver" help
@@ -114,6 +118,12 @@ check "kdialog for the first-start questions" test -x "$r/usr/bin/kdialog"
 check "chpasswd for the first-start account" test -x "$r/usr/bin/chpasswd"
 check "installer asks for no password" bash -c "! grep -q 'read -rsp' '$r/usr/local/bin/ollie-install'"
 check "translations kept (NoExtract removed)" compgen -G "$r/usr/share/locale/de/LC_MESSAGES/*"
+
+echo
+echo "== The 25 largest packages (installed MB)"
+for d in "$r"/var/lib/pacman/local/*/; do
+    awk -v n="$(basename "$d")" '/^%SIZE%/ {getline; printf "%8d  %s\n", $1 / 1048576, n}' "$d/desc"
+done | sort -rn | head -n 25
 
 echo
 echo "$pass passed, $fail failed"

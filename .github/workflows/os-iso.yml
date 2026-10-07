@@ -37,9 +37,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for name in ollie-os-iso ollie-os-usb-maker ollie-os-boot-test ollie-os-virtualbox-test; do
+          # Old ISOs are all deleted (this build makes a new one); of the
+          # small ones the newest is kept.
+          for name in ollie-os-iso ollie-os-usb-maker ollie-os-boot-test ollie-os-virtualbox-test oliver-appimage js-academy-appimage; do
+            keep=1
+            [[ "$name" == ollie-os-iso ]] && keep=0
             gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$name&per_page=100" \
-              --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | reverse | .[1:][] | .id' |
+              --jq "[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | reverse | .[$keep:][] | .id" |
               while read -r id; do
                 echo "deleting old $name artifact $id"
                 gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" || true
@@ -112,18 +116,27 @@ jobs:
           set -euo pipefail
           cd os/out
           iso="$(ls ollie-os-*.iso | head -n1)"
-          sudo split -b 1900M -d -a 1 "$iso" "$iso.part"
+          # One file when it fits under the 2 GB limit for a release file,
+          # otherwise two parts that the USB Maker joins.
+          if (($(stat -c %s "$iso") < 2047 * 1024 * 1024)); then
+            files=("$iso")
+            what="**$iso** (the whole ISO, one file)"
+          else
+            sudo split -b 1900M -d -a 1 "$iso" "$iso.part"
+            files=("$iso".part*)
+            what="**$iso.part0** and **$iso.part1** (the ISO in two parts; the USB Maker joins them)"
+          fi
           gh release delete ollie-os-newest --yes --cleanup-tag 2>/dev/null || true
           gh release create ollie-os-newest --prerelease --target "$GITHUB_SHA" \
             --title "Ollie OS (newest build)" \
             --notes "Built from ${GITHUB_SHA::7} on $(date -u '+%Y-%m-%d %H:%M UTC').
 
-          Download all of these into the same folder (Downloads):
-          - **Ollie-OS-USB-Maker-x86_64.AppImage**
-          - **$iso.part0** and **$iso.part1** (the ISO, in two parts)
+          Download into Downloads:
+          - $what
+          - **Ollie-OS-USB-Maker-x86_64.AppImage** to put it on a USB drive
 
-          Then run the USB Maker: it joins the two parts into the ISO by itself." \
-            "$iso".part* *.sha256 Ollie-OS-USB-Maker*-x86_64.AppImage
+          Or write the ISO to a drive with any ISO writer." \
+            "${files[@]}" *.sha256 Ollie-OS-USB-Maker*-x86_64.AppImage
 
       - name: Publish a release for os-v* tags
         if: startsWith(github.ref, 'refs/tags/os-v')
@@ -161,10 +174,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p iso
-          gh release download ollie-os-newest -D iso -p '*.part*'
-          first="$(ls iso/*.part0)"
-          cat iso/*.part[0-9] >"${first%.part0}"
-          rm iso/*.part[0-9]
+          gh release download ollie-os-newest -D iso -p '*.iso*'
+          if compgen -G 'iso/*.part0' >/dev/null; then
+            first="$(ls iso/*.part0)"
+            cat iso/*.part[0-9] >"${first%.part0}"
+            rm iso/*.part[0-9]
+          fi
+          rm -f iso/*.sha256
           ls -la iso
 
       - name: Make room on the runner
@@ -261,10 +277,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p iso
-          gh release download ollie-os-newest -D iso -p '*.part*'
-          first="$(ls iso/*.part0)"
-          cat iso/*.part[0-9] >"${first%.part0}"
-          rm iso/*.part[0-9]
+          gh release download ollie-os-newest -D iso -p '*.iso*'
+          if compgen -G 'iso/*.part0' >/dev/null; then
+            first="$(ls iso/*.part0)"
+            cat iso/*.part[0-9] >"${first%.part0}"
+            rm iso/*.part[0-9]
+          fi
+          rm -f iso/*.sha256
 
       - name: Install VirtualBox
         run: |

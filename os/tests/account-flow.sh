@@ -117,11 +117,12 @@ type_text() { # type_text TEXT (small letters and digits)
 }
 
 # Read the screen; wait up to SECONDS for TEXT (a regular expression) to show.
-n=0
+echo 0 >"$out/.count"
 read_screen() { # read_screen NAME -> prints the text on the screen
-    local png
-    png="$out/step-$(printf %02d $n)-$1.png"
-    n=$((n + 1))
+    local png n
+    n="$(cat "$out/.count")"
+    echo $((n + 1)) >"$out/.count"
+    png="$out/step-$(printf %03d "$n")-$1.png"
     screenshot "$png" || return 1
     # A larger, grey picture reads better.
     convert "$png" -colorspace Gray -resize 200% "$out/ocr-in.png" 2>/dev/null
@@ -180,17 +181,19 @@ sleep 5
 type_text "$PASSWORD"
 sleep 1
 press_enter
-if wait_for desktop 180 'Search Google|Install Ollie'; then
+# The desktop: the bar's search box or the wallpaper's name, and no
+# password box any more.
+if wait_for desktop 180 '(Search|Google|Ollie ?OS)' && ! read_screen desktop-check | grep -qiE 'Password'; then
     pass "logging in with the new password opens the desktop"
 else
     fail "logging in with the new password opens the desktop"
 fi
-if [[ "$mode" == qemu ]]; then
-    if sed 's/\x1b\[[0-9;]*m//g' "$out/serial.log" | grep -aqE "Started Session [0-9]+ of User $USERNAME"; then
-        pass "the system log shows a session for $USERNAME"
-    else
-        fail "the system log shows a session for $USERNAME"
-    fi
+# The setup account's desktop has the Install Ollie OS icon; the new
+# account's does not, which shows this desktop is really $USERNAME's.
+if read_screen whose-desktop | grep -qiE 'Install Ollie'; then
+    fail "the desktop belongs to $USERNAME, not the setup account"
+else
+    pass "the desktop belongs to $USERNAME, not the setup account"
 fi
 # The Welcome window must not come back for the new account.
 sleep 20

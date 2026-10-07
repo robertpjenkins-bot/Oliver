@@ -5,7 +5,7 @@
 # --- live system and boot ---
 base
 linux
-linux-firmware
+# linux-firmware: the parts for consumer hardware are chosen in build.sh
 sof-firmware
 amd-ucode
 intel-ucode

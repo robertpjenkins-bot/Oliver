@@ -21,9 +21,10 @@ Steam Deck.
 - **`.exe` files just run.** Double-click one and [Oliver](../README.md)
   chooses the best runtime installed (Wine, Proton or Proton-GE) and starts
   it.
-- **Preinstalled:** Google Chrome, Steam, Proton-GE, Wine (with Mono and
-  Gecko), Oliver, the Dolphin file manager, Konsole, Kate and a screenshot
-  tool.
+- **Preinstalled:** Google Chrome, Steam, Wine (with Mono and Gecko),
+  Oliver, the Dolphin file manager, Konsole, Kate and a screenshot tool.
+  **Get Proton-GE** in the app menu downloads Proton-GE (about 500 MB) when
+  you want it; it is not on the ISO, so the ISO stays one file under 2 GB.
 - **DC - Debug Computer** (pinned to the bar) checks everything: memory,
   storage, temperature, internet, graphics and Vulkan, sound, Bluetooth,
   Steam, Proton, Wine and Oliver, stuck updates, and recent errors. It
@@ -184,7 +185,7 @@ os/
 └── profile/
     ├── packages.x86_64            packages from the Arch repositories
     ├── packages-optional.x86_64   added only if the repositories carry them
-    ├── aur-packages.txt           built from the AUR (Chrome, Proton-GE)
+    ├── aur-packages.txt           built from the AUR (Chrome, the cursor)
     └── airootfs/                  files copied into the system
         ├── etc/                   autologin, services, defaults
         └── usr/
