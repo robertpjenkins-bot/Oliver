@@ -69,7 +69,7 @@ stop_vm() {
     case "$mode" in
     qemu) kill "$qemu" 2>/dev/null || true ;;
     vbox)
-        sudo VBoxManage controlvm "$vm" poweroff >/dev/null 2>&1 || true
+        timeout 60 sudo VBoxManage controlvm "$vm" poweroff >/dev/null 2>&1 || true
         sleep 3
         cp "$(sudo VBoxManage showvminfo "$vm" --machinereadable | sed -n 's/^LogFldr="\(.*\)"$/\1/p')/VBox.log" "$out/VBox.log" 2>/dev/null ||
             sudo find /root/VirtualBox\ VMs/"$vm" -name VBox.log -exec cp {} "$out/VBox.log" \; 2>/dev/null || true
@@ -88,7 +88,7 @@ screenshot() { # screenshot FILE.png
         [[ -f "$ppm" ]] && convert "$ppm" "$1" && rm -f "$ppm"
         ;;
     vbox)
-        sudo VBoxManage controlvm "$vm" screenshotpng "$1" >/dev/null 2>&1
+        timeout 60 sudo VBoxManage controlvm "$vm" screenshotpng "$1" >/dev/null 2>&1
         sudo chmod a+r "$1" 2>/dev/null
         ;;
     esac
@@ -99,7 +99,7 @@ screenshot() { # screenshot FILE.png
 press_enter() {
     case "$mode" in
     qemu) printf 'sendkey ret\n' | socat - UNIX-CONNECT:"$mon" >/dev/null 2>&1 ;;
-    vbox) sudo VBoxManage controlvm "$vm" keyboardputscancode 1c 9c ;;
+    vbox) timeout 60 sudo VBoxManage controlvm "$vm" keyboardputscancode 1c 9c ;;
     esac
 }
 type_text() { # type_text TEXT (small letters and digits)
@@ -112,7 +112,7 @@ type_text() { # type_text TEXT (small letters and digits)
             sleep 0.15
         done
         ;;
-    vbox) sudo VBoxManage controlvm "$vm" keyboardputstring "$1" ;;
+    vbox) timeout 60 sudo VBoxManage controlvm "$vm" keyboardputstring "$1" ;;
     esac
 }
 
@@ -168,10 +168,19 @@ sleep 1
 press_enter
 if wait_for allset 60 'All set|login screen'; then pass "says the account is made"; else fail "says the account is made"; fi
 
-sleep 2
-press_enter
-# The login screen comes back up with the new account.
-if wait_for login 120 "$USERNAME|Log ?In|Password"; then
+# Press OK on "All set!". The login screen is recognised by its own buttons
+# (the "All set!" box itself says "Log in as ..."), and OK is pressed again
+# if the first press came before the box could take it.
+at_login=false
+for _ in 1 2 3; do
+    sleep 3
+    press_enter
+    if wait_for login 60 'Shut ?Down|Virtual Keyboard|Restart'; then
+        at_login=true
+        break
+    fi
+done
+if $at_login; then
     pass "Ollie OS goes to the login screen, showing $USERNAME"
 else
     fail "Ollie OS goes to the login screen, showing $USERNAME"
