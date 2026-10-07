@@ -71,6 +71,9 @@ jobs:
       - name: Build Ollie OS USB Maker
         run: bash os/usb/build-appimage.sh
       - uses: actions/upload-artifact@v4
+        # The ISO release below carries it too, so a full artifact storage
+        # does not stop the build.
+        continue-on-error: true
         with:
           name: ollie-os-usb-maker
           path: os/out/Ollie-OS-USB-Maker-x86_64.AppImage
@@ -80,6 +83,9 @@ jobs:
     if: needs.plan.outputs.reuse_run == ''
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    permissions:
+      contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,6 +103,7 @@ jobs:
 
       - name: Upload the ISO
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ollie-os-iso
           path: |
@@ -107,8 +114,31 @@ jobs:
           retention-days: 7
 
       - name: Build Ollie OS USB Maker for the release
-        if: startsWith(github.ref, 'refs/tags/os-v')
         run: sudo bash os/usb/build-appimage.sh
+
+      # Release files do not count against the artifact storage, which can
+      # fill up. A release file may be at most 2 GB, so the ISO goes up in
+      # two parts; the USB Maker joins them by itself.
+      - name: Publish the newest build as the "Ollie OS (newest)" release
+        if: "!startsWith(github.ref, 'refs/tags/os-v')"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd os/out
+          iso="$(ls ollie-os-*.iso | head -n1)"
+          sudo split -b 1900M -d -a 1 "$iso" "$iso.part"
+          gh release delete ollie-os-newest --yes --cleanup-tag 2>/dev/null || true
+          gh release create ollie-os-newest --prerelease --target "$GITHUB_SHA" \
+            --title "Ollie OS (newest build)" \
+            --notes "Built from ${GITHUB_SHA::7} on $(date -u '+%Y-%m-%d %H:%M UTC').
+
+          Download all of these into the same folder (Downloads):
+          - **Ollie-OS-USB-Maker-x86_64.AppImage**
+          - **$iso.part0** and **$iso.part1** (the ISO, in two parts)
+
+          Then run the USB Maker: it joins the two parts into the ISO by itself." \
+            "$iso".part* *.sha256 Ollie-OS-USB-Maker-x86_64.AppImage
 
       - name: Publish a release for os-v* tags
         if: startsWith(github.ref, 'refs/tags/os-v')
@@ -125,15 +155,32 @@ jobs:
     if: always() && (needs.iso.result == 'success' || needs.plan.outputs.reuse_run != '')
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
+        id: artifact
+        continue-on-error: true
         with:
           name: ollie-os-iso
           path: iso
           run-id: ${{ needs.plan.outputs.reuse_run || github.run_id }}
           github-token: ${{ github.token }}
+
+      - name: Get the ISO from the release instead
+        if: steps.artifact.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p iso
+          gh release download ollie-os-newest -D iso -p '*.part*'
+          first="$(ls iso/*.part0)"
+          cat iso/*.part[0-9] >"${first%.part0}"
+          rm iso/*.part[0-9]
+          ls -la iso
 
       - name: Make room on the runner
         run: |
@@ -175,6 +222,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: ollie-os-boot-test
           path: |

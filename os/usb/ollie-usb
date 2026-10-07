@@ -79,6 +79,22 @@ if [[ -z "$iso" ]]; then
         [[ -f "$f" ]] && iso="$f"
     done
 fi
+# The newest build comes as two parts (a GitHub release file is at most 2 GB):
+# join ollie-os-X.iso.part0 + .part1 into ollie-os-X.iso next to them.
+if [[ -z "$iso" ]]; then
+    for f in "$PWD"/ollie-os-*.iso.part0 "$HOME"/Downloads/ollie-os-*.iso.part0 "$HOME"/Desktop/ollie-os-*.iso.part0 \
+        ${APPIMAGE:+"$(dirname -- "$APPIMAGE")"/ollie-os-*.iso.part0}; do
+        [[ -f "$f" ]] || continue
+        base="${f%.part0}"
+        [[ -f "$base.part1" ]] || die "found $(basename -- "$f") but not $(basename -- "$base").part1 next to it. Download both parts."
+        say "Joining the two ISO parts into $(basename -- "$base")"
+        cat -- "$base".part[0-9] >"$base.joining" || die "could not join the parts (is the drive full?)."
+        mv -- "$base.joining" "$base"
+        rm -f -- "$base".part[0-9]
+        iso="$base"
+        break
+    done
+fi
 if [[ -z "$iso" ]]; then
     echo "Could not find an ollie-os-*.iso file in Downloads or next to this app."
     ask iso "Drag the ISO file into this window (or type its path) and press Enter:"
