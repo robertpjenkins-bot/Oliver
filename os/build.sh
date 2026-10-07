@@ -124,12 +124,13 @@ repo-add "$localrepo/ollie-local.db.tar.gz" "$localrepo"/*.pkg.tar.zst
 step "Writing package lists and pacman configuration"
 # Firmware for consumer hardware only. Arch splits linux-firmware into parts;
 # the NVIDIA part (large, and for cards the Steam Machine and Deck do not
-# have) and the server network cards are left out. Without the split, the
+# have), Qualcomm phone and laptop chips (qcom) and the server network cards
+# are left out. Without the split, the
 # whole package.
 firmware=(linux-firmware)
 if pacman -Si linux-firmware-amdgpu &>/dev/null; then
     firmware=()
-    for part in amdgpu radeon intel realtek mediatek atheros broadcom cirrus qcom other; do
+    for part in amdgpu radeon intel realtek mediatek atheros broadcom cirrus other; do
         pacman -Si "linux-firmware-$part" &>/dev/null && firmware+=("linux-firmware-$part")
     done
 fi
@@ -152,6 +153,9 @@ echo "firmware: ${firmware[*]}"
 install -D -m 0644 /etc/pacman.conf "$profile/airootfs/etc/pacman.conf"
 install -D -m 0644 /etc/pacman.d/mirrorlist "$profile/airootfs/etc/pacman.d/mirrorlist"
 cp /etc/pacman.conf "$profile/pacman.conf"
+# Of the cursor package's 24 colour sets, only the one Ollie OS uses goes on
+# the ISO (the rest is over 300 MB). Later patterns win in pacman.
+sed -i '/^\[options\]/a NoExtract = usr/share/icons/Bibata-* !usr/share/icons/Bibata-Modern-Ice/*' "$profile/pacman.conf"
 cat >>"$profile/pacman.conf" <<EOF
 
 [ollie-local]

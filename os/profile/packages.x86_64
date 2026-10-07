@@ -86,4 +86,5 @@ steam
 gamescope
 wine
 wine-mono
-wine-gecko
+# wine-gecko is left out to keep the ISO under 2 GB; Wine offers to
+# download it the first time a program needs it.
