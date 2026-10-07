@@ -1,4 +1,0 @@
-#!/bin/sh
-# AppImage entry point: start the USB maker, passing along a dropped ISO.
-HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/ollie-usb" "$@"

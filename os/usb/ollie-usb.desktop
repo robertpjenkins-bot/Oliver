@@ -6,4 +6,4 @@ Exec=ollie-usb %f
 Icon=ollie-os
 Terminal=false
 Categories=System;
-MimeType=application/x-cd-image;application/x-iso9660-image;
+MimeType=application/x-cd-image;application/x-iso9660-image;application/zip;

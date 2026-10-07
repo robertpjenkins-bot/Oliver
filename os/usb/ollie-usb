@@ -69,7 +69,17 @@ handed_over=false
 [[ -n "$dev" ]] && handed_over=true
 
 [[ $EUID -eq 0 && "${BASH_SOURCE[0]}" == /tmp/ollie-usb.* ]] && rm -f -- "${BASH_SOURCE[0]}"
-$handed_over || printf '\n%s  Ollie OS USB Maker%s  (asks only which drive)\n\n' "$bold" "$reset"
+# The Zip edition (Ollie-OS-USB-Maker-Zip AppImage) takes Ollie OS only from
+# a zip: of the ISO, or of its two parts, with any names.
+zip_only=false
+[[ "${OLLIE_USB_ZIP_ONLY:-}" == 1 ]] && zip_only=true
+if ! $handed_over; then
+    if $zip_only; then
+        printf '\n%s  Ollie OS USB Maker: Zip edition%s  (give it the zip; asks only which drive)\n\n' "$bold" "$reset"
+    else
+        printf '\n%s  Ollie OS USB Maker%s  (asks only which drive)\n\n' "$bold" "$reset"
+    fi
+fi
 
 # --- 2. Find and check the ISO --------------------------------------------------------
 # The ISO can come whole, or in parts (a GitHub release file is at most 2 GB),
@@ -288,6 +298,55 @@ iso_in_folder() { # iso_in_folder DIR|ZIP -> sets iso, fails when there is none
         return 1
     fi
 }
+# Zip edition: the zips in DIR (any names), newest first.
+zips_in() { # zips_in DIR
+    local f
+    find "$1" -maxdepth 1 -type f -size +"$MIN_PART_MIB"M -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2- |
+        while IFS= read -r f; do is_zip "$f" && printf '%s\n' "$f"; done
+    return 0
+}
+zip_iso_in() { # zip_iso_in DIR|ZIP -> sets iso from the first zip with Ollie OS
+    local z
+    if [[ -f "$1" ]]; then
+        is_zip "$1" || die "$(basename -- "$1") is not a zip file. This is the Zip edition: give it the zip with Ollie OS in it."
+        iso_in_folder "$1"
+        return
+    fi
+    while IFS= read -r z; do
+        iso_in_folder "$z" && return 0
+    done < <(zips_in "$1")
+    return 1
+}
+
+if $zip_only && ! $handed_over; then
+    if [[ -n "$iso" ]]; then
+        d="$iso"
+        iso=""
+        zip_iso_in "$d" || die "no zip with Ollie OS in it in $d."
+    fi
+    if [[ -z "$iso" ]]; then
+        while IFS= read -r d; do
+            zip_iso_in "$d" && break
+        done < <(search_dirs)
+    fi
+    if [[ -z "$iso" ]]; then
+        echo "Could not find a zip with Ollie OS in it in Downloads or next to this app."
+        pick=""
+        if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+            if have kdialog; then
+                pick="$(kdialog --title "Choose the zip with Ollie OS in it" --getopenfilename "$HOME/Downloads" "*.zip *.ZIP|Zip files" 2>/dev/null)" || true
+            elif have zenity; then
+                pick="$(zenity --file-selection --title="Choose the zip with Ollie OS in it" --file-filter='*.zip *.ZIP' 2>/dev/null)" || true
+            fi
+        fi
+        if [[ -z "$pick" ]]; then
+            ask pick "Drag the zip into this window and press Enter:"
+            pick="${pick//\'/}"
+        fi
+        [[ -e "$pick" ]] || die "no file at '$pick'."
+        zip_iso_in "$pick" || die "no zip with Ollie OS in it in $pick."
+    fi
+fi
 if [[ -d "$iso" ]] || { [[ -f "$iso" ]] && is_zip "$iso"; }; then
     d="$iso"
     iso=""

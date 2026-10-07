@@ -110,6 +110,11 @@ If it finds a username and password left by an older USB Maker, it asks
 whether to **remove** them (the default: Ollie OS then asks for a new one when it starts) or **set**
 a new username and password, which brings back a login screen.
 
+**Zip edition.** `Ollie-OS-USB-Maker-Zip-x86_64.AppImage` takes Ollie OS
+only from a zip: of the ISO, or of its two parts, with any names. It looks
+for the zip in Downloads (and the folders directly inside it), or opens a
+file picker for it.
+
 It lays the drive out like this:
 
 | Partition   | Size   | Format       | What                                        |
