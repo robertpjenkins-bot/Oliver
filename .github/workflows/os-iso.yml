@@ -212,13 +212,17 @@ jobs:
         if: always()
         run: bash os/tests/account-flow.sh qemu "$(find iso -name '*.iso' | head -n1)" account
 
+      - name: "First start the way GNOME Boxes runs it: older PC, QXL graphics, 30 GB disk"
+        if: always()
+        run: bash os/tests/account-flow.sh boxes "$(find iso -name '*.iso' | head -n1)" boxes
+
       - name: Show the first-start screenshots
         if: always()
         run: |
-          for f in account/step-*.png; do
+          for f in account/step-*.png boxes/step-*.png; do
             [[ -f "$f" ]] || continue
             convert "$f" -resize 800x -quality 55 "${f%.png}.jpg"
-            echo "=== SCREENSHOT acct-$(basename "${f%.png}") BEGIN"
+            echo "=== SCREENSHOT $(basename "$(dirname "$f")")-$(basename "${f%.png}") BEGIN"
             base64 -w 0 "${f%.png}.jpg"
             echo
             echo "=== SCREENSHOT END"
@@ -250,6 +254,9 @@ jobs:
             account/ocr-*.txt
             account/serial.log
             account/summary.txt
+            boxes/step-*.png
+            boxes/serial.log
+            boxes/summary.txt
           retention-days: 7
 
   # The same first start in VirtualBox, booting the ISO through its own UEFI

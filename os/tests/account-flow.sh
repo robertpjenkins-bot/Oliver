@@ -15,7 +15,7 @@
 # OUTDIR, and exits non-zero if any step failed.
 set -uo pipefail
 
-mode="${1:?usage: account-flow.sh qemu|vbox ISO OUTDIR}"
+mode="${1:?usage: account-flow.sh qemu|boxes|vbox ISO OUTDIR}"
 iso="$(realpath "${2:?}")"
 out="$(realpath -m "${3:?}")"
 readonly USERNAME=tester PASSWORD=ollie123
@@ -30,8 +30,19 @@ fail() { results+=("FAIL  $1"); echo "FAIL  $1"; }
 vm=ollie-test
 start_vm() {
     case "$mode" in
-    qemu)
+    qemu | boxes)
         local boot="$out/bootfiles" entry options accel=tcg cpu=max
+        # qemu: a modern PC (q35) with virtio graphics, like the tests always
+        # used. boxes: what GNOME Boxes gives an "unknown" system, an older
+        # PC (i440fx) with QXL graphics and a 30 GB disk, with everything the
+        # system logs copied to the serial log to see why it fails.
+        local machine=q35 gfx=(-device virtio-vga) extra=() append=""
+        if [[ "$mode" == boxes ]]; then
+            machine=pc gfx=(-vga qxl)
+            qemu-img create -f qcow2 "$out/disk.qcow2" 30G >/dev/null
+            extra=(-drive "file=$out/disk.qcow2,if=virtio")
+            append="systemd.journald.forward_to_console=1"
+        fi
         rm -rf "$boot"
         mkdir -p "$boot"
         xorriso -osirrox on -indev "$iso" \
@@ -44,10 +55,10 @@ start_vm() {
         mon="$out/monitor.sock"
         rm -f "$mon"
         qemu-system-x86_64 \
-            -machine q35,accel=$accel -cpu $cpu -smp 2 -m 4096 \
+            -machine $machine,accel=$accel -cpu $cpu -smp 2 -m 4096 \
             -kernel "$boot/vmlinuz-linux" -initrd "$boot/initramfs-linux.img" \
-            -append "$options console=tty0 console=ttyS0,115200" \
-            -cdrom "$iso" -device virtio-vga -display none \
+            -append "$options console=tty0 console=ttyS0,115200 $append" \
+            -cdrom "$iso" "${gfx[@]}" "${extra[@]}" -display none \
             -serial file:"$out/serial.log" \
             -monitor unix:"$mon",server,nowait \
             -nic user,model=virtio-net-pci &
@@ -67,7 +78,7 @@ start_vm() {
 }
 stop_vm() {
     case "$mode" in
-    qemu) kill "$qemu" 2>/dev/null || true ;;
+    qemu | boxes) kill "$qemu" 2>/dev/null || true ;;
     vbox)
         timeout 60 sudo VBoxManage controlvm "$vm" poweroff >/dev/null 2>&1 || true
         sleep 3
@@ -81,7 +92,7 @@ trap stop_vm EXIT
 
 screenshot() { # screenshot FILE.png
     case "$mode" in
-    qemu)
+    qemu | boxes)
         local ppm="${1%.png}.ppm"
         printf 'screendump %s\n' "$ppm" | socat - UNIX-CONNECT:"$mon" >/dev/null 2>&1
         sleep 1
@@ -98,14 +109,14 @@ screenshot() { # screenshot FILE.png
 # Keys. In QEMU through its monitor; in VirtualBox as keyboard scancodes.
 press_enter() {
     case "$mode" in
-    qemu) printf 'sendkey ret\n' | socat - UNIX-CONNECT:"$mon" >/dev/null 2>&1 ;;
+    qemu | boxes) printf 'sendkey ret\n' | socat - UNIX-CONNECT:"$mon" >/dev/null 2>&1 ;;
     vbox) timeout 60 sudo VBoxManage controlvm "$vm" keyboardputscancode 1c 9c ;;
     esac
 }
 type_text() { # type_text TEXT (small letters and digits)
     local i c
     case "$mode" in
-    qemu)
+    qemu | boxes)
         for ((i = 0; i < ${#1}; i++)); do
             c="${1:i:1}"
             printf 'sendkey %s\n' "$c" | socat - UNIX-CONNECT:"$mon" >/dev/null 2>&1
@@ -221,6 +232,11 @@ trap - EXIT
         echo
         echo "== Ollie OS services"
         sed 's/\x1b\[[0-9;]*m//g' "$out/serial.log" | grep -aE 'ollie-|Display Manager|Session [0-9]+ of User' | sort -u | head -n 40 || true
+        echo
+        echo "== Graphics and login screen problems"
+        sed 's/\x1b\[[0-9;]*m//g' "$out/serial.log" | tr -d '\r' |
+            grep -aiE 'sddm|kwin|drm|qxl|virtio.?gpu|wayland|failed|error|segfault|core dump' |
+            grep -viE 'audit:|ACPI' | head -n 120 || true
     fi
     if [[ -f "$out/VBox.log" ]]; then
         echo
