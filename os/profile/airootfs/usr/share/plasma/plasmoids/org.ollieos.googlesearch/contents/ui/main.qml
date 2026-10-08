@@ -6,7 +6,7 @@ import org.kde.plasma.components as PlasmaComponents
 import org.kde.kirigami as Kirigami
 
 // A search box that lives directly in the panel. Enter opens the results in
-// the default browser (Google Chrome); something that looks like a web
+// the default browser (Firefox); something that looks like a web
 // address is opened as-is instead of being searched for.
 PlasmoidItem {
     id: root

@@ -128,6 +128,17 @@ else
     cp "$(ls "$TARGET"/usr/lib/modules/*/vmlinuz | head -n1)" "$TARGET/boot/vmlinuz-linux"
 fi
 
+# The Fixer's good copy of the system (about 2 GB): the image Ollie OS was
+# started from, so damaged programs can be put back without internet.
+for sfs in "$BOOTMNT/arch/x86_64/airootfs.sfs" /run/ollie-bootdir/arch/x86_64/airootfs.sfs \
+    /run/archiso/copytoram/airootfs.sfs; do
+    if [[ -f "$sfs" ]]; then
+        say "Keeping a copy of the original system for The Fixer"
+        install -D -m 0644 "$sfs" "$TARGET/var/lib/ollie/fixer/airootfs.sfs"
+        break
+    fi
+done
+
 say "Setting up the installed system"
 # Undo what makes the image a live USB.
 rm -f "$TARGET/etc/mkinitcpio.conf.d/archiso.conf" \

@@ -12,8 +12,8 @@ Steam Deck.
   choose **Set as wallpaper** to use it instead.
 - **One bar along the bottom.**
   - **Left:** the cube button opens the app menu, and next to it is a
-    **Google search box**. Type, press Enter, and the results open in Google
-    Chrome. Typing a web address such as `youtube.com` goes straight there.
+    **Google search box**. Type, press Enter, and the results open in
+    Firefox. Typing a web address such as `youtube.com` goes straight there.
   - **Right:** your pinned apps, then the tray and the clock. To pin an app,
     right-click it and choose **Add to bar**. That works on desktop icons,
     on apps in Dolphin, and on Windows `.exe` files. In the app menu, the
@@ -21,10 +21,16 @@ Steam Deck.
 - **`.exe` files just run.** Double-click one and [Oliver](../README.md)
   chooses the best runtime installed (Wine, Proton or Proton-GE) and starts
   it.
-- **Preinstalled:** Google Chrome, Steam, Wine (with Mono and Gecko),
+- **Preinstalled:** Firefox, Steam, Wine (with Mono),
   Oliver, the Dolphin file manager, Konsole, Kate and a screenshot tool.
   **Get Proton-GE** in the app menu downloads Proton-GE (about 500 MB) when
   you want it; it is not on the ISO, so the ISO stays one file under 2 GB.
+- **The Fixer** (in the app menu) checks every system program for missing
+  or damaged files, shows what it found and, when you agree, puts good
+  copies back from Ollie OS's own copy of the system: the read-only image
+  on the USB, or the 2 GB copy the installer keeps on the drive. A program
+  updated since Ollie OS was made is downloaded again instead. Your own
+  files and settings are never touched.
 - **DC - Debug Computer** (pinned to the bar) checks everything: memory,
   storage, temperature, internet, graphics and Vulkan, sound, Bluetooth,
   Steam, Proton, Wine and Oliver, stuck updates, and recent errors. It
@@ -185,7 +191,7 @@ os/
 └── profile/
     ├── packages.x86_64            packages from the Arch repositories
     ├── packages-optional.x86_64   added only if the repositories carry them
-    ├── aur-packages.txt           built from the AUR (Chrome, the cursor)
+    ├── aur-packages.txt           built from the AUR (the cursor)
     └── airootfs/                  files copied into the system
         ├── etc/                   autologin, services, defaults
         └── usr/

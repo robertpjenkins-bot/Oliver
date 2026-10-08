@@ -82,6 +82,9 @@ file_permissions=(
   ["/usr/local/bin/ollie-first-setup"]="0:0:755"
   ["/usr/local/bin/ollie-set-account"]="0:0:755"
   ["/usr/local/bin/ollie-get-proton-ge"]="0:0:755"
+  ["/usr/local/bin/ollie-fixer"]="0:0:755"
+  ["/usr/local/bin/ollie-fixer-helper"]="0:0:755"
+  ["/usr/local/bin/ollie-selftest-fixer"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true
@@ -155,7 +158,8 @@ install -D -m 0644 /etc/pacman.d/mirrorlist "$profile/airootfs/etc/pacman.d/mirr
 cp /etc/pacman.conf "$profile/pacman.conf"
 # Of the cursor package's 24 colour sets, only the one Ollie OS uses goes on
 # the ISO (the rest is over 300 MB). Later patterns win in pacman.
-sed -i '/^\[options\]/a NoExtract = usr/share/icons/Bibata-* !usr/share/icons/Bibata-Modern-Ice/*' "$profile/pacman.conf"
+sed -i '/^\[options\]/a NoExtract = usr/share/icons/Bibata-* !usr/share/icons/Bibata-Modern-Ice/*' \
+    "$profile/pacman.conf" "$profile/airootfs/etc/pacman.conf"
 cat >>"$profile/pacman.conf" <<EOF
 
 [ollie-local]

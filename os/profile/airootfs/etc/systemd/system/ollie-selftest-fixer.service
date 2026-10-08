@@ -1,0 +1,11 @@
+[Unit]
+Description=Self-test of The Fixer (only with ollie.selftest=fixer)
+ConditionKernelCommandLine=ollie.selftest=fixer
+After=ollie-live-setup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ollie-selftest-fixer
+
+[Install]
+WantedBy=multi-user.target

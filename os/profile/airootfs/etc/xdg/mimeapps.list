@@ -1,8 +1,8 @@
 [Default Applications]
-x-scheme-handler/http=google-chrome.desktop
-x-scheme-handler/https=google-chrome.desktop
-text/html=google-chrome.desktop
-application/xhtml+xml=google-chrome.desktop
+x-scheme-handler/http=firefox.desktop
+x-scheme-handler/https=firefox.desktop
+text/html=firefox.desktop
+application/xhtml+xml=firefox.desktop
 application/x-ms-dos-executable=oliver.desktop
 application/x-msdownload=oliver.desktop
 application/vnd.microsoft.portable-executable=oliver.desktop

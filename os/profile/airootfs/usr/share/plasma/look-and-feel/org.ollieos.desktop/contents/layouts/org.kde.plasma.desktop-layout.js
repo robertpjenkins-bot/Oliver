@@ -27,7 +27,7 @@ panel.addWidget("org.kde.plasma.panelspacer");
 var apps = panel.addWidget("org.kde.plasma.icontasks");
 apps.currentConfigGroup = ["General"];
 apps.writeConfig("launchers", [
-    "applications:google-chrome.desktop",
+    "applications:firefox.desktop",
     "applications:steam.desktop",
     "applications:org.kde.dolphin.desktop",
     "applications:oliver.desktop",

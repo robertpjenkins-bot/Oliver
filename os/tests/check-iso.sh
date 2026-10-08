@@ -48,10 +48,11 @@ echo "== System image"
 unsquashfs -no-progress -quiet -d "$work/root" "$sfs" >/dev/null 2>&1 || bad "unpack system image"
 r="$work/root"
 pkg() { compgen -G "$r/var/lib/pacman/local/$1-[0-9]*" >/dev/null || compgen -G "$r/var/lib/pacman/local/$1-r[0-9]*" >/dev/null; }
-for p in bibata-cursor-theme-bin pciutils usbutils vulkan-tools linux plasma-desktop sddm dolphin konsole steam wine wine-mono gamescope google-chrome \
+for p in bibata-cursor-theme-bin pciutils usbutils vulkan-tools linux plasma-desktop sddm dolphin konsole steam wine wine-mono gamescope firefox \
     networkmanager pipewire mesa vulkan-radeon lib32-vulkan-radeon zram-generator btrfs-progs arch-install-scripts; do
     check "package $p" pkg "$p"
 done
+check "The Fixer in the menu" test -f "$r/usr/share/applications/ollie-fixer.desktop"
 check "Get Proton-GE in the menu" test -f "$r/usr/share/applications/ollie-get-proton-ge.desktop"
 check "graphics firmware for AMD (Steam Machine, Steam Deck)" compgen -G "$r/usr/lib/firmware/amdgpu/*"
 check "kernel modules present" compgen -G "$r/usr/lib/modules/*/vmlinuz"
@@ -60,14 +61,15 @@ echo "== Ollie OS pieces"
 for f in /usr/local/bin/oliver /usr/local/bin/ollie-install /usr/local/bin/ollie-write \
     /usr/local/bin/ollie-add-to-bar /usr/local/bin/ollie-live-setup \
     /usr/local/bin/ollie-dc /usr/local/bin/ollie-drivers \
-    /usr/local/bin/ollie-first-setup /usr/local/bin/ollie-set-account /usr/local/bin/ollie-get-proton-ge; do
+    /usr/local/bin/ollie-first-setup /usr/local/bin/ollie-set-account /usr/local/bin/ollie-get-proton-ge \
+    /usr/local/bin/ollie-fixer /usr/local/bin/ollie-fixer-helper; do
     check "$f is executable" test -x "$r$f"
 done
 check "oliver runs" "$r/usr/local/bin/oliver" help
 check "Oliver handles .exe files" grep -q 'application/x-ms-dos-executable=oliver.desktop' "$r/etc/xdg/mimeapps.list"
 check "oliver.desktop installed" test -f "$r/usr/share/applications/oliver.desktop"
-check "Chrome is the default browser" grep -q 'https=google-chrome.desktop' "$r/etc/xdg/mimeapps.list"
-check "google-chrome.desktop exists" test -f "$r/usr/share/applications/google-chrome.desktop"
+check "Firefox is the default browser" grep -q 'https=firefox.desktop' "$r/etc/xdg/mimeapps.list"
+check "firefox.desktop exists" test -f "$r/usr/share/applications/firefox.desktop"
 check "steam.desktop exists" test -f "$r/usr/share/applications/steam.desktop"
 check "DC - Debug Computer in the menu" test -f "$r/usr/share/applications/ollie-dc.desktop"
 check "Driver Installer in the menu" test -f "$r/usr/share/applications/ollie-drivers.desktop"

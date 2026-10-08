@@ -262,7 +262,7 @@ if have oliver; then
         head -n 3 <<<"$problems_log" | while IFS= read -r l; do info "$l"; done
     fi
 fi
-if have google-chrome-stable; then ok "Google Chrome installed"; else warn "Google Chrome is missing"; fi
+if have firefox; then ok "Firefox web browser installed"; else warn "Firefox web browser is missing (The Fixer can put it back)"; fi
 
 # --- Updates -------------------------------------------------------------------
 section "Updates and app store"

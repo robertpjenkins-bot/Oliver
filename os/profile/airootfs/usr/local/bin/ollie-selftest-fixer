@@ -1,0 +1,25 @@
+#!/bin/bash
+# Self-test of The Fixer, run at start-up only when the kernel command line
+# has ollie.selftest=fixer (the build's tests do that). It breaks a program
+# and an Ollie OS file on purpose, lets The Fixer find and repair them, and
+# prints OLLIE-FIXER-TEST: PASS or FAIL to the console.
+set -uo pipefail
+say() { echo "OLLIE-FIXER-TEST: $*" | tee /dev/console /dev/ttyS0 2>/dev/null; }
+
+say "breaking /usr/bin/nano and /usr/local/bin/ollie-dc on purpose"
+rm -f /usr/bin/nano
+echo "broken" >>/usr/local/bin/ollie-dc
+
+list="$(mktemp)"
+OLLIE_FIXER_PACKAGES="nano bash" /usr/local/bin/ollie-fixer-helper scan "$list" >/dev/null
+say "found: $(cut -f3 "$list" | tr '\n' ' ')"
+ok=true
+grep -q $'\t/usr/bin/nano$' "$list" || { say "did not notice /usr/bin/nano missing"; ok=false; }
+grep -q $'\t/usr/local/bin/ollie-dc$' "$list" || { say "did not notice /usr/local/bin/ollie-dc damaged"; ok=false; }
+grep -q '/usr/bin/bash$' "$list" && { say "wrongly reported bash as broken"; ok=false; }
+
+/usr/local/bin/ollie-fixer-helper fix "$list" | grep -v PROGRESS | while read -r l; do say "$l"; done
+[[ -x /usr/bin/nano ]] && /usr/bin/nano --version >/dev/null 2>&1 || { say "nano was not put back"; ok=false; }
+cmp -s /usr/local/bin/ollie-dc /run/archiso/airootfs/usr/local/bin/ollie-dc || { say "ollie-dc was not put back"; ok=false; }
+
+if $ok; then say PASS; else say FAIL; fi

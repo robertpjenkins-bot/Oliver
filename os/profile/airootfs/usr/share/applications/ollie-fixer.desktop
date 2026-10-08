@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=The Fixer
+Comment=Find broken system programs and put good copies back
+Exec=/usr/local/bin/ollie-fixer
+Icon=tools-wizard
+Categories=System;
+Terminal=false
