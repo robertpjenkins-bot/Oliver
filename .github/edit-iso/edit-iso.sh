@@ -38,22 +38,25 @@ unsquashfs -no-progress -d "$root" "$work/iso/arch/x86_64/airootfs.sfs" >/dev/nu
 
 step "Chrome out, Firefox in"
 y="${uuid:0:4}" m="${uuid:5:2}" d="${uuid:8:2}"
-conf="$root/tmp/edit-pacman.conf"
+conf="$root/var/tmp/edit-pacman.conf"
 sed -e "s|^Include *= */etc/pacman.d/mirrorlist|Server = https://archive.archlinux.org/repos/$y/$m/$d/\$repo/os/\$arch|" \
-    -e 's|^#\?CacheDir.*|CacheDir = /tmp/edit-pkgcache/|' "$root/etc/pacman.conf" >"$conf"
-grep -q '^CacheDir' "$conf" || sed -i '/^\[options\]/a CacheDir = /tmp/edit-pkgcache/' "$conf"
+    -e 's|^#\?CacheDir.*|CacheDir = /var/tmp/edit-pkgcache/|' "$root/etc/pacman.conf" >"$conf"
+grep -q '^CacheDir' "$conf" || sed -i '/^\[options\]/a CacheDir = /var/tmp/edit-pkgcache/' "$conf"
+# arch-chroot wants the root to be a mount point.
+mount --bind "$root" "$root"
 had_gnupg=false
 [[ -d "$root/etc/pacman.d/gnupg" ]] && had_gnupg=true
 mkdir -p "$root/etc/pacman.d/gnupg"
 mount --bind /etc/pacman.d/gnupg "$root/etc/pacman.d/gnupg"
-trap 'umount "$root/etc/pacman.d/gnupg" 2>/dev/null || true' EXIT
+trap 'umount "$root/etc/pacman.d/gnupg" 2>/dev/null || true; umount "$root" 2>/dev/null || true' EXIT
 if arch-chroot "$root" pacman -Q google-chrome >/dev/null 2>&1; then
-    arch-chroot "$root" pacman --config /tmp/edit-pacman.conf -Rns --noconfirm google-chrome
+    arch-chroot "$root" pacman --config /var/tmp/edit-pacman.conf -Rns --noconfirm google-chrome
 fi
-arch-chroot "$root" pacman --config /tmp/edit-pacman.conf -Sy --noconfirm --needed firefox
+arch-chroot "$root" pacman --config /var/tmp/edit-pacman.conf -Sy --noconfirm --needed firefox
 umount "$root/etc/pacman.d/gnupg"
+umount "$root"
 trap - EXIT
-rm -rf "$root/tmp/edit-pkgcache" "$conf" "$root/var/lib/pacman/sync"/*
+rm -rf "$root/var/tmp/edit-pkgcache" "$conf" "$root/var/lib/pacman/sync"/*
 $had_gnupg || rmdir "$root/etc/pacman.d/gnupg"
 
 step "Ollie OS files"
