@@ -1,0 +1,6 @@
+#!/bin/sh
+# AppRun is the AppImage entry point: it opens the OS Maker designer, or runs
+# a subcommand such as "build" when given one.
+set -eu
+HERE="$(dirname "$(readlink -f "${0}")")"
+exec "${HERE}/usr/bin/osmaker" "$@"

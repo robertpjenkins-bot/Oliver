@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=OS Maker 2.0
+GenericName=Operating System Designer
+Comment=Design your own desktop and build it as a bootable Arch Linux ISO
+Exec=osmaker %f
+TryExec=osmaker
+Icon=osmaker
+Terminal=false
+Categories=Development;System;
+Keywords=os;iso;arch;linux;desktop;designer;maker;
