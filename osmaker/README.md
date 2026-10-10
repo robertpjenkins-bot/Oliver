@@ -38,18 +38,18 @@ share.
 
 ## Building the ISO
 
-ISOs are built with [archiso](https://wiki.archlinux.org/title/Archiso), the
-same tool that builds the official Arch Linux ISO. OS Maker uses whichever of
-these it finds:
+Press **💿 Build ISO** and type your password when asked. That's it.
 
-| On this computer | What happens |
-|---|---|
-| Arch Linux | runs archiso directly (installing it if needed) and asks for your password |
-| Docker or Podman | runs archiso inside an `archlinux` container |
-| neither | **Only make the build folder** still works: copy it to an Arch machine and run `sudo bash build.sh` |
+OS Maker downloads Arch Linux's official bootstrap image (a minimal Arch
+system, about 150 MB, checked against Arch's published checksum and kept for
+next time), then builds your OS inside it with
+[archiso](https://wiki.archlinux.org/title/Archiso), the tool that builds the
+official Arch Linux ISO. This works on any 64-bit Linux, including Ubuntu,
+Mint, Fedora and Debian, and needs no Docker and no Arch install. On Arch
+Linux itself, it uses archiso directly.
 
-A build downloads every package (often 1–3 GB), needs about 10 GB of free
-space and takes 10–40 minutes. The finished ISO lands in
+A build downloads every app (often 1–3 GB), needs about 10 GB of free space
+and takes 10–40 minutes. The finished ISO lands in
 `~/OS Maker/<computer-name>/out/`. Boot it in VirtualBox, GNOME Boxes or QEMU,
 or write it to a USB stick with balenaEtcher or Fedora Media Writer.
 
@@ -58,6 +58,7 @@ From a terminal:
 ```console
 $ osmaker build my-os.osmaker            # build the ISO
 $ osmaker folder my-os.osmaker -o ~/out  # only write the build folder
+$ osmaker build my-os.osmaker --with docker  # build in Docker (or podman) instead
 ```
 
 ## What's in the finished OS
@@ -105,5 +106,5 @@ $ make appimage   # build dist/OS_Maker-*.AppImage
 |---|---|
 | `internal/design` | the `.osmaker` format, validation, the app catalog |
 | `internal/archiso` | turns a design into an archiso build folder; `assets/` holds `build.sh` and the desktop shell |
-| `internal/builder` | runs `build.sh` with archiso, Docker or Podman |
+| `internal/builder` | downloads Arch's bootstrap image and runs `build.sh` inside it (or with archiso, Docker or Podman) |
 | `internal/editor` | the local web server and the designer page (`web/`) |

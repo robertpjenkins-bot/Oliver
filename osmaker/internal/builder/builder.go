@@ -11,13 +11,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // Method is a way of running build.sh.
 type Method struct {
-	// Kind is "archiso", "docker" or "podman".
+	// Kind is "archiso", "bootstrap", "docker" or "podman".
 	Kind string `json:"kind"`
 	Path string `json:"path"`
 	Desc string `json:"desc"`
@@ -34,6 +36,9 @@ func Detect() []Method {
 	} else if _, err := os.Stat("/etc/arch-release"); err == nil {
 		// Arch without archiso yet: build.sh installs it.
 		out = append(out, Method{"archiso", "", "Arch Linux on this computer, installing archiso (asks for your password)"})
+	}
+	if bootstrapPossible() {
+		out = append(out, Method{"bootstrap", "", "download Arch Linux and build from it (asks for your password)"})
 	}
 	for _, kind := range []string{"docker", "podman"} {
 		if p, err := exec.LookPath(kind); err == nil {
@@ -52,17 +57,7 @@ func Command(ctx context.Context, m Method, dir string) (*exec.Cmd, error) {
 	script := filepath.Join(dir, "build.sh")
 	switch m.Kind {
 	case "archiso":
-		if os.Geteuid() == 0 {
-			return exec.CommandContext(ctx, "bash", script), nil
-		}
-		// pkexec shows a graphical password prompt; sudo needs a terminal.
-		if p, err := exec.LookPath("pkexec"); err == nil && os.Getenv("DISPLAY")+os.Getenv("WAYLAND_DISPLAY") != "" {
-			return exec.CommandContext(ctx, p, "bash", script), nil
-		}
-		if p, err := exec.LookPath("sudo"); err == nil {
-			return exec.CommandContext(ctx, p, "bash", script), nil
-		}
-		return nil, errors.New("building needs root: run  sudo bash " + script)
+		return asRoot(ctx, "bash", script)
 	case "docker", "podman":
 		args := []string{"run", "--rm", "--privileged",
 			"-e", "OSMAKER_CONTAINER=1",
@@ -76,10 +71,58 @@ func Command(ctx context.Context, m Method, dir string) (*exec.Cmd, error) {
 	return nil, fmt.Errorf("unknown build method %q", m.Kind)
 }
 
+// asRoot runs a command as root, asking for the password the friendliest
+// way available.
+func asRoot(ctx context.Context, name string, args ...string) (*exec.Cmd, error) {
+	// pkexec wants a full path.
+	if p, err := exec.LookPath(name); err == nil {
+		name = p
+	}
+	if os.Geteuid() == 0 {
+		return exec.CommandContext(ctx, name, args...), nil
+	}
+	// pkexec shows a graphical password prompt; sudo needs a terminal.
+	if p, err := exec.LookPath("pkexec"); err == nil && os.Getenv("DISPLAY")+os.Getenv("WAYLAND_DISPLAY") != "" {
+		return exec.CommandContext(ctx, p, append([]string{name}, args...)...), nil
+	}
+	if p, err := exec.LookPath("sudo"); err == nil {
+		return exec.CommandContext(ctx, p, append([]string{name}, args...)...), nil
+	}
+	return nil, fmt.Errorf("building needs root: run  sudo %s %s", name, strings.Join(args, " "))
+}
+
+// bootstrapPossible reports whether this machine can build inside a
+// downloaded Arch Linux: Arch only publishes it for x86-64.
+func bootstrapPossible() bool {
+	if runtime.GOARCH != "amd64" {
+		return false
+	}
+	for _, tool := range []string{"unshare", "chroot", "tar"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			return false
+		}
+	}
+	if os.Geteuid() == 0 {
+		return true
+	}
+	for _, tool := range []string{"pkexec", "sudo"} {
+		if _, err := exec.LookPath(tool); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // Run builds the ISO in dir, streaming the build's output to log, and
 // returns the path of the finished ISO.
 func Run(ctx context.Context, m Method, dir string, log io.Writer) (string, error) {
-	cmd, err := Command(ctx, m, dir)
+	var cmd *exec.Cmd
+	var err error
+	if m.Kind == "bootstrap" {
+		cmd, err = bootstrapCommand(ctx, dir, log)
+	} else {
+		cmd, err = Command(ctx, m, dir)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -93,6 +136,24 @@ func Run(ctx context.Context, m Method, dir string, log io.Writer) (string, erro
 		return "", errors.New("the build finished but no ISO appeared in " + filepath.Join(dir, "out"))
 	}
 	return iso, nil
+}
+
+func bootstrapCommand(ctx context.Context, dir string, log io.Writer) (*exec.Cmd, error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	cache := CacheDir()
+	tarball, err := EnsureBootstrap(ctx, cache, log)
+	if err != nil {
+		return nil, err
+	}
+	script, err := writeArchBuildScript(cache)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintln(log, "Asking for your password to build the OS …")
+	return asRoot(ctx, "bash", script, tarball, cache, dir)
 }
 
 // NewestISO returns the most recently written .iso in dir.

@@ -144,7 +144,7 @@ func buildCmd(folderOnly bool, args []string) error {
 	fs := flag.NewFlagSet("build", flag.ContinueOnError)
 	home, _ := os.UserHomeDir()
 	out := fs.String("o", filepath.Join(home, "OS Maker"), "folder to build in")
-	method := fs.String("with", "", "archiso, docker or podman (default: the first available)")
+	method := fs.String("with", "", "archiso, bootstrap, docker or podman (default: the best available)")
 	// Accept the design before or after the flags.
 	var file string
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -185,7 +185,7 @@ func buildCmd(folderOnly bool, args []string) error {
 		}
 	}
 	if m.Kind == "" {
-		return errors.New("this computer cannot build ISOs: install Docker or Podman, or use Arch Linux (then: sudo bash " + filepath.Join(dir, "build.sh") + ")")
+		return errors.New("this computer cannot build ISOs: it needs to be a 64-bit (x86-64) Linux computer (or, on Arch Linux: sudo bash " + filepath.Join(dir, "build.sh") + ")")
 	}
 	fmt.Println("building with", m.Desc)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

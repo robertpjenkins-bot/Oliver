@@ -285,7 +285,7 @@ func (s *Server) startBuild(w http.ResponseWriter, r *http.Request) (any, error)
 			}
 		}
 		if method.Kind == "" {
-			return nil, errors.New("this computer cannot build ISOs yet: install Docker or Podman, or use Arch Linux with archiso")
+			return nil, errors.New("this computer cannot build ISOs: it needs to be a 64-bit (x86-64) Linux computer")
 		}
 	}
 

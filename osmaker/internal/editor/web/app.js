@@ -735,25 +735,28 @@ async function openBuild() {
   const status = await api("GET", "/api/build");
   if (status.running) return showProgress();
 
-  const methods = info.methods;
+  // One button: OS Maker picks the best way this computer can build.
+  const best = info.methods[0];
   const out = h("input", { type: "text", value: info.outDir });
-  const method = h("select", {}, methods.map(m => h("option", { value: m.kind }, m.desc)));
   const n = D.apps.length;
+  const how = !best ? null
+    : best.kind === "bootstrap" ? "OS Maker downloads Arch Linux (about 150 MB, only the first time), changes it to match your design, and turns it into an ISO."
+    : best.kind === "archiso" ? "This computer runs Arch Linux, so OS Maker builds your ISO right here."
+    : `OS Maker builds your ISO inside an Arch Linux container in ${best.kind}.`;
   body.replaceChildren(
     h("p", {}, `This makes `, h("b", {}, D.system.osName), ` as a bootable Arch Linux ISO with your desktop and ${n} extra app${n === 1 ? "" : "s"}.`),
-    field("Save it in", out),
-    methods.length
-      ? field("Build using", method)
-      : h("div", { class: "note" }, "This computer can't build ISOs yet. Install ", h("b", {}, "Docker"), " or ", h("b", {}, "Podman"),
-          " (or use Arch Linux, where OS Maker uses archiso). Until then you can make the build folder and run its ",
-          h("code", {}, "build.sh"), " on an Arch Linux computer."),
+    best
+      ? h("div", { class: "note" }, how, " You'll be asked for your password once.")
+      : h("div", { class: "note" }, "This computer can't build ISOs: OS Maker needs a 64-bit (x86-64) Linux computer. ",
+          "You can still make the build folder and run its ", h("code", {}, "build.sh"), " on one."),
     h("div", { class: "note", style: { marginTop: "12px" } },
-      "Building downloads every package (often 1–3 GB) and takes 10–40 minutes. You need about 10 GB of free space. ",
+      "Building downloads every app (often 1–3 GB) and takes 10–40 minutes. You need about 10 GB of free space. ",
       "You can keep designing while it runs; the build uses the design as it is right now."),
+    h("details", { style: { marginTop: "12px" } }, h("summary", {}, "Where to save it"), field("Folder", out)),
     h("div", { class: "btns" },
       h("button", { onclick: closeBuild }, "Cancel"),
-      h("button", { onclick: () => startBuild(out.value, "", true) }, "Only make the build folder"),
-      methods.length ? h("button", { class: "primary", onclick: () => startBuild(out.value, method.value, false) }, "💿 Build ISO") : null));
+      best ? null : h("button", { onclick: () => startBuild(out.value, "", true) }, "Make the build folder"),
+      best ? h("button", { class: "primary", onclick: () => startBuild(out.value, best.kind, false) }, "💿 Build ISO") : null));
 }
 
 async function startBuild(outDir, method, folderOnly) {
