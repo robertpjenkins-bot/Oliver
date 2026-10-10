@@ -54,6 +54,13 @@ while read -r pkg; do
 	fi
 done < <(grep -Ev '^\s*(#|$)' "$here/packages.txt")
 cat "$work/annie-packages" >>"$profile/packages.x86_64"
+
+# The Arch live ISO carries rescue and server tools a desktop doesn't need.
+# Dropping them keeps the ISO small enough to publish as a single file.
+for pkg in clonezilla partclone partimage fsarchiver open-vm-tools virtualbox-guest-utils-nox \
+	irssi lynx mc nmap tcpdump wvdial xl2tpd pptpclient vpnc openconnect openvpn linux-atm lftp; do
+	sed -i "/^${pkg}\$/d" "$profile/packages.x86_64"
+done
 sort -u -o "$profile/packages.x86_64" "$profile/packages.x86_64"
 
 # NetworkManager replaces the live ISO's iwd + systemd-networkd.

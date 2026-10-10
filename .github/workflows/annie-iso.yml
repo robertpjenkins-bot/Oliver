@@ -7,6 +7,9 @@ on:
       - ".github/workflows/annie-iso.yml"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   iso:
     runs-on: ubuntu-latest
@@ -35,11 +38,26 @@ jobs:
       - name: Checksum
         run: cd annie-os/iso && sha256sum *.iso | tee SHA256SUMS
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: annie-os-iso
-          path: |
-            annie-os/iso/*.iso
-            annie-os/iso/SHA256SUMS
-          compression-level: 0
-          retention-days: 30
+      # Published as a release rather than an artifact: releases don't count
+      # against the account's artifact storage, which the ISO would fill.
+      # GitHub caps each release file at 2 GiB, so a bigger ISO goes up in parts.
+      - name: Publish as a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd annie-os/iso
+          iso=$(ls *.iso)
+          files=("$iso" SHA256SUMS)
+          notes="Annie OS live ISO. Write it to a USB stick (Annie Disk Writer, Ventoy, balenaEtcher or dd) and boot from it."
+          if [ "$(stat -c %s "$iso")" -ge 2147483648 ]; then
+            split -b 1900M -d "$iso" "$iso.part"
+            files=("$iso".part* SHA256SUMS)
+            notes="$notes
+
+          The ISO is split in parts because GitHub limits release files to 2 GB. Download every part, then join them:
+          - Linux / Mac: cat $iso.part* > $iso
+          - Windows: copy /b $iso.part00+$iso.part01 $iso"
+          fi
+          tag="annie-os-$(date +%Y.%m.%d)-run${{ github.run_number }}"
+          gh release create "$tag" "${files[@]}" -R "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title "Annie OS $(date +%Y.%m.%d)" --notes "$notes" --prerelease
