@@ -1,0 +1,905 @@
+#!/bin/bash
+# Annie OS USB Maker: put Annie OS onto a single drive that it then runs from.
+#
+# Nothing else is needed: no second drive, no separate installer. The drive
+# is laid out in 25 GB, with whatever is left over shared with other systems:
+#
+#   ANNIE_BOOT   5 GB    FAT32  the Annie OS files and boot loader
+#   ANNIE_DATA   20 GB   ext4   everything you save and install in Annie OS
+#   ANNIE_SHARE  the rest       exFAT or FAT32, readable by Windows, macOS,
+#                               SteamOS and cameras (about 4 GB on a 32 GB stick)
+#
+#   annie-usb [ISO]
+#
+# Run from a terminal or by double-clicking (it opens a terminal window). The
+# only question is which drive. Annie OS then logs in by itself as "annie".
+#
+# Drives under 25 GB work too (8 GB at least): the ANNIE_DATA part shrinks
+# to fit, and there is no ANNIE_SHARE part.
+#
+# No administrator password is needed for a USB drive: the work goes through
+# udisks, the service the file manager uses to format and mount USB sticks,
+# which lets the person sitting at the computer do that to removable drives.
+# Only if udisks refuses does it fall back to sudo, which needs a password.
+set -euo pipefail
+
+readonly BOOT_SIZE_GIB=5
+readonly DATA_SIZE_GIB=20    # at most; less on a smaller drive
+readonly MIN_DATA_GIB=2
+readonly MIN_DRIVE_GIB=8
+readonly MIN_SHARE_MIB=256
+readonly FAT32_MAX_FILE=$((4 * 1024 * 1024 * 1024 - 1))
+readonly MIB=$((1024 * 1024))
+readonly GIB=$((1024 * MIB))
+
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' reset=$'\e[0m'
+say() { printf '%s==>%s %s\n' "$teal$bold" "$reset" "$*"; }
+die() {
+    printf '\n%sError:%s %s\n' "$red$bold" "$reset" "$*" >&2
+    exit 1
+}
+ask() { # ask VAR "question" [default]
+    local reply
+    read -rp "$2${3:+ [$3]} " reply || die "no answer, stopped."
+    printf -v "$1" '%s' "${reply:-${3:-}}"
+}
+have() { command -v "$1" >/dev/null 2>&1; }
+
+pick="" answer=""
+
+# --- 1. Make sure there is a terminal to talk in --------------------------------
+# Double-clicked from a file manager there is none, so open one and start again.
+if [[ ! -t 0 && -z "${ANNIE_USB_IN_TERMINAL:-}" ]]; then
+    export ANNIE_USB_IN_TERMINAL=1
+    self="${APPIMAGE:-$(realpath -- "$0")}"
+    for term in konsole gnome-terminal kgx xfce4-terminal xterm; do
+        have "$term" || continue
+        case "$term" in
+        konsole) exec konsole --hold -e "$self" "$@" ;;
+        gnome-terminal | kgx) exec "$term" -- "$self" "$@" ;;
+        *) exec "$term" -hold -e "$self" "$@" ;;
+        esac
+    done
+    msg="No terminal program found. Run this from a terminal instead."
+    have kdialog && kdialog --error "$msg"
+    have zenity && zenity --error --text="$msg"
+    die "$msg"
+fi
+
+# Answers handed over from an earlier, non-root run of this script (see the
+# sudo fallback at the end); when present the questions are skipped.
+dev="${ANNIE_USB_DEV:-}"
+share_fs="${ANNIE_USB_SHARE_FS:-}"
+handed_over=false
+[[ -n "$dev" ]] && handed_over=true
+
+[[ $EUID -eq 0 && "${BASH_SOURCE[0]}" == /tmp/annie-usb.* ]] && rm -f -- "${BASH_SOURCE[0]}"
+# The Zip edition (Annie-OS-USB-Maker-Zip AppImage) takes Annie OS only from
+# a zip: of the ISO, or of its two parts, with any names.
+zip_only=false
+[[ "${ANNIE_USB_ZIP_ONLY:-}" == 1 ]] && zip_only=true
+if ! $handed_over; then
+    if $zip_only; then
+        printf '\n%s  Annie OS USB Maker: Zip edition%s  (give it the zip; asks only which drive)\n\n' "$bold" "$reset"
+    else
+        printf '\n%s  Annie OS USB Maker%s  (asks only which drive)\n\n' "$bold" "$reset"
+    fi
+fi
+
+# --- 2. Find and check the ISO --------------------------------------------------------
+# The ISO can come whole, or in parts (a GitHub release file is at most 2 GB),
+# with any file names: give this app the ISO file, or the folder the parts
+# are in. The parts are recognised by what is inside them, not by their names.
+# The size of every part but the last (smaller sizes only for tests).
+readonly PART_BYTES=$((${ANNIE_USB_TEST_PART_MIB:-1900} * MIB))
+# Small enough for a second part from an ISO only just over the split size.
+readonly MIN_PART_MIB=${ANNIE_USB_TEST_MIN_MIB:-16}
+is_iso_start() { [[ "$(dd if="$1" bs=1 skip=32769 count=5 2>/dev/null)" == CD001 ]]; }
+is_zip() { [[ "$(head -c 4 -- "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')" == 504b0304 ]]; }
+size_of() { stat -c %s -- "$1"; }
+
+# Print the ISO found in DIR, joining its parts first. Returns 2 when there
+# is none; any other failure has already said what is wrong.
+iso_from_dir() { # iso_from_dir DIR
+    local dir="$1" f first="" out sum want got
+    local -a rest=() wholes=()
+    [[ -d "$dir" ]] || return 2
+    while IFS= read -r -d '' f; do
+        if is_zip "$f"; then
+            wholes+=("$f") # looked inside below
+        elif is_iso_start "$f"; then
+            if (($(size_of "$f") == PART_BYTES)); then first="$f"; else wholes+=("$f"); fi
+        elif (($(size_of "$f") <= PART_BYTES)); then
+            rest+=("$f")
+        fi
+    done < <(find "$dir" -maxdepth 1 -type f -size +"$MIN_PART_MIB"M ! -iname '*.appimage' ! -name '*.joining' -print0 2>/dev/null | sort -zV)
+
+    if [[ -n "$first" ]]; then
+        ((${#rest[@]} > 0)) || die "found the first part of Annie OS in $dir, but not the second. Download both parts into the same folder."
+        sum="$(find "$dir" -maxdepth 1 -type f \( -name '*.sha256' -o -name 'SHA256SUMS*' \) 2>/dev/null | head -n1)"
+        want=""
+        [[ -n "$sum" ]] && want="$(awk '{print $1; exit}' "$sum")"
+        if ((${#rest[@]} > 1)) && [[ -z "$want" ]]; then
+            die "the folder $dir has more than one big file besides the first part, so it is not clear which is the second. Put just the two parts in a folder of their own and try again."
+        fi
+        out="$dir/annie-os.iso"
+        [[ -w "$dir" ]] || out="$HOME/Downloads/annie-os.iso"
+        # Try files named like the first part (…part00 / …part01) before others.
+        local stem="${first##*/}" ordered=()
+        stem="${stem%??}"
+        for f in "${rest[@]}"; do [[ "${f##*/}" == "$stem"* ]] && ordered+=("$f"); done
+        for f in "${rest[@]}"; do [[ "${f##*/}" == "$stem"* ]] || ordered+=("$f"); done
+        rest=("${ordered[@]}")
+        # Usually there is exactly one second part; with a checksum file next
+        # to the parts, other big files in the folder are tried and skipped.
+        for f in "${rest[@]}"; do
+            say "Joining the two parts of Annie OS into $out" >&2
+            cat -- "$first" "$f" >"$out.joining" || { rm -f -- "$out.joining"; die "could not join the parts (is the drive full? it needs about 3 GB free)."; }
+            if [[ -n "$want" ]] && have sha256sum; then
+                say "Checking the joined file" >&2
+                got="$(sha256sum "$out.joining" | awk '{print $1}')"
+                if [[ "$got" != "$want" ]]; then
+                    rm -f -- "$out.joining"
+                    continue
+                fi
+            fi
+            mv -f -- "$out.joining" "$out"
+            rm -f -- "$first" "$f"
+            echo "$out"
+            return 0
+        done
+        die "the parts in $dir do not fit together: one of them is incomplete or from a different build. Download both parts again."
+    fi
+
+    # A whole ISO, or a zip with Annie OS in it: the newest one first.
+    ((${#wholes[@]} > 0)) || return 2
+    local rc
+    while IFS= read -r f; do
+        if is_zip "$f"; then
+            iso_from_zip "$f" && return 0
+            rc=$?
+            ((rc == 2)) || exit 1
+        else
+            echo "$f"
+            return 0
+        fi
+    done < <(ls -t -- "${wholes[@]}")
+    return 2
+}
+
+# Print the ISO inside ZIP (whole, or in parts with any names, also in
+# folders inside the zip), written next to the zip. Returns 2 when the zip
+# has no Annie OS in it.
+iso_from_zip() { # iso_from_zip ZIP
+    local zip="$1" dir out rc x
+    dir="$(dirname -- "$zip")"
+    out="$dir/annie-os.iso"
+    [[ -w "$dir" ]] || out="$HOME/Downloads/annie-os.iso"
+    if have python3; then
+        say "Looking inside $(basename -- "$zip")" >&2
+        rc=0
+        python3 - "$zip" "$out" "$PART_BYTES" "$((MIN_PART_MIB * MIB))" <<'PY' || rc=$?
+import hashlib, os, sys, zipfile
+zpath, out, part, least = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+try:
+    zf = zipfile.ZipFile(zpath)
+except Exception:
+    sys.exit(2)
+first, wholes, rest, want = None, [], [], None
+for i in sorted(zf.infolist(), key=lambda i: i.filename):
+    if i.is_dir():
+        continue
+    if (i.filename.endswith(".sha256") or os.path.basename(i.filename).startswith("SHA256SUMS")) and i.file_size < 4096:
+        want = zf.read(i).split()[0].decode(errors="replace")
+        continue
+    if i.file_size <= least or i.filename.lower().endswith(".appimage"):
+        continue
+    try:
+        with zf.open(i) as f:
+            start = f.read(32774)[32769:]
+    except Exception:
+        continue
+    if start == b"CD001":
+        if i.file_size == part:
+            first = i
+        else:
+            wholes.append(i)
+    elif i.file_size <= part:
+        rest.append(i)
+if first is not None:
+    if not rest:
+        sys.exit(4)
+    if len(rest) > 1 and not want:
+        sys.exit(5)
+    tries = [[first, r] for r in rest]
+elif wholes:
+    tries = [[w] for w in wholes]
+else:
+    sys.exit(2)
+for members in tries:
+    total = sum(m.file_size for m in members)
+    done, h, tmp = 0, hashlib.sha256(), out + ".joining"
+    print("    unpacking %d MB" % (total >> 20), file=sys.stderr)
+    try:
+        with open(tmp, "wb") as o:
+            for m in members:
+                with zf.open(m) as f:
+                    while True:
+                        b = f.read(8 << 20)
+                        if not b:
+                            break
+                        o.write(b)
+                        h.update(b)
+                        done += len(b)
+                        if done % (512 << 20) < (8 << 20):
+                            print("    %d%%" % (done * 100 // total), file=sys.stderr)
+    except OSError as e:
+        print("    " + str(e), file=sys.stderr)
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        sys.exit(6)
+    except Exception as e:
+        print("    " + str(e), file=sys.stderr)
+        sys.exit(7)
+    if want and h.hexdigest() != want:
+        os.remove(tmp)
+        continue
+    os.replace(tmp, out)
+    print(out)
+    sys.exit(0)
+sys.exit(3)
+PY
+        case $rc in
+        0) return 0 ;;
+        2) return 2 ;;
+        3) die "the Annie OS in $(basename -- "$zip") does not match its checksum: the zip is incomplete or broken. Download or make it again." ;;
+        4) die "$(basename -- "$zip") has only the first part of Annie OS. Put both parts in the zip." ;;
+        5) die "$(basename -- "$zip") has more than one big file besides the first part, so it is not clear which is the second. Put just the two parts in the zip." ;;
+        6) die "could not unpack $(basename -- "$zip") (is the drive full? it needs about 3 GB free)." ;;
+        *) die "could not unpack $(basename -- "$zip"); it may be broken. Download or make it again." ;;
+        esac
+    fi
+    # Without Python: unpack it with another tool, then look in the folder.
+    x="$dir/annie-os-unzipped"
+    mkdir -p -- "$x" || die "could not make a folder to unpack $(basename -- "$zip") into."
+    say "Unpacking $(basename -- "$zip")" >&2
+    if have bsdtar; then
+        bsdtar -xf "$zip" -C "$x" >&2 || die "could not unpack $(basename -- "$zip")."
+    elif have unzip; then
+        unzip -q -o "$zip" -d "$x" >&2 || die "could not unpack $(basename -- "$zip")."
+    else
+        die "this computer cannot open zip files. Unzip it in the file manager, then run this again."
+    fi
+    find "$x" -mindepth 2 -type f -exec mv -f -t "$x" -- {} + 2>/dev/null || true
+    iso_from_dir "$x"
+}
+
+# Folders to look in when nothing is given: here, Downloads (and the folders
+# directly inside it), the desktop, and the folder this app is in.
+search_dirs() {
+    printf '%s\n' "$PWD" "$HOME/Downloads"
+    find "$HOME/Downloads" -mindepth 1 -maxdepth 1 -type d 2>/dev/null
+    printf '%s\n' "$HOME/Desktop"
+    [[ -n "${APPIMAGE:-}" ]] && dirname -- "$APPIMAGE"
+    return 0
+}
+
+iso="${1:-}"
+iso="${iso//\'/}"
+# Look in a folder or zip; stop if something in it is wrong (already explained).
+iso_in_folder() { # iso_in_folder DIR|ZIP -> sets iso, fails when there is none
+    local found rc
+    if [[ -f "$1" ]]; then
+        if found="$(iso_from_zip "$1")"; then
+            iso="$found"
+            return 0
+        else
+            rc=$?
+            ((rc == 2)) || exit 1
+            return 1
+        fi
+    fi
+    if found="$(iso_from_dir "$1")"; then
+        iso="$found"
+        return 0
+    else
+        rc=$?
+        ((rc == 2)) || exit 1
+        return 1
+    fi
+}
+# Zip edition: the zips in DIR (any names), newest first.
+zips_in() { # zips_in DIR
+    local f
+    find "$1" -maxdepth 1 -type f -size +"$MIN_PART_MIB"M -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2- |
+        while IFS= read -r f; do is_zip "$f" && printf '%s\n' "$f"; done
+    return 0
+}
+zip_iso_in() { # zip_iso_in DIR|ZIP -> sets iso from the first zip with Annie OS
+    local z
+    if [[ -f "$1" ]]; then
+        is_zip "$1" || die "$(basename -- "$1") is not a zip file. This is the Zip edition: give it the zip with Annie OS in it."
+        iso_in_folder "$1"
+        return
+    fi
+    while IFS= read -r z; do
+        iso_in_folder "$z" && return 0
+    done < <(zips_in "$1")
+    return 1
+}
+
+if $zip_only && ! $handed_over; then
+    if [[ -n "$iso" ]]; then
+        d="$iso"
+        iso=""
+        zip_iso_in "$d" || die "no zip with Annie OS in it in $d."
+    fi
+    if [[ -z "$iso" ]]; then
+        while IFS= read -r d; do
+            zip_iso_in "$d" && break
+        done < <(search_dirs)
+    fi
+    if [[ -z "$iso" ]]; then
+        echo "Could not find a zip with Annie OS in it in Downloads or next to this app."
+        pick=""
+        if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+            if have kdialog; then
+                pick="$(kdialog --title "Choose the zip with Annie OS in it" --getopenfilename "$HOME/Downloads" "*.zip *.ZIP|Zip files" 2>/dev/null)" || true
+            elif have zenity; then
+                pick="$(zenity --file-selection --title="Choose the zip with Annie OS in it" --file-filter='*.zip *.ZIP' 2>/dev/null)" || true
+            fi
+        fi
+        if [[ -z "$pick" ]]; then
+            ask pick "Drag the zip into this window and press Enter:"
+            pick="${pick//\'/}"
+        fi
+        [[ -e "$pick" ]] || die "no file at '$pick'."
+        zip_iso_in "$pick" || die "no zip with Annie OS in it in $pick."
+    fi
+fi
+if [[ -d "$iso" ]] || { [[ -f "$iso" ]] && is_zip "$iso"; }; then
+    d="$iso"
+    iso=""
+    iso_in_folder "$d" || die "no Annie OS ISO, or parts of one, in $d."
+fi
+if [[ -z "$iso" ]]; then
+    while IFS= read -r d; do
+        iso_in_folder "$d" && break
+    done < <(search_dirs)
+fi
+if [[ -z "$iso" ]]; then
+    echo "Could not find Annie OS (the ISO, its two parts, or a zip of them) in Downloads or next to this app."
+    pick_dir=""
+    if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        if have kdialog; then
+            pick_dir="$(kdialog --title "Choose the folder with Annie OS in it" --getexistingdirectory "$HOME/Downloads" 2>/dev/null)" || true
+        elif have zenity; then
+            pick_dir="$(zenity --file-selection --directory --title="Choose the folder with Annie OS in it" 2>/dev/null)" || true
+        fi
+    fi
+    if [[ -z "$pick_dir" ]]; then
+        ask pick_dir "Drag the ISO, the zip, or the folder with its parts into this window and press Enter:"
+        pick_dir="${pick_dir//\'/}"
+    fi
+    if [[ -d "$pick_dir" ]] || { [[ -f "$pick_dir" ]] && is_zip "$pick_dir"; }; then
+        iso_in_folder "$pick_dir" || die "no Annie OS ISO, or parts of one, in $pick_dir."
+    else
+        iso="$pick_dir"
+    fi
+fi
+[[ -f "$iso" ]] || die "no ISO file at '$iso'."
+iso="$(realpath -- "$iso")"
+$handed_over || say "Image: $iso"
+
+iso_mib=$(($(stat -c %s "$iso") / MIB + 64))
+((iso_mib < BOOT_SIZE_GIB * 1024)) || die "the ISO is bigger than the ${BOOT_SIZE_GIB} GB boot partition."
+# Look inside without unpacking it, where a tool for that is available.
+if have bsdtar; then
+    listing="$(bsdtar -tvf "$iso" 2>/dev/null)" || die "could not open the ISO file (is the download complete?)."
+    grep -qE ' loader/entries/' <<<"$listing" || die "this is not an Annie OS ISO."
+    sfs_bytes="$(awk '$NF ~ /^arch\/x86_64\/airootfs\./ {print $5; exit}' <<<"$listing")"
+    [[ -n "$sfs_bytes" ]] || die "this ISO has no system image inside."
+    ((sfs_bytes <= FAT32_MAX_FILE)) ||
+        die "the system image in this ISO is over 4 GB, which a FAT32 boot partition cannot hold."
+fi
+
+# --- 3. Choose the drive --------------------------------------------------------------
+# The disk(s) a path lives on.
+disks_of() {
+    local src
+    src="$(findmnt -no SOURCE --target "$1" 2>/dev/null)" || return 0
+    src="${src%%\[*}"
+    [[ -b "$src" ]] || return 0
+    lsblk -sno NAME,TYPE "$src" | awk '$2 == "disk" {gsub(/[^A-Za-z0-9]/, "", $1); print $1}'
+}
+# Never the drive this computer is running from.
+protected=()
+for m in / /home /boot /boot/efi /var /run/archiso/bootmnt; do
+    while read -r d; do [[ -n "$d" ]] && protected+=("$d"); done < <(disks_of "$m")
+done
+is_protected() {
+    local p
+    for p in "${protected[@]}"; do [[ "$p" == "$1" ]] && return 0; done
+    return 1
+}
+need_bytes=$((MIN_DRIVE_GIB * 1000 * 1000 * 1000))   # an "8 GB" stick, as sold
+
+if ! $handed_over; then
+    echo
+    say "Drives you can put Annie OS on (8 GB or more):"
+    echo
+    disks=()
+    while read -r name type; do
+        [[ "$type" == disk ]] || continue
+        case "$name" in loop* | zram* | sr* | ram*) continue ;; esac
+        is_protected "$name" && continue
+        (($(lsblk -bdno SIZE "/dev/$name") >= need_bytes)) || continue
+        disks+=("$name")
+        printf '  %d) /dev/%-10s %8s  %s\n' "${#disks[@]}" "$name" \
+            "$(lsblk -dno SIZE "/dev/$name")" "$(lsblk -dno MODEL "/dev/$name")"
+    done < <(lsblk -dnro NAME,TYPE)
+    ((${#disks[@]} > 0)) || die "no drive of 8 GB or more found. Plug in the drive and try again."
+    echo
+    ask pick "Which drive? [1-${#disks[@]}]"
+    [[ "$pick" =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#disks[@]})) || die "no such drive."
+    dev="/dev/${disks[pick - 1]}"
+fi
+[[ -b "$dev" && "$(lsblk -dno TYPE "$dev")" == disk ]] || die "$dev is not a drive."
+is_protected "${dev#/dev/}" && die "$dev holds the system you are running; refusing to erase it."
+if disks_of "$iso" | grep -qx "${dev#/dev/}"; then
+    die "the ISO file is on $dev itself. Copy it to this computer (for example Downloads) and run this again."
+fi
+dev_bytes="$(lsblk -bdno SIZE "$dev")"
+((dev_bytes >= need_bytes)) || die "$dev is smaller than 8 GB."
+# Up to 20 GB for your files; on a smaller drive, whatever is left after the
+# boot part (with a little room to spare).
+data_gib=$(((dev_bytes - 64 * MIB) / GIB - BOOT_SIZE_GIB))
+((data_gib > DATA_SIZE_GIB)) && data_gib=$DATA_SIZE_GIB
+((data_gib >= MIN_DATA_GIB)) || die "$dev is too small for Annie OS."
+share_mib=$((dev_bytes / MIB - (BOOT_SIZE_GIB + data_gib) * 1024 - 8))
+
+# --- 4. The shared space: exFAT when this computer can make it, else FAT32 ----------------
+if ! $handed_over; then
+    share_fs=none
+    if ((share_mib >= MIN_SHARE_MIB)); then
+        share_fs=exfat
+        have mkfs.exfat || share_fs=fat32
+    fi
+fi
+
+# --- Shared by both ways of writing the drive ------------------------------------------
+# Unpack the ISO into the mounted boot partition.
+unpack_iso() { # unpack_iso DIR
+    if have bsdtar; then
+        bsdtar -x --no-same-owner --no-same-permissions -f "$iso" -C "$1"
+    elif have xorriso; then
+        xorriso -osirrox on -indev "$iso" -extract / "$1" 2>&1 | grep -iE 'error|fail' || true
+        chmod -R u+w "$1" 2>/dev/null || true
+    else
+        return 1
+    fi
+}
+
+# Point the boot menu at this drive and leave the account for first start.
+finish_boot_partition() { # finish_boot_partition DIR BOOT_UUID [live]
+    # With "live" nothing is kept between starts (no ANNIE_DATA partition).
+    local dir="$1" uuid="$2" edited=0 cfg extra=" cow_label=ANNIE_DATA"
+    [[ "${3:-}" == live ]] && extra=""
+    [[ -d "$dir/arch" && -d "$dir/loader/entries" ]] || die "this is not an Annie OS ISO."
+    # The ISO finds itself by the ISO's own ID; on this drive it must look for
+    # the FAT32 partition instead, and keep everything you change on ANNIE_DATA.
+    while IFS= read -r -d '' cfg; do
+        if grep -qE 'archisosearchuuid=|archisolabel=|archisodevice=' "$cfg"; then
+            sed -i -E \
+                -e 's/ cow_label=[^ ]*//g' \
+                -e 's/(archisosearchuuid|archisolabel|archisodevice)=[^ ]*/archisodevice=UUID='"$uuid$extra"'/' \
+                "$cfg"
+            edited=$((edited + 1))
+        fi
+    done < <(find "$dir/loader" "$dir/boot" -type f \( -name '*.conf' -o -name '*.cfg' \) -print0 2>/dev/null)
+    ((edited > 0)) || die "could not find the boot menu in the ISO to update."
+    # Boot straight into Annie OS rather than waiting on the menu.
+    if [[ -f "$dir/loader/loader.conf" ]]; then
+        sed -i -E 's/^timeout.*/timeout 3/' "$dir/loader/loader.conf"
+    fi
+}
+
+# --- After writing: scan the drive and fix what is wrong ----------------------------------
+# Size of a file inside the ISO, or nothing when that cannot be read.
+iso_file_size() { # iso_file_size PATH
+    have bsdtar || return 0
+    bsdtar -tvf "$iso" "$1" 2>/dev/null | awk 'NR == 1 {print $5}'
+}
+
+scan_and_fix() { # scan_and_fix DIR BOOT_UUID [live]
+    local dir="$1" uuid="$2" mode="${3:-}" f want got bad=0 fixed=0 cfg test
+    echo
+    ask answer "Run a scan to check the drive and fix any problems? [Y/n]"
+    if [[ "$answer" == [nN]* ]]; then
+        return 0
+    fi
+    echo
+    say "Scanning the drive"
+
+    # 1. Every Annie OS file is there and complete.
+    for f in EFI/BOOT/BOOTx64.EFI arch/boot/x86_64/vmlinuz-linux \
+        arch/boot/x86_64/initramfs-linux.img arch/x86_64/airootfs.sfs; do
+        want="$(iso_file_size "$f")"
+        got="$(stat -c %s "$dir/$f" 2>/dev/null || echo 0)"
+        if [[ "$got" == 0 || (-n "$want" && "$want" != "$got") ]]; then
+            echo "  FOUND $f is missing or incomplete"
+            bad=$((bad + 1))
+        fi
+    done
+    if ((bad > 0)); then
+        say "Copying Annie OS onto the drive again"
+        if unpack_iso "$dir" && finish_boot_partition "$dir" "$uuid" ${mode:+"$mode"}; then
+            fixed=$((fixed + bad))
+            echo "  fixed copied the missing files again"
+        fi
+    else
+        echo "  ok    all Annie OS files are there and complete"
+    fi
+
+    # 2. The boot menu starts Annie OS from this drive.
+    local menu_ok=true
+    for cfg in "$dir"/loader/entries/*.conf; do
+        [[ -f "$cfg" ]] || continue
+        if ! grep -q "archisodevice=UUID=$uuid" "$cfg" ||
+            { [[ "$mode" == live ]] && grep -q 'cow_label=' "$cfg"; } ||
+            { [[ "$mode" != live ]] && ! grep -q 'cow_label=ANNIE_DATA' "$cfg"; }; then
+            echo "  FOUND the boot menu entry $(basename -- "$cfg") points at the wrong place"
+            menu_ok=false
+            bad=$((bad + 1))
+            finish_boot_partition "$dir" "$uuid" ${mode:+"$mode"} && fixed=$((fixed + 1)) &&
+                echo "  fixed pointed it at this drive"
+            break
+        fi
+    done
+    if $menu_ok; then echo "  ok    the boot menu starts Annie OS from this drive"; fi
+
+    # 3. Leftovers from other systems that confuse the computer's boot menu.
+    for f in "$dir"/autorun.inf "$dir"/.disk/info; do
+        [[ -e "$f" ]] || continue
+        echo "  FOUND a leftover file from another system: ${f#"$dir"/}"
+        bad=$((bad + 1))
+        rm -f -- "$f" && fixed=$((fixed + 1)) && echo "  fixed removed it"
+    done
+
+    # 4. The drive can really be written to and read back.
+    test="$dir/.annie-scan-$$"
+    if head -c $((4 * MIB)) /dev/urandom >"$test" 2>/dev/null && sync &&
+        [[ "$(stat -c %s "$test")" == $((4 * MIB)) ]]; then
+        echo "  ok    the drive saves and reads files correctly"
+    else
+        echo "  FOUND the drive could not save a test file: it may be worn out or failing"
+        bad=$((bad + 1))
+    fi
+    rm -f -- "$test"
+
+    echo
+    if ((bad == 0)); then
+        say "Scan done: no problems found."
+    else
+        say "Scan done: $bad problem(s) found, $fixed fixed."
+    fi
+}
+
+all_done() {
+    echo
+    say "Done. Annie OS is on $dev."
+    cat <<EOF
+
+  Boot from the drive to start Annie OS. It goes straight to the unicorn
+  desktop, logged in as "annie".
+    Steam Machine / PC:  press Esc (or F12, F11, F8) while it starts and pick the drive.
+    Steam Deck:          hold Volume Down, press Power, pick the drive.
+
+  Your files, settings and installed games are kept on the drive.
+EOF
+    if [[ "$share_fs" != none ]]; then
+        echo "  The ANNIE_SHARE part ($share_fs) opens on Windows, macOS and SteamOS too."
+    fi
+    echo
+}
+
+# --- 7a. Without a password: through udisks ---------------------------------------------------
+readonly UD=org.freedesktop.UDisks2
+ud() { # ud OBJECT INTERFACE METHOD SIGNATURE ARGS...
+    # Never pop up a password dialog: if udisks wants one, fall back instead.
+    busctl --system --timeout=600 --allow-interactive-authorization=no call \
+        "$UD" "$1" "$UD.$2" "$3" "${@:4}"
+}
+ud_prop() { # ud_prop OBJECT INTERFACE PROPERTY -> value without type or quotes
+    busctl --system get-property "$UD" "$1" "$UD.$2" "$3" | sed -E 's/^[a-z]+ "?//; s/"$//'
+}
+# Create one partition and its filesystem; prints the new device, e.g. /dev/sda1.
+ud_partition() { # ud_partition OFFSET SIZE TYPE_GUID NAME FSTYPE LABEL
+    local out
+    out="$(ud "$disk_obj" PartitionTable CreatePartitionAndFormat 'ttssa{sv}sa{sv}' \
+        "$1" "$2" "$3" "$4" 0 "$5" 1 label s "$6")" || return 1
+    out="${out#o \"}"
+    echo "/dev/$(basename -- "${out%\"}")"
+}
+
+install_with_udisks() {
+    have busctl && have udisksctl || return 1
+    local name part mnt boot_part boot_uuid end share_type
+    name="$(basename -- "$dev")"
+    disk_obj="/org/freedesktop/UDisks2/block_devices/$name"
+    busctl --system introspect "$UD" "$disk_obj" >/dev/null 2>&1 || return 1
+
+    echo
+    say "Partitioning $dev"
+    # An ISO written with another tool is often mounted from the whole drive.
+    for part in $(lsblk -lnpo NAME "$dev"); do
+        udisksctl unmount --no-user-interaction -b "$part" >/dev/null 2>&1 || true
+    done
+    ud "$disk_obj" Block Format 'sa{sv}' gpt 0 >/dev/null || return 1
+
+    say "Formatting"
+    boot_part="$(ud_partition $((1 * MIB)) $((BOOT_SIZE_GIB * GIB)) \
+        c12a7328-f81f-11d2-ba4b-00a0c93ec93b ANNIE_BOOT vfat ANNIE_BOOT)" || return 1
+    ud_partition $((1 * MIB + BOOT_SIZE_GIB * GIB)) $((data_gib * GIB)) \
+        0fc63daf-8483-4772-8e79-3d69d8477de4 ANNIE_DATA ext4 ANNIE_DATA >/dev/null || return 1
+    if [[ "$share_fs" != none ]]; then
+        # Everything after the first two, short of the backup GPT at the end.
+        end=$(((dev_bytes - 2 * MIB) / MIB * MIB))
+        share_type=exfat
+        [[ "$share_fs" == fat32 ]] && share_type=vfat
+        ud_partition $((1 * MIB + (BOOT_SIZE_GIB + data_gib) * GIB)) \
+            $((end - 1 * MIB - (BOOT_SIZE_GIB + data_gib) * GIB)) \
+            ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 ANNIE_SHARE "$share_type" ANNIE_SHARE >/dev/null ||
+            echo "(Could not create the shared part; Annie OS itself is unaffected.)"
+    fi
+
+    say "Copying Annie OS (a few minutes; USB 2 sticks are slower)"
+    mnt="$(findmnt -no TARGET "$boot_part" 2>/dev/null | head -n1)"
+    if [[ -z "$mnt" ]]; then
+        udisksctl mount --no-user-interaction -b "$boot_part" >/dev/null || return 1
+        mnt="$(findmnt -no TARGET "$boot_part" | head -n1)"
+    fi
+    [[ -n "$mnt" && -w "$mnt" ]] || return 1
+    unpack_iso "$mnt" || die "could not unpack the ISO (bsdtar or xorriso is needed)."
+
+    boot_uuid="$(ud_prop "/org/freedesktop/UDisks2/block_devices/$(basename -- "$boot_part")" Block IdUUID)"
+    [[ -n "$boot_uuid" ]] || boot_uuid="$(lsblk -no UUID "$boot_part")"
+    finish_boot_partition "$mnt" "$boot_uuid"
+    scan_and_fix "$mnt" "$boot_uuid"
+
+    say "Finishing (writing everything out to the drive)"
+    sync
+    udisksctl unmount --no-user-interaction -b "$boot_part" >/dev/null || true
+    all_done
+}
+
+# --- 7b. Without a password, without erasing: copy onto an existing FAT32 drive ----------
+# Mounting a USB drive and copying files onto it never needs a password, and
+# a computer's firmware starts Annie OS from any FAT32 drive that has its
+# files on it. Nothing is erased, but nothing is kept between starts either,
+# because keeping changes needs a Linux partition, which means reformatting.
+fat_part_of() { # the first FAT32 filesystem on the drive (or the drive itself)
+    lsblk -lnpo NAME,FSTYPE "$dev" | awk '$2 == "vfat" {print $1; exit}'
+}
+install_by_copying() {
+    local part mnt uuid free need part_bytes
+    part="$(fat_part_of)"
+    [[ -n "$part" ]] || return 1
+    have udisksctl || have gio || return 1
+
+    echo
+    say "Opening the FAT32 drive ($part)"
+    mnt="$(findmnt -no TARGET "$part" 2>/dev/null | head -n1)"
+    if [[ -z "$mnt" ]]; then
+        if have udisksctl; then
+            udisksctl mount --no-user-interaction -b "$part" >/dev/null 2>&1 || true
+        else
+            gio mount -d "$part" >/dev/null 2>&1 || true
+        fi
+        mnt="$(findmnt -no TARGET "$part" 2>/dev/null | head -n1)"
+    fi
+    if [[ -z "$mnt" || ! -w "$mnt" ]]; then
+        echo "Could not open the drive. Click it once in the file manager to open it, then run this again."
+        return 1
+    fi
+    need=$(($(stat -c %s "$iso") + 100 * MIB))
+    free="$(df --output=avail -B1 "$mnt" | tail -n1 | tr -d ' ')"
+    part_bytes="$(lsblk -bdno SIZE "$part" | tr -d ' ')"
+    if ((free <= need && part_bytes > need)); then
+        # Room enough once the files already on it are gone; deleting files
+        # on a USB drive needs no password.
+        echo
+        echo "The drive is full of other files: Annie OS needs $((need / MIB)) MB, only $((free / MIB)) MB is free."
+        printf '%sDelete EVERYTHING on %s to make room?%s\n' "$red$bold" "$dev" "$reset"
+        ask answer "Type ERASE to delete it all (Enter cancels):"
+        [[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+        # Only ever inside the drive's own FAT32 part, mounted where udisks put it.
+        [[ "$mnt" == /run/media/* || "$mnt" == /media/* || "$mnt" == "${ANNIE_USB_TEST_MNT:-/nonexistent}"/* ]] ||
+            die "the drive is open at an unexpected place ($mnt); delete its files yourself and run this again."
+        [[ "$(findmnt -no SOURCE "$mnt" 2>/dev/null)" == "$part" || -n "${ANNIE_USB_TEST_MNT:-}" ]] ||
+            die "could not confirm that $mnt is the USB drive; delete its files yourself and run this again."
+        say "Deleting the old files"
+        find "$mnt" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>/dev/null || true
+        sync
+        free="$(df --output=avail -B1 "$mnt" | tail -n1 | tr -d ' ')"
+    fi
+    if ((free <= need)); then
+        echo
+        echo "Not enough room: Annie OS needs $((need / MIB)) MB, and the drive's FAT32 part is"
+        echo "only $((part_bytes / MIB)) MB in all. This happens after an ISO has been written to the"
+        echo "drive with another tool, so the whole drive has to be reformatted."
+        printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$dev" "$reset"
+        ask answer "Type ERASE to reformat it (Enter cancels):"
+        [[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+        udisksctl unmount --no-user-interaction -b "$part" >/dev/null 2>&1 || true
+        install_with_udisks && exit 0
+        echo
+        echo "This computer wants an administrator password to reformat the drive."
+        echo "To do it without one, reformat it on another computer, then plug it back in"
+        echo "here and run this again:"
+        echo "  Mac:      Terminal > diskutil list (find the ~31 GB external disk, e.g. disk4) >"
+        echo "            diskutil eraseDisk FAT32 ANNIE MBRFormat /dev/disk4"
+        echo "  Windows:  right-click the drive in File Explorer > Format > FAT32"
+        exit 1
+    fi
+    say "Copying Annie OS onto it"
+    unpack_iso "$mnt" || die "could not unpack the ISO (bsdtar or xorriso is needed)."
+    uuid="$(lsblk -no UUID "$part" | head -n1)"
+    [[ -n "$uuid" ]] || die "could not read the drive's ID."
+    finish_boot_partition "$mnt" "$uuid" live
+    scan_and_fix "$mnt" "$uuid" live
+
+    say "Finishing (writing everything out to the drive)"
+    sync
+    if have udisksctl; then
+        udisksctl unmount --no-user-interaction -b "$part" >/dev/null 2>&1 || true
+    fi
+    echo
+    say "Done. Annie OS is on $dev."
+    echo
+    echo "  Boot from the drive to start Annie OS. It goes straight to the unicorn"
+    echo "  desktop, logged in as \"annie\"."
+    echo "    Steam Machine / PC:  press Esc (or F12, F11, F8) while it starts and pick the drive."
+    echo "    Steam Deck:          hold Volume Down, press Power, pick the drive."
+    echo
+    echo "  Because the drive was not reformatted, Annie OS runs fresh every time:"
+    echo "  files and installed apps are not kept after you turn it off. To keep"
+    echo "  them, run this app again with an administrator password."
+    echo
+}
+
+# --- 7c. With administrator rights ---------------------------------------------------------
+install_as_root() {
+    local tool part boot_part data_part share_part sep work
+    for tool in sfdisk mkfs.vfat mkfs.ext4 blkid lsblk mount umount findmnt; do
+        have "$tool" || die "this computer is missing '$tool', which is needed to set up the drive."
+    done
+
+    echo
+    say "Partitioning $dev"
+    for part in $(lsblk -lnpo NAME "$dev" | tail -n +2); do
+        umount "$part" 2>/dev/null || true
+    done
+    wipefs -af "$dev" >/dev/null 2>&1 || true
+    {
+        echo "label: gpt"
+        echo "size=${BOOT_SIZE_GIB}GiB, type=uefi, name=ANNIE_BOOT"
+        echo "size=${data_gib}GiB, type=linux, name=ANNIE_DATA"
+        # Microsoft basic data, so Windows and macOS mount it.
+        [[ "$share_fs" != none ]] && echo "type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, name=ANNIE_SHARE"
+    } | sfdisk --quiet --wipe always --wipe-partitions always "$dev"
+    partprobe "$dev" 2>/dev/null || true
+    udevadm settle 2>/dev/null || sleep 2
+
+    if [[ "$dev" =~ [0-9]$ ]]; then sep=p; else sep=; fi
+    boot_part="${dev}${sep}1" data_part="${dev}${sep}2" share_part="${dev}${sep}3"
+    # Give the system up to 10 seconds to notice the new partitions.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        [[ -b "$boot_part" && -b "$data_part" ]] && break
+        partx -u "$dev" 2>/dev/null || true
+        sleep 1
+    done
+    for part in "$boot_part" "$data_part"; do
+        [[ -b "$part" ]] || die "the new partition $part did not appear. Unplug the drive, plug it back in and try again."
+    done
+
+    say "Formatting"
+    mkfs.vfat -F 32 -n ANNIE_BOOT "$boot_part" >/dev/null
+    mkfs.ext4 -q -F -L ANNIE_DATA "$data_part"
+    case "$share_fs" in
+    exfat) mkfs.exfat -n ANNIE_SHARE "$share_part" >/dev/null ;;
+    fat32) mkfs.vfat -F 32 -n ANNIE_SHARE "$share_part" >/dev/null ;;
+    esac
+
+    say "Copying Annie OS (a few minutes; USB 2 sticks are slower)"
+    work="$(mktemp -d /tmp/annie-usb-work.XXXXXX)"
+    mount "$boot_part" "$work" || die "could not open the new boot partition."
+    # shellcheck disable=SC2064
+    trap "umount '$work' 2>/dev/null; rmdir '$work' 2>/dev/null" EXIT
+    if ! unpack_iso "$work"; then
+        # No unpacking tool: open the ISO directly instead.
+        mkdir -p "$work.iso"
+        mount -o loop,ro -- "$iso" "$work.iso" || die "could not open the ISO file."
+        cp -r --no-preserve=all "$work.iso/." "$work/"
+        umount "$work.iso"
+        rmdir "$work.iso"
+    fi
+    finish_boot_partition "$work" "$(blkid -s UUID -o value "$boot_part")"
+    scan_and_fix "$work" "$(blkid -s UUID -o value "$boot_part")"
+
+    say "Finishing (writing everything out to the drive)"
+    sync
+    umount "$work"
+    rmdir "$work"
+    trap - EXIT
+    all_done
+}
+
+# --- 5. Write the drive ----------------------------------------------------------------
+if [[ $EUID -eq 0 ]]; then
+    # Started as root directly (not handed over after a confirmation): ask now.
+    if ! $handed_over; then
+        echo
+        lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL,MOUNTPOINTS "$dev"
+        echo
+        printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$dev" "$reset"
+        ask answer "Type ERASE to continue:"
+        [[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+    fi
+    install_as_root
+    exit 0
+fi
+
+model="$(lsblk -dno MODEL "$dev" | sed 's/ *$//')"
+size="$(lsblk -dno SIZE "$dev" | tr -d ' ')"
+fat="$(fat_part_of)"
+fat_bytes=0
+[[ -n "$fat" ]] && fat_bytes="$(lsblk -bdno SIZE "$fat" | tr -d ' ')"
+
+# A FAT32 drive: copy Annie OS on. No password; nothing is erased unless the
+# drive is full and you say so. (A FAT32 part too small for it is explained
+# there too.)
+if ((fat_bytes > 0)); then
+    echo
+    echo "Annie OS will be copied onto $dev ($size ${model:-drive})."
+    ask answer "Press Enter to start, or type q to quit:"
+    [[ "$answer" == [qQ]* ]] && die "cancelled, nothing was changed."
+    install_by_copying && exit 0
+    exit 1
+fi
+
+# Anything else has to be reformatted first.
+echo
+lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL,MOUNTPOINTS "$dev"
+echo
+echo "This drive is not FAT32, so it has to be reformatted for Annie OS."
+printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$dev" "$reset"
+ask answer "Type ERASE to continue:"
+[[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+install_with_udisks && exit 0
+
+echo
+say "This computer wants an administrator password to reformat the drive."
+echo
+echo "To do it without a password, format the drive as FAT32 on another computer"
+echo "(that erases it), plug it back in here and run this app again:"
+echo "  Mac:      Disk Utility > View > Show All Devices > the drive > Erase >"
+echo "            Format: MS-DOS (FAT), Scheme: Master Boot Record"
+echo "  Windows:  right-click the drive in File Explorer > Format > FAT32"
+echo
+ask answer "Or type P to use an administrator password now (Enter quits):"
+[[ "$answer" == [pP]* ]] || exit 1
+
+# Inside an AppImage this script lives on a mount only this user can read,
+# so root runs a copy of it.
+copy="$(mktemp /tmp/annie-usb.XXXXXX)"
+cat -- "${BASH_SOURCE[0]}" >"$copy"
+chmod 755 "$copy"
+handover=(ANNIE_USB_IN_TERMINAL=1 "ANNIE_USB_DEV=$dev" "ANNIE_USB_SHARE_FS=$share_fs")
+if have sudo; then
+    sudo -v || die "that password did not work. On SteamOS, set one with  passwd  in Konsole."
+    exec sudo "${handover[@]}" bash "$copy" "$iso"
+fi
+exec pkexec env "${handover[@]}" bash "$copy" "$iso"

@@ -1,3 +1,4 @@
 iso/*.iso
 iso/*.AppImage
 work/
+out/

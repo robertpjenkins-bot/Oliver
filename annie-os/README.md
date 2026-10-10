@@ -38,6 +38,25 @@ Put it on a USB stick with Annie Disk Writer, or from any Linux computer:
 $ sudo dd if=iso/annie-os-*.iso of=/dev/sdX bs=4M conv=fsync status=progress
 ```
 
+## Annie OS USB Maker
+
+The easiest way onto a USB drive. Download `Annie-OS-USB-Maker-x86_64.AppImage`
+from the release, along with the ISO (whole, in its two parts, or in a zip),
+and run it on Linux or SteamOS. It finds Annie OS in Downloads, joins the
+parts, checks them, asks which drive, and sets it up:
+
+| Part | Size | |
+| --- | --- | --- |
+| ANNIE_BOOT | 5 GB, FAT32 | Annie OS itself |
+| ANNIE_DATA | up to 20 GB, ext4 | everything you save and install, kept between starts |
+| ANNIE_SHARE | the rest, exFAT or FAT32 | opens on Windows, macOS and SteamOS too |
+
+Drives from 8 GB up work; under 25 GB, ANNIE_DATA shrinks to fit. On a
+drive that's already FAT32 it copies Annie OS on without erasing it or
+asking for a password (nothing is kept between starts then).
+`Annie-OS-USB-Maker-Zip-x86_64.AppImage` is the same, but only takes a zip.
+Build them with `./usb/build-appimage.sh`.
+
 ## The Disk Writer AppImage
 
 ```console

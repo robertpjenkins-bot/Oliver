@@ -1,0 +1,31 @@
+name: Annie OS USB Maker
+
+on:
+  push:
+    paths:
+      - "annie-os/usb/**"
+      - ".github/workflows/annie-usb.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the AppImages
+        run: ./annie-os/usb/build-appimage.sh
+
+      # Attach them to the newest Annie OS release, next to the ISO.
+      - name: Add to the newest Annie OS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
+                  -q 'sort_by(.createdAt) | reverse | .[].tagName' | grep '^annie-os-' | head -n1)
+          [ -n "$tag" ] || { echo "no Annie OS release yet"; exit 1; }
+          gh release upload "$tag" annie-os/out/Annie-OS-USB-Maker*-x86_64.AppImage -R "$GITHUB_REPOSITORY" --clobber
+          echo "added to $tag"

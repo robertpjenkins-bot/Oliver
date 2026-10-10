@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Annie OS USB Maker
+Comment=Put Annie OS on a USB drive and run it from there
+Exec=annie-usb %f
+Icon=annie-os
+Terminal=false
+Categories=System;
+MimeType=application/x-cd-image;application/x-iso9660-image;application/zip;
