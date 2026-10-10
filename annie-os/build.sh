@@ -9,7 +9,7 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-out="${OUTDIR:-${here}/out}"
+out="${OUTDIR:-${here}/iso}"
 work="${WORKDIR:-${here}/work}"
 profile="${work}/profile"
 max_bytes=$((25 * 1000 * 1000 * 1000))   # the ISO must be 25 GB or under

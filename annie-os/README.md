@@ -29,13 +29,13 @@ $ sudo pacman -S archiso python-pillow
 $ sudo ./build.sh
 ```
 
-The ISO lands in `out/annie-os-YYYY.MM.DD-x86_64.iso`. Everything is downloaded
+The ISO lands in `iso/annie-os-YYYY.MM.DD-x86_64.iso`. Everything is downloaded
 from the official Arch package mirrors. Nothing comes from GitHub or the AUR.
 
 Put it on a USB stick with Annie Disk Writer, or from any Linux computer:
 
 ```console
-$ sudo dd if=out/annie-os-*.iso of=/dev/sdX bs=4M conv=fsync status=progress
+$ sudo dd if=iso/annie-os-*.iso of=/dev/sdX bs=4M conv=fsync status=progress
 ```
 
 ## The Disk Writer AppImage
