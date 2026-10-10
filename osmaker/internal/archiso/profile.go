@@ -21,6 +21,12 @@ var buildScript string
 //go:embed assets/osmaker-desktop.py
 var desktopShell []byte
 
+//go:embed assets/osmaker-install
+var installer []byte
+
+//go:embed assets/osmaker-install-backend
+var installerBackend []byte
+
 // BasePackages are installed in every OS on top of archiso's releng set:
 // the Xfce desktop, a login manager, sound, networking, fonts and icons, and
 // what the OS Maker desktop shell needs to run.
@@ -34,6 +40,8 @@ var BasePackages = []string{
 	"papirus-icon-theme", "gnome-themes-extra",
 	"noto-fonts", "noto-fonts-emoji", "ttf-dejavu",
 	"gvfs", "xdg-utils", "xdg-user-dirs", "sudo",
+	// For installing from the live system onto a disk.
+	"grub", "efibootmgr", "dosfstools", "e2fsprogs", "rsync", "arch-install-scripts",
 }
 
 // File is one file of the generated build folder.
@@ -73,7 +81,10 @@ file_permissions+=(
   ["/etc/shadow"]="0:0:400"
   ["/etc/gshadow"]="0:0:400"
   ["/etc/sudoers.d/10-osmaker"]="0:0:440"
+  ["/etc/sudoers.d/20-osmaker-live"]="0:0:440"
   ["/usr/local/bin/osmaker-desktop"]="0:0:755"
+  ["/usr/local/bin/osmaker-install"]="0:0:755"
+  ["/usr/local/bin/osmaker-install-backend"]="0:0:755"
   ["/home/%s"]="1000:1000:750"
 )
 `, user), 0o644)
@@ -98,6 +109,10 @@ file_permissions+=(
 	root("etc/group", fmt.Sprintf("root:x:0:root\nadm:x:999:%[1]s\nwheel:x:998:%[1]s\nautologin:x:1001:%[1]s\n%[1]s:x:1000:\n", user))
 	root("etc/gshadow", fmt.Sprintf("root:!*::root\nadm:!*::%[1]s\nwheel:!*::%[1]s\nautologin:!*::%[1]s\n%[1]s:!*::\n", user))
 	root("etc/sudoers.d/10-osmaker", "%wheel ALL=(ALL:ALL) ALL\n")
+	// On the live USB the user may run the installer without a password,
+	// since a design need not have one. The installer deletes this rule from
+	// the system it installs.
+	root("etc/sudoers.d/20-osmaker-live", "%wheel ALL=(root) NOPASSWD: /usr/local/bin/osmaker-install-backend\n")
 
 	// Time, keyboard.
 	link("airootfs/etc/localtime", "/usr/share/zoneinfo/"+s.Timezone)
@@ -161,6 +176,18 @@ WantedBy=multi-user.target
 	}
 	root("etc/osmaker/layout.json", string(layout))
 	f["airootfs/usr/local/bin/osmaker-desktop"] = File{Data: desktopShell, Mode: 0o755}
+	f["airootfs/usr/local/bin/osmaker-install"] = File{Data: installer, Mode: 0o755}
+	f["airootfs/usr/local/bin/osmaker-install-backend"] = File{Data: installerBackend, Mode: 0o755}
+	root("etc/osmaker/os-name", s.OSName+"\n")
+	root("usr/share/applications/osmaker-install.desktop", fmt.Sprintf(`[Desktop Entry]
+Type=Application
+Name=Install %s
+Comment=Put %[1]s on this computer's disk
+Exec=/usr/local/bin/osmaker-install
+Icon=system-software-install
+Terminal=false
+Categories=System;
+`, s.OSName))
 
 	// The user's own settings: Xfce panel, theme and session, and the shell.
 	xfconf := home + "/.config/xfce4/xfconf/xfce-perchannel-xml/"
@@ -269,6 +296,7 @@ func shellLayout(d *design.Design, wallpaper string) ([]byte, error) {
 		"canvas": map[string]int{"w": design.CanvasW, "h": design.CanvasH},
 		"theme":  d.Desktop.Theme,
 		"accent": d.Desktop.Accent,
+		"osName": d.System.OSName,
 		"background": map[string]any{
 			"kind":   bg.Kind,
 			"color1": bg.Color1,

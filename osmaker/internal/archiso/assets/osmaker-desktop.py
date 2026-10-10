@@ -23,6 +23,9 @@ from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
 
 LAYOUT = os.environ.get("OSMAKER_LAYOUT", "/etc/osmaker/layout.json")
 NOTES_DIR = os.path.join(GLib.get_user_data_dir(), "osmaker", "notes")
+# Running from the USB stick or DVD, rather than installed on a disk.
+LIVE = os.path.isdir("/run/archiso")
+ICON_TYPES = ("app", "install")
 
 
 def rgba(hex_color, alpha=1.0):
@@ -102,6 +105,19 @@ def make_app_icon(item, s):
     button.add(box)
     button.connect("clicked", lambda *_: launch(app))
     return button
+
+
+def make_install(item, s):
+    """The button that installs the OS onto this computer's disk."""
+    item = dict(item)
+    item["appInfo"] = {
+        "name": item.get("text") or "Install",
+        "description": "Install this OS on this computer",
+        "desktop": "osmaker-install.desktop",
+        "exec": "osmaker-install",
+        "icon": "system-software-install",
+    }
+    return make_app_icon(item, s)
 
 
 def make_search(item, s):
@@ -266,6 +282,7 @@ def make_text(item, s):
 
 MAKERS = {
     "app": make_app_icon,
+    "install": make_install,
     "search": make_search,
     "clock": make_clock,
     "calendar": make_calendar,
@@ -316,7 +333,7 @@ class Desktop(Gtk.Window):
         css = []
         for n, item in enumerate(layout["items"]):
             maker = MAKERS.get(item["type"])
-            if maker is None:
+            if maker is None or (item["type"] == "install" and not LIVE):
                 continue
             try:
                 widget = maker(item, self.s)
@@ -340,8 +357,8 @@ class Desktop(Gtk.Window):
     def item_css(self, name, item):
         s = self.s
         fs = max(6, round(item["fontSize"] * s))
-        bg_alpha = 0.0 if item["type"] == "app" else item["opacity"]
-        pad = 0 if item["type"] in ("app", "search") else round(10 * s)
+        bg_alpha = 0.0 if item["type"] in ICON_TYPES else item["opacity"]
+        pad = 0 if item["type"] in ICON_TYPES + ("search",) else round(10 * s)
         rules = [
             "#%s { background-color: %s; border-radius: %dpx; padding: %dpx; }" % (
                 name, css_rgba(item["color"], bg_alpha), round(item["radius"] * s), pad),
@@ -349,7 +366,7 @@ class Desktop(Gtk.Window):
             "#%s .osm-big { font-size: %dpx; font-weight: bold; }" % (name, fs),
             "#%s .osm-small { font-size: %dpx; }" % (name, max(6, round(fs * 0.38))),
         ]
-        if item["type"] == "app":
+        if item["type"] in ICON_TYPES:
             rules.append("#%s button { padding: 0; border-radius: %dpx; }" % (name, round(item["radius"] * s)))
             rules.append("#%s button:hover { background: rgba(255,255,255,0.18); }" % name)
             rules.append("#%s .osm-label { text-shadow: 0 1px 3px rgba(0,0,0,0.8); }" % name)
@@ -394,6 +411,13 @@ class Desktop(Gtk.Window):
 def main():
     with open(LAYOUT) as f:
         layout = json.load(f)
+    if LIVE and not any(i["type"] == "install" for i in layout["items"]):
+        # Designs made before the install button existed still get one.
+        layout["items"].append({
+            "id": "install", "type": "install", "x": 1170, "y": 560, "w": 90, "h": 90,
+            "color": "#000000", "textColor": "#ffffff", "opacity": 0, "radius": 12, "fontSize": 13,
+            "text": "Install",
+        })
 
     # The designed desktop replaces Xfce's own; make sure it is not running.
     subprocess.run(["xfdesktop", "--quit"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

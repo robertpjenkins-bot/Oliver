@@ -44,6 +44,7 @@ const WIDGETS = {
   sysmon:   { name: "System monitor", icon: "📈", hint: "CPU and memory use",          w: 280, h: 100, color: "#000000", textColor: "#ffffff", opacity: 0.35, radius: 16, fontSize: 14 },
   note:     { name: "Sticky note",    icon: "🗒️", hint: "Notes you can type in",       w: 220, h: 200, color: "#fff59d", textColor: "#333333", opacity: 1,    radius: 6,  fontSize: 15, text: "Things to do:\n- " },
   text:     { name: "Text",           icon: "🔤", hint: "A title or message",          w: 420, h: 70,  color: "#000000", textColor: "#ffffff", opacity: 0,    radius: 0,  fontSize: 34, text: "Welcome!" },
+  install:  { name: "Install button", icon: "💿", hint: "Puts your OS on a computer's disk", w: 90, h: 90, color: "#000000", textColor: "#ffffff", opacity: 0, radius: 12, fontSize: 13, text: "Install" },
   app:      { name: "App icon",       icon: "🧩", hint: "Opens an app",                w: 90,  h: 90,  color: "#000000", textColor: "#ffffff", opacity: 0,    radius: 12, fontSize: 13, app: "files" },
 };
 
@@ -129,16 +130,22 @@ function clockText(fmt) {
   return [t, d];
 }
 
+const isIcon = it => it.type === "app" || it.type === "install";
+
 function renderItem(it) {
-  const el = h("div", { class: `item w-${it.type === "calendar" ? "cal" : it.type === "sysmon" ? "sys" : it.type}`, "data-id": it.id });
+  const cls = { calendar: "cal", sysmon: "sys", install: "app" }[it.type] || it.type;
+  const el = h("div", { class: `item w-${cls}`, "data-id": it.id });
   Object.assign(el.style, {
     left: it.x + "px", top: it.y + "px", width: it.w + "px", height: it.h + "px",
     borderRadius: it.radius + "px", color: it.textColor, fontSize: it.fontSize + "px",
-    background: it.type === "app" ? "transparent" : rgba(it.color, it.opacity),
+    background: isIcon(it) ? "transparent" : rgba(it.color, it.opacity),
   });
   switch (it.type) {
-    case "app": {
-      const a = appById(it.app) || { name: "?", emoji: "❓", color: "#555" };
+    case "app":
+    case "install": {
+      const a = it.type === "install"
+        ? { name: it.text || "Install", emoji: "💿", color: D.desktop.accent, description: "Installs your OS onto a computer's disk. Only shows when running from the USB stick." }
+        : appById(it.app) || { name: "?", emoji: "❓", color: "#555" };
       const size = Math.max(16, Math.round(Math.min(it.w, it.h - it.fontSize * 1.6) * 0.6));
       el.append(tile(a, size), h("span", { class: "lbl" }, a.name));
       el.title = a.description || a.name;
@@ -378,9 +385,9 @@ function renderProps() {
     }
     kids.push(field("App", sel));
   }
-  if (["search", "note", "text"].includes(it.type)) {
-    const label = { search: "Hint text", note: "Starting text", text: "Text" }[it.type];
-    const ta = it.type === "search" ? h("input", { type: "text", value: it.text || "" }) : h("textarea", {}, it.text || "");
+  if (["search", "note", "text", "install"].includes(it.type)) {
+    const label = { search: "Hint text", note: "Starting text", text: "Text", install: "Label" }[it.type];
+    const ta = it.type === "search" || it.type === "install" ? h("input", { type: "text", value: it.text || "" }) : h("textarea", {}, it.text || "");
     ta.addEventListener("input", e => { it.text = e.target.value; renderScreen(); });
     ta.addEventListener("change", commit);
     kids.push(field(label, ta));
@@ -398,13 +405,16 @@ function renderProps() {
 
   const color = (key) => h("input", { type: "color", value: it[key], oninput: e => { it[key] = e.target.value; renderScreen(); }, onchange: commit });
   const range = (key, min, max, step) => h("input", { type: "range", min, max, step, value: it[key], oninput: e => { it[key] = Number(e.target.value); renderScreen(); }, onchange: commit });
-  if (it.type !== "app") {
+  if (it.type === "install") {
+    kids.push(h("p", { class: "hint small" }, "This only appears when your OS is running from its USB stick. Clicking it installs the OS onto the computer's disk."));
+  }
+  if (!isIcon(it)) {
     kids.push(h("label", { class: "row" }, "Background", color("color")));
     kids.push(h("label", { class: "row" }, "Solid", range("opacity", 0, 1, 0.05)));
   }
   kids.push(h("label", { class: "row" }, "Text colour", color("textColor")));
   kids.push(h("label", { class: "row" }, "Text size", range("fontSize", 8, 120, 1)));
-  if (it.type !== "app") kids.push(h("label", { class: "row" }, "Round corners", range("radius", 0, 100, 1)));
+  if (!isIcon(it)) kids.push(h("label", { class: "row" }, "Round corners", range("radius", 0, 100, 1)));
 
   kids.push(h("div", { class: "actions" },
     h("button", { onclick: duplicate }, "Copy"),

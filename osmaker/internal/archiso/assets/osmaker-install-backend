@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# Installs the running OS Maker live system onto a disk.
+#
+# THIS ERASES THE WHOLE DISK. It is run by the osmaker-install window, which
+# makes the person pick the disk and confirm first.
+#
+#   osmaker-install-backend /dev/sdX [--password-stdin]
+#
+# It copies the untouched live system (the squashfs image, not the running
+# session), removes what only makes sense on a live USB, and installs GRUB.
+# Progress is reported on stdout as "PROGRESS <percent> <message>" lines and
+# failures as "ERROR <message>"; everything else is log.
+set -euo pipefail
+
+target=/mnt/osmaker-target
+squash=/run/archiso/airootfs
+
+step() { echo "PROGRESS $1 $2"; }
+fail() { echo "ERROR $*"; exit 1; }
+trap 'echo "ERROR a step of the install failed; the log above says which"' ERR
+trap 'umount -R "${target}" 2>/dev/null || true' EXIT
+
+[ "$#" -ge 1 ] || fail "usage: $0 /dev/DISK [--password-stdin]"
+disk="$1"
+password=""
+if [ "${2:-}" = "--password-stdin" ]; then
+	IFS= read -r password || true
+fi
+
+[ "$(id -u)" -eq 0 ] || fail "the installer must run as root"
+[ -d "${squash}" ] || fail "this only works when running from the OS Maker USB stick or DVD"
+[ -b "${disk}" ] || fail "${disk} is not a disk"
+[ "$(lsblk -dno TYPE "${disk}")" = disk ] || fail "${disk} is a partition, not a whole disk"
+[ "$(lsblk -dno RO "${disk}" | tr -d ' ')" = 0 ] || fail "${disk} is read-only"
+size=$(lsblk -dbno SIZE "${disk}" | tr -d ' ')
+[ "${size}" -ge $((12 * 1024 * 1024 * 1024)) ] || fail "${disk} is smaller than 12 GB"
+
+# Never erase the stick this is running from.
+boot_src="$(findmnt -no SOURCE /run/archiso/bootmnt 2>/dev/null || true)"
+if [ -n "${boot_src}" ]; then
+	boot_disk="/dev/$(lsblk -no PKNAME "${boot_src}" 2>/dev/null | head -n 1)"
+	[ "${boot_disk}" != "/dev/" ] || boot_disk="${boot_src}"
+	[ "$(readlink -f "${boot_disk}")" != "$(readlink -f "${disk}")" ] || fail "${disk} is the USB stick or DVD this OS is running from"
+fi
+
+os_name="$(cat /etc/osmaker/os-name 2>/dev/null || echo "OS Maker")"
+# The account OS Maker created, read from the system being copied.
+user="$(awk -F: '$3 == 1000 { print $1; exit }' "${squash}/etc/passwd" 2>/dev/null || true)"
+uefi=0
+[ -d /sys/firmware/efi ] && uefi=1
+
+step 2 "Getting ${disk} ready"
+for part in $(lsblk -lnpo NAME "${disk}" | tail -n +2); do
+	swapoff "${part}" 2>/dev/null || true
+	umount -q "${part}" 2>/dev/null || true
+done
+wipefs -af "${disk}"
+
+step 5 "Making partitions"
+if [ "${uefi}" = 1 ]; then
+	sfdisk --wipe always --wipe-partitions always "${disk}" <<-EOF
+	label: gpt
+	size=512MiB, type=uefi, name=EFI
+	type=linux, name=${user:-root}
+	EOF
+else
+	sfdisk --wipe always --wipe-partitions always "${disk}" <<-EOF
+	label: dos
+	type=83, bootable
+	EOF
+fi
+udevadm settle
+partx -u "${disk}" 2>/dev/null || true
+udevadm settle
+
+# Partition names differ (sda1, nvme0n1p1, mmcblk0p1), so ask lsblk.
+part() { lsblk -lnpo NAME,TYPE "${disk}" | awk '$2 == "part" { print $1 }' | sed -n "${1}p"; }
+if [ "${uefi}" = 1 ]; then
+	esp="$(part 1)"
+	root="$(part 2)"
+else
+	root="$(part 1)"
+fi
+[ -b "${root}" ] || fail "the new partitions did not appear"
+
+step 8 "Formatting"
+mkfs.ext4 -F -L osmaker "${root}"
+mkdir -p "${target}"
+mount "${root}" "${target}"
+if [ "${uefi}" = 1 ]; then
+	mkfs.fat -F 32 -n EFI "${esp}"
+	mkdir -p "${target}/boot/efi"
+	mount "${esp}" "${target}/boot/efi"
+fi
+
+step 10 "Copying ${os_name} (this is the slow part)"
+last=-1
+rsync -aHAX --numeric-ids --info=progress2 --no-inc-recursive "${squash}/" "${target}/" |
+	stdbuf -oL tr '\r' '\n' |
+	while IFS= read -r line; do
+		pct="$(sed -n 's/.* \([0-9]\{1,3\}\)% .*/\1/p' <<<"${line}")"
+		if [ -n "${pct}" ] && [ "${pct}" != "${last}" ]; then
+			last="${pct}"
+			step $((10 + pct * 65 / 100)) "Copying ${os_name} (${pct}%)"
+		fi
+	done
+
+step 76 "Removing the live-USB parts"
+t="${target}"
+# mkarchiso moves the kernel onto the boot medium; put it back.
+if [ ! -e "${t}/boot/vmlinuz-linux" ]; then
+	cp -v /run/archiso/bootmnt/*/boot/"$(uname -m)"/vmlinuz-linux "${t}/boot/vmlinuz-linux"
+fi
+rm -f "${t}/etc/mkinitcpio.conf.d/archiso.conf"
+cat > "${t}/etc/mkinitcpio.d/linux.preset" <<'EOF'
+# mkinitcpio preset file for the 'linux' package
+ALL_kver="/boot/vmlinuz-linux"
+PRESETS=('default' 'fallback')
+default_image="/boot/initramfs-linux.img"
+fallback_image="/boot/initramfs-linux-fallback.img"
+fallback_options="-S autodetect"
+EOF
+rm -rf "${t}/etc/systemd/system/getty@tty1.service.d"
+rm -f \
+	"${t}/etc/systemd/system/choose-mirror.service" \
+	"${t}/etc/systemd/system/pacman-init.service" \
+	"${t}/etc/systemd/system/etc-pacman.d-gnupg.mount" \
+	"${t}/etc/systemd/system/livecd-alsa-unmuter.service" \
+	"${t}/etc/systemd/system/livecd-talk.service" \
+	"${t}/etc/systemd/system/multi-user.target.wants/sshd.service" \
+	"${t}/etc/systemd/system/osmaker-home.service" \
+	"${t}/etc/systemd/journald.conf.d/volatile-storage.conf" \
+	"${t}/etc/systemd/logind.conf.d/do-not-suspend.conf" \
+	"${t}/etc/ssh/sshd_config.d/10-archiso.conf" \
+	"${t}/etc/sudoers.d/20-osmaker-live" \
+	"${t}/usr/share/applications/osmaker-install.desktop" \
+	"${t}/root/.automated_script.sh" \
+	"${t}/root/.zlogin" \
+	"${t}/etc/motd"
+# Drop links to the services just removed. Check them inside the new system:
+# the live system still has the originals.
+find "${t}/etc/systemd/system" -type l | while IFS= read -r link; do
+	dest="$(readlink "${link}")"
+	case "${dest}" in
+		/*) [ -e "${t}${dest}" ] || rm -f "${link}" ;;
+	esac
+done
+# A fresh machine id is made on first boot.
+printf 'uninitialized\n' > "${t}/etc/machine-id"
+
+step 80 "Setting up ${os_name} for this computer"
+genfstab -U "${t}" > "${t}/etc/fstab"
+if [ -n "${user}" ] && [ -d "${t}/home/${user}" ]; then
+	chown -R 1000:1000 "${t}/home/${user}"
+	if [ -n "${password}" ]; then
+		printf '%s:%s\n' "${user}" "${password}" | arch-chroot "${t}" chpasswd
+	fi
+fi
+
+step 84 "Setting up software updates"
+arch-chroot "${t}" pacman-key --init
+arch-chroot "${t}" pacman-key --populate archlinux
+
+step 88 "Preparing to start up"
+arch-chroot "${t}" mkinitcpio -P
+
+step 94 "Installing the boot menu"
+if [ -f "${t}/etc/default/grub" ]; then
+	sed -i "s|^GRUB_DISTRIBUTOR=.*|GRUB_DISTRIBUTOR=\"${os_name}\"|" "${t}/etc/default/grub"
+fi
+if [ "${uefi}" = 1 ]; then
+	# The normal install adds a boot entry; the "removable" copy is what
+	# firmware falls back to when it ignores boot entries.
+	arch-chroot "${t}" grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=osmaker ||
+		echo "could not add a firmware boot entry; relying on the fallback copy"
+	arch-chroot "${t}" grub-install --target=x86_64-efi --efi-directory=/boot/efi --removable
+else
+	arch-chroot "${t}" grub-install --target=i386-pc "${disk}"
+fi
+arch-chroot "${t}" grub-mkconfig -o /boot/grub/grub.cfg
+
+step 98 "Finishing"
+sync
+umount -R "${t}"
+step 100 "${os_name} is installed"

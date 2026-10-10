@@ -66,8 +66,26 @@ $ osmaker folder my-os.osmaker -o ~/out  # only write the build folder
 - Your taskbar, which is Xfce's panel set up with your colours and pinned apps.
 - Your account in the `wheel` group, so `sudo` works.
 
-The ISO is a *live* system: it runs from the USB stick or DVD and starts fresh
-on every boot.
+## Installing it on a computer
+
+The ISO starts as a *live* system: it runs from the USB stick or DVD and starts
+fresh on every boot. To keep it, click the **💿 Install** button on its
+desktop (you place it in the designer like any app icon; it only shows up on
+the live USB). It asks for:
+
+1. **The disk to install to.** It must be at least 12 GB. The USB stick it's
+   running from is never offered. **The whole disk is erased.**
+2. **An optional password** for your account on the installed system.
+
+It then copies the OS exactly as designed, with the same desktop, apps and
+settings, onto the disk. It works on both newer (UEFI) and older (BIOS)
+computers and installs a GRUB boot menu named after your OS. Restart, remove
+the USB stick, and the computer boots into your OS. Things you save are kept
+from then on.
+
+On the installed system, everything that only belongs on a live USB is taken
+out again: the Install button, the passwordless permission it used, and the
+live-boot setup.
 
 ## Developing
 

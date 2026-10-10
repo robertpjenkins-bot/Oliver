@@ -126,3 +126,52 @@ func TestWriteProducesRunnableFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestInstallerIsIncluded(t *testing.T) {
+	dir := t.TempDir()
+	if err := Write(testDesign(t), dir); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "airootfs/usr/local/bin")
+	for _, name := range []string{"osmaker-install", "osmaker-install-backend"} {
+		fi, err := os.Stat(filepath.Join(bin, name))
+		if err != nil || fi.Mode().Perm() != 0o755 {
+			t.Fatalf("%s missing or not executable: %v", name, err)
+		}
+	}
+	if out, err := exec.Command("bash", "-n", filepath.Join(bin, "osmaker-install-backend")).CombinedOutput(); err != nil {
+		t.Fatalf("backend does not parse: %s", out)
+	}
+	if py, err := exec.LookPath("python3"); err == nil {
+		if out, err := exec.Command(py, "-m", "py_compile", filepath.Join(bin, "osmaker-install")).CombinedOutput(); err != nil {
+			t.Fatalf("installer does not compile: %s", out)
+		}
+	}
+	name, _ := os.ReadFile(filepath.Join(dir, "airootfs/etc/osmaker/os-name"))
+	if string(name) != "Rob's OS\n" {
+		t.Errorf("os-name = %q", name)
+	}
+}
+
+// Whatever the live system adds only for the live USB, the installer must
+// take back out of the installed system.
+func TestInstallerRemovesLiveOnlyFiles(t *testing.T) {
+	for _, path := range []string{
+		"/etc/sudoers.d/20-osmaker-live",
+		"/usr/share/applications/osmaker-install.desktop",
+		"/etc/systemd/system/osmaker-home.service",
+		"/etc/mkinitcpio.conf.d/archiso.conf",
+		"/etc/systemd/system/etc-pacman.d-gnupg.mount",
+	} {
+		if !strings.Contains(string(installerBackend), path) {
+			t.Errorf("installer does not remove %s", path)
+		}
+	}
+	files, err := Files(testDesign(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(files["airootfs/etc/sudoers.d/20-osmaker-live"].Data), "NOPASSWD: /usr/local/bin/osmaker-install-backend\n") {
+		t.Error("live sudo rule should allow only the installer backend")
+	}
+}

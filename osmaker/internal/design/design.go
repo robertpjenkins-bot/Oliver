@@ -92,7 +92,10 @@ type Item struct {
 }
 
 // ItemTypes are the kinds of thing that can be placed on the desktop.
-var ItemTypes = []string{"app", "search", "clock", "calendar", "sysmon", "note", "text"}
+//
+// "install" is the button that installs the OS onto a disk; it only shows
+// while the OS runs from its USB stick or DVD.
+var ItemTypes = []string{"app", "install", "search", "clock", "calendar", "sysmon", "note", "text"}
 
 // Default returns the design a new project starts from.
 func Default() *Design {
@@ -133,6 +136,7 @@ func Default() *Design {
 			{ID: "app1", Type: "app", X: 30, Y: 30, W: 90, H: 90, App: "files", TextColor: "#ffffff", Color: "#000000", Radius: 12, FontSize: 13},
 			{ID: "app2", Type: "app", X: 30, Y: 140, W: 90, H: 90, App: "firefox", TextColor: "#ffffff", Color: "#000000", Radius: 12, FontSize: 13},
 			{ID: "app3", Type: "app", X: 30, Y: 250, W: 90, H: 90, App: "terminal", TextColor: "#ffffff", Color: "#000000", Radius: 12, FontSize: 13},
+			{ID: "install1", Type: "install", X: 30, Y: 360, W: 90, H: 90, Text: "Install", TextColor: "#ffffff", Color: "#000000", Radius: 12, FontSize: 13},
 		},
 	}
 }
