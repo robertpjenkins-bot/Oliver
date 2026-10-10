@@ -33,7 +33,7 @@ sed -i \
 	-e 's/^iso_application=.*/iso_application="Annie OS Live"/' \
 	"$profile/profiledef.sh"
 grep -rlZ 'Arch Linux' "$profile"/{grub,syslinux,efiboot} 2>/dev/null \
-	| xargs -0 -r sed -i 's/Arch Linux/Annie OS/g'
+	| xargs -0 -r sed -i 's/Arch Linux/Annie OS/g'  || true
 
 # Steam and its 32-bit libraries live in [multilib].
 if ! grep -q '^\[multilib\]' "$profile/pacman.conf"; then
