@@ -142,6 +142,25 @@ ExecStart=/usr/bin/chown -R %[1]s:%[1]s /home/%[1]s
 WantedBy=multi-user.target
 `, user))
 
+	if slices.Contains(d.Apps, "store") {
+		// The App Store finds apps on Flathub; add it once there is internet.
+		link("airootfs/etc/systemd/system/multi-user.target.wants/osmaker-flathub.service", "/etc/systemd/system/osmaker-flathub.service")
+		root("etc/systemd/system/osmaker-flathub.service", `[Unit]
+Description=Add Flathub to the App Store
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+`)
+	}
+
 	theme, icons := "Adwaita", "Papirus-Light"
 	if d.Desktop.Theme == "dark" {
 		theme, icons = "Adwaita-dark", "Papirus-Dark"

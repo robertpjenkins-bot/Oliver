@@ -44,12 +44,37 @@ mkdir -p "${work}" "${out}"
 cp -a "${releng}" "${profile}"
 
 say "adding your apps"
-grep -v '^\s*#' "${here}/packages.txt" >> "${profile}/packages.x86_64"
-sort -u -o "${profile}/packages.x86_64" "${profile}/packages.x86_64"
 if [ "${MULTILIB}" = 1 ]; then
-	# Steam and other 32-bit games live in the multilib repository.
+	# Steam, Wine and other 32-bit programs live in the multilib repository.
 	sed -i '/^#\[multilib\]/,/^#Include/ s/^#//' "${profile}/pacman.conf"
 fi
+# Check every package against Arch's repositories first. Packages get renamed
+# or dropped now and then; one missing app should be skipped, not stop the
+# whole build at the very end.
+db="${work}/pacman-db"
+known="${work}/known-packages"
+mkdir -p "${db}"
+if pacman --config "${profile}/pacman.conf" --dbpath "${db}" -Sy >/dev/null; then
+	{
+		pacman --config "${profile}/pacman.conf" --dbpath "${db}" -Slq
+		pacman --config "${profile}/pacman.conf" --dbpath "${db}" -Sg | awk '{ print $1 }'
+	} | sort -u > "${known}"
+else
+	echo "could not check the package list; trying them all"
+fi
+skipped=()
+while IFS= read -r pkg; do
+	[ -n "${pkg}" ] || continue
+	if [ ! -s "${known}" ] || grep -qxF "${pkg}" "${known}"; then
+		echo "${pkg}" >> "${profile}/packages.x86_64"
+	else
+		skipped+=("${pkg}")
+	fi
+done < <(grep -v '^\s*#' "${here}/packages.txt")
+if [ "${#skipped[@]}" -gt 0 ]; then
+	say "skipping these, Arch Linux no longer has them: ${skipped[*]}"
+fi
+sort -u -o "${profile}/packages.x86_64" "${profile}/packages.x86_64"
 
 say "applying your desktop"
 # releng logs root straight into a console and runs its own networking; the

@@ -175,3 +175,19 @@ func TestInstallerRemovesLiveOnlyFiles(t *testing.T) {
 		t.Error("live sudo rule should allow only the installer backend")
 	}
 }
+
+func TestAppStoreAddsFlathub(t *testing.T) {
+	d := testDesign(t)
+	files, _ := Files(d)
+	if _, ok := files["airootfs/etc/systemd/system/osmaker-flathub.service"]; ok {
+		t.Error("Flathub set up without the App Store")
+	}
+	d.Apps = append(d.Apps, "store")
+	files, _ = Files(d)
+	if !strings.Contains(string(files["airootfs/etc/systemd/system/osmaker-flathub.service"].Data), "dl.flathub.org") {
+		t.Error("App Store chosen but Flathub not set up")
+	}
+	if !strings.Contains(string(files["packages.txt"].Data), "\nflatpak\n") {
+		t.Error("flatpak not installed with the App Store")
+	}
+}
