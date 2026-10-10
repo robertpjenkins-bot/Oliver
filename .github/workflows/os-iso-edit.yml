@@ -94,7 +94,7 @@ jobs:
       - name: Install test tools
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q xorriso squashfs-tools qemu-system-x86 socat imagemagick tesseract-ocr
+          sudo apt-get install -y -q xorriso squashfs-tools qemu-system-x86 ovmf socat imagemagick tesseract-ocr
           # Let the test use hardware virtualisation.
           sudo chmod 666 /dev/kvm || true
 
@@ -120,6 +120,10 @@ jobs:
       - name: "The Fixer: break a program on purpose and let The Fixer repair it"
         if: always()
         run: bash os/tests/fixer-test.sh "$(find iso -name '*.iso' | head -n1)" fixer
+
+      - name: "Install onto an empty disk, then start the installed system"
+        if: always()
+        run: bash os/tests/install-test.sh "$(find iso -name '*.iso' | head -n1)" install
 
       - name: Show the first-start screenshots
         if: always()
@@ -162,6 +166,7 @@ jobs:
             boxes/step-*.png
             boxes/serial.log
             boxes/summary.txt
+            install/*.log
           retention-days: 7
 
 

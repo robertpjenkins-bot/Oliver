@@ -152,6 +152,18 @@ fallback_image="/boot/initramfs-linux-fallback.img"
 fallback_options="-S autodetect"
 EOF
 
+# root has no password, so without this a start-up problem ends at "root
+# account is locked" instead of a repair prompt. Also inside the initramfs.
+for unit in emergency rescue; do
+    install -D -m 0644 /dev/stdin "$TARGET/etc/systemd/system/$unit.service.d/ollie-shell.conf" <<'EOF'
+[Service]
+Environment=SYSTEMD_SULOGIN_FORCE=1
+EOF
+done
+cat >"$TARGET/etc/mkinitcpio.conf.d/ollie.conf" <<'EOF'
+FILES=(/etc/systemd/system/emergency.service.d/ollie-shell.conf /etc/systemd/system/rescue.service.d/ollie-shell.conf)
+EOF
+
 genfstab -U "$TARGET" >"$TARGET/etc/fstab"
 echo "$hostname" >"$TARGET/etc/hostname"
 ln -sf "/usr/share/zoneinfo/$timezone" "$TARGET/etc/localtime"

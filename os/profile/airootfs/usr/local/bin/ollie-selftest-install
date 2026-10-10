@@ -1,0 +1,34 @@
+#!/bin/bash
+# Self-test of the installer, run at start-up only when the kernel command
+# line has ollie.selftest=install (the build's tests do that, in a virtual
+# machine with an empty 30 GB disk). It installs Ollie OS onto that disk the
+# way a person would, answering the installer's questions, prints what the
+# installed system will start with, then switches the machine off. The test
+# then starts the installed system from the disk.
+set -uo pipefail
+say() { echo "OLLIE-INSTALL-TEST: $*" | tee /dev/console /dev/ttyS0 2>/dev/null; }
+
+# Drive 1 (the only one), ERASE, default computer name and time zone.
+if printf '1\nERASE\n\n\n' | /usr/local/bin/ollie-install >/tmp/install.log 2>&1; then
+    say "installer finished"
+else
+    say "installer FAILED:"
+fi
+tail -n 30 /tmp/install.log | while IFS= read -r l; do say "  $l"; done
+
+root="$(blkid -L OLLIE)"
+if [[ -n "$root" ]]; then
+    mkdir -p /mnt/check
+    mount -o subvol=@ "$root" /mnt/check && mount "$(blkid -L OLLIE_BOOT)" /mnt/check/boot
+    say "boot files: $(ls /mnt/check/boot | tr '\n' ' ')"
+    say "loader entry: $(grep options /mnt/check/boot/loader/entries/ollie.conf)"
+    say "hooks: $(grep -h '^HOOKS' /mnt/check/etc/mkinitcpio.conf /mnt/check/etc/mkinitcpio.conf.d/*.conf 2>/dev/null | tr '\n' ' ')"
+    say "kernel: $(file -b /mnt/check/boot/vmlinuz-linux | grep -o 'version [^ ]*')"
+    say "modules: $(ls /mnt/check/usr/lib/modules | tr '\n' ' ')"
+    say "btrfs in initramfs: $(lsinitcpio /mnt/check/boot/initramfs-linux.img 2>/dev/null | grep -c btrfs)"
+    say "fstab: $(grep -v '^#' /mnt/check/etc/fstab | tr -s ' \t' ' ' | tr '\n' '|')"
+    umount -R /mnt/check
+fi
+say DONE
+sync
+systemctl poweroff
