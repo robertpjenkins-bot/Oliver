@@ -858,26 +858,36 @@ fat="$(fat_part_of)"
 fat_bytes=0
 [[ -n "$fat" ]] && fat_bytes="$(lsblk -bdno SIZE "$fat" | tr -d ' ')"
 
-# A FAT32 drive: copy Annie OS on. No password; nothing is erased unless the
-# drive is full and you say so. (A FAT32 part too small for it is explained
-# there too.)
+# A FAT32 drive: copy Annie OS on without erasing it (no password, but
+# nothing is kept between starts), or erase it and set it up properly.
 if ((fat_bytes > 0)); then
     echo
-    echo "Annie OS will be copied onto $dev ($size ${model:-drive})."
-    ask answer "Press Enter to start, or type q to quit:"
+    lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL,MOUNTPOINTS "$dev"
+    echo
+    echo "Annie OS can go onto $dev ($size ${model:-drive}) two ways:"
+    echo
+    echo "  Enter   copy it on and keep the files already there. Annie OS then runs"
+    echo "          fresh every time: nothing you save or install is kept."
+    printf '  %sERASE%s   erase the whole drive and set it up properly: your files, settings\n' "$red$bold" "$reset"
+    echo "          and games are kept between starts, and the rest of the drive"
+    echo "          is an exFAT/FAT32 part for Windows and Mac."
+    echo
+    ask answer "Press Enter to copy, type ERASE to erase, or q to quit:"
     [[ "$answer" == [qQ]* ]] && die "cancelled, nothing was changed."
-    install_by_copying && exit 0
-    exit 1
+    if [[ "$answer" != ERASE ]]; then
+        install_by_copying && exit 0
+        exit 1
+    fi
+else
+    # Anything else has to be reformatted first.
+    echo
+    lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL,MOUNTPOINTS "$dev"
+    echo
+    echo "This drive is not FAT32, so it has to be reformatted for Annie OS."
+    printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$dev" "$reset"
+    ask answer "Type ERASE to continue:"
+    [[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
 fi
-
-# Anything else has to be reformatted first.
-echo
-lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL,MOUNTPOINTS "$dev"
-echo
-echo "This drive is not FAT32, so it has to be reformatted for Annie OS."
-printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$dev" "$reset"
-ask answer "Type ERASE to continue:"
-[[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
 install_with_udisks && exit 0
 
 echo
