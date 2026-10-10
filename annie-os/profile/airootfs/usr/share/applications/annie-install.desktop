@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Install Annie OS
+Comment=Install Annie OS onto a drive (uses 25 GB)
+Exec=konsole --hold -e sudo /usr/local/bin/annie-install
+Icon=annie-os
+Terminal=false
+Categories=System;

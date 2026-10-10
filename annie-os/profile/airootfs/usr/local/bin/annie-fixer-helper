@@ -1,0 +1,152 @@
+#!/bin/bash
+# The Fixer's root helper: finds and repairs broken system programs.
+#
+#   annie-fixer-helper scan LIST   write what is broken to LIST
+#   annie-fixer-helper fix LIST    repair what LIST names
+#
+# Both print "PROGRESS done total" lines for the progress bar.
+#
+# The good copy of Annie OS:
+#   - on the USB, the read-only system image Annie OS starts from
+#     (/run/archiso/airootfs);
+#   - installed on a drive, the copy of that image the installer kept
+#     (/var/lib/annie/fixer/airootfs.sfs), mounted read-only.
+# A file is restored from the good copy when its program is still the same
+# version as in the copy; a program updated since then is downloaded again
+# instead (the copy's file would be too old for it).
+#
+# Only system programs are checked (/usr and /opt): never the user's files
+# or settings, and never /etc, where settings rightly change.
+set -uo pipefail
+
+[[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
+
+readonly SFS=/var/lib/annie/fixer/airootfs.sfs
+readonly MNT=/run/annie-fixer/good-copy
+
+# Annie OS's own files, which no package owns.
+readonly ANNIE_PATHS=(
+    /usr/local/bin
+    /usr/share/plasma/look-and-feel/org.annieos.desktop
+    /usr/share/plasma/plasmoids/org.annieos.googlesearch
+    /usr/share/wallpapers/AnnieOS
+)
+readonly ANNIE_GLOBS=(
+    '/usr/share/applications/annie-*'
+    '/usr/share/applications/oliver.desktop'
+    '/usr/share/applications/steam-game-mode.desktop'
+    '/usr/share/kio/servicemenus/annie-*'
+    '/usr/share/icons/hicolor/scalable/apps/annie-*'
+)
+
+good_copy() { # prints the good copy's root, or nothing
+    if [[ -d /run/archiso/airootfs/usr ]]; then
+        echo /run/archiso/airootfs
+    elif [[ -f "$SFS" ]]; then
+        mkdir -p "$MNT"
+        mountpoint -q "$MNT" || mount -o loop,ro "$SFS" "$MNT" 2>/dev/null || return 0
+        echo "$MNT"
+    fi
+}
+
+scan() {
+    local list="$1" good pkgs total n=0 pkg line path ver
+    good="$(good_copy)"
+    : >"$list"
+    # ANNIE_FIXER_PACKAGES limits the check to some programs (for the self-test).
+    mapfile -t pkgs < <(if [[ -n "${ANNIE_FIXER_PACKAGES:-}" ]]; then tr ' ' '\n' <<<"$ANNIE_FIXER_PACKAGES"; else pacman -Qq; fi)
+    total=$((${#pkgs[@]} + 1))
+    for pkg in "${pkgs[@]}"; do
+        n=$((n + 1))
+        echo "PROGRESS $n $total"
+        # Files that are missing or changed; a different time alone is not
+        # damage, and settings files under /etc are left alone.
+        while IFS= read -r line; do
+            path="$(sed -nE 's/^warning: [^:]+: (\/.*) \(([^()]*)\)$/\1/p' <<<"$line")"
+            [[ -n "$path" ]] || continue
+            case "$path" in /usr/* | /opt/*) ;; *) continue ;; esac
+            case "$line" in
+            *"Modification time mismatch"* | *"Permissions mismatch"* | *"UID mismatch"* | *"GID mismatch"*) continue ;;
+            esac
+            ver="$(pacman -Q "$pkg" | awk '{print $2}')"
+            if [[ -n "$good" && -d "$good/var/lib/pacman/local/$pkg-$ver" ]]; then
+                if [[ -e "$good$path" || -L "$good$path" ]]; then
+                    printf 'copy\t%s\t%s\n' "$pkg" "$path" >>"$list"
+                fi
+                # Missing from the good copy too: left out on purpose when
+                # Annie OS was made (the cursor's other colours), not damage.
+            else
+                printf 'download\t%s\t%s\n' "$pkg" "$path" >>"$list"
+            fi
+        done < <(pacman -Qkk "$pkg" 2>&1 | grep '^warning: ')
+    done
+    # Annie OS's own files.
+    if [[ -n "$good" ]]; then
+        local f rel
+        while IFS= read -r -d '' f; do
+            rel="${f#"$good"}"
+            # The installer removes the live USB's Install icon on purpose.
+            [[ "$rel" == /usr/share/applications/annie-install.desktop && ! -d /run/archiso ]] && continue
+            if [[ ! -e "$rel" && ! -L "$rel" ]] || ! cmp -s "$f" "$rel"; then
+                printf 'copy\tannie-os\t%s\n' "$rel" >>"$list"
+            fi
+        done < <(
+            for p in "${ANNIE_PATHS[@]}"; do find "$good$p" \( -type f -o -type l \) -print0 2>/dev/null; done
+            for g in "${ANNIE_GLOBS[@]}"; do
+                for f in $good$g; do [[ -e "$f" || -L "$f" ]] && printf '%s\0' "$f"; done
+            done
+        )
+    fi
+    echo "PROGRESS $total $total"
+}
+
+fix() {
+    local list="$1" good total n=0 kind pkg path
+    local -a downloads=()
+    good="$(good_copy)"
+    total="$(wc -l <"$list")"
+    while IFS=$'\t' read -r kind pkg path; do
+        n=$((n + 1))
+        echo "PROGRESS $n $((total + 1))"
+        case "$kind" in
+        copy)
+            [[ -n "$good" ]] || { downloads+=("$pkg"); continue; }
+            mkdir -p "$(dirname -- "$path")"
+            if cp -a --remove-destination -- "$good$path" "$path"; then
+                echo "fixed      $path"
+            else
+                echo "NOT FIXED  $path"
+            fi
+            ;;
+        download) downloads+=("$pkg") ;;
+        esac
+    done <"$list"
+    if ((${#downloads[@]} > 0)); then
+        mapfile -t downloads < <(printf '%s\n' "${downloads[@]}" | grep -v '^annie-os$' | sort -u)
+        pacman -Sy >/dev/null 2>&1 || true
+        local -a fromrepo=()
+        for pkg in "${downloads[@]}"; do
+            if pacman -Si "$pkg" >/dev/null 2>&1; then
+                fromrepo+=("$pkg")
+            else
+                echo "NOT FIXED  $pkg (not in the online repositories)"
+            fi
+        done
+        downloads=("${fromrepo[@]}")
+        if ((${#downloads[@]} > 0)); then
+            echo "downloading: ${downloads[*]}"
+            if pacman -S --noconfirm "${downloads[@]}"; then
+                echo "fixed      ${downloads[*]} (downloaded again)"
+            else
+                echo "NOT FIXED  ${downloads[*]} (no internet?)"
+            fi
+        fi
+    fi
+    echo "PROGRESS $((total + 1)) $((total + 1))"
+}
+
+case "${1:-}" in
+scan) scan "${2:?}" ;;
+fix) fix "${2:?}" ;;
+*) echo "usage: annie-fixer-helper scan|fix LIST" >&2; exit 2 ;;
+esac

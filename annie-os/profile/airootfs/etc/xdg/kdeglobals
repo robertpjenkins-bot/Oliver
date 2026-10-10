@@ -1,0 +1,9 @@
+[General]
+ColorScheme=BreezeLight
+AccentColor=170,120,255
+
+[KDE]
+LookAndFeelPackage=org.annieos.desktop
+
+[Icons]
+Theme=breeze

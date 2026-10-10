@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Annie OS Updater
-Comment=Update Annie OS, add the rainbow cursor, and fix everything
+Name=Update Annie OS
+Comment=Update everything, add what is missing, and fix what has gone wrong
 Exec=annie-update
 Icon=annie-os
 Terminal=false

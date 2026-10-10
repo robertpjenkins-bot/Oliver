@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Annie Fixer
-Comment=Fix common problems with one click
-Exec=annie-fixer
-Icon=applications-utilities
-Categories=System;Settings;
-Terminal=false

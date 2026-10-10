@@ -1,0 +1,78 @@
+#!/bin/bash
+# The Fixer: finds broken system programs and puts good copies back.
+# Opened from the app menu. It checks, shows what it found, and asks before
+# fixing anything. The work is done by annie-fixer-helper (as root, through
+# Annie OS's password-less sudo).
+set -uo pipefail
+
+readonly TITLE="The Fixer"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+list="$work/broken.txt"
+
+# Runs the helper with a progress bar.
+with_progress() { # with_progress TEXT scan|fix LIST
+    local bar total cur
+    bar="$(kdialog --title "$TITLE" --progressbar "$1" 100)"
+    sudo -n /usr/local/bin/annie-fixer-helper "$2" "$3" 2>&1 | tee "$work/$2.log" |
+        while read -r word cur total _; do
+            [[ "$word" == PROGRESS && "$total" -gt 0 ]] &&
+                qdbus6 $bar Set "" value $((cur * 100 / total)) >/dev/null 2>&1
+        done
+    qdbus6 $bar close >/dev/null 2>&1
+}
+
+kdialog --title "$TITLE" --yes-label "Check" --no-label "Close" --yesno \
+    "The Fixer checks every system program for missing or damaged files,
+and puts good copies back from Annie OS's own copy of the system.
+
+Your files and settings are never touched.
+
+Checking takes a few minutes." || exit 0
+
+with_progress "Checking every system program..." scan "$list"
+
+if [[ ! -s "$list" ]]; then
+    kdialog --title "$TITLE" --msgbox "Nothing is broken. All system programs are complete."
+    exit 0
+fi
+
+copies="$(grep -c '^copy' "$list")"
+downloads="$(grep -c '^download' "$list")"
+programs="$(cut -f2 "$list" | sort -u | tr '\n' ' ')"
+{
+    echo "The Fixer found $((copies + downloads)) damaged or missing file(s) in:"
+    echo
+    echo "  $programs"
+    echo
+    echo "Files:"
+    cut -f3 "$list" | sed 's/^/  /'
+} >"$work/report.txt"
+
+msg="Found $((copies + downloads)) damaged or missing file(s) in:
+$programs
+
+Fix them now?"
+if ((downloads > 0)); then
+    msg="$msg
+
+$downloads of them belong to programs updated since Annie OS was made, so
+good copies are downloaded from the internet (it needs to be connected)."
+fi
+kdialog --title "$TITLE" --textbox "$work/report.txt" 700 400
+kdialog --title "$TITLE" --yes-label "Fix" --no-label "Not now" --yesno "$msg" || exit 0
+
+with_progress "Fixing..." fix "$list"
+
+fixed="$(grep -c '^fixed' "$work/fix.log")"
+failed="$(grep -c '^NOT FIXED' "$work/fix.log")"
+cp "$work/fix.log" "$HOME/Desktop/The-Fixer-report.txt" 2>/dev/null || true
+if ((failed == 0)); then
+    kdialog --title "$TITLE" --msgbox "All fixed. Restart the computer if a program still misbehaves.
+
+A report is on the desktop (The-Fixer-report.txt)."
+else
+    kdialog --title "$TITLE" --sorry "Fixed $fixed, but $failed could not be fixed (is the internet connected?).
+
+A report is on the desktop (The-Fixer-report.txt). DC - Debug Computer can help find out more."
+fi

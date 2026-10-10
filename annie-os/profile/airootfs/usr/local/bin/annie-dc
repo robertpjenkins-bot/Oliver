@@ -1,0 +1,342 @@
+#!/bin/bash
+# DC - Debug Computer: check everything on this computer, explain what is
+# wrong in plain words, and offer to fix what can be fixed.
+#
+#   annie-dc            check, then offer fixes
+#   annie-dc --report   check only; no questions asked
+#
+# A copy of every run is saved to ~/Desktop/DC-report-<date>.txt, ready to
+# share with someone helping you.
+set -uo pipefail
+
+ask_fixes=true
+[[ "${1:-}" == --report ]] && ask_fixes=false
+[[ -t 0 ]] || ask_fixes=false
+
+green=$'\e[32m' yellow=$'\e[33m' red=$'\e[31m' teal=$'\e[36m' bold=$'\e[1m' reset=$'\e[0m'
+report_dir="$HOME/Desktop"
+[[ -d "$report_dir" ]] || report_dir="$HOME"
+report="$report_dir/DC-report-$(date +%Y-%m-%d-%H%M).txt"
+: >"$report"
+
+problems=0 warnings=0
+fix_titles=() fix_cmds=()
+
+log() { printf '%s\n' "$*" | sed 's/\x1b\[[0-9;]*m//g' >>"$report"; }
+section() {
+    printf '\n%s%s== %s%s\n' "$teal" "$bold" "$1" "$reset"
+    log "" "== $1"
+}
+ok() {
+    printf '  %sOK%s     %s\n' "$green" "$reset" "$1"
+    log "  OK     $1"
+}
+warn() {
+    printf '  %sWARN%s   %s\n' "$yellow" "$reset" "$1"
+    log "  WARN   $1"
+    warnings=$((warnings + 1))
+}
+bad() {
+    printf '  %sPROBLEM%s %s\n' "$red" "$reset" "$1"
+    log "  PROBLEM $1"
+    problems=$((problems + 1))
+}
+info() {
+    printf '         %s\n' "$1"
+    log "         $1"
+}
+# offer_fix "what it does" "command" - queued, asked about at the end.
+offer_fix() {
+    fix_titles+=("$1")
+    fix_cmds+=("$2")
+}
+have() { command -v "$1" >/dev/null 2>&1; }
+
+printf '\n%s  DC - Debug Computer%s\n' "$bold" "$reset"
+log "DC - Debug Computer report, $(date)"
+
+# --- System ---------------------------------------------------------------
+section "System"
+. /etc/os-release 2>/dev/null
+ok "$(uname -n): ${PRETTY_NAME:-Linux}, kernel $(uname -r)"
+if [[ ! -d "/usr/lib/modules/$(uname -r)" ]]; then
+    bad "the drivers for the running kernel are missing (the kernel was updated without restarting)"
+    info "Restart the computer to fix this."
+fi
+ok "up $(uptime -p 2>/dev/null | sed 's/^up //')"
+cpu="$(awk -F': ' '/model name/ {print $2; exit}' /proc/cpuinfo)"
+ok "processor: ${cpu:-unknown} ($(nproc) threads)"
+mem_total=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+mem_avail=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
+if ((mem_avail < 500)); then
+    bad "memory almost full: ${mem_avail} MB free of ${mem_total} MB"
+    info "Close some programs or browser tabs."
+else
+    ok "memory: ${mem_avail} MB free of ${mem_total} MB"
+fi
+if have zramctl && [[ -n "$(zramctl --noheadings 2>/dev/null)" ]]; then
+    ok "compressed memory swap (zram) is on"
+else
+    warn "no swap: the computer may freeze when memory runs out"
+fi
+temp_file=""
+for t in /sys/class/thermal/thermal_zone*/temp; do [[ -r "$t" ]] && temp_file="$t" && break; done
+if [[ -n "$temp_file" ]]; then
+    temp=$(($(cat "$temp_file") / 1000))
+    if ((temp >= 90)); then
+        bad "running very hot: ${temp}°C. Check the fan and air vents."
+    else
+        ok "temperature: ${temp}°C"
+    fi
+fi
+
+# --- Storage --------------------------------------------------------------
+section "Storage"
+while read -r target avail pcent; do
+    used=${pcent%\%}
+    if ((avail < 1024 * 1024)); then
+        bad "$target is almost full: $((avail / 1024)) MB left (${pcent} used)"
+        offer_fix "Free space: remove old downloaded updates and old logs" \
+            "sudo paccache -rk1 && sudo paccache -ruk0 && sudo journalctl --vacuum-size=100M"
+    elif ((used >= 90)); then
+        warn "$target is ${pcent} full ($((avail / 1024 / 1024)) GB left)"
+        offer_fix "Free space: remove old downloaded updates and old logs" \
+            "sudo paccache -rk1 && sudo paccache -ruk0 && sudo journalctl --vacuum-size=100M"
+    else
+        ok "$target: $((avail / 1024 / 1024)) GB free (${pcent} used)"
+    fi
+done < <(df -k --output=target,avail,pcent / /home 2>/dev/null | tail -n +2 | sort -u)
+if grep -q ' / overlay ' /proc/mounts && grep -qE 'cow_(label|device)=' /proc/cmdline; then
+    ok "running from a USB drive; your changes are being saved"
+elif grep -q ' / overlay ' /proc/mounts && [[ -d /run/archiso ]]; then
+    warn "running from the live USB: nothing you change is kept after a restart"
+    info "Use 'Install Annie OS' or the Annie OS USB Maker to keep your files."
+fi
+if have btrfs && [[ "$(findmnt -no FSTYPE /)" == btrfs ]]; then
+    errs="$(sudo -n btrfs device stats / 2>/dev/null | awk '$2 != 0' | head -n1)"
+    [[ -n "$errs" ]] && bad "the drive has reported read/write errors: $errs"
+fi
+
+# --- Services ---------------------------------------------------------------
+section "Background services"
+failed="$(systemctl --failed --plain --no-legend 2>/dev/null | awk '{print $1}')"
+if [[ -z "$failed" ]]; then
+    ok "all system services are running"
+else
+    for unit in $failed; do
+        bad "service $unit has stopped working"
+        offer_fix "Restart $unit" "sudo systemctl restart '$unit'"
+    done
+fi
+user_failed="$(systemctl --user --failed --plain --no-legend 2>/dev/null | awk '{print $1}')"
+for unit in $user_failed; do
+    bad "your service $unit has stopped working"
+    offer_fix "Restart $unit" "systemctl --user restart '$unit'"
+done
+
+# --- Internet -----------------------------------------------------------------
+section "Internet"
+if ! systemctl is-active -q NetworkManager 2>/dev/null; then
+    bad "the network service is not running"
+    offer_fix "Start the network service" "sudo systemctl restart NetworkManager"
+elif ! ip route 2>/dev/null | grep -q '^default'; then
+    bad "not connected to any network"
+    info "Click the Wi-Fi icon in the bottom-right of the bar to connect."
+elif ! getent hosts google.com >/dev/null 2>&1; then
+    bad "connected, but web addresses cannot be looked up (DNS)"
+    offer_fix "Reconnect the network" "sudo systemctl restart NetworkManager"
+elif have curl && ! curl -fsS -m 8 -o /dev/null https://www.google.com 2>/dev/null; then
+    warn "connected, but google.com did not answer"
+else
+    ok "connected to the internet"
+fi
+if have timedatectl && [[ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" == no ]]; then
+    warn "the clock is not synced; a wrong clock breaks websites and Steam"
+    offer_fix "Sync the clock" "sudo timedatectl set-ntp true"
+fi
+
+# --- Graphics -----------------------------------------------------------------
+section "Graphics"
+if have lspci; then
+    while IFS= read -r line; do
+        slot="${line%% *}"
+        name="${line#* }"
+        name="${name#*: }"
+        driver="$(lspci -k -s "$slot" 2>/dev/null | awk -F': ' '/Kernel driver in use/ {print $2}')"
+        if [[ -n "$driver" ]]; then
+            ok "$name (driver: $driver)"
+        else
+            bad "$name has no driver"
+            offer_fix "Open the Driver Installer" "annie-drivers"
+        fi
+        if [[ "$name" == *NVIDIA* && "$driver" == nouveau ]]; then
+            warn "NVIDIA card is using the slow open driver (nouveau); games will run poorly"
+            offer_fix "Open the Driver Installer to add the NVIDIA driver" "annie-drivers"
+        fi
+    done < <(lspci | grep -E 'VGA|3D|Display')
+fi
+if have vulkaninfo; then
+    if vulkaninfo --summary >/dev/null 2>&1; then
+        ok "Vulkan works (needed by Steam, Proton and most games)"
+    else
+        bad "Vulkan does not work: most games and Proton will fail"
+        offer_fix "Open the Driver Installer" "annie-drivers"
+    fi
+fi
+if compgen -G '/usr/share/vulkan/icd.d/*i686*' >/dev/null || compgen -G '/usr/share/vulkan/icd.d/*.i686.json' >/dev/null; then
+    ok "32-bit graphics drivers present (needed by Steam and older games)"
+else
+    warn "no 32-bit graphics drivers: Steam and older Windows games may not start"
+    offer_fix "Open the Driver Installer" "annie-drivers"
+fi
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    ok "desktop running on Wayland"
+fi
+
+# --- Sound ---------------------------------------------------------------------
+section "Sound"
+if systemctl --user is-active -q pipewire 2>/dev/null && systemctl --user is-active -q wireplumber 2>/dev/null; then
+    ok "sound system is running"
+    if have wpctl; then
+        sink="$(wpctl inspect @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk -F'"' '/node.description/ {print $2; exit}')"
+        if [[ -n "$sink" ]]; then
+            ok "sound goes to: $sink"
+            vol="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null)"
+            if [[ "$vol" == *MUTED* ]]; then
+                warn "sound is muted"
+                offer_fix "Unmute" "wpctl set-mute @DEFAULT_AUDIO_SINK@ 0"
+            fi
+        else
+            bad "no speakers or headphones found"
+            offer_fix "Open the Driver Installer (sound firmware)" "annie-drivers"
+        fi
+    fi
+else
+    bad "the sound system is not running"
+    offer_fix "Restart the sound system" "systemctl --user restart pipewire pipewire-pulse wireplumber"
+fi
+
+# --- Bluetooth -------------------------------------------------------------------
+section "Bluetooth and controllers"
+if [[ -d /sys/class/bluetooth ]] && compgen -G '/sys/class/bluetooth/hci*' >/dev/null; then
+    if systemctl is-active -q bluetooth 2>/dev/null; then
+        ok "Bluetooth is on"
+    else
+        warn "this computer has Bluetooth but the service is off"
+        offer_fix "Turn on Bluetooth" "sudo systemctl enable --now bluetooth"
+    fi
+else
+    ok "no Bluetooth hardware"
+fi
+if compgen -G '/dev/input/js*' >/dev/null; then
+    ok "game controller connected"
+fi
+if [[ -f /usr/lib/udev/rules.d/70-steam-input.rules || -f /usr/lib/udev/rules.d/60-steam-input.rules ]]; then
+    ok "Steam controller support installed"
+fi
+
+# --- Games and Windows programs -----------------------------------------------
+section "Games and Windows programs"
+if have steam; then ok "Steam installed"; else bad "Steam is missing"; fi
+if compgen -G '/usr/share/steam/compatibilitytools.d/*' >/dev/null || compgen -G "$HOME/.local/share/Steam/compatibilitytools.d/*" >/dev/null; then
+    ok "Proton-GE installed"
+else
+    warn "Proton-GE not found"
+fi
+if have wine; then
+    ok "Wine $(wine --version 2>/dev/null | sed 's/^wine-//')"
+else
+    bad "Wine is missing: .exe files will not run"
+fi
+if have oliver; then
+    ok "Oliver installed (double-click .exe files to run them)"
+    if doctor="$(timeout 30 oliver doctor 2>&1)"; then
+        while IFS= read -r l; do [[ -n "$l" ]] && log "         oliver: $l"; done <<<"$doctor"
+        ok "oliver doctor: no problems"
+    else
+        warn "oliver doctor found something (details in the saved report)"
+        while IFS= read -r l; do [[ -n "$l" ]] && log "         oliver: $l"; done <<<"$doctor"
+    fi
+    if problems_log="$(oliver log -problems 2>/dev/null)" && [[ -n "$problems_log" ]]; then
+        warn "the last Windows program had errors:"
+        head -n 3 <<<"$problems_log" | while IFS= read -r l; do info "$l"; done
+    fi
+fi
+if have firefox; then ok "Firefox web browser installed"; else warn "Firefox web browser is missing (The Fixer can put it back)"; fi
+
+# --- Updates -------------------------------------------------------------------
+section "Updates and app store"
+if [[ -e /var/lib/pacman/db.lck ]] && ! pgrep -x pacman >/dev/null; then
+    bad "the app installer is stuck locked (a previous update was interrupted)"
+    offer_fix "Unlock the app installer" "sudo rm -f /var/lib/pacman/db.lck"
+else
+    ok "app installer is ready"
+fi
+if [[ -z "$(ls -A /etc/pacman.d/gnupg 2>/dev/null)" ]]; then
+    bad "app signing keys are not set up: installing apps will fail"
+    offer_fix "Set up the signing keys" "sudo pacman-key --init && sudo pacman-key --populate"
+fi
+if have checkupdates; then
+    n="$(checkupdates 2>/dev/null | wc -l)"
+    if ((n > 0)); then
+        warn "$n updates available"
+        offer_fix "Install the $n updates" "sudo pacman -Syu --noconfirm"
+    else
+        ok "everything is up to date"
+    fi
+fi
+
+# --- Recent errors -----------------------------------------------------------------
+section "Errors since this start"
+errors="$(journalctl -b -p 3 --no-pager -o cat 2>/dev/null | sort | uniq -c | sort -rn | head -n 8)"
+if [[ -z "$errors" ]]; then
+    ok "no errors logged"
+else
+    n="$(journalctl -b -p 3 --no-pager -o cat 2>/dev/null | wc -l)"
+    if ((n > 50)); then warn "$n error messages logged; the most common:"; else ok "$n error messages logged (normal); the most common:"; fi
+    while IFS= read -r l; do info "${l:0:110}"; done <<<"$errors"
+fi
+
+# --- Summary -----------------------------------------------------------------------
+echo
+log ""
+if ((problems == 0 && warnings == 0)); then
+    printf '%s%sEverything looks good.%s\n' "$green" "$bold" "$reset"
+    log "Everything looks good."
+else
+    printf '%s%d problem(s), %d warning(s).%s\n' "$bold" "$problems" "$warnings" "$reset"
+    log "$problems problem(s), $warnings warning(s)."
+fi
+echo "Report saved to $report"
+
+# --- Fixes ---------------------------------------------------------------------------
+((${#fix_titles[@]} > 0)) || exit 0
+# The same fix can be offered by several checks; ask about it once.
+declare -A seen=()
+echo
+printf '%sDC can try to fix these:%s\n' "$bold" "$reset"
+for i in "${!fix_titles[@]}"; do
+    [[ -n "${seen[${fix_cmds[i]}]:-}" ]] && continue
+    seen[${fix_cmds[i]}]=1
+    printf '  - %s\n' "${fix_titles[i]}"
+done
+$ask_fixes || exit 0
+
+echo
+seen=()
+for i in "${!fix_titles[@]}"; do
+    cmd="${fix_cmds[i]}"
+    [[ -n "${seen[$cmd]:-}" ]] && continue
+    seen[$cmd]=1
+    read -rp "${fix_titles[i]}? [y/N] " yn
+    [[ "$yn" == [yY]* ]] || continue
+    if bash -c "$cmd"; then
+        printf '  %sdone%s\n' "$green" "$reset"
+        log "FIXED: ${fix_titles[i]}"
+    else
+        printf '  %sthat did not work%s\n' "$red" "$reset"
+        log "FIX FAILED: ${fix_titles[i]}"
+    fi
+done
+echo
+echo "Run DC again to check the fixes worked."

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Get Proton-GE
+Comment=Download Proton-GE so more Windows games run (about 500 MB)
+Exec=/usr/local/bin/annie-get-proton-ge
+Icon=steam
+Categories=Game;
+Terminal=false

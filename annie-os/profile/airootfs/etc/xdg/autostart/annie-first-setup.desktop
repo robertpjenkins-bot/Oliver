@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Annie OS first start
+Comment=Create your username and password
+Exec=/usr/local/bin/annie-first-setup
+Icon=annie-os
+NoDisplay=true
+X-KDE-autostart-after=panel

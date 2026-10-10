@@ -1,112 +1,155 @@
-#!/usr/bin/env bash
-# Builds the Annie OS live ISO.
+#!/bin/bash
+# Build the Annie OS ISO.
 #
-# Run on Arch Linux as root:   sudo ./build.sh
-# Needs:                       pacman -S archiso python-pillow
+# Runs as root inside an Arch Linux container (see .github/workflows/os-iso.yml):
 #
-# Everything is fetched from the Arch package mirrors; nothing comes from
-# GitHub or the AUR.
+#   docker run --rm --privileged -v "$PWD:/src" -w /src archlinux:latest bash os/build.sh
+#
+# The ISO and its checksum land in os/out/.
+#
+# The profile starts from archiso's own "releng" profile for the boot loader
+# configuration, which tracks the installed archiso version, and layers
+# os/profile on top for everything that makes the system Annie OS.
 set -euo pipefail
 
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-out="${OUTDIR:-${here}/iso}"
-work="${WORKDIR:-${here}/work}"
-profile="${work}/profile"
-max_bytes=$((25 * 1000 * 1000 * 1000))   # the ISO must be 25 GB or under
+repo="$(cd "$(dirname "$0")/.." && pwd)"
+os="$repo/os"
+out="$os/out"
+work=/tmp/annie-work
+profile=/tmp/annie-profile
 
-say() { printf '\033[1;35m==>\033[0m %s\n' "$*"; }
-die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+step() { printf '\n\e[1;36m==> %s\e[0m\n' "$*"; }
+# Package lists: one name per line, # starts a comment.
+list() { sed -e 's/#.*//' -e 's/[[:space:]]//g' -e '/^$/d' "$1"; }
 
-[ "$(id -u)" -eq 0 ] || die "run as root: sudo $0"
-[ -d /usr/share/archiso/configs/releng ] || die "archiso is not installed: pacman -S archiso"
+step "Preparing the build container"
+# The container image strips man pages and translations from everything it
+# installs; the ISO must not inherit that.
+sed -i '/^NoExtract/d' /etc/pacman.conf
+# Steam, Wine and the 32-bit drivers live in multilib. Uncomment it, or add it
+# if this pacman.conf has no multilib section at all.
+sed -i '/^#\[multilib\]/,/^#Include/ s/^#//' /etc/pacman.conf
+if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
+    printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >>/etc/pacman.conf
+fi
+pacman-key --init >/dev/null
+pacman -Sy --noconfirm --needed archlinux-keyring
+pacman -Su --noconfirm
+# python-pillow and ttf-dejavu draw the unicorn wallpaper and its "Annie OS"
+# title (tools/make-wallpaper.py); without a font the letters are left out.
+pacman -S --noconfirm --needed archiso git go python-pillow ttf-dejavu sudo
 
-say "preparing the profile"
-rm -rf "$work"
-mkdir -p "$work" "$out"
+git config --global --add safe.directory "$repo"
+version="$(git -C "$repo" describe --tags --always --dirty 2>/dev/null || echo dev)"
+
+step "Assembling the profile"
+rm -rf "$profile" "$work"
 cp -a /usr/share/archiso/configs/releng "$profile"
+rm -rf /tmp/releng-airootfs
+mv "$profile/airootfs" /tmp/releng-airootfs
+mkdir -p "$profile/airootfs"
+# Annie OS ships its own live initramfs hooks (os/profile/airootfs/etc/
+# mkinitcpio.conf.d); of releng's root filesystem it only keeps a kernel
+# preset, in archiso versions that still provide one.
+if [[ -f /tmp/releng-airootfs/etc/mkinitcpio.d/linux.preset ]]; then
+    install -D -m 0644 /tmp/releng-airootfs/etc/mkinitcpio.d/linux.preset \
+        "$profile/airootfs/etc/mkinitcpio.d/linux.preset"
+fi
+rm -rf /tmp/releng-airootfs
+cp -a "$os/profile/airootfs/." "$profile/airootfs/"
 
-# Name and brand the ISO.
+# Name the ISO and boot menus Annie OS.
 sed -i \
-	-e 's/^iso_name=.*/iso_name="annie-os"/' \
-	-e 's/^iso_label=.*/iso_label="ANNIE_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"/' \
-	-e 's/^iso_publisher=.*/iso_publisher="Annie OS"/' \
-	-e 's/^iso_application=.*/iso_application="Annie OS Live"/' \
-	"$profile/profiledef.sh"
-grep -rlZ 'Arch Linux' "$profile"/{grub,syslinux,efiboot} 2>/dev/null \
-	| xargs -0 -r sed -i 's/Arch Linux/Annie OS/g'  || true
+    -e 's/^iso_name=.*/iso_name="annie-os"/' \
+    -e 's/^iso_label="ARCH_/iso_label="ANNIE_/' \
+    -e 's|^iso_publisher=.*|iso_publisher="Annie OS"|' \
+    -e 's|^iso_application=.*|iso_application="Annie OS live and installer"|' \
+    "$profile/profiledef.sh"
+# releng's permission list names files that Annie OS leaves out.
+sed -i '/^file_permissions=(/,/^)/d' "$profile/profiledef.sh"
+find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true
+grep -rlZ 'Arch Linux' "$profile/efiboot" "$profile/syslinux" "$profile/grub" 2>/dev/null |
+    xargs -0r sed -i -e 's/Arch Linux install medium/Annie OS/g' -e 's/Arch Linux/Annie OS/g'
 
-# Steam and its 32-bit libraries live in [multilib].
-if ! grep -q '^\[multilib\]' "$profile/pacman.conf"; then
-	printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >>"$profile/pacman.conf"
-fi
+step "Building Oliver $version"
+(cd "$repo" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$version" \
+    -o "$profile/airootfs/usr/local/bin/oliver" ./cmd/oliver)
+install -D -m 0644 "$repo/packaging/oliver.desktop" "$profile/airootfs/usr/share/applications/oliver.desktop"
+install -D -m 0644 "$repo/packaging/oliver.svg" "$profile/airootfs/usr/share/icons/hicolor/scalable/apps/oliver.svg"
+install -D -m 0755 "$os/annie-write" "$profile/airootfs/usr/local/bin/annie-write"
 
-# Packages. Arch drops and renames packages over time, so check each one
-# against the repositories and leave out (with a warning) any that are gone,
-# rather than failing the whole build.
-say "checking the package list"
-pacman --config "$profile/pacman.conf" -Sy >/dev/null
-while read -r pkg; do
-	if pacman --config "$profile/pacman.conf" -Si "$pkg" >/dev/null 2>&1 \
-		|| pacman --config "$profile/pacman.conf" -Sg "$pkg" >/dev/null 2>&1; then
-		echo "$pkg" >>"$work/annie-packages"
-	else
-		printf '\033[1;33mwarning:\033[0m %s is not in the Arch repositories; leaving it out\n' "$pkg"
-	fi
-done < <(grep -Ev '^\s*(#|$)' "$here/packages.txt")
-cat "$work/annie-packages" >>"$profile/packages.x86_64"
+step "Building the Annie OS Updater"
+# It is in the menu as "Update Annie OS", and the apps self-test runs it.
+bash "$os/updater/build-appimage.sh"
+install -D -m 0755 "$os/out/Annie-OS-Updater-x86_64.AppImage" \
+    "$profile/airootfs/usr/share/annie/Annie-OS-Updater-x86_64.AppImage"
 
-# The Arch live ISO carries rescue and server tools a desktop doesn't need.
-# Dropping them keeps the ISO small enough to publish as a single file.
-for pkg in clonezilla partclone partimage fsarchiver open-vm-tools virtualbox-guest-utils-nox \
-	irssi lynx mc nmap tcpdump wvdial xl2tpd pptpclient vpnc openconnect openvpn linux-atm lftp; do
-	sed -i "/^${pkg}\$/d" "$profile/packages.x86_64"
+step "Drawing the logo and wallpaper"
+for icon in annie-os annie-dc annie-drivers; do  # art/*.svg
+    install -D -m 0644 "$os/art/$icon.svg" "$profile/airootfs/usr/share/icons/hicolor/scalable/apps/$icon.svg"
 done
-sort -u -o "$profile/packages.x86_64" "$profile/packages.x86_64"
+images="$profile/airootfs/usr/share/wallpapers/AnnieOS/contents/images"
+mkdir -p "$images"
+for size in 1280x720 1920x1080 2560x1440 3840x2160; do
+    python3 "$os/tools/make-wallpaper.py" "$images/$size.png" "${size%x*}" "${size#*x}"
+done
+# The BIOS boot menu background; syslinux wants exactly 640x480.
+python3 "$os/tools/make-wallpaper.py" "$profile/syslinux/splash.png" 640 480
 
-# NetworkManager replaces the live ISO's iwd + systemd-networkd.
-rm -f "$profile"/airootfs/etc/systemd/system/multi-user.target.wants/{iwd,systemd-networkd}.service \
-      "$profile"/airootfs/etc/systemd/system/sockets.target.wants/systemd-networkd.socket \
-      "$profile"/airootfs/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service
-
-# The Annie files.
-cp -a "$here/airootfs/." "$profile/airootfs/"
-install -Dm755 "$here/appimage/AnnieDiskWriter/annie-disk-writer" "$profile/airootfs/usr/local/bin/annie-disk-writer"
-install -Dm755 "$here/appimage/AnnieDiskWriter/annie-disk-helper" "$profile/airootfs/usr/lib/annie/annie-disk-helper"
-install -Dm644 "$here/appimage/AnnieDiskWriter/annie-disk-writer.desktop" "$profile/airootfs/usr/share/applications/annie-disk-writer.desktop"
-install -Dm644 "$here/appimage/AnnieDiskWriter/annie-disk-writer.svg" "$profile/airootfs/usr/share/icons/hicolor/scalable/apps/annie-disk-writer.svg"
-install -Dm644 "$work/annie-packages" "$profile/airootfs/usr/share/annie/packages.txt"
-
-# The disk writer also ships as a portable AppImage, when appimagetool is here.
-OUTDIR="$work/appimage" "$here/appimage/build-appimage.sh"
-if [ -f "$work/appimage/AnnieDiskWriter-x86_64.AppImage" ]; then
-	install -Dm755 "$work/appimage/AnnieDiskWriter-x86_64.AppImage" \
-		"$profile/airootfs/usr/share/annie/AnnieDiskWriter-x86_64.AppImage"
-	cp "$work/appimage/AnnieDiskWriter-x86_64.AppImage" "$out/"
+step "Writing package lists and pacman configuration"
+# Firmware for consumer hardware only. Arch splits linux-firmware into parts;
+# the NVIDIA part (large, and for cards the Steam Machine and Deck do not
+# have), Qualcomm phone and laptop chips (qcom) and the server network cards
+# are left out. Without the split, the
+# whole package.
+firmware=(linux-firmware)
+if pacman -Si linux-firmware-amdgpu &>/dev/null; then
+    firmware=()
+    for part in amdgpu radeon intel realtek mediatek atheros broadcom cirrus other; do
+        pacman -Si "linux-firmware-$part" &>/dev/null && firmware+=("linux-firmware-$part")
+    done
 fi
-
-# Oliver (in the folder above) runs Windows programs with Wine or Proton.
-if command -v go >/dev/null 2>&1 && [ -f "$here/../go.mod" ]; then
-	say "building Oliver"
-	(cd "$here/.." && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
-		-o "$profile/airootfs/usr/local/bin/oliver" ./cmd/oliver)
-fi
-
-# mkarchiso resets file modes, so list everything that must stay executable.
+echo "firmware: ${firmware[*]}"
 {
-	for f in "$profile"/airootfs/usr/local/bin/* "$profile"/airootfs/usr/lib/annie/* \
-	         "$profile"/airootfs/usr/share/annie/*.AppImage; do
-		[ -f "$f" ] || continue
-		printf '  ["%s"]="0:0:755"\n' "${f#"$profile/airootfs"}"
-	done
-} >"$work/perms"
-sed -i "/^file_permissions=(/r $work/perms" "$profile/profiledef.sh"
+    printf '%s\n' "${firmware[@]}"
+    list "$os/profile/packages.x86_64"
+    while read -r pkg; do
+        if pacman -Si "$pkg" &>/dev/null; then
+            echo "$pkg"
+        else
+            echo "note: optional package $pkg is not in the repositories, leaving it out" >&2
+        fi
+    done < <(list "$os/profile/packages-optional.x86_64")
+} | sort -u >"$profile/packages.x86_64"
 
-say "building the ISO (this takes a while)"
-mkarchiso -v -w "$work/mkarchiso" -o "$out" "$profile"
+# The installed system gets the container's pacman setup (with multilib) and
+# its working mirror list. Everything comes from the official repositories.
+install -D -m 0644 /etc/pacman.conf "$profile/airootfs/etc/pacman.conf"
+install -D -m 0644 /etc/pacman.d/mirrorlist "$profile/airootfs/etc/pacman.d/mirrorlist"
+cp /etc/pacman.conf "$profile/pacman.conf"
 
-iso=$(ls -t "$out"/annie-os-*.iso | head -n1)
-size=$(stat -c %s "$iso")
-if [ "$size" -gt "$max_bytes" ]; then
-	die "$iso is $((size / 1000000)) MB, over the 25 GB limit"
-fi
-say "done: $iso ($((size / 1000000)) MB, under the 25 GB limit)"
+# Every program Annie OS adds must stay allowed to run: list them all
+# (mkarchiso otherwise copies them without that mark).
+{
+    echo 'file_permissions=('
+    echo '  ["/etc/sudoers.d"]="0:0:750"'
+    echo '  ["/etc/sudoers.d/10-wheel"]="0:0:440"'
+    for f in "$profile"/airootfs/usr/local/bin/* "$profile"/airootfs/usr/share/annie/*.AppImage; do
+        [[ -f "$f" ]] && printf '  ["%s"]="0:0:755"\n' "${f#"$profile/airootfs"}"
+    done
+    echo ')'
+} >>"$profile/profiledef.sh"
+grep -c '0:0:755' "$profile/profiledef.sh"
+
+step "Building the ISO"
+mkdir -p "$out"
+rm -f "$out"/annie-os-*.iso "$out"/annie-os-*.iso.sha256
+mkarchiso -v -w "$work" -o "$out" "$profile"
+rm -rf "$work"
+
+cd "$out"
+for iso in annie-os-*.iso; do
+    sha256sum "$iso" >"$iso.sha256"
+done
+step "Done"
+ls -lh "$out"

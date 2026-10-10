@@ -1,0 +1,15 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Id": "org.annieos.googlesearch",
+        "Name": "Google Search",
+        "Description": "Type in the bar and press Enter to search Google",
+        "Icon": "search",
+        "Category": "Utilities",
+        "Authors": [{ "Name": "Annie OS" }],
+        "License": "MIT",
+        "Version": "1.0",
+        "FormFactors": ["desktop", "panel"]
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

@@ -1,0 +1,95 @@
+#!/bin/bash
+# Pin an application to the right-hand side of the Annie OS bar.
+#
+#   annie-add-to-bar FILE...
+#
+# FILE is an application's .desktop file, or a Windows program (.exe/.msi),
+# which gets a menu entry that runs it through Oliver and is then pinned.
+set -euo pipefail
+
+apps_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+
+fail() {
+    if command -v kdialog >/dev/null && [[ ! -t 2 ]]; then
+        kdialog --title "Add to bar" --error "$1"
+    else
+        echo "annie-add-to-bar: $1" >&2
+    fi
+    exit 1
+}
+
+# Prints the desktop file ID the task manager should launch for FILE.
+desktop_id() {
+    local file
+    file="$(realpath "$1")"
+    case "$file" in
+    *.desktop)
+        local dir
+        for dir in "$apps_dir" /usr/local/share/applications /usr/share/applications; do
+            if [[ "$file" == "$dir/"* ]]; then
+                echo "${file#"$dir/"}" | tr / -
+                return
+            fi
+        done
+        # A launcher outside the menu (on the desktop, say): copy it in.
+        mkdir -p "$apps_dir"
+        cp -f -- "$file" "$apps_dir/"
+        basename -- "$file"
+        ;;
+    *.exe | *.EXE | *.msi | *.MSI)
+        local name slug
+        name="$(basename -- "$file")"
+        name="${name%.*}"
+        slug="oliver-$(printf '%s' "$file" | sha1sum | cut -c1-10)"
+        mkdir -p "$apps_dir"
+        cat >"$apps_dir/$slug.desktop" <<ENTRY
+[Desktop Entry]
+Type=Application
+Name=$name
+Comment=Windows program, run by Oliver
+Exec=oliver run "$file"
+Path=$(dirname -- "$file")
+Icon=oliver
+Terminal=false
+ENTRY
+        echo "$slug.desktop"
+        ;;
+    *)
+        fail "$(basename -- "$1") is not an application."
+        ;;
+    esac
+}
+
+[[ $# -gt 0 ]] || fail "usage: annie-add-to-bar FILE..."
+
+ids=()
+for f in "$@"; do
+    [[ -e "$f" ]] || fail "$f does not exist."
+    ids+=("applications:$(desktop_id "$f")")
+done
+update-desktop-database "$apps_dir" 2>/dev/null || true
+
+# Hand the new launchers to Plasma, which adds them to every task manager on
+# every panel without needing a restart.
+js_ids="$(printf '"%s",' "${ids[@]}")"
+script="
+var add = [${js_ids%,}];
+panels().forEach(function (panel) {
+    panel.widgets().forEach(function (w) {
+        if (w.type !== 'org.kde.plasma.icontasks' && w.type !== 'org.kde.plasma.taskmanager')
+            return;
+        w.currentConfigGroup = ['General'];
+        var have = w.readConfig('launchers', []);
+        if (!Array.isArray(have))
+            have = have ? String(have).split(',') : [];
+        add.forEach(function (id) {
+            if (have.indexOf(id) < 0)
+                have.push(id);
+        });
+        w.writeConfig('launchers', have);
+        w.reloadConfig();
+    });
+});
+"
+busctl --user call org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell evaluateScript s "$script" >/dev/null ||
+    fail "Could not reach the desktop to update the bar."

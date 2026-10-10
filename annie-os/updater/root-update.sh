@@ -1,19 +1,45 @@
 #!/bin/bash
 # The system half of the Annie OS Updater, run as root:
-#   root-update.sh PAYLOAD_DIR
+#   root-update.sh PAYLOAD_DIR kde|xfce [UPDATER_APPIMAGE]
 set -uo pipefail
 p="${1:?payload}"
+desktop="${2:-kde}"
 [[ "$(id -u)" -eq 0 ]] || { echo "ERROR: must run as root"; exit 1; }
 fail() { echo "ERROR: $*"; }
 
 echo "# Installing the newest Annie apps"
-cp -a "$p/files/." / || fail "could not copy the Annie apps"
-chmod 755 /usr/local/bin/annie-* /usr/lib/annie/* 2>/dev/null
+if [[ "$desktop" == kde ]]; then
+    cp -a "$p/files/." / || fail "could not copy the Annie apps"
+else
+    # The first Annie OS (Xfce): only the parts that work there.
+    while read -r f; do
+        [[ -e "$p/files/$f" ]] || continue
+        mkdir -p "/$(dirname "$f")"
+        cp -a "$p/files/$f" "/$(dirname "$f")/" || fail "could not copy $f"
+    done <"$p/xfce-files.txt"
+    for t in application/vnd.appimage application/x-iso9660-appimage; do
+        grep -qs "^$t=" /etc/xdg/mimeapps.list ||
+            { grep -qs '^\[Default Applications\]' /etc/xdg/mimeapps.list || echo '[Default Applications]' >>/etc/xdg/mimeapps.list
+              echo "$t=annie-run-appimage.desktop" >>/etc/xdg/mimeapps.list; }
+    done
+fi
+chmod 755 /usr/local/bin/annie-* 2>/dev/null
+if [[ -f "${3:-}" ]]; then
+    install -D -m 0755 "$3" /usr/share/annie/Annie-OS-Updater-x86_64.AppImage
+fi
 mkdir -p /usr/share/icons/default
 printf '[Icon Theme]\nInherits=AnnieRainbow\n' >/usr/share/icons/default/index.theme
 gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null
 update-desktop-database -q /usr/share/applications 2>/dev/null
-/usr/lib/annie/enable-multilib
+
+# Steam and the 32-bit drivers live in multilib.
+if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
+    if grep -q '^#\[multilib\]' /etc/pacman.conf; then
+        sed -i '/^#\[multilib\]/{s/^#//;n;s/^#//}' /etc/pacman.conf
+    else
+        printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >>/etc/pacman.conf
+    fi
+fi
 
 echo "# Unsticking the package installer"
 if pgrep -x pacman >/dev/null; then
@@ -34,14 +60,18 @@ else
 fi
 $updated || fail "the update did not finish (is the internet on?)"
 
-if $updated && [[ -f "$p/packages.txt" ]]; then
-    echo "# Adding anything new to Annie OS"
+if $updated; then
+    echo "# Adding anything Annie OS needs that is missing"
+    list="$p/packages-essential.txt"
+    [[ "$desktop" == kde ]] && list="$p/packages.txt"
     want=()
     while read -r pkg; do
-        [[ -z "$pkg" || "$pkg" == \#* ]] && continue
+        pkg="${pkg%%#*}"
+        pkg="${pkg//[[:space:]]/}"
+        [[ -z "$pkg" ]] && continue
         pacman -Qq "$pkg" >/dev/null 2>&1 && continue
         { pacman -Si "$pkg" || pacman -Sg "$pkg"; } >/dev/null 2>&1 && want+=("$pkg")
-    done <"$p/packages.txt"
+    done <"$list"
     if ((${#want[@]})); then
         pacman -S --needed --noconfirm "${want[@]}" || fail "could not add: ${want[*]}"
     fi

@@ -1,0 +1,12 @@
+[Unit]
+Description=Self-test: Annie OS apps start (only with annie.selftest=apps)
+ConditionKernelCommandLine=annie.selftest=apps
+After=graphical.target annie-live-setup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/annie-selftest-apps
+TimeoutStartSec=20min
+
+[Install]
+WantedBy=graphical.target

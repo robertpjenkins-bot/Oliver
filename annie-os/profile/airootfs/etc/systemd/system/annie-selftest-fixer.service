@@ -1,0 +1,11 @@
+[Unit]
+Description=Self-test of The Fixer (only with annie.selftest=fixer)
+ConditionKernelCommandLine=annie.selftest=fixer
+After=annie-live-setup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/annie-selftest-fixer
+
+[Install]
+WantedBy=multi-user.target

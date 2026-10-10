@@ -1,70 +1,97 @@
 #!/bin/bash
-# Annie OS Updater: brings an Annie OS computer or USB drive up to date and
-# fixes what has gone wrong, in one go.
+# Annie OS Updater: brings Annie OS up to date and fixes what has gone wrong,
+# in one go. It runs on a USB drive or an installed computer:
 #
-#   - installs the newest Annie apps (Paint, Fixer, Drivers, Disk Writer)
-#   - updates every package, repairing the package keys if that is what
-#     stops the update
-#   - installs the Annie Rainbow mouse cursor
-#   - makes the Command / Windows key open the app launcher
-#   - runs every Annie Fixer fix: stuck installs, damaged packages, disk
-#     space, Wi-Fi, sound, the taskbar, the wallpaper
+#   - installs the newest Annie apps and settings
+#   - updates every package, repairing the package keys if they stop it
+#   - adds anything Annie OS needs that is missing (AppImage support,
+#     Python and Tk for Annie Paint, ...)
+#   - the Annie Rainbow mouse cursor, and the Command / Windows key opening
+#     the app launcher
+#   - unsticks installs, reinstalls damaged packages, frees disk space,
+#     brings back Wi-Fi, sound and the taskbar
+#
+# On the first Annie OS (the Xfce one) it makes apps start again and adds
+# the cursor and the key; the new Annie OS itself comes on a new USB drive.
 set -uo pipefail
+
+# The apps self-test (annie-selftest-apps) only checks that this AppImage starts.
+if [[ "${ANNIE_UPDATE_SELFTEST:-}" == 1 ]]; then
+    echo "annie-update ok"
+    exit 0
+fi
 
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 payload="$here/payload"
 title="Annie OS Updater"
 have() { command -v "$1" >/dev/null 2>&1; }
+gui() { [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] && { have kdialog || have zenity; }; }
 
-msg() { # msg error|info TEXT
-    if have zenity && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+ask() { # ask TEXT -> yes?
+    if have kdialog && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        kdialog --title "$title" --icon annie-os --yes-label "Update and fix" --no-label "Not now" --yesno "$1"
+    elif gui; then
+        zenity --question --title="$title" --width=440 --ok-label="Update and fix" --cancel-label="Not now" --text="$1" 2>/dev/null
+    else
+        echo "$1"
+        read -rp "Press Enter to start, or Ctrl+C to stop. " _
+    fi
+}
+tell() { # tell error|info TEXT
+    if have kdialog && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        if [[ "$1" == error ]]; then kdialog --title "$title" --error "$2"; else kdialog --title "$title" --msgbox "$2"; fi
+    elif gui; then
         zenity "--$1" --title="$title" --width=420 --text="$2" 2>/dev/null
     else
         echo "$2"
     fi
 }
 
-if ! have pacman || ! have xfconf-query; then
-    msg error "This updater is for Annie OS. Run it on Annie OS (from the USB drive or an installed computer)."
+if ! have pacman; then
+    tell error "This updater is for Annie OS. Run it on Annie OS (from the USB drive or an installed computer)."
     exit 1
 fi
-if [[ ! -d "$payload" ]]; then
-    msg error "This copy of the updater is incomplete. Download it again."
-    exit 1
-fi
-have zenity && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] &&
-    ! zenity --question --title="$title" --width=440 --ok-label="Update and fix" --cancel-label="Not now" \
-        --text="This will:\n\n• install the newest Annie apps\n• update everything (can take a while; needs the internet)\n• put on the rainbow mouse cursor\n• make the Command / Windows key open the app launcher\n• fix stuck installs, Wi-Fi, sound, the taskbar and the wallpaper\n\nYour files are not touched." 2>/dev/null &&
-    exit 0
+[[ -d "$payload" ]] || { tell error "This copy of the updater is incomplete. Download it again."; exit 1; }
+
+desktop=kde
+have plasmashell || desktop=xfce
+ask "This will:
+
+• install the newest Annie apps
+• update everything (can take a while; needs the internet)
+• add anything missing that apps need to start
+• put on the rainbow mouse cursor
+• make the Command / Windows key open the app launcher
+• fix stuck installs, Wi-Fi, sound and the taskbar
+
+Your files are not touched." || exit 0
 
 log="$(mktemp -t annie-update.XXXXXX.log)"
-work=""
 
 user_fixes() {
-    echo "# Rainbow mouse cursor"
-    xfconf-query -c xsettings -p /Gtk/CursorThemeName -n -t string -s AnnieRainbow
-    xfconf-query -c xsettings -p /Gtk/CursorThemeSize -n -t int -s 32
+    echo "# Rainbow mouse cursor and the Command key"
     mkdir -p "$HOME/.icons/default"
     printf '[Icon Theme]\nInherits=AnnieRainbow\n' >"$HOME/.icons/default/index.theme"
-
-    echo "# Command key opens the app launcher"
-    for k in Super_L Super_R; do
-        xfconf-query -c xfce4-keyboard-shortcuts -p "/commands/custom/$k" -n -t string -s xfce4-popup-whiskermenu
-    done
-
-    echo "# Wallpaper"
-    xfconf-query -c xfce4-desktop -p /backdrop/annie-set -r 2>/dev/null
-    /usr/lib/annie/annie-session-setup >/dev/null 2>&1 &
-
-    echo "# Taskbar"
-    if ! pgrep -u "$USER" -x xfce4-panel >/dev/null; then
-        mkdir -p "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml"
-        [[ -f "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml" ]] ||
-            cp /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/"
-        [[ -d "$HOME/.config/xfce4/panel" ]] || cp -r /etc/skel/.config/xfce4/panel "$HOME/.config/xfce4/panel"
-        (setsid xfce4-panel >/dev/null 2>&1 &)
+    if [[ "$desktop" == kde ]]; then
+        local kw=kwriteconfig6
+        have kwriteconfig6 || kw=kwriteconfig5
+        $kw --file kcminputrc --group Mouse --key cursorTheme AnnieRainbow
+        $kw --file kcminputrc --group Mouse --key cursorSize 32
+        have plasma-apply-cursortheme && plasma-apply-cursortheme AnnieRainbow >/dev/null 2>&1
+        $kw --file kwinrc --group ModifierOnlyShortcuts --key Meta \
+            "org.kde.plasmashell,/PlasmaShell,org.kde.PlasmaShell,activateLauncherMenu"
+        have qdbus6 && qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1
+        echo "# Taskbar"
+        pgrep -u "$USER" -x plasmashell >/dev/null || (setsid plasmashell >/dev/null 2>&1 &)
+    else
+        xfconf-query -c xsettings -p /Gtk/CursorThemeName -n -t string -s AnnieRainbow
+        xfconf-query -c xsettings -p /Gtk/CursorThemeSize -n -t int -s 32
+        for k in Super_L Super_R; do
+            xfconf-query -c xfce4-keyboard-shortcuts -p "/commands/custom/$k" -n -t string -s xfce4-popup-whiskermenu
+        done
+        echo "# Taskbar"
+        pgrep -u "$USER" -x xfce4-panel >/dev/null || (setsid xfce4-panel >/dev/null 2>&1 &)
     fi
-
     echo "# Sound"
     systemctl --user restart pipewire pipewire-pulse wireplumber 2>&1 || echo "ERROR: sound would not restart"
 }
@@ -73,20 +100,36 @@ user_fixes() {
     # Root reads its copy from /tmp: it often cannot see inside an AppImage.
     work="$(mktemp -d -t annie-update.XXXXXX)"
     cp -a "$payload" "$work/payload"
+    # This AppImage itself, so "Update Annie OS" in the menu runs the newest one.
+    [[ -f "${APPIMAGE:-}" ]] && cp "$APPIMAGE" "$work/updater.AppImage"
     chmod -R a+rX "$work"
     echo "# Asking for permission"
-    pkexec /bin/bash "$work/payload/root-update.sh" "$work/payload" 2>&1 || echo "ERROR: the system part did not finish (permission refused, or see above)"
+    if have pkexec; then
+        pkexec /bin/bash "$work/payload/root-update.sh" "$work/payload" "$desktop" "$work/updater.AppImage" 2>&1 ||
+            echo "ERROR: the system part did not finish (permission refused, or see above)"
+    else
+        sudo /bin/bash "$work/payload/root-update.sh" "$work/payload" "$desktop" "$work/updater.AppImage" 2>&1 ||
+            echo "ERROR: the system part did not finish"
+    fi
     rm -rf "$work"
     user_fixes 2>&1
     echo "# Done"
-} | tee "$log" | if have zenity && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+} | tee "$log" | if have kdialog && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+    # kdialog has no pulsing progress bar that reads lines, so show each step
+    # as a passive notification and keep the log for the end.
+    while IFS= read -r line; do
+        [[ "$line" == "# "* ]] && kdialog --title "$title" --passivepopup "${line#\# }" 4 2>/dev/null &
+    done
+elif gui; then
     zenity --progress --pulsate --auto-close --no-cancel --title="$title" --text="Starting…" --width=480 2>/dev/null
 else
     sed -n 's/^# //p'
 fi
 
 if grep -q '^ERROR' "$log"; then
-    if have zenity && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+    if have kdialog && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        kdialog --title "$title - some things need attention" --textbox "$log" 720 480
+    elif gui; then
         zenity --text-info --title="$title - some things need attention" --filename="$log" --width=720 --height=480 2>/dev/null
     else
         grep '^ERROR' "$log"
@@ -95,4 +138,6 @@ if grep -q '^ERROR' "$log"; then
     exit 1
 fi
 rm -f "$log"
-msg info "Annie OS is up to date and fixed. 🦄\n\nLog out and back in (or restart) to see the new mouse cursor everywhere."
+tell info "Annie OS is up to date and fixed. 🦄
+
+Log out and back in (or restart) to see the new mouse cursor everywhere."

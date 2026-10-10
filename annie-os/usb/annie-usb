@@ -14,9 +14,6 @@
 # Run from a terminal or by double-clicking (it opens a terminal window). The
 # only question is which drive. Annie OS then logs in by itself as "annie".
 #
-# Drives under 25 GB work too (8 GB at least): the ANNIE_DATA part shrinks
-# to fit, and there is no ANNIE_SHARE part.
-#
 # No administrator password is needed for a USB drive: the work goes through
 # udisks, the service the file manager uses to format and mount USB sticks,
 # which lets the person sitting at the computer do that to removable drives.
@@ -124,9 +121,10 @@ iso_from_dir() { # iso_from_dir DIR
         fi
         out="$dir/annie-os.iso"
         [[ -w "$dir" ]] || out="$HOME/Downloads/annie-os.iso"
-        # Try files named like the first part (…part00 / …part01) before others.
+        # Try files named like the first part (…part0 / …part1) before others.
         local stem="${first##*/}" ordered=()
-        stem="${stem%??}"
+        stem="${stem%?}"
+        stem="${stem%[0-9]}"
         for f in "${rest[@]}"; do [[ "${f##*/}" == "$stem"* ]] && ordered+=("$f"); done
         for f in "${rest[@]}"; do [[ "${f##*/}" == "$stem"* ]] || ordered+=("$f"); done
         rest=("${ordered[@]}")
@@ -513,11 +511,48 @@ iso_file_size() { # iso_file_size PATH
     bsdtar -tvf "$iso" "$1" 2>/dev/null | awk 'NR == 1 {print $5}'
 }
 
+# A username and password left on the drive (annie-user.conf from an older
+# USB Maker, or annie-account.conf from this one): set a new one or remove it.
+fix_account() { # fix_account DIR
+    local dir="$1" name pw pw2 hash
+    if [[ ! -f "$dir/annie-user.conf" && ! -f "$dir/annie-account.conf" ]]; then
+        echo "  ok    no old username or password: Annie OS asks you to make one when it first starts"
+        return 0
+    fi
+    echo "  FOUND a username and password on the drive (from an older USB Maker)."
+    ask answer "        Press Enter to REMOVE it, or type S to SET a new one:"
+    if [[ "$answer" != [sS]* ]]; then
+        rm -f -- "$dir/annie-user.conf" "$dir/annie-account.conf"
+        echo "  fixed removed it: Annie OS asks you to make a new one when it first starts"
+        return 0
+    fi
+    have openssl || { rm -f -- "$dir/annie-user.conf" "$dir/annie-account.conf"
+        echo "  fixed removed it (this computer cannot make a password, openssl is missing)"; return 0; }
+    while :; do
+        ask name "        New username (small letters and digits):" annie
+        [[ "$name" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$name" != root ]] && break
+        echo "        Use small letters, digits, - and _ only, starting with a letter."
+    done
+    while :; do
+        read -rsp "        New password: " pw || die "cancelled."; echo
+        read -rsp "        Same password again: " pw2 || die "cancelled."; echo
+        [[ -n "$pw" && "$pw" == "$pw2" ]] && break
+        echo "        They did not match (or were empty). Try again."
+    done
+    hash="$(printf '%s' "$pw" | openssl passwd -6 -stdin)"
+    rm -f -- "$dir/annie-user.conf"
+    # Only the scrambled form of the password is stored, never the password.
+    printf 'USERNAME=%s\nPASSWORD_HASH=%s\n' "$name" "$hash" >"$dir/annie-account.conf"
+    echo "  fixed Annie OS will show a login screen for $name with that password"
+}
+
 scan_and_fix() { # scan_and_fix DIR BOOT_UUID [live]
     local dir="$1" uuid="$2" mode="${3:-}" f want got bad=0 fixed=0 cfg test
     echo
     ask answer "Run a scan to check the drive and fix any problems? [Y/n]"
     if [[ "$answer" == [nN]* ]]; then
+        # Not scanned: still never leave an old username and password behind.
+        rm -f -- "$dir/annie-user.conf" "$dir/annie-account.conf"
         return 0
     fi
     echo
@@ -579,6 +614,14 @@ scan_and_fix() { # scan_and_fix DIR BOOT_UUID [live]
     fi
     rm -f -- "$test"
 
+    # 5. Usernames and passwords.
+    if [[ -f "$dir/annie-user.conf" || -f "$dir/annie-account.conf" ]]; then
+        bad=$((bad + 1))
+        fix_account "$dir" && fixed=$((fixed + 1))
+    else
+        fix_account "$dir"
+    fi
+
     echo
     if ((bad == 0)); then
         say "Scan done: no problems found."
@@ -592,8 +635,8 @@ all_done() {
     say "Done. Annie OS is on $dev."
     cat <<EOF
 
-  Boot from the drive to start Annie OS. It goes straight to the unicorn
-  desktop, logged in as "annie".
+  Boot from the drive to start Annie OS. When it first starts, it asks you
+  to create a username and password (or Skip for no password).
     Steam Machine / PC:  press Esc (or F12, F11, F8) while it starts and pick the drive.
     Steam Deck:          hold Volume Down, press Power, pick the drive.
 
@@ -759,8 +802,8 @@ install_by_copying() {
     echo
     say "Done. Annie OS is on $dev."
     echo
-    echo "  Boot from the drive to start Annie OS. It goes straight to the unicorn"
-    echo "  desktop, logged in as \"annie\"."
+    echo "  Boot from the drive to start Annie OS. When it first starts, it asks you"
+    echo "  to create a username and password (or Skip for no password)."
     echo "    Steam Machine / PC:  press Esc (or F12, F11, F8) while it starts and pick the drive."
     echo "    Steam Deck:          hold Volume Down, press Power, pick the drive."
     echo

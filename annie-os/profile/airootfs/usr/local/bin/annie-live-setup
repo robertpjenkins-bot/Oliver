@@ -1,0 +1,79 @@
+#!/bin/bash
+# Make sure the "annie" account exists, with no password (or the account set
+# in the USB Maker's scan, if one was). Annie OS logs in
+# by itself (/etc/sddm.conf.d/20-autologin.conf), and admin tasks never ask
+# for a password (/etc/sudoers.d/10-wheel and the polkit rule).
+#
+# Runs on every start from a USB drive. On a drive made with the USB Maker
+# that keeps changes (cow_label=), it also holds back the kernel package.
+set -euo pipefail
+
+# Where the drive's boot partition can be read: archiso's own mount, or,
+# when archiso copied everything into memory and let go of the drive, the
+# drive mounted again here. /run/annie-bootdir points at it (if there is
+# one), /run/annie-bootdev names the drive it is on.
+bootdir=""
+if mountpoint -q /run/archiso/bootmnt; then
+    bootdir=/run/archiso/bootmnt
+else
+    uuid="$(grep -oE 'archiso(device=UUID|searchuuid)=[^ ]+' /proc/cmdline | head -n1 | sed 's/.*=//' || true)"
+    if [[ -n "$uuid" && -e "/dev/disk/by-uuid/$uuid" ]]; then
+        mkdir -p /run/annie-boot
+        if mount -o ro "/dev/disk/by-uuid/$uuid" /run/annie-boot 2>/dev/null; then
+            bootdir=/run/annie-boot
+        fi
+    fi
+fi
+if [[ -n "$bootdir" ]]; then
+    ln -sfn "$bootdir" /run/annie-bootdir
+    findmnt -no SOURCE "$bootdir" >/run/annie-bootdev 2>/dev/null || true
+fi
+
+if grep -qE '(^| )cow_(label|device)=' /proc/cmdline; then
+    persistent=true
+    # The kernel lives on the boot partition and is not updated by pacman,
+    # so updating the kernel package would leave it without its modules.
+    if ! grep -q '^IgnorePkg *= *linux$' /etc/pacman.conf; then
+        sed -i 's/^#\?IgnorePkg *=.*/IgnorePkg = linux/' /etc/pacman.conf
+    fi
+else
+    persistent=false
+fi
+
+# A username and password chosen in the USB Maker's scan (annie-account.conf
+# on the drive's boot partition). Only the scrambled password is stored there.
+user=annie hash=""
+account=/run/annie-bootdir/annie-account.conf
+if [[ -f "$account" ]]; then
+    name="$(sed -n 's/^USERNAME=//p' "$account" | head -n1)"
+    hash="$(sed -n 's/^PASSWORD_HASH=//p' "$account" | head -n1)"
+    if [[ "$name" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$name" != root && "$hash" == '$'* ]]; then
+        user="$name"
+    else
+        hash=""
+    fi
+fi
+
+if ! id "$user" &>/dev/null; then
+    useradd -m -G wheel,video,audio,input,storage -s /bin/bash -c "Annie" "$user"
+fi
+if [[ -n "$hash" ]]; then
+    usermod -p "$hash" "$user"
+    # With a password, show the login screen instead of logging in by itself,
+    # with only this account on it, already picked.
+    rm -f /etc/sddm.conf.d/20-autologin.conf
+    if [[ "$user" != annie ]]; then
+        printf '[Users]\nHideUsers=annie\n' >/etc/sddm.conf.d/30-annie-hide-setup-user.conf
+    fi
+    mkdir -p /var/lib/sddm
+    printf '[Last]\nUser=%s\nSession=/usr/share/wayland-sessions/plasma.desktop\n' "$user" >/var/lib/sddm/state.conf
+    chown -R sddm:sddm /var/lib/sddm 2>/dev/null || true
+else
+    passwd -d "$user" >/dev/null
+fi
+
+# The installer is offered on the desktop of a plain live USB.
+if ! $persistent; then
+    install -d -o "$user" -g "$user" "/home/$user/Desktop"
+    install -m 0755 -o "$user" -g "$user" /usr/share/applications/annie-install.desktop "/home/$user/Desktop/"
+fi

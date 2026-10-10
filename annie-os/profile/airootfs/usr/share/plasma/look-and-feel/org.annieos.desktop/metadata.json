@@ -1,0 +1,16 @@
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Id": "org.annieos.desktop",
+        "Name": "Annie OS",
+        "Description": "Unicorn wallpaper, your apps on the left of the bar, the search box on the right",
+        "Authors": [
+            {
+                "Name": "Annie OS"
+            }
+        ],
+        "License": "MIT",
+        "Version": "1.0"
+    },
+    "X-Plasma-APIVersion": "2"
+}

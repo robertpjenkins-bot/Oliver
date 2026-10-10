@@ -1,6 +1,6 @@
 #!/bin/bash
-# Build Annie OS USB Maker as AppImages in annie-os/out/:
-#   Annie-OS-USB-Maker-x86_64.AppImage      takes the ISO, its two parts, or a zip
+# Build Annie OS USB Maker as AppImages in os/out/:
+#   Annie-OS-USB-Maker-x86_64.AppImage      takes the ISO, its parts, or a zip
 #   Annie-OS-USB-Maker-Zip-x86_64.AppImage  the Zip edition: takes only a zip
 set -euo pipefail
 
@@ -29,7 +29,7 @@ APPRUN
     chmod 0755 "$appdir/AppRun"
     install -D -m 0755 "$here/annie-usb" "$appdir/usr/bin/annie-usb"
     sed "s/^Name=.*/Name=$2/" "$here/annie-usb.desktop" >"$appdir/annie-usb.desktop"
-    install -D -m 0644 "$os/airootfs/usr/share/icons/hicolor/scalable/apps/annie-os.svg" "$appdir/annie-os.svg"
+    install -D -m 0644 "$os/art/annie-os.svg" "$appdir/annie-os.svg"
     # --appimage-extract-and-run: works without FUSE, as in containers and CI.
     ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Annie-OS-USB-Maker$1-x86_64.AppImage"
     rm -rf "$appdir"

@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Annie OS USB Maker
-Comment=Put Annie OS on a USB drive and run it from there
+Comment=Put Annie OS on a drive and run it from there (uses 25 GB)
 Exec=annie-usb %f
 Icon=annie-os
 Terminal=false

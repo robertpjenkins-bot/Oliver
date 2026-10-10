@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Update Annie OS
+Comment=Update everything, add what is missing, and fix what has gone wrong
+Exec=/usr/share/annie/Annie-OS-Updater-x86_64.AppImage
+Icon=annie-os
+Terminal=false
+Categories=System;

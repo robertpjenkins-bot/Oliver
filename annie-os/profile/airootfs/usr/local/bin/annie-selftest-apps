@@ -1,0 +1,123 @@
+#!/bin/bash
+# Self-test: can Annie OS run its apps? Run at start-up only when the kernel
+# command line has annie.selftest=apps (the build's tests do that).
+#
+# Checks that every Annie menu entry points at a program that is there, then
+# waits for the desktop and really starts the apps people use, inside the
+# desktop session of the "annie" user: Firefox, Dolphin, Konsole, Settings,
+# Annie Paint, Annie Disk Writer, and an AppImage (the Annie Updater) both
+# directly and by "double-click" through annie-run-appimage. An app passes
+# if it is still running after a while, or finished without an error.
+# Prints ANNIE-APPS-TEST: PASS or FAIL to the console.
+set -uo pipefail
+say() { echo "ANNIE-APPS-TEST: $*" | tee /dev/console /dev/ttyS0 >/dev/null 2>&1; }
+ok=true
+user=annie
+updater=/usr/share/annie/Annie-OS-Updater-x86_64.AppImage
+
+# 1. Every menu entry Annie OS adds starts a program that is there.
+for d in /usr/share/applications/annie-*.desktop /usr/share/applications/oliver.desktop \
+    /usr/share/applications/firefox.desktop /usr/share/applications/steam.desktop; do
+    [[ -f "$d" ]] || { say "missing menu entry $d"; ok=false; continue; }
+    exe="$(sed -n 's/^Exec=//p' "$d" | head -n1 | awk '{print $1}')"
+    if ! command -v "$exe" >/dev/null 2>&1; then
+        say "$(basename -- "$d"): its program $exe is missing"
+        ok=false
+    fi
+done
+for exe in /usr/local/bin/annie-*; do
+    [[ -x "$exe" ]] || { say "$exe is not allowed to run"; ok=false; }
+done
+say "menu entries checked"
+
+# 2. Wait for the desktop.
+pid=""
+for _ in $(seq 150); do
+    pid="$(pgrep -u "$user" -x plasmashell | head -n1)"
+    [[ -n "$pid" ]] && break
+    sleep 2
+done
+if [[ -z "$pid" ]]; then
+    say "the desktop did not start"
+    say FAIL
+    exit 1
+fi
+say "desktop is up; giving it a moment to settle"
+sleep 30
+# The desktop session's own environment: where its Wayland and X displays are.
+mapfile -d '' envs <"/proc/$pid/environ"
+# Apps started from the menu also get what the session hands to systemd
+# (DISPLAY for XWayland among it); add anything plasmashell itself lacks.
+uid="$(id -u "$user")"
+while IFS= read -r kv; do
+    [[ "$kv" == *=* ]] || continue
+    printf '%s\n' "${envs[@]}" | grep -q "^${kv%%=*}=" || envs+=("$kv")
+done < <(runuser -u "$user" -- env XDG_RUNTIME_DIR="/run/user/$uid" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" systemctl --user show-environment 2>/dev/null)
+printf '%s\n' "${envs[@]}" | grep -q '^DISPLAY=' || envs+=("DISPLAY=:0")
+say "session: $(printf '%s\n' "${envs[@]}" | grep -E '^(WAYLAND_DISPLAY|DISPLAY)=' | tr '\n' ' ')"
+
+try() { # try NAME SECONDS COMMAND... -> did it start?
+    local name="$1" secs="$2" log p rc
+    shift 2
+    log="$(mktemp)"
+    chmod 644 "$log"
+    setsid runuser -u "$user" -- env -i "${envs[@]}" "$@" >"$log" 2>&1 &
+    p=$!
+    for ((t = 0; t < secs; t++)); do
+        kill -0 "$p" 2>/dev/null || break
+        sleep 1
+    done
+    if kill -0 "$p" 2>/dev/null; then
+        say "$name: started and is running"
+        kill -- "-$p" 2>/dev/null
+        sleep 2
+        kill -9 -- "-$p" 2>/dev/null
+    else
+        wait "$p"
+        rc=$?
+        if ((rc == 0)); then
+            say "$name: ran and finished without an error"
+        else
+            say "$name: FAILED to start (exit status $rc):"
+            tail -n 8 "$log" | while IFS= read -r l; do say "    $l"; done
+            ok=false
+        fi
+    fi
+    rm -f "$log"
+}
+
+try "Firefox" 25 firefox --new-instance --no-remote about:blank
+pkill -u "$user" -x firefox 2>/dev/null
+try "Dolphin (files)" 15 dolphin
+try "Konsole (terminal)" 15 konsole
+try "System Settings" 20 systemsettings
+try "Annie Paint" 15 annie-paint
+try "Annie Disk Writer" 15 annie-disk-writer
+
+# 3. AppImages: run one directly, then a copy that is not marked as allowed
+#    to run, the way a fresh download is, through the double-click handler.
+check_appimage() { # check_appimage NAME COMMAND...
+    local name="$1" out
+    shift
+    out="$(runuser -u "$user" -- env -i "${envs[@]}" ANNIE_UPDATE_SELFTEST=1 timeout 60 "$@" 2>&1)"
+    if grep -q 'annie-update ok' <<<"$out"; then
+        say "$name: ran"
+    else
+        say "$name: FAILED:"
+        tail -n 8 <<<"$out" | while IFS= read -r l; do say "    $l"; done
+        ok=false
+    fi
+}
+if [[ -f "$updater" ]]; then
+    check_appimage "AppImage (Annie Updater)" "$updater"
+    fresh="/home/$user/Downloads/Fresh-Download.AppImage"
+    install -D -m 0644 -o "$user" -g "$user" "$updater" "$fresh"
+    check_appimage "AppImage opened by double-click" annie-run-appimage "$fresh"
+    rm -f "$fresh"
+else
+    say "the Annie Updater AppImage is missing ($updater)"
+    ok=false
+fi
+
+if $ok; then say PASS; else say FAIL; fi

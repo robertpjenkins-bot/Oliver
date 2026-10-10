@@ -1,0 +1,11 @@
+[Default Applications]
+x-scheme-handler/http=firefox.desktop
+x-scheme-handler/https=firefox.desktop
+text/html=firefox.desktop
+application/xhtml+xml=firefox.desktop
+application/x-ms-dos-executable=oliver.desktop
+application/x-msdownload=oliver.desktop
+application/vnd.microsoft.portable-executable=oliver.desktop
+application/x-msi=oliver.desktop
+application/vnd.appimage=annie-run-appimage.desktop
+application/x-iso9660-appimage=annie-run-appimage.desktop

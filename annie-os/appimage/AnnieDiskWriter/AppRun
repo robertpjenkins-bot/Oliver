@@ -1,8 +1,0 @@
-#!/bin/sh
-HERE="$(dirname "$(readlink -f "$0")")"
-if ! python3 -c 'import tkinter' 2>/dev/null; then
-	msg="Annie Disk Writer needs Python 3 with Tk (on Arch: sudo pacman -S python tk)."
-	zenity --error --text="$msg" 2>/dev/null || echo "$msg" >&2
-	exit 1
-fi
-exec python3 "$HERE/annie-disk-writer" "$@"

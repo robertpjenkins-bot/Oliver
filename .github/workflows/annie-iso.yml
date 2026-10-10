@@ -1,75 +1,347 @@
 name: Annie OS ISO
 
 on:
+  workflow_dispatch:
   push:
+    branches: ["**"]
     paths:
       - "annie-os/**"
-      - "!annie-os/usb/**"
-      - "!annie-os/updater/**"
       - "!annie-os/**/*.md"
+      - "cmd/**"
+      - "internal/**"
+      - "packaging/**"
       - ".github/workflows/annie-iso.yml"
-  workflow_dispatch:
+    tags: ["annie-os-v*"]
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
 jobs:
-  iso:
+  # When a push changes only the tests, the README or the USB Maker (none of
+  # them part of the ISO), test the newest ISO already built for this branch
+  # instead of spending an hour building an identical one.
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      reuse_run: ${{ steps.plan.outputs.reuse_run }}
     steps:
-      # The runner ships ~30 GB of SDKs we don't need; the ISO build needs the room.
-      - name: Free disk space
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Each ISO is about 3 GB and the account's artifact storage is limited:
+      # keep only the newest ISO, USB Maker and boot test, delete the rest.
+      - name: Delete old builds to make room
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Old ISOs are all deleted (this build makes a new one); of the
+          # small ones the newest is kept.
+          for name in annie-os-iso annie-os-usb-maker annie-os-boot-test annie-os-virtualbox-test; do
+            keep=1
+            [[ "$name" == annie-os-iso ]] && keep=0
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$name&per_page=100" \
+              --jq "[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | reverse | .[$keep:][] | .id" |
+              while read -r id; do
+                echo "deleting old $name artifact $id"
+                gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" || true
+              done
+          done
+      # Every build makes a fresh ISO: reusing an older one once tested an
+      # ISO that did not have the changes being tested.
+      - id: plan
+        run: echo "reuse_run=" >>"$GITHUB_OUTPUT"
+
+  usb-maker:
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Annie OS USB Maker and Updater
+        run: |
+          bash annie-os/usb/build-appimage.sh
+          bash annie-os/updater/build-appimage.sh
+      - uses: actions/upload-artifact@v4
+        # The ISO release below carries it too, so a full artifact storage
+        # does not stop the build.
+        continue-on-error: true
+        with:
+          name: annie-os-usb-maker
+          path: annie-os/out/Annie-OS-*-x86_64.AppImage
+
+  iso:
+    needs: plan
+    if: needs.plan.outputs.reuse_run == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make room on the runner
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost
           sudo docker image prune -af
           df -h /
 
-      - uses: actions/checkout@v4
-
-      # mkarchiso has to run on Arch, so build inside the official Arch image.
-      - name: Build the ISO
+      - name: Build the ISO in an Arch Linux container
         run: |
-          docker run --rm --privileged -v "$PWD:/src" -w /src/annie-os archlinux:latest bash -euxc '
-            pacman -Syu --noconfirm --needed archiso go git
-            git config --global --add safe.directory /src
-            ./build.sh
-          '
-          sudo chown -R "$(id -u):$(id -g)" annie-os/iso
-          ls -lh annie-os/iso
+          docker run --rm --privileged -v "$PWD:/src" -w /src archlinux:latest bash annie-os/build.sh
 
-      - name: Build the USB Maker
-        run: |
-          ./annie-os/usb/build-appimage.sh
-          ./annie-os/updater/build-appimage.sh
+      - name: Upload the ISO
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          # Just the one ISO file.
+          name: annie-os-iso
+          path: annie-os/out/*.iso
+          compression-level: 0
+          retention-days: 7
 
-      - name: Checksum
-        run: cd annie-os/iso && sha256sum *.iso | tee SHA256SUMS
+      - name: Build Annie OS USB Maker for the release
+        run: sudo bash annie-os/usb/build-appimage.sh
 
-      # Published as a release rather than an artifact: releases don't count
-      # against the account's artifact storage, which the ISO would fill.
-      # GitHub caps each release file at 2 GiB, so a bigger ISO goes up in parts.
-      - name: Publish as a release
+      # Release files do not count against the artifact storage, which can
+      # fill up. A release file may be at most 2 GB, so the ISO goes up in
+      # two parts; the USB Maker joins them by itself.
+      - name: Publish the newest build as the "Annie OS (newest)" release
+        # Only when started by hand: pushes build and test, but leave the
+        # release alone (it may hold an edited ISO, see os-iso-edit.yml).
+        if: "!startsWith(github.ref, 'refs/tags/annie-os-v')"
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cd annie-os/iso
-          iso=$(ls *.iso)
-          files=("$iso" SHA256SUMS ../out/Annie-OS-*-x86_64.AppImage)
-          notes="Annie OS live ISO.
-
-          Easiest: download Annie-OS-USB-Maker-x86_64.AppImage with the ISO (or its parts, or a zip of them), run it on Linux or SteamOS and pick your USB drive (8 GB or more). It joins the parts for you and keeps your files on the drive. Annie-OS-USB-Maker-Zip-x86_64.AppImage does the same but only takes a zip.
-
-          Or write the ISO with balenaEtcher, Ventoy or dd."
-          if [ "$(stat -c %s "$iso")" -ge 2147483648 ]; then
-            split -b 1900M -d "$iso" "$iso.part"
-            files=("$iso".part* SHA256SUMS ../out/Annie-OS-*-x86_64.AppImage)
-            notes="$notes
-
-          The ISO is split in parts because GitHub limits release files to 2 GB. Download every part, then join them:
-          - Linux / Mac: cat $iso.part* > $iso
-          - Windows: copy /b $iso.part00+$iso.part01 $iso"
+          set -euo pipefail
+          cd annie-os/out
+          iso="$(ls annie-os-*.iso | head -n1)"
+          # One file when it fits under the 2 GB limit for a release file,
+          # otherwise two parts that the USB Maker joins.
+          if (($(stat -c %s "$iso") < 2047 * 1024 * 1024)); then
+            files=("$iso")
+            what="**$iso** (the whole ISO, one file)"
+          else
+            sudo split -b 1900M -d -a 1 "$iso" "$iso.part"
+            files=("$iso".part*)
+            what="**$iso.part0** and **$iso.part1** (the ISO in two parts; the USB Maker joins them)"
           fi
-          tag="annie-os-$(date +%Y.%m.%d)-run${{ github.run_number }}"
-          gh release create "$tag" "${files[@]}" -R "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" --title "Annie OS $(date +%Y.%m.%d)" --notes "$notes" --prerelease
+          gh release delete annie-os-newest --yes --cleanup-tag 2>/dev/null || true
+          gh release create annie-os-newest --prerelease --target "$GITHUB_SHA" \
+            --title "Annie OS (newest build)" \
+            --notes "Built from ${GITHUB_SHA::7} on $(date -u '+%Y-%m-%d %H:%M UTC').
+
+          Download into Downloads:
+          - $what
+          - **Annie-OS-USB-Maker-x86_64.AppImage** to put it on a USB drive (8 GB or more)
+          - **Annie-OS-Updater-x86_64.AppImage** to update an Annie OS you already have, and fix it
+
+          Or write the ISO to a drive with any ISO writer." \
+            "${files[@]}" *.sha256 Annie-OS-*-x86_64.AppImage
+
+      - name: Publish a release for os-v* tags
+        if: startsWith(github.ref, 'refs/tags/annie-os-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            annie-os/out/*.iso
+            annie-os/out/Annie-OS-*.AppImage
+            annie-os/out/*.sha256
+            annie-os/annie-write
+
+  test:
+    needs: [plan, iso]
+    if: always() && (needs.iso.result == 'success' || needs.plan.outputs.reuse_run != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        id: artifact
+        continue-on-error: true
+        with:
+          name: annie-os-iso
+          path: iso
+          run-id: ${{ needs.plan.outputs.reuse_run || github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Get the ISO from the release instead
+        if: steps.artifact.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p iso
+          gh release download annie-os-newest -D iso -p '*.iso*'
+          if compgen -G 'iso/*.part0' >/dev/null; then
+            first="$(ls iso/*.part0)"
+            cat iso/*.part[0-9] >"${first%.part0}"
+            rm iso/*.part[0-9]
+          fi
+          rm -f iso/*.sha256
+          ls -la iso
+
+      - name: Make room on the runner
+        run: |
+          # Unpacking the system image needs about 10 GB.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost
+          sudo docker image prune -af
+          df -h / /mnt
+
+      - name: Install test tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xorriso squashfs-tools qemu-system-x86 socat imagemagick tesseract-ocr
+          # Let the test use hardware virtualisation.
+          sudo chmod 666 /dev/kvm || true
+
+      - name: Check what is inside the ISO
+        run: |
+          # Unpack on whichever disk has more room.
+          tmp=/mnt/annie-check
+          sudo mkdir -p "$tmp"
+          sudo TMPDIR="$tmp" bash annie-os/tests/check-iso.sh "$(find iso -name '*.iso' | head -n1)"
+
+      - name: Boot the ISO
+        if: always()
+        run: bash annie-os/tests/boot-iso.sh "$(find iso -name '*.iso' | head -n1)" boot 15
+
+      - name: "First start: create a username and password, then log in (QEMU)"
+        if: always()
+        run: bash annie-os/tests/account-flow.sh qemu "$(find iso -name '*.iso' | head -n1)" account
+
+      - name: "First start the way GNOME Boxes runs it: older PC, QXL graphics, 30 GB disk"
+        if: always()
+        run: bash annie-os/tests/account-flow.sh boxes "$(find iso -name '*.iso' | head -n1)" boxes
+
+      - name: "The Fixer: break a program on purpose and let The Fixer repair it"
+        if: always()
+        run: bash annie-os/tests/fixer-test.sh "$(find iso -name '*.iso' | head -n1)" fixer
+
+      - name: "Apps: start Firefox, Dolphin, Konsole, Settings, Annie Paint, Disk Writer and an AppImage"
+        if: always()
+        run: bash annie-os/tests/apps-test.sh "$(find iso -name '*.iso' | head -n1)" apps
+
+      - name: Show the first-start screenshots
+        if: always()
+        run: |
+          for f in account/step-*.png boxes/step-*.png apps/end.png; do
+            [[ -f "$f" ]] || continue
+            convert "$f" -resize 800x -quality 55 "${f%.png}.jpg"
+            echo "=== SCREENSHOT $(basename "$(dirname "$f")")-$(basename "${f%.png}") BEGIN"
+            base64 -w 0 "${f%.png}.jpg"
+            echo
+            echo "=== SCREENSHOT END"
+          done
+
+      - name: Show the last screenshots
+        if: always()
+        run: |
+          # Printed into the log as base64 so they can be read without
+          # downloading the artifact.
+          for f in $(ls boot/screen-*.png 2>/dev/null | tail -n 3); do
+            convert "$f" -resize 960x -quality 60 "${f%.png}.jpg"
+            echo "=== SCREENSHOT $(basename "${f%.png}") BEGIN"
+            base64 -w 0 "${f%.png}.jpg"
+            echo
+            echo "=== SCREENSHOT END"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: annie-os-boot-test
+          path: |
+            boot/*.png
+            boot/serial.log
+            boot/summary.txt
+            account/step-*.png
+            account/ocr-*.txt
+            account/serial.log
+            account/summary.txt
+            boxes/step-*.png
+            boxes/serial.log
+            boxes/summary.txt
+            apps/end.png
+            apps/serial.log
+          retention-days: 7
+
+  # The same first start in VirtualBox, booting the ISO through its own UEFI
+  # boot menu like a real computer.
+  virtualbox:
+    needs: iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        id: artifact
+        continue-on-error: true
+        with:
+          name: annie-os-iso
+          path: iso
+
+      - name: Get the ISO from the release instead
+        if: steps.artifact.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p iso
+          gh release download annie-os-newest -D iso -p '*.iso*'
+          if compgen -G 'iso/*.part0' >/dev/null; then
+            first="$(ls iso/*.part0)"
+            cat iso/*.part[0-9] >"${first%.part0}"
+            rm iso/*.part[0-9]
+          fi
+          rm -f iso/*.sha256
+
+      - name: Install VirtualBox
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+            virtualbox virtualbox-dkms "linux-headers-$(uname -r)" xorriso imagemagick tesseract-ocr
+          # VirtualBox needs the processor's virtualisation to itself.
+          sudo modprobe -r kvm_amd kvm_intel kvm 2>/dev/null || true
+          sudo modprobe vboxdrv
+          VBoxManage --version
+
+      - name: "First start: create a username and password, then log in (VirtualBox)"
+        run: bash annie-os/tests/account-flow.sh vbox "$(find iso -name '*.iso' | head -n1)" vbox
+
+      - name: Show the VirtualBox screenshots
+        if: always()
+        run: |
+          for f in vbox/step-*.png; do
+            [[ -f "$f" ]] || continue
+            convert "$f" -resize 800x -quality 55 "${f%.png}.jpg"
+            echo "=== SCREENSHOT vbox-$(basename "${f%.png}") BEGIN"
+            base64 -w 0 "${f%.png}.jpg"
+            echo
+            echo "=== SCREENSHOT END"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: annie-os-virtualbox-test
+          path: |
+            vbox/step-*.png
+            vbox/ocr-*.txt
+            vbox/VBox.log
+            vbox/vbox-serial.log
+            vbox/summary.txt
+          retention-days: 7

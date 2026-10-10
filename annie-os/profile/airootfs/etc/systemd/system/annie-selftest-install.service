@@ -1,0 +1,11 @@
+[Unit]
+Description=Self-test of the installer (only with annie.selftest=install)
+ConditionKernelCommandLine=annie.selftest=install
+After=annie-live-setup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/annie-selftest-install
+
+[Install]
+WantedBy=multi-user.target

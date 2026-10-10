@@ -1,9 +1,0 @@
-button-title=Apps
-button-icon=annie-os
-show-button-title=true
-show-button-icon=true
-favorites=firefox.desktop,steam.desktop,annie-paint.desktop,annie-disk-writer.desktop,annie-fixer.desktop,annie-drivers.desktop,thunar.desktop,xfce4-terminal.desktop
-position-search-alternate=true
-position-commands-alternate=true
-menu-width=520
-menu-height=560

@@ -1,0 +1,40 @@
+#!/bin/bash
+# Start an AppImage, even one just downloaded that is not yet allowed to run.
+# Double-clicking an AppImage in Dolphin or Firefox's downloads opens it with
+# this (/etc/xdg/mimeapps.list).
+#
+#   annie-run-appimage FILE [ARGS...]
+set -uo pipefail
+app="$(realpath -- "${1:?usage: annie-run-appimage FILE [ARGS...]}")"
+shift
+
+say() {
+    if command -v kdialog >/dev/null && [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]]; then
+        kdialog --title "Run AppImage" --error "$1"
+    else
+        echo "$1" >&2
+    fi
+}
+
+[[ -f "$app" ]] || { say "There is no file at $app."; exit 1; }
+# An AppImage starts with an ELF header and carries "AI" at byte 8.
+magic="$(head -c 11 -- "$app" | od -An -c | tr -d ' \n')"
+[[ "$magic" == 177ELF* ]] || { say "$(basename -- "$app") is not an AppImage (it may not have finished downloading)."; exit 1; }
+
+if [[ ! -x "$app" ]]; then
+    if ! chmod u+x -- "$app" 2>/dev/null; then
+        # A drive that cannot hold the "may run" mark (some USB sticks):
+        # run a copy from the home folder instead.
+        dir="$HOME/.local/share/appimages"
+        mkdir -p "$dir"
+        cp -f -- "$app" "$dir/"
+        app="$dir/$(basename -- "$app")"
+        chmod u+x -- "$app"
+    fi
+fi
+
+# Without FUSE the AppImage can still unpack itself and run from there.
+if ! command -v fusermount >/dev/null && ! command -v fusermount3 >/dev/null; then
+    export APPIMAGE_EXTRACT_AND_RUN=1
+fi
+exec "$app" "$@"

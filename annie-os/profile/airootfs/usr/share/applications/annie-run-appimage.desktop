@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Run AppImage
+Comment=Start an AppImage, even one that is not marked as allowed to run
+Exec=annie-run-appimage %f
+Icon=application-x-executable
+Terminal=false
+NoDisplay=true
+MimeType=application/vnd.appimage;application/x-iso9660-appimage;

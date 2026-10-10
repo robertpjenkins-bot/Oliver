@@ -1,0 +1,52 @@
+#!/bin/bash
+# Download Proton-GE, the community build of Proton that runs more Windows
+# games, into ~/.local/share/Steam/compatibilitytools.d. Steam and Oliver
+# both find it there. It is about 500 MB, which is why Annie OS downloads it
+# when wanted rather than carrying it on the ISO (that keeps the ISO a single
+# file under GitHub's 2 GB limit).
+set -uo pipefail
+
+readonly DEST="$HOME/.local/share/Steam/compatibilitytools.d"
+readonly API=https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest
+TITLE="Get Proton-GE"
+gui=false
+[[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] && command -v kdialog >/dev/null && gui=true
+
+tell() {
+    if $gui; then kdialog --title "$TITLE" --msgbox "$1"; else echo "$1"; fi
+}
+fail() {
+    if $gui; then kdialog --title "$TITLE" --error "$1"; else echo "Error: $1" >&2; fi
+    exit 1
+}
+
+mkdir -p "$DEST" || fail "Could not make $DEST."
+info="$(curl -fsSL --max-time 30 "$API")" || fail "Could not reach GitHub. Check the internet connection and try again."
+url="$(printf '%s' "$info" | grep -o '"browser_download_url": *"[^"]*\.tar\.gz"' | head -n1 | sed 's/.*"\(http[^"]*\)"/\1/')"
+name="$(basename -- "$url" .tar.gz)"
+[[ -n "$url" ]] || fail "Could not find the newest Proton-GE download."
+if [[ -d "$DEST/$name" ]]; then
+    tell "$name is already installed."
+    exit 0
+fi
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+if $gui; then
+    # A progress window while it downloads.
+    bar="$(kdialog --title "$TITLE" --progressbar "Downloading $name (about 500 MB)..." 100)"
+    curl -fL --max-time 3600 -o "$tmp/p.tar.gz" "$url" 2>&1 | tr '\r' '\n' |
+        while read -r line; do
+            pct="$(awk '{print $1}' <<<"$line")"
+            [[ "$pct" =~ ^[0-9]+$ ]] && qdbus6 $bar Set "" value "$pct" >/dev/null 2>&1
+        done
+    qdbus6 $bar close >/dev/null 2>&1
+else
+    curl -fL --max-time 3600 -o "$tmp/p.tar.gz" "$url"
+fi
+[[ -s "$tmp/p.tar.gz" ]] || fail "The download did not finish. Try again."
+tar -xzf "$tmp/p.tar.gz" -C "$DEST" || fail "Could not unpack Proton-GE (is the drive full? it needs about 1.5 GB)."
+tell "$name is installed.
+
+Steam: right-click a game > Properties > Compatibility, and pick $name.
+Windows programs (.exe) opened with Oliver use it by themselves."

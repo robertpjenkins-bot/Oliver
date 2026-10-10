@@ -1,0 +1,105 @@
+# Annie OS package list. One package per line; lines starting with # are ignored.
+# Packages that may not exist in the repositories go in packages-optional.x86_64,
+# and everything comes from the official repositories (no AUR).
+
+# --- live system and boot ---
+base
+linux
+# linux-firmware: the parts for consumer hardware are chosen in build.sh
+sof-firmware
+amd-ucode
+intel-ucode
+mkinitcpio
+mkinitcpio-archiso
+syslinux
+edk2-shell
+memtest86+
+memtest86+-efi
+
+# --- installer and disk tools ---
+arch-install-scripts
+btrfs-progs
+dosfstools
+e2fsprogs
+exfatprogs
+ntfs-3g
+gptfdisk
+rsync
+pciutils
+usbutils
+vulkan-tools
+zram-generator
+pacman-contrib
+sudo
+nano
+bash-completion
+man-db
+
+# --- network, sound, bluetooth ---
+networkmanager
+bluez
+bluez-utils
+pipewire
+pipewire-alsa
+pipewire-pulse
+pipewire-jack
+wireplumber
+lib32-pipewire
+
+# --- desktop (KDE Plasma on Wayland) ---
+plasma-desktop
+plasma-nm
+plasma-pa
+bluedevil
+powerdevil
+power-profiles-daemon
+kscreen
+breeze
+breeze-gtk
+kde-gtk-config
+xdg-desktop-portal-kde
+sddm
+sddm-kcm
+kdialog
+dolphin
+konsole
+kate
+firefox
+ark
+gwenview
+spectacle
+noto-fonts
+noto-fonts-emoji
+ttf-liberation
+
+# --- graphics: AMD (Steam Machine, Steam Deck) and Intel ---
+mesa
+lib32-mesa
+vulkan-radeon
+lib32-vulkan-radeon
+vulkan-intel
+lib32-vulkan-intel
+vulkan-icd-loader
+lib32-vulkan-icd-loader
+
+# --- Annie apps and AppImages ---
+# fuse2 and fuse3: AppImages (the Annie Updater, the USB Maker, and most
+# apps people download for Linux) need FUSE to start.
+fuse2
+fuse3
+# Annie Paint and Annie Disk Writer are Python with Tk; Tk runs through
+# XWayland on the Plasma desktop.
+python
+python-pillow
+tk
+xorg-xwayland
+udisks2
+parted
+
+# --- games and Windows programs ---
+steam
+gamescope
+wine
+wine-mono
+# wine-gecko is left out to keep the ISO under 2 GB; Wine offers to
+# download it the first time a program needs it.

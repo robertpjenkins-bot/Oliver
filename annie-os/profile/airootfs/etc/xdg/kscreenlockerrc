@@ -1,0 +1,7 @@
+# The screen never locks, so no password is ever needed to get back in.
+[Daemon]
+Autolock=false
+LockOnResume=false
+
+[Greeter][Wallpaper][org.kde.image][General]
+Image=/usr/share/wallpapers/AnnieOS/

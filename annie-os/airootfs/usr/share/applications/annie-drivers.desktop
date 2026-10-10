@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Annie Drivers
-Comment=Install graphics, Wi-Fi and other drivers
-Exec=annie-drivers
-Icon=hardware
-Categories=System;Settings;HardwareSettings;
-Terminal=false
