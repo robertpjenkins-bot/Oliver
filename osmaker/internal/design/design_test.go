@@ -114,3 +114,13 @@ func TestCatalogIsConsistent(t *testing.T) {
 		}
 	}
 }
+
+func TestCatalogServicesAreUnits(t *testing.T) {
+	for _, a := range Catalog {
+		for _, svc := range a.Services {
+			if !strings.HasSuffix(svc, ".service") || strings.ContainsAny(svc, "/ ") {
+				t.Errorf("%s: bad service %q", a.ID, svc)
+			}
+		}
+	}
+}

@@ -191,3 +191,17 @@ func TestAppStoreAddsFlathub(t *testing.T) {
 		t.Error("flatpak not installed with the App Store")
 	}
 }
+
+func TestAppServicesAreEnabled(t *testing.T) {
+	d := testDesign(t)
+	d.Apps = append(d.Apps, "bluetooth", "printers")
+	files, err := Files(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, svc := range []string{"bluetooth.service", "cups.service"} {
+		if files["airootfs/etc/systemd/system/multi-user.target.wants/"+svc].Link != "/usr/lib/systemd/system/"+svc {
+			t.Errorf("%s not enabled", svc)
+		}
+	}
+}

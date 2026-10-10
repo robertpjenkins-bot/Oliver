@@ -401,6 +401,21 @@ func (d *Design) Packages() []string {
 	return out
 }
 
+// Services returns the systemd units the selected apps need enabled.
+func (d *Design) Services() []string {
+	var out []string
+	for _, id := range d.Apps {
+		if a, ok := AppByID(id); ok {
+			for _, svc := range a.Services {
+				if !slices.Contains(out, svc) {
+					out = append(out, svc)
+				}
+			}
+		}
+	}
+	return out
+}
+
 // NeedsMultilib reports whether any selected app needs 32-bit packages.
 func (d *Design) NeedsMultilib() bool {
 	for _, id := range d.Apps {

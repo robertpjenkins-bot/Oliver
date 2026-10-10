@@ -10,14 +10,15 @@ then download it as a real, bootable ISO.
    wallpaper (a colour, a gradient or your own picture). You can also move the
    taskbar to the top or bottom, change its colour and height, rename the Start
    button and pin apps to it.
-3. **Pick the apps.** Choose from over 120 apps to pre-install: Minecraft (Prism
+3. **Pick the apps.** Choose from over 280 apps to pre-install: Minecraft (Prism
    Launcher), Steam, SuperTuxKart, Luanti, Xonotic, OpenTTD, Doom (Freedoom),
-   console emulators, Firefox, Discord, Spotify, VLC, OBS, GIMP, Krita,
+   emulators for NES, SNES, N64, GBA, DS, GameCube and more, Firefox, Discord, Spotify, VLC, OBS, GIMP, Krita,
    Blender, Godot, LibreOffice, learning apps like GCompris and Stellarium, and
    many more. Add the **App Store** to get thousands more from Flathub after
    install, including the official Minecraft launcher. If Arch Linux has
    renamed or dropped an app, the build skips it and says so instead of
-   failing.
+   failing. Apps that need a background service (Bluetooth, printers,
+   firewall) get it switched on.
 4. **Set it up.** Choose the OS name, the computer name, your username and
    password, automatic login, time zone and keyboard layout.
 5. **Build ISO.** OS Maker turns the design into an Arch Linux ISO that boots

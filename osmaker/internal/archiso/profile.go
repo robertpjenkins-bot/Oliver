@@ -142,6 +142,10 @@ ExecStart=/usr/bin/chown -R %[1]s:%[1]s /home/%[1]s
 WantedBy=multi-user.target
 `, user))
 
+	for _, svc := range d.Services() {
+		link("airootfs/etc/systemd/system/multi-user.target.wants/"+svc, "/usr/lib/systemd/system/"+svc)
+	}
+
 	if slices.Contains(d.Apps, "store") {
 		// The App Store finds apps on Flathub; add it once there is internet.
 		link("airootfs/etc/systemd/system/multi-user.target.wants/osmaker-flathub.service", "/etc/systemd/system/osmaker-flathub.service")
