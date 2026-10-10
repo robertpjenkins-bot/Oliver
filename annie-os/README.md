@@ -11,7 +11,7 @@ A friendly Arch Linux desktop with a unicorn wallpaper, ready for games.
 | | |
 | --- | --- |
 | **Base** | Arch Linux (rolling), Xfce desktop, boots straight into the desktop as the user `annie` |
-| **Look** | Unicorn and rainbow wallpaper, an **app dock down the left side** and a top bar with the **search box on the right** (type to search the web or run a program; the Apps button next to it, or the Super/Windows key, searches your apps) |
+| **Look** | Unicorn and rainbow wallpaper, a rainbow mouse cursor, an **app dock down the left side** and a top bar with the **search box on the right** (type to search the web or run a program; the Apps button next to it, or the Super/Windows key, searches your apps) |
 | **Games** | Steam, with **Proton** switched on for every game (Steam Play), plus 32-bit Vulkan drivers and GameMode |
 | **Annie Paint** | A drawing app: brush, rainbow brush, eraser, lines, boxes, circles, paint bucket, undo/redo, open and save PNG/JPEG |
 | **Annie Fixer** | One-click repairs: unstick the package manager, repair signing keys, update, reinstall broken packages, free disk space, restart Wi-Fi or sound, reset the taskbar, repair Steam |
@@ -39,6 +39,24 @@ Put it on a USB stick with Annie Disk Writer, or from any Linux computer:
 ```console
 $ sudo dd if=iso/annie-os-*.iso of=/dev/sdX bs=4M conv=fsync status=progress
 ```
+
+## Annie OS Updater
+
+`Annie-OS-Updater-x86_64.AppImage`, run on Annie OS (a USB drive or an
+installed computer), does everything in one go:
+
+- installs the newest Annie apps
+- updates every package, repairing the package keys if they are what stops it
+- puts on the **Annie Rainbow** mouse cursor
+- makes the **Command / Windows key** open the app launcher
+- unsticks the installer, reinstalls damaged packages, frees disk space, and
+  brings back Wi-Fi, sound, the taskbar and the wallpaper
+
+![Annie Rainbow cursors](airootfs/usr/share/icons/AnnieRainbow/preview.png)
+
+New ISOs come with the cursor and the Command key already set. Build the
+updater with `./updater/build-appimage.sh`; redraw the cursors with
+`tools/make-cursors.py airootfs/usr/share/icons/AnnieRainbow`.
 
 ## Annie OS USB Maker
 

@@ -21,12 +21,15 @@ if [ "$current" != done ]; then
 	xfconf-query -c xfce4-desktop -p /backdrop/annie-set -n -t string -s done
 fi
 
+# The Command / Windows key opens the app launcher (set every login, so it
+# comes back if something else takes the key).
+xfconf-query -c xfce4-keyboard-shortcuts -p /commands/custom/Super_L -n -t string -s xfce4-popup-whiskermenu
+xfconf-query -c xfce4-keyboard-shortcuts -p /commands/custom/Super_R -n -t string -s xfce4-popup-whiskermenu
+
 stamp="$HOME/.config/annie-os/first-login-done"
 [ -e "$stamp" ] && exit 0
 mkdir -p "$(dirname "$stamp")"
 
-# The Super (Windows) key opens the app search.
-xfconf-query -c xfce4-keyboard-shortcuts -p /commands/custom/Super_L -n -t string -s xfce4-popup-whiskermenu
 
 # Steam Play: run every Windows game with Proton out of the box.
 cfg="$HOME/.local/share/Steam/config/config.vdf"

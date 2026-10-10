@@ -6,5 +6,7 @@
   </property>
   <property name="Gtk" type="empty">
     <property name="FontName" type="string" value="Noto Sans 10"/>
+    <property name="CursorThemeName" type="string" value="AnnieRainbow"/>
+    <property name="CursorThemeSize" type="int" value="32"/>
   </property>
 </channel>

@@ -1,0 +1,98 @@
+#!/bin/bash
+# Annie OS Updater: brings an Annie OS computer or USB drive up to date and
+# fixes what has gone wrong, in one go.
+#
+#   - installs the newest Annie apps (Paint, Fixer, Drivers, Disk Writer)
+#   - updates every package, repairing the package keys if that is what
+#     stops the update
+#   - installs the Annie Rainbow mouse cursor
+#   - makes the Command / Windows key open the app launcher
+#   - runs every Annie Fixer fix: stuck installs, damaged packages, disk
+#     space, Wi-Fi, sound, the taskbar, the wallpaper
+set -uo pipefail
+
+here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+payload="$here/payload"
+title="Annie OS Updater"
+have() { command -v "$1" >/dev/null 2>&1; }
+
+msg() { # msg error|info TEXT
+    if have zenity && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        zenity "--$1" --title="$title" --width=420 --text="$2" 2>/dev/null
+    else
+        echo "$2"
+    fi
+}
+
+if ! have pacman || ! have xfconf-query; then
+    msg error "This updater is for Annie OS. Run it on Annie OS (from the USB drive or an installed computer)."
+    exit 1
+fi
+if [[ ! -d "$payload" ]]; then
+    msg error "This copy of the updater is incomplete. Download it again."
+    exit 1
+fi
+have zenity && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] &&
+    ! zenity --question --title="$title" --width=440 --ok-label="Update and fix" --cancel-label="Not now" \
+        --text="This will:\n\n• install the newest Annie apps\n• update everything (can take a while; needs the internet)\n• put on the rainbow mouse cursor\n• make the Command / Windows key open the app launcher\n• fix stuck installs, Wi-Fi, sound, the taskbar and the wallpaper\n\nYour files are not touched." 2>/dev/null &&
+    exit 0
+
+log="$(mktemp -t annie-update.XXXXXX.log)"
+work=""
+
+user_fixes() {
+    echo "# Rainbow mouse cursor"
+    xfconf-query -c xsettings -p /Gtk/CursorThemeName -n -t string -s AnnieRainbow
+    xfconf-query -c xsettings -p /Gtk/CursorThemeSize -n -t int -s 32
+    mkdir -p "$HOME/.icons/default"
+    printf '[Icon Theme]\nInherits=AnnieRainbow\n' >"$HOME/.icons/default/index.theme"
+
+    echo "# Command key opens the app launcher"
+    for k in Super_L Super_R; do
+        xfconf-query -c xfce4-keyboard-shortcuts -p "/commands/custom/$k" -n -t string -s xfce4-popup-whiskermenu
+    done
+
+    echo "# Wallpaper"
+    xfconf-query -c xfce4-desktop -p /backdrop/annie-set -r 2>/dev/null
+    /usr/lib/annie/annie-session-setup >/dev/null 2>&1 &
+
+    echo "# Taskbar"
+    if ! pgrep -u "$USER" -x xfce4-panel >/dev/null; then
+        mkdir -p "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml"
+        [[ -f "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml" ]] ||
+            cp /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/"
+        [[ -d "$HOME/.config/xfce4/panel" ]] || cp -r /etc/skel/.config/xfce4/panel "$HOME/.config/xfce4/panel"
+        (setsid xfce4-panel >/dev/null 2>&1 &)
+    fi
+
+    echo "# Sound"
+    systemctl --user restart pipewire pipewire-pulse wireplumber 2>&1 || echo "ERROR: sound would not restart"
+}
+
+{
+    # Root reads its copy from /tmp: it often cannot see inside an AppImage.
+    work="$(mktemp -d -t annie-update.XXXXXX)"
+    cp -a "$payload" "$work/payload"
+    chmod -R a+rX "$work"
+    echo "# Asking for permission"
+    pkexec /bin/bash "$work/payload/root-update.sh" "$work/payload" 2>&1 || echo "ERROR: the system part did not finish (permission refused, or see above)"
+    rm -rf "$work"
+    user_fixes 2>&1
+    echo "# Done"
+} | tee "$log" | if have zenity && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+    zenity --progress --pulsate --auto-close --no-cancel --title="$title" --text="Starting…" --width=480 2>/dev/null
+else
+    sed -n 's/^# //p'
+fi
+
+if grep -q '^ERROR' "$log"; then
+    if have zenity && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        zenity --text-info --title="$title - some things need attention" --filename="$log" --width=720 --height=480 2>/dev/null
+    else
+        grep '^ERROR' "$log"
+    fi
+    rm -f "$log"
+    exit 1
+fi
+rm -f "$log"
+msg info "Annie OS is up to date and fixed. 🦄\n\nLog out and back in (or restart) to see the new mouse cursor everywhere."

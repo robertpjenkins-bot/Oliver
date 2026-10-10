@@ -10,6 +10,10 @@ fi
 echo 'annie ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/annie-live
 chmod 440 /etc/sudoers.d/annie-live
 
+# The rainbow cursor for everything, including apps that ignore the desktop's setting.
+mkdir -p /usr/share/icons/default
+printf '[Icon Theme]\nInherits=AnnieRainbow\n' >/usr/share/icons/default/index.theme
+
 # /etc/os-release belongs to the filesystem package, so brand it at boot
 # rather than shipping a file that would collide with it during the build.
 rm -f /etc/os-release

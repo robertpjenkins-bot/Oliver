@@ -1,9 +1,10 @@
-name: Annie OS USB Maker
+name: Annie OS apps
 
 on:
   push:
     paths:
       - "annie-os/usb/**"
+      - "annie-os/updater/**"
       - ".github/workflows/annie-usb.yml"
   workflow_dispatch:
 
@@ -17,7 +18,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build the AppImages
-        run: ./annie-os/usb/build-appimage.sh
+        run: |
+          ./annie-os/usb/build-appimage.sh
+          ./annie-os/updater/build-appimage.sh
 
       # Attach them to the newest Annie OS release, next to the ISO.
       - name: Add to the newest Annie OS release
@@ -27,5 +30,5 @@ jobs:
           tag=$(gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
                   -q 'sort_by(.createdAt) | reverse | .[].tagName' | grep '^annie-os-' | head -n1)
           [ -n "$tag" ] || { echo "no Annie OS release yet"; exit 1; }
-          gh release upload "$tag" annie-os/out/Annie-OS-USB-Maker*-x86_64.AppImage -R "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$tag" annie-os/out/Annie-OS-*-x86_64.AppImage -R "$GITHUB_REPOSITORY" --clobber
           echo "added to $tag"

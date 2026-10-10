@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Annie OS Updater
+Comment=Update Annie OS, add the rainbow cursor, and fix everything
+Exec=annie-update
+Icon=annie-os
+Terminal=false
+Categories=System;

@@ -5,6 +5,7 @@ on:
     paths:
       - "annie-os/**"
       - "!annie-os/usb/**"
+      - "!annie-os/updater/**"
       - "!annie-os/**/*.md"
       - ".github/workflows/annie-iso.yml"
   workflow_dispatch:
@@ -38,7 +39,9 @@ jobs:
           ls -lh annie-os/iso
 
       - name: Build the USB Maker
-        run: ./annie-os/usb/build-appimage.sh
+        run: |
+          ./annie-os/usb/build-appimage.sh
+          ./annie-os/updater/build-appimage.sh
 
       - name: Checksum
         run: cd annie-os/iso && sha256sum *.iso | tee SHA256SUMS
@@ -52,7 +55,7 @@ jobs:
         run: |
           cd annie-os/iso
           iso=$(ls *.iso)
-          files=("$iso" SHA256SUMS ../out/Annie-OS-USB-Maker*-x86_64.AppImage)
+          files=("$iso" SHA256SUMS ../out/Annie-OS-*-x86_64.AppImage)
           notes="Annie OS live ISO.
 
           Easiest: download Annie-OS-USB-Maker-x86_64.AppImage with the ISO (or its parts, or a zip of them), run it on Linux or SteamOS and pick your USB drive (8 GB or more). It joins the parts for you and keeps your files on the drive. Annie-OS-USB-Maker-Zip-x86_64.AppImage does the same but only takes a zip.
@@ -60,7 +63,7 @@ jobs:
           Or write the ISO with balenaEtcher, Ventoy or dd."
           if [ "$(stat -c %s "$iso")" -ge 2147483648 ]; then
             split -b 1900M -d "$iso" "$iso.part"
-            files=("$iso".part* SHA256SUMS ../out/Annie-OS-USB-Maker*-x86_64.AppImage)
+            files=("$iso".part* SHA256SUMS ../out/Annie-OS-*-x86_64.AppImage)
             notes="$notes
 
           The ISO is split in parts because GitHub limits release files to 2 GB. Download every part, then join them:
