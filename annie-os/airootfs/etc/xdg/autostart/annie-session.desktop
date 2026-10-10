@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Annie OS session setup
+Exec=/usr/lib/annie/annie-session-setup
+OnlyShowIn=XFCE;
+NoDisplay=true

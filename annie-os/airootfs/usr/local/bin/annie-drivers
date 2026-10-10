@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Annie Drivers - finds the hardware in this computer and installs what it needs.
+set -uo pipefail
+
+title="Annie Drivers"
+gpu=$(lspci -nn | grep -Ei 'vga|3d controller|display')
+net=$(lspci -nn | grep -Ei 'network|wireless')
+
+rows=()
+add() { rows+=("$1" "$2" "$3"); }  # checked  packages  description
+
+if grep -qi nvidia <<<"$gpu"; then
+	# The open kernel modules cover GeForce 16xx/RTX 20xx and newer; older
+	# cards need the legacy driver, which Arch no longer ships in its repos.
+	add TRUE "nvidia-open nvidia-utils lib32-nvidia-utils nvidia-settings" "NVIDIA graphics (GTX 16xx / RTX 20xx and newer)"
+fi
+if grep -Eqi 'amd|ati|radeon' <<<"$gpu"; then
+	add TRUE "mesa lib32-mesa vulkan-radeon lib32-vulkan-radeon xf86-video-amdgpu" "AMD Radeon graphics + Vulkan for games"
+fi
+if grep -qi intel <<<"$gpu"; then
+	add TRUE "mesa lib32-mesa vulkan-intel lib32-vulkan-intel intel-media-driver" "Intel graphics + Vulkan for games"
+fi
+if grep -qi broadcom <<<"$net"; then
+	add TRUE "broadcom-wl" "Broadcom Wi-Fi"
+fi
+add TRUE  "linux-firmware sof-firmware" "Firmware for Wi-Fi, sound and graphics"
+add TRUE  "gamemode lib32-gamemode" "GameMode (faster games)"
+add FALSE "bluez bluez-utils blueman" "Bluetooth"
+add FALSE "cups system-config-printer" "Printers"
+
+choice=$(zenity --list --checklist --title="$title" --width=720 --height=460 \
+	--text="Found in this computer:\n<tt>${gpu:-no graphics card detected}</tt>\n\nTick the drivers to install:" \
+	--column="Install" --column="Packages" --column="Driver" --hide-column=2 \
+	"${rows[@]}" --separator=" " --print-column=2) || exit 0
+[ -n "$choice" ] || exit 0
+
+log=$(mktemp -t annie-drivers.XXXXXX.log)
+pkexec /usr/lib/annie/annie-drivers-root $choice 2>&1 | tee "$log" |
+	zenity --progress --pulsate --auto-close --no-cancel --title="$title" \
+		--text="Installing drivers…" --width=480
+if grep -q '^ERROR' "$log"; then
+	zenity --text-info --title="$title - problem" --filename="$log" --width=720 --height=480
+else
+	zenity --question --title="$title" --width=360 \
+		--text="Drivers installed. Restart now so they take effect?" && systemctl reboot
+fi
+rm -f "$log"

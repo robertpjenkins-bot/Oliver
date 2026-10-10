@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Annie Disk Writer
+Exec=annie-disk-writer
+Icon=annie-disk-writer
+Terminal=false

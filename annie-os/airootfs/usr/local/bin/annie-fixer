@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Annie Fixer - one-click repairs for the things that usually go wrong.
+set -uo pipefail
+
+title="Annie Fixer"
+choice=$(zenity --list --checklist --title="$title" --width=640 --height=520 \
+	--text="Tick what you want fixed, then press OK." \
+	--column="Fix" --column="id" --column="What it does" --hide-column=2 \
+	TRUE  lock     "Unstick the installer (\"pacman is locked\")" \
+	TRUE  keys     "Repair package signing keys" \
+	FALSE update   "Update everything" \
+	FALSE broken   "Reinstall packages with missing or damaged files" \
+	FALSE space    "Free up disk space (old package downloads)" \
+	FALSE network  "Restart Wi-Fi / internet" \
+	FALSE sound    "Restart sound" \
+	FALSE panel    "Put the taskbar and search bar back to normal" \
+	FALSE steam    "Repair Steam (keeps your games)" \
+	--separator=" " --print-column=2) || exit 0
+[ -n "$choice" ] || exit 0
+
+root_tasks=() user_tasks=()
+for t in $choice; do
+	case "$t" in
+		sound|panel|steam) user_tasks+=("$t") ;;
+		*) root_tasks+=("$t") ;;
+	esac
+done
+
+log=$(mktemp -t annie-fixer.XXXXXX.log)
+(
+	if [ "${#root_tasks[@]}" -gt 0 ]; then
+		pkexec /usr/lib/annie/annie-fixer-root "${root_tasks[@]}" 2>&1
+	fi
+	for t in "${user_tasks[@]}"; do
+		case "$t" in
+		sound)
+			echo "# Restarting sound"
+			systemctl --user restart pipewire pipewire-pulse wireplumber 2>&1
+			;;
+		panel)
+			echo "# Resetting the taskbar"
+			xfce4-panel --quit 2>/dev/null
+			pkill -x xfconfd
+			mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml
+			cp /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml \
+				~/.config/xfce4/xfconf/xfce-perchannel-xml/
+			rm -rf ~/.config/xfce4/panel
+			cp -r /etc/skel/.config/xfce4/panel ~/.config/xfce4/panel
+			(setsid xfce4-panel >/dev/null 2>&1 &)
+			;;
+		steam)
+			echo "# Repairing Steam"
+			pkill -x steam; sleep 2
+			steamdir="$HOME/.local/share/Steam"
+			# Removing everything except games, saves and settings makes Steam
+			# re-download its own runtime on the next start.
+			if [ -d "$steamdir" ]; then
+				find "$steamdir" -mindepth 1 -maxdepth 1 \
+					! -name steamapps ! -name userdata ! -name config \
+					! -name ssfn\* ! -name steam.sh ! -name compatibilitytools.d \
+					-exec rm -rf {} + 2>&1
+			fi
+			rm -rf "$HOME/.local/share/Steam/steamapps/shadercache"
+			;;
+		esac
+	done
+	echo "# All done"
+) | tee "$log" | zenity --progress --pulsate --auto-close --no-cancel \
+	--title="$title" --text="Working…" --width=480
+
+if grep -q '^ERROR' "$log"; then
+	zenity --text-info --title="$title - some fixes need attention" \
+		--filename="$log" --width=720 --height=480
+else
+	zenity --info --title="$title" --text="Everything you picked has been fixed. 🦄" --width=320
+fi
+rm -f "$log"

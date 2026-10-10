@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""Annie Paint - the drawing app that comes with Annie OS."""
+import colorsys
+import os
+import tkinter as tk
+from tkinter import filedialog, messagebox
+
+from PIL import Image, ImageDraw, ImageTk
+
+W, H = 1200, 760
+PALETTE = ["#000000", "#ffffff", "#ff5c78", "#ffa050", "#ffde5a", "#6edc8c",
+           "#5aaaff", "#aa78ff", "#8b5a2b", "#ff9fd0", "#7a7a7a", "#00c8c8"]
+UNDO_LIMIT = 30
+
+
+class Paint:
+    def __init__(self, root):
+        self.root = root
+        root.title("Annie Paint")
+        self.color = "#aa78ff"
+        self.size = tk.IntVar(value=8)
+        self.tool = tk.StringVar(value="brush")
+        self.hue = 0.0
+        self.last = None
+        self.start = None
+        self.preview = None
+        self.path = None
+        self.undo = []
+        self.redo = []
+        self.image = Image.new("RGB", (W, H), "white")
+        self.draw = ImageDraw.Draw(self.image)
+
+        bar = tk.Frame(root, bg="#efe6fb", padx=6, pady=6)
+        bar.pack(side=tk.TOP, fill=tk.X)
+        for name, label in [("brush", "🖌 Brush"), ("rainbow", "🌈 Rainbow"),
+                            ("eraser", "🧽 Eraser"), ("line", "／ Line"),
+                            ("rect", "▭ Box"), ("oval", "◯ Circle"), ("fill", "🪣 Fill")]:
+            tk.Radiobutton(bar, text=label, value=name, variable=self.tool,
+                           indicatoron=False, padx=8, pady=4, bg="#ffffff",
+                           selectcolor="#d9c4ff").pack(side=tk.LEFT, padx=2)
+        tk.Label(bar, text="  Size", bg="#efe6fb").pack(side=tk.LEFT)
+        tk.Scale(bar, from_=1, to=80, orient=tk.HORIZONTAL, variable=self.size,
+                 length=140, bg="#efe6fb", highlightthickness=0).pack(side=tk.LEFT)
+        for text, cmd in [("↶ Undo", self.do_undo), ("↷ Redo", self.do_redo),
+                          ("New", self.new), ("Open", self.open), ("Save", self.save)]:
+            tk.Button(bar, text=text, command=cmd).pack(side=tk.LEFT, padx=2)
+
+        pal = tk.Frame(root, bg="#efe6fb", padx=6, pady=4)
+        pal.pack(side=tk.TOP, fill=tk.X)
+        self.swatch = tk.Label(pal, text="  current  ", bg=self.color, relief=tk.SUNKEN)
+        self.swatch.pack(side=tk.LEFT, padx=(0, 10))
+        for c in PALETTE:
+            b = tk.Label(pal, bg=c, width=3, relief=tk.RAISED, cursor="hand2")
+            b.pack(side=tk.LEFT, padx=2)
+            b.bind("<Button-1>", lambda e, c=c: self.set_color(c))
+        tk.Button(pal, text="More colours…", command=self.pick_color).pack(side=tk.LEFT, padx=8)
+
+        self.canvas = tk.Canvas(root, width=W, height=H, bg="white", cursor="pencil",
+                                highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas.bind("<ButtonPress-1>", self.press)
+        self.canvas.bind("<B1-Motion>", self.motion)
+        self.canvas.bind("<ButtonRelease-1>", self.release)
+        root.bind("<Control-z>", lambda e: self.do_undo())
+        root.bind("<Control-y>", lambda e: self.do_redo())
+        root.bind("<Control-s>", lambda e: self.save())
+        root.bind("<Control-o>", lambda e: self.open())
+        root.bind("<Control-n>", lambda e: self.new())
+        self.render()
+
+    # --- helpers -----------------------------------------------------------
+    def set_color(self, c):
+        self.color = c
+        self.swatch.config(bg=c)
+        if self.tool.get() in ("eraser", "rainbow"):
+            self.tool.set("brush")
+
+    def pick_color(self):
+        from tkinter import colorchooser
+        c = colorchooser.askcolor(color=self.color, title="Pick a colour")[1]
+        if c:
+            self.set_color(c)
+
+    def stroke_color(self):
+        t = self.tool.get()
+        if t == "eraser":
+            return "#ffffff"
+        if t == "rainbow":
+            self.hue = (self.hue + 0.015) % 1.0
+            r, g, b = colorsys.hsv_to_rgb(self.hue, 0.65, 1.0)
+            return "#%02x%02x%02x" % (int(r * 255), int(g * 255), int(b * 255))
+        return self.color
+
+    def snapshot(self):
+        self.undo.append(self.image.copy())
+        del self.undo[:-UNDO_LIMIT]
+        self.redo.clear()
+
+    def set_image(self, img):
+        self.image = img
+        self.draw = ImageDraw.Draw(self.image)
+        self.render()
+
+    def render(self):
+        self.canvas.delete("all")
+        self.photo = ImageTk.PhotoImage(self.image)
+        self.canvas.create_image(0, 0, image=self.photo, anchor=tk.NW)
+        self.canvas.config(scrollregion=(0, 0, *self.image.size))
+
+    def dot(self, x, y, c, s):
+        r = s / 2
+        self.draw.ellipse([x - r, y - r, x + r, y + r], fill=c)
+        self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=c, outline=c)
+
+    # --- mouse -------------------------------------------------------------
+    def press(self, e):
+        self.snapshot()
+        x, y = self.canvas.canvasx(e.x), self.canvas.canvasy(e.y)
+        t = self.tool.get()
+        if t == "fill":
+            ImageDraw.floodfill(self.image, (int(x), int(y)), hex_to_rgb(self.color))
+            self.render()
+            return
+        self.start = self.last = (x, y)
+        if t in ("brush", "rainbow", "eraser"):
+            self.dot(x, y, self.stroke_color(), self.size.get())
+
+    def motion(self, e):
+        if self.start is None:
+            return
+        x, y = self.canvas.canvasx(e.x), self.canvas.canvasy(e.y)
+        t, s = self.tool.get(), self.size.get()
+        if t in ("brush", "rainbow", "eraser"):
+            c = self.stroke_color()
+            lx, ly = self.last
+            self.draw.line([lx, ly, x, y], fill=c, width=s)
+            self.canvas.create_line(lx, ly, x, y, fill=c, width=s, capstyle=tk.ROUND)
+            self.dot(x, y, c, s)
+            self.last = (x, y)
+            return
+        if self.preview:
+            self.canvas.delete(self.preview)
+        sx, sy = self.start
+        if t == "line":
+            self.preview = self.canvas.create_line(sx, sy, x, y, fill=self.color, width=s, capstyle=tk.ROUND)
+        elif t == "rect":
+            self.preview = self.canvas.create_rectangle(sx, sy, x, y, outline=self.color, width=s)
+        elif t == "oval":
+            self.preview = self.canvas.create_oval(sx, sy, x, y, outline=self.color, width=s)
+
+    def release(self, e):
+        if self.start is None:
+            return
+        x, y = self.canvas.canvasx(e.x), self.canvas.canvasy(e.y)
+        t, s = self.tool.get(), self.size.get()
+        sx, sy = self.start
+        box = [min(sx, x), min(sy, y), max(sx, x), max(sy, y)]
+        if t == "line":
+            self.draw.line([sx, sy, x, y], fill=self.color, width=s)
+        elif t == "rect":
+            self.draw.rectangle(box, outline=self.color, width=s)
+        elif t == "oval":
+            self.draw.ellipse(box, outline=self.color, width=s)
+        self.start = self.last = self.preview = None
+        self.render()
+
+    # --- commands ----------------------------------------------------------
+    def do_undo(self):
+        if self.undo:
+            self.redo.append(self.image)
+            self.set_image(self.undo.pop())
+
+    def do_redo(self):
+        if self.redo:
+            self.undo.append(self.image)
+            self.set_image(self.redo.pop())
+
+    def new(self):
+        if messagebox.askyesno("Annie Paint", "Start a new picture?"):
+            self.snapshot()
+            self.path = None
+            self.set_image(Image.new("RGB", (W, H), "white"))
+
+    def open(self):
+        p = filedialog.askopenfilename(
+            initialdir=os.path.expanduser("~/Pictures"),
+            filetypes=[("Pictures", "*.png *.jpg *.jpeg *.bmp *.gif *.webp"), ("All files", "*")])
+        if p:
+            try:
+                img = Image.open(p).convert("RGB")
+            except OSError as err:
+                messagebox.showerror("Annie Paint", f"Could not open that picture:\n{err}")
+                return
+            self.snapshot()
+            self.path = p
+            self.set_image(img)
+
+    def save(self):
+        p = self.path or filedialog.asksaveasfilename(
+            initialdir=os.path.expanduser("~/Pictures"), initialfile="my-drawing.png",
+            defaultextension=".png", filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg")])
+        if p:
+            self.image.save(p)
+            self.path = p
+            self.root.title(f"Annie Paint - {os.path.basename(p)}")
+
+
+def hex_to_rgb(hex_color):
+    h = hex_color.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+if __name__ == "__main__":
+    os.makedirs(os.path.expanduser("~/Pictures"), exist_ok=True)
+    root = tk.Tk()
+    Paint(root)
+    root.mainloop()

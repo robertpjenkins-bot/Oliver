@@ -1,0 +1,12 @@
+[Unit]
+Description=Prepare the Annie OS live user
+Before=display-manager.service
+After=systemd-sysusers.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/annie/annie-live-setup
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

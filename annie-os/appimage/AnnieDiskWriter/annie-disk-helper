@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Privileged half of Annie Disk Writer, run through pkexec.
+#
+#   annie-disk-helper format DEVICE exfat|fat32 LABEL
+#   annie-disk-helper write  IMAGE  DEVICE
+#
+# It refuses any disk that holds the running system, so a wrong click can
+# only ever erase a USB stick or a spare drive.
+set -euo pipefail
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+[ "$(id -u)" -eq 0 ] || die "must run as root"
+
+check_device() {
+	local dev=$1
+	[[ "$dev" =~ ^/dev/(sd[a-z]+|nvme[0-9]+n[0-9]+|mmcblk[0-9]+|vd[a-z]+)$ ]] || die "$dev is not a whole disk"
+	[ -b "$dev" ] || die "$dev does not exist"
+	[ "$(lsblk -dno TYPE "$dev")" = disk ] || die "$dev is not a disk"
+	local mp
+	while read -r mp; do
+		case "$mp" in
+			/|/boot|/boot/efi|/efi|/home|/usr|/var|\[SWAP\]|/run/archiso/bootmnt)
+				die "$dev holds the running system ($mp); refusing to touch it" ;;
+		esac
+	done < <(lsblk -lno MOUNTPOINTS "$dev" | tr ' ' '\n' | sed '/^$/d')
+}
+
+unmount_all() {
+	local part
+	for part in $(lsblk -lnpo NAME "$1" | tail -n +2) "$1"; do
+		umount -q "$part" 2>/dev/null || true
+	done
+}
+
+part_name() {  # /dev/sdb -> /dev/sdb1, /dev/nvme0n1 -> /dev/nvme0n1p1
+	case "$1" in *[0-9]) echo "${1}p1" ;; *) echo "${1}1" ;; esac
+}
+
+case "${1:-}" in
+format)
+	dev=${2:?device}; fs=${3:?filesystem}; label=${4:-ANNIE}
+	check_device "$dev"
+	case "$fs" in
+		exfat) label=${label:0:15}; ptype=ntfs ;;   # MBR type 0x07, as Windows uses for exFAT
+		fat32) label=${label:0:11}; label=${label^^}; ptype=fat32 ;;
+		*) die "unknown filesystem $fs" ;;
+	esac
+	echo "PROGRESS 5 Unmounting"
+	unmount_all "$dev"
+	echo "PROGRESS 15 Wiping old partitions"
+	wipefs -aq "$dev"
+	echo "PROGRESS 35 Creating partition"
+	parted -s "$dev" mklabel msdos mkpart primary "$ptype" 1MiB 100%
+	partprobe "$dev" 2>/dev/null || true
+	udevadm settle
+	part=$(part_name "$dev")
+	for _ in $(seq 20); do [ -b "$part" ] && break; sleep 0.5; done
+	[ -b "$part" ] || die "the new partition $part did not appear"
+	echo "PROGRESS 60 Formatting as $fs"
+	if [ "$fs" = exfat ]; then
+		mkfs.exfat -L "$label" "$part"
+	else
+		mkfs.fat -F 32 -n "$label" "$part"
+	fi
+	sync
+	echo "PROGRESS 100 Done"
+	echo "PARTITION $part"
+	;;
+write)
+	img=${2:?image}; dev=${3:?device}
+	[ -f "$img" ] || die "$img not found"
+	check_device "$dev"
+	size=$(stat -c %s "$img"); disk=$(blockdev --getsize64 "$dev")
+	[ "$size" -le "$disk" ] || die "the image ($size bytes) is bigger than the disk ($disk bytes)"
+	unmount_all "$dev"
+	echo "TOTAL $size"
+	dd if="$img" of="$dev" bs=4M conv=fsync oflag=direct status=progress 2>&1 | stdbuf -o0 tr '\r' '\n'
+	sync
+	echo "PROGRESS 100 Done"
+	;;
+*)
+	die "usage: $0 format DEVICE exfat|fat32 LABEL | write IMAGE DEVICE"
+	;;
+esac

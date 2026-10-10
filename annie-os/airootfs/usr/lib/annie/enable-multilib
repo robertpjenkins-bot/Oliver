@@ -1,0 +1,10 @@
+#!/bin/sh
+# Turns on the 32-bit [multilib] repository, which Steam and Proton need.
+conf=/etc/pacman.conf
+if ! grep -q '^\[multilib\]' "$conf"; then
+	if grep -q '^#\[multilib\]' "$conf"; then
+		sed -i '/^#\[multilib\]/{s/^#//;n;s/^#//}' "$conf"
+	else
+		printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >>"$conf"
+	fi
+fi

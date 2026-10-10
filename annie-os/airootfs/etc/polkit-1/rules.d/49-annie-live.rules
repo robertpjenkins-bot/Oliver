@@ -1,0 +1,7 @@
+// Live session only: the "annie" user has no password, so let it do admin
+// tasks (drivers, fixer, disk writer) without a password prompt.
+polkit.addRule(function(action, subject) {
+    if (subject.user == "annie" && subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});

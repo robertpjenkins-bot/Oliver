@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Annie Drivers
+Exec=annie-drivers
+Icon=hardware
+Terminal=false

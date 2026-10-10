@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Annie Paint
+Comment=Draw and paint pictures
+Exec=annie-paint
+Icon=applications-graphics
+Categories=Graphics;2DGraphics;RasterGraphics;
+Terminal=false

@@ -1,0 +1,55 @@
+# Annie OS packages, added on top of Arch's live ISO (releng) package list.
+# Every one of these comes from the official Arch repositories.
+
+# Desktop
+xorg-server
+xorg-xrandr
+lightdm
+lightdm-gtk-greeter
+xfce4
+xfce4-goodies
+xfce4-whiskermenu-plugin
+xfce4-verve-plugin
+polkit-gnome
+gvfs
+udisks2
+xdg-user-dirs
+arc-gtk-theme
+papirus-icon-theme
+noto-fonts
+noto-fonts-emoji
+ttf-dejavu
+ttf-liberation
+
+# Internet and sound
+networkmanager
+network-manager-applet
+firefox
+pipewire
+pipewire-alsa
+pipewire-pulse
+wireplumber
+pavucontrol
+
+# Games: Steam (Proton is built into Steam) and the 32-bit graphics it needs
+steam
+mesa
+lib32-mesa
+vulkan-icd-loader
+lib32-vulkan-icd-loader
+vulkan-radeon
+lib32-vulkan-radeon
+vulkan-intel
+lib32-vulkan-intel
+gamemode
+lib32-gamemode
+
+# Annie apps (paint, fixer, drivers, disk writer)
+python
+python-pillow
+tk
+zenity
+pciutils
+parted
+dosfstools
+exfatprogs

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Annie Fixer
+Exec=annie-fixer
+Icon=applications-utilities
+Terminal=false

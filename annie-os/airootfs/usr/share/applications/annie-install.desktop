@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Install Annie OS
+Comment=Install Annie OS onto this computer
+Exec=annie-install
+Icon=system-software-install
+Categories=System;
+Terminal=true

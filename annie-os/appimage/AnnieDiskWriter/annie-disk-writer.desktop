@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Annie Disk Writer
+Comment=Format USB drives as exFAT or FAT32 and write disk images
+Exec=annie-disk-writer
+Icon=annie-disk-writer
+Categories=System;Utility;
+Terminal=false
