@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Method is a way of running build.sh.
@@ -23,6 +25,8 @@ type Method struct {
 	Kind string `json:"kind"`
 	Path string `json:"path"`
 	Desc string `json:"desc"`
+	// Password is true when building this way asks for the password.
+	Password bool `json:"password"`
 }
 
 // Image is the container image used when the host is not Arch Linux.
@@ -31,18 +35,22 @@ const Image = "docker.io/library/archlinux:latest"
 // Detect lists the ways this machine can build an ISO, best first.
 func Detect() []Method {
 	var out []Method
+	// Best: no password at all, where Linux allows user namespaces.
+	if bootstrapPossible() && rootlessPossible() {
+		out = append(out, Method{Kind: "bootstrap", Desc: "download Arch Linux and build from it, no password needed"})
+	}
 	if p, err := exec.LookPath("mkarchiso"); err == nil {
-		out = append(out, Method{"archiso", p, "archiso on this computer (asks for your password)"})
+		out = append(out, Method{"archiso", p, "archiso on this computer (asks for your password)", true})
 	} else if _, err := os.Stat("/etc/arch-release"); err == nil {
 		// Arch without archiso yet: build.sh installs it.
-		out = append(out, Method{"archiso", "", "Arch Linux on this computer, installing archiso (asks for your password)"})
+		out = append(out, Method{"archiso", "", "Arch Linux on this computer, installing archiso (asks for your password)", true})
 	}
-	if bootstrapPossible() {
-		out = append(out, Method{"bootstrap", "", "download Arch Linux and build from it (asks for your password)"})
+	if bootstrapPossible() && !rootlessPossible() && rootAvailable() {
+		out = append(out, Method{"bootstrap", "", "download Arch Linux and build from it (asks for your password)", true})
 	}
 	for _, kind := range []string{"docker", "podman"} {
 		if p, err := exec.LookPath(kind); err == nil {
-			out = append(out, Method{kind, p, fmt.Sprintf("an Arch Linux container in %s", kind)})
+			out = append(out, Method{Kind: kind, Path: p, Desc: fmt.Sprintf("an Arch Linux container in %s", kind)})
 		}
 	}
 	return out
@@ -102,6 +110,10 @@ func bootstrapPossible() bool {
 			return false
 		}
 	}
+	return true
+}
+
+func rootAvailable() bool {
 	if os.Geteuid() == 0 {
 		return true
 	}
@@ -111,6 +123,39 @@ func bootstrapPossible() bool {
 		}
 	}
 	return false
+}
+
+// rootlessArgs runs a command as "root" inside a new user namespace, with
+// the person's subordinate user ids mapped so files can belong to system
+// users, the way rootless Podman works. No password is involved.
+var rootlessArgs = []string{"unshare", "--user", "--map-auto", "--map-root-user", "--mount", "--pid", "--fork", "--kill-child", "--"}
+
+var (
+	rootlessOnce sync.Once
+	rootlessOK   bool
+)
+
+// rootlessPossible tries it out: some systems (Ubuntu 24.04 and later, or
+// ones without newuidmap or /etc/subuid entries) do not allow it.
+func rootlessPossible() bool {
+	rootlessOnce.Do(func() {
+		if os.Geteuid() == 0 {
+			return // real root needs no namespace
+		}
+		d, err := os.MkdirTemp("", "osmaker-probe-")
+		if err != nil {
+			return
+		}
+		defer os.RemoveAll(d)
+		// Everything a build needs: tmpfs and proc mounts, and files owned
+		// by a system user.
+		probe := `mount -t tmpfs none "$1" && touch "$1/x" && chown 1000:1000 "$1/x" && mount -t proc proc "$1"`
+		args := append(append([]string{}, rootlessArgs[1:]...), "sh", "-c", probe, "probe", d)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		rootlessOK = exec.CommandContext(ctx, rootlessArgs[0], args...).Run() == nil
+	})
+	return rootlessOK
 }
 
 // Run builds the ISO in dir, streaming the build's output to log, and
@@ -152,8 +197,38 @@ func bootstrapCommand(ctx context.Context, dir string, log io.Writer) (*exec.Cmd
 	if err != nil {
 		return nil, err
 	}
+	if rootlessPossible() {
+		// Arch unpacked this way is owned by the namespace's ids, so it
+		// lives apart from one unpacked as real root.
+		into := filepath.Join(cache, "rootless")
+		if err := os.MkdirAll(into, 0o755); err != nil {
+			return nil, err
+		}
+		args := append(append([]string{}, rootlessArgs[1:]...), "env", "OSMAKER_ROOTLESS=1", "bash", script, tarball, into, dir)
+		return exec.CommandContext(ctx, rootlessArgs[0], args...), nil
+	}
 	fmt.Fprintln(log, "Asking for your password to build the OS …")
 	return asRoot(ctx, "bash", script, tarball, cache, dir)
+}
+
+// CleanCache deletes the downloaded and unpacked Arch Linux. Files unpacked
+// without a password belong to the namespace's ids, so they are removed from
+// inside one.
+func CleanCache(ctx context.Context) error {
+	cache := CacheDir()
+	if _, err := os.Stat(cache); os.IsNotExist(err) {
+		return nil
+	}
+	if os.Geteuid() != 0 && rootlessPossible() {
+		args := append(append([]string{}, rootlessArgs[1:]...), "rm", "-rf", filepath.Join(cache, "rootless"))
+		if out, err := exec.CommandContext(ctx, rootlessArgs[0], args...).CombinedOutput(); err != nil {
+			return fmt.Errorf("%v: %s", err, out)
+		}
+	}
+	if err := os.RemoveAll(cache); err != nil {
+		return fmt.Errorf("%w (Arch Linux unpacked with your password can only be removed with it: sudo rm -rf %s)", err, cache)
+	}
+	return nil
 }
 
 // NewestISO returns the most recently written .iso in dir.

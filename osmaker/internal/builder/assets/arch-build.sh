@@ -24,9 +24,15 @@ for tool in tar unshare chroot mount; do
 	command -v "${tool}" >/dev/null || die "${tool} is missing on this computer"
 done
 
-# Whoever asked for the build gets the ISO.
-owner="${PKEXEC_UID:-${SUDO_UID:-0}}"
-group="$(getent passwd "${owner}" | cut -d: -f4)"
+# Whoever asked for the build gets the ISO. Without a password, OS Maker
+# runs this inside a user namespace where "root" already is that person.
+if [ "${OSMAKER_ROOTLESS:-0}" = 1 ]; then
+	owner=0
+	group=0
+else
+	owner="${PKEXEC_UID:-${SUDO_UID:-0}}"
+	group="$(getent passwd "${owner}" | cut -d: -f4)"
+fi
 
 if [ ! -x "${root}/usr/bin/pacman" ]; then
 	say "unpacking Arch Linux"
@@ -41,6 +47,49 @@ printf 'Server = %s\n' \
 	'https://mirror.rackspace.com/archlinux/$repo/os/$arch' \
 	> "${root}/etc/pacman.d/mirrorlist"
 mkdir -p "${root}/osmaker"
+
+if [ "${OSMAKER_ROOTLESS:-0}" = 1 ]; then
+	# Inside a user namespace the kernel refuses the devtmpfs and sysfs mounts
+	# pacstrap makes. This stand-in bind-mounts them instead, as pacstrap's
+	# own unshare mode does, and is found first on PATH.
+	mkdir -p "${root}/usr/local/bin"
+	cat > "${root}/usr/local/bin/pacstrap" <<'PACSTRAP'
+#!/bin/bash
+# OS Maker's pacstrap for building without root. Accepts mkarchiso's options.
+set -euo pipefail
+conf=/etc/pacman.conf
+hostcache=0
+confirm=--noconfirm
+while getopts ':C:cGiKMNP' opt; do
+	case "${opt}" in
+		C) conf="${OPTARG}" ;;
+		c) hostcache=1 ;;
+		i) confirm= ;;
+		*) ;;
+	esac
+done
+shift $((OPTIND - 1))
+newroot="$1"
+shift
+mkdir -m 0755 -p "${newroot}"/var/{cache/pacman/pkg,lib/pacman,log} "${newroot}"/{dev,run,etc/pacman.d,proc,sys}
+mkdir -m 1777 -p "${newroot}/tmp"
+cache=(--cachedir "${newroot}/var/cache/pacman/pkg")
+[ "${hostcache}" = 1 ] && cache=()
+exec unshare --mount --propagation private bash -euo pipefail -c '
+newroot="$1"; shift
+mount --bind "${newroot}" "${newroot}"
+mount -t proc proc "${newroot}/proc" -o nosuid,noexec,nodev
+mount --rbind /sys "${newroot}/sys"
+mount --rbind /dev "${newroot}/dev"
+mount -t tmpfs run "${newroot}/run" -o nosuid,nodev,mode=0755
+mount -t tmpfs tmp "${newroot}/tmp" -o mode=1777,strictatime,nodev,nosuid
+pacman -r "${newroot}" "$@"
+' pacstrap "${newroot}" --config "${conf}" ${confirm} "${cache[@]}" -Sy "$@"
+PACSTRAP
+	chmod 0755 "${root}/usr/local/bin/pacstrap"
+else
+	rm -f "${root}/usr/local/bin/pacstrap"
+fi
 
 say "entering Arch Linux"
 # A private mount namespace: every mount below disappears when the build

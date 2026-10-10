@@ -38,15 +38,22 @@ share.
 
 ## Building the ISO
 
-Press **💿 Build ISO** and type your password when asked. That's it.
+Press **💿 Build ISO**. That's it: on most Linux computers there's no password
+to type.
 
 OS Maker downloads Arch Linux's official bootstrap image (a minimal Arch
 system, about 150 MB, checked against Arch's published checksum and kept for
 next time), then builds your OS inside it with
 [archiso](https://wiki.archlinux.org/title/Archiso), the tool that builds the
-official Arch Linux ISO. This works on any 64-bit Linux, including Ubuntu,
-Mint, Fedora and Debian, and needs no Docker and no Arch install. On Arch
-Linux itself, it uses archiso directly.
+official Arch Linux ISO. This works on any 64-bit Linux and needs no Docker and
+no Arch install.
+
+It builds inside a *user namespace*, the same sealed-off box rootless Podman
+uses, so it can act as administrator in there without your password. Some
+systems switch that off: Ubuntu 24.04 and later do, and so does any system
+without the `uidmap` package. There OS Maker asks for your password once
+instead. `osmaker clean-cache` deletes the downloaded Arch Linux (about 1 GB)
+when you're done.
 
 A build downloads every app (often 1–3 GB), needs about 10 GB of free space
 and takes 10–40 minutes. The finished ISO lands in

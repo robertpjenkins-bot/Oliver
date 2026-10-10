@@ -29,6 +29,7 @@ usage:
   osmaker [design.osmaker]          open the designer (in your web browser)
   osmaker build <design> [-o dir]   build an ISO from a saved design
   osmaker folder <design> [-o dir]  only write the build folder (build.sh and files)
+  osmaker clean-cache               delete the downloaded Arch Linux (frees about 1 GB)
   osmaker version
 
 designer options:
@@ -48,6 +49,12 @@ func run(args []string) error {
 		switch args[0] {
 		case "build", "folder":
 			return buildCmd(args[0] == "folder", args[1:])
+		case "clean-cache":
+			if err := builder.CleanCache(context.Background()); err != nil {
+				return err
+			}
+			fmt.Println("removed the downloaded Arch Linux from", builder.CacheDir())
+			return nil
 		case "version", "--version":
 			fmt.Println("OS Maker", version)
 			return nil

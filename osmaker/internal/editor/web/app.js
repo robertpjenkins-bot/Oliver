@@ -746,7 +746,7 @@ async function openBuild() {
   body.replaceChildren(
     h("p", {}, `This makes `, h("b", {}, D.system.osName), ` as a bootable Arch Linux ISO with your desktop and ${n} extra app${n === 1 ? "" : "s"}.`),
     best
-      ? h("div", { class: "note" }, how, " You'll be asked for your password once.")
+      ? h("div", { class: "note" }, how, best.password ? " You'll be asked for your password once." : " No password needed.")
       : h("div", { class: "note" }, "This computer can't build ISOs: OS Maker needs a 64-bit (x86-64) Linux computer. ",
           "You can still make the build folder and run its ", h("code", {}, "build.sh"), " on one."),
     h("div", { class: "note", style: { marginTop: "12px" } },
