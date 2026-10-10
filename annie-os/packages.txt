@@ -14,7 +14,6 @@ polkit-gnome
 gvfs
 udisks2
 xdg-user-dirs
-arc-gtk-theme
 papirus-icon-theme
 noto-fonts
 noto-fonts-emoji

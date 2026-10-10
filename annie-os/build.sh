@@ -40,8 +40,20 @@ if ! grep -q '^\[multilib\]' "$profile/pacman.conf"; then
 	printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >>"$profile/pacman.conf"
 fi
 
-# Packages.
-grep -Ev '^\s*(#|$)' "$here/packages.txt" >>"$profile/packages.x86_64"
+# Packages. Arch drops and renames packages over time, so check each one
+# against the repositories and leave out (with a warning) any that are gone,
+# rather than failing the whole build.
+say "checking the package list"
+pacman --config "$profile/pacman.conf" -Sy >/dev/null
+while read -r pkg; do
+	if pacman --config "$profile/pacman.conf" -Si "$pkg" >/dev/null 2>&1 \
+		|| pacman --config "$profile/pacman.conf" -Sg "$pkg" >/dev/null 2>&1; then
+		echo "$pkg" >>"$work/annie-packages"
+	else
+		printf '\033[1;33mwarning:\033[0m %s is not in the Arch repositories; leaving it out\n' "$pkg"
+	fi
+done < <(grep -Ev '^\s*(#|$)' "$here/packages.txt")
+cat "$work/annie-packages" >>"$profile/packages.x86_64"
 sort -u -o "$profile/packages.x86_64" "$profile/packages.x86_64"
 
 # NetworkManager replaces the live ISO's iwd + systemd-networkd.
@@ -55,7 +67,7 @@ install -Dm755 "$here/appimage/AnnieDiskWriter/annie-disk-writer" "$profile/airo
 install -Dm755 "$here/appimage/AnnieDiskWriter/annie-disk-helper" "$profile/airootfs/usr/lib/annie/annie-disk-helper"
 install -Dm644 "$here/appimage/AnnieDiskWriter/annie-disk-writer.desktop" "$profile/airootfs/usr/share/applications/annie-disk-writer.desktop"
 install -Dm644 "$here/appimage/AnnieDiskWriter/annie-disk-writer.svg" "$profile/airootfs/usr/share/icons/hicolor/scalable/apps/annie-disk-writer.svg"
-install -Dm644 "$here/packages.txt" "$profile/airootfs/usr/share/annie/packages.txt"
+install -Dm644 "$work/annie-packages" "$profile/airootfs/usr/share/annie/packages.txt"
 
 # The disk writer also ships as a portable AppImage, when appimagetool is here.
 OUTDIR="$work/appimage" "$here/appimage/build-appimage.sh"
