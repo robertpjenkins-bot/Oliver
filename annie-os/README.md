@@ -2,7 +2,9 @@
 
 A friendly Arch Linux desktop with a unicorn wallpaper, ready for games.
 
-![wallpaper](airootfs/usr/share/backgrounds/annie/unicorn.png)
+![Annie OS desktop preview](desktop-preview.png)
+
+*A drawn preview of the desktop, made from its settings (not a screenshot).*
 
 ## What's inside
 
