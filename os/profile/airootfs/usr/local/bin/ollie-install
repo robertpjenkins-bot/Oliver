@@ -144,12 +144,13 @@ say "Setting up the installed system"
 rm -f "$TARGET/etc/mkinitcpio.conf.d/archiso.conf" \
     "$TARGET/etc/systemd/system/multi-user.target.wants/ollie-live-setup.service" \
     "$TARGET/usr/share/applications/ollie-install.desktop"
+# One start-up image with every driver (no autodetect), so the drive starts
+# on any computer it is plugged into, not only the one it was installed on.
 cat >"$TARGET/etc/mkinitcpio.d/linux.preset" <<'EOF'
 ALL_kver="/boot/vmlinuz-linux"
-PRESETS=('default' 'fallback')
+PRESETS=('default')
 default_image="/boot/initramfs-linux.img"
-fallback_image="/boot/initramfs-linux-fallback.img"
-fallback_options="-S autodetect"
+default_options="-S autodetect"
 EOF
 
 # root has no password, so without this a start-up problem ends at "root
@@ -192,11 +193,11 @@ linux   /vmlinuz-linux
 initrd  /initramfs-linux.img
 options root=UUID=$root_uuid rootflags=subvol=@ rw quiet
 EOF
-# Every driver, for when the drive is moved to a different computer.
+# Without "quiet", to see what goes wrong if starting ever fails.
 cat >"$TARGET/boot/loader/entries/ollie-fallback.conf" <<EOF
-title   Ollie OS (safe mode)
+title   Ollie OS (show start-up messages)
 linux   /vmlinuz-linux
-initrd  /initramfs-linux-fallback.img
+initrd  /initramfs-linux.img
 options root=UUID=$root_uuid rootflags=subvol=@ rw
 EOF
 

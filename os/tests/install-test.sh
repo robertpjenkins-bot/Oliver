@@ -3,7 +3,8 @@
 # virtual machine (UEFI, like the Steam Machine):
 #   1. boot the ISO with ollie.selftest=install: it runs the installer onto
 #      the empty 30 GB disk, answering its questions, and switches off;
-#   2. start the installed system from that disk, with its own kernel,
+#   2. start the installed system from that disk on a different virtual
+#      computer, with the disk plugged in over USB, using its own kernel,
 #      initramfs and boot options, and check it gets past mounting its root
 #      filesystem to the login screen.
 #
@@ -45,7 +46,7 @@ grep -a 'OLLIE-INSTALL-TEST' "$out/install.log" | tr -d '\r' | sed 's/^.*OLLIE-I
 grep -aq 'OLLIE-INSTALL-TEST: installer finished' "$out/install.log" || { echo "FAIL  the installer did not finish"; exit 1; }
 echo "ok    the installer finished"
 
-echo "== 2. Starting the installed system"
+echo "== 2. Starting the installed system on a different computer, from USB"
 # Its kernel, initramfs and boot options, from its own boot partition.
 loop="$(sudo losetup -fP --show "$disk")"
 inst="$out/installed-boot"
@@ -60,10 +61,14 @@ cat "$inst/ollie.conf"
 ioptions="$(awk '$1 == "options" {$1 = ""; print substr($0, 2)}' "$inst/ollie.conf")"
 ioptions="${ioptions/ quiet/}"
 
-qemu-system-x86_64 -machine q35,accel=$accel -cpu $cpu -smp 2 -m 4096 -bios "$ovmf" \
+# On a different "computer" from the one it was installed on: an older PC
+# type, other graphics, and the drive plugged in over USB, the way it is
+# taken to a friend's computer.
+qemu-system-x86_64 -machine pc,accel=$accel -cpu $cpu -smp 2 -m 4096 -bios "$ovmf" \
     -kernel "$inst/vmlinuz-linux" -initrd "$inst/initramfs-linux.img" \
     -append "$ioptions console=tty0 console=ttyS0,115200" \
-    -drive "file=$disk,format=raw,if=virtio" -device virtio-vga -display none \
+    -device qemu-xhci -drive "file=$disk,format=raw,if=none,id=usbdisk" -device usb-storage,drive=usbdisk \
+    -vga std -display none \
     -serial file:"$out/installed.log" -nic user,model=virtio-net-pci &
 qemu=$!
 trap 'kill $qemu 2>/dev/null || true' EXIT
@@ -79,7 +84,7 @@ echo "-- what the installed system printed while starting (problems):"
 sed 's/\x1b\[[0-9;]*m//g' "$out/installed.log" | tr -d '\r' |
     grep -aiE 'sysroot|btrfs|mount|fail|error|emergency|root=|initrd|Reached target|sddm' | head -n 80
 case "$result" in
-PASS) echo "ok    the installed system started and reached the login screen" ;;
+PASS) echo "ok    the installed system started on another computer and reached the login screen" ;;
 FAIL) echo "FAIL  the installed system could not start (see above)"; ok=false ;;
 *) echo "FAIL  the installed system did not reach the login screen in 10 minutes"; ok=false ;;
 esac
