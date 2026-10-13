@@ -70,7 +70,7 @@ handed_over=false
 
 [[ $EUID -eq 0 && "${BASH_SOURCE[0]}" == /tmp/ollie-usb.* ]] && rm -f -- "${BASH_SOURCE[0]}"
 # The Zip edition (Ollie-OS-USB-Maker-Zip AppImage) takes Ollie OS only from
-# a zip: of the ISO, or of its two parts, with any names.
+# a zip: of the ISO, or of its parts (2, 4, ...), with any names.
 zip_only=false
 [[ "${OLLIE_USB_ZIP_ONLY:-}" == 1 ]] && zip_only=true
 if ! $handed_over; then
@@ -82,61 +82,79 @@ if ! $handed_over; then
 fi
 
 # --- 2. Find and check the ISO --------------------------------------------------------
-# The ISO can come whole, or in parts (a GitHub release file is at most 2 GB),
-# with any file names: give this app the ISO file, or the folder the parts
-# are in. The parts are recognised by what is inside them, not by their names.
-# The size of every part but the last (smaller sizes only for tests).
-readonly PART_BYTES=$((${OLLIE_USB_TEST_PART_MIB:-1900} * MIB))
-readonly MIN_PART_MIB=${OLLIE_USB_TEST_MIN_MIB:-100}
+# The ISO can come whole, or in any number of parts (2, 4, ...: a GitHub
+# release file is at most 2 GB, a chat upload much less), with any file
+# names: give this app the ISO file, the folder the parts are in, or a zip of
+# them. The first part is recognised by what is inside it: it starts like an
+# ISO and says how big the whole ISO is, and the other parts follow it in the
+# order of their names (part2, part3, ...).
+readonly MIN_PART_MIB=${OLLIE_USB_TEST_MIN_MIB:-20}
+# What the ISO is short of the whole file: the boot partition tables at the end.
+readonly ISO_TAIL_SLACK=$((16 * MIB))
 is_iso_start() { [[ "$(dd if="$1" bs=1 skip=32769 count=5 2>/dev/null)" == CD001 ]]; }
+# How big the whole ISO is, from its first part (its volume descriptor).
+iso_volume_bytes() { # iso_volume_bytes FILE
+    local blocks bs
+    blocks="$(od -An -tu4 -j $((32768 + 80)) -N4 -- "$1" 2>/dev/null | tr -d ' ')"
+    bs="$(od -An -tu2 -j $((32768 + 128)) -N2 -- "$1" 2>/dev/null | tr -d ' ')"
+    echo $((${blocks:-0} * ${bs:-0}))
+}
 is_zip() { [[ "$(head -c 4 -- "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')" == 504b0304 ]]; }
 size_of() { stat -c %s -- "$1"; }
 
 # Print the ISO found in DIR, joining its parts first. Returns 2 when there
 # is none; any other failure has already said what is wrong.
 iso_from_dir() { # iso_from_dir DIR
-    local dir="$1" f first="" out sum want got
-    local -a rest=() wholes=()
+    local dir="$1" f first="" out sum want got need total
+    local -a rest=() wholes=() used=()
     [[ -d "$dir" ]] || return 2
     while IFS= read -r -d '' f; do
         if is_zip "$f"; then
             wholes+=("$f") # looked inside below
         elif is_iso_start "$f"; then
-            if (($(size_of "$f") == PART_BYTES)); then first="$f"; else wholes+=("$f"); fi
-        elif (($(size_of "$f") <= PART_BYTES)); then
+            # Shorter than the ISO it describes: the first of its parts.
+            if (($(size_of "$f") < $(iso_volume_bytes "$f"))); then
+                [[ -z "$first" ]] && first="$f"
+            else
+                wholes+=("$f")
+            fi
+        else
             rest+=("$f")
         fi
     done < <(find "$dir" -maxdepth 1 -type f -size +"$MIN_PART_MIB"M ! -iname '*.appimage' ! -name '*.joining' -print0 2>/dev/null | sort -zV)
 
     if [[ -n "$first" ]]; then
-        ((${#rest[@]} > 0)) || die "found the first part of Ollie OS in $dir, but not the second. Download both parts into the same folder."
+        ((${#rest[@]} > 0)) || die "found the first part of Ollie OS in $dir, but not the others. Download all the parts into the same folder."
+        need="$(iso_volume_bytes "$first")"
         sum="$(find "$dir" -maxdepth 1 -type f -name '*.sha256' 2>/dev/null | head -n1)"
         want=""
         [[ -n "$sum" ]] && want="$(awk '{print $1; exit}' "$sum")"
-        if ((${#rest[@]} > 1)) && [[ -z "$want" ]]; then
-            die "the folder $dir has more than one big file besides the first part, so it is not clear which is the second. Put just the two parts in a folder of their own and try again."
-        fi
         out="$dir/ollie-os.iso"
         [[ -w "$dir" ]] || out="$HOME/Downloads/ollie-os.iso"
-        # Usually there is exactly one second part; with a checksum file next
-        # to the parts, other big files in the folder are tried and skipped.
+        # The other parts, in the order of their names, until the ISO is whole.
+        used=("$first")
+        total="$(size_of "$first")"
         for f in "${rest[@]}"; do
-            say "Joining the two parts of Ollie OS into $out" >&2
-            cat -- "$first" "$f" >"$out.joining" || { rm -f -- "$out.joining"; die "could not join the parts (is the drive full? it needs about 3 GB free)."; }
-            if [[ -n "$want" ]] && have sha256sum; then
-                say "Checking the joined file" >&2
-                got="$(sha256sum "$out.joining" | awk '{print $1}')"
-                if [[ "$got" != "$want" ]]; then
-                    rm -f -- "$out.joining"
-                    continue
-                fi
-            fi
-            mv -f -- "$out.joining" "$out"
-            rm -f -- "$first" "$f"
-            echo "$out"
-            return 0
+            ((total >= need)) && break
+            used+=("$f")
+            total=$((total + $(size_of "$f")))
         done
-        die "the parts in $dir do not fit together: one of them is incomplete or from a different build. Download both parts again."
+        ((total >= need)) || die "the parts of Ollie OS in $dir add up to $((total / MIB)) MB, but it is $((need / MIB)) MB: a part is missing or incomplete. Download all the parts into the same folder."
+        ((total <= need + ISO_TAIL_SLACK)) || die "the parts in $dir do not fit together (other big files in the folder?). Put just the parts in a folder of their own and try again."
+        say "Joining the ${#used[@]} parts of Ollie OS into $out" >&2
+        cat -- "${used[@]}" >"$out.joining" || { rm -f -- "$out.joining"; die "could not join the parts (is the drive full? it needs about 3 GB free)."; }
+        if [[ -n "$want" ]] && have sha256sum; then
+            say "Checking the joined file" >&2
+            got="$(sha256sum "$out.joining" | awk '{print $1}')"
+            if [[ "$got" != "$want" ]]; then
+                rm -f -- "$out.joining"
+                die "the parts in $dir do not fit together: one of them is incomplete or from a different build. Download the parts again."
+            fi
+        fi
+        mv -f -- "$out.joining" "$out"
+        rm -f -- "${used[@]}"
+        echo "$out"
+        return 0
     fi
 
     # A whole ISO, or a zip with Ollie OS in it: the newest one first.
@@ -166,15 +184,18 @@ iso_from_zip() { # iso_from_zip ZIP
     if have python3; then
         say "Looking inside $(basename -- "$zip")" >&2
         rc=0
-        python3 - "$zip" "$out" "$PART_BYTES" "$((MIN_PART_MIB * MIB))" <<'PY' || rc=$?
-import hashlib, os, sys, zipfile
-zpath, out, part, least = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+        python3 - "$zip" "$out" "$ISO_TAIL_SLACK" "$((MIN_PART_MIB * MIB))" <<'PY' || rc=$?
+import hashlib, os, re, struct, sys, zipfile
+zpath, out, slack, least = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+
+def natural(name):  # part2 before part10
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
 try:
     zf = zipfile.ZipFile(zpath)
 except Exception:
     sys.exit(2)
-first, wholes, rest, want = None, [], [], None
-for i in sorted(zf.infolist(), key=lambda i: i.filename):
+first, need, wholes, rest, want = None, 0, [], [], None
+for i in sorted(zf.infolist(), key=lambda i: natural(i.filename)):
     if i.is_dir():
         continue
     if i.filename.endswith(".sha256") and i.file_size < 4096:
@@ -184,22 +205,32 @@ for i in sorted(zf.infolist(), key=lambda i: i.filename):
         continue
     try:
         with zf.open(i) as f:
-            start = f.read(32774)[32769:]
+            head = f.read(32768 + 2048)
     except Exception:
         continue
-    if start == b"CD001":
-        if i.file_size == part:
-            first = i
+    if head[32769:32774] == b"CD001":
+        # Shorter than the ISO it describes: the first of its parts.
+        size = struct.unpack("<I", head[32768 + 80:32768 + 84])[0] * struct.unpack("<H", head[32768 + 128:32768 + 130])[0]
+        if i.file_size < size:
+            if first is None:
+                first, need = i, size
         else:
             wholes.append(i)
-    elif i.file_size <= part:
+    else:
         rest.append(i)
 if first is not None:
-    if not rest:
+    # The other parts, in the order of their names, until the ISO is whole.
+    members, total = [first], first.file_size
+    for r in rest:
+        if total >= need:
+            break
+        members.append(r)
+        total += r.file_size
+    if total < need:
         sys.exit(4)
-    if len(rest) > 1 and not want:
+    if total > need + slack:
         sys.exit(5)
-    tries = [[first, r] for r in rest]
+    tries = [members]
 elif wholes:
     tries = [[w] for w in wholes]
 else:
@@ -243,8 +274,8 @@ PY
         0) return 0 ;;
         2) return 2 ;;
         3) die "the Ollie OS in $(basename -- "$zip") does not match its checksum: the zip is incomplete or broken. Download or make it again." ;;
-        4) die "$(basename -- "$zip") has only the first part of Ollie OS. Put both parts in the zip." ;;
-        5) die "$(basename -- "$zip") has more than one big file besides the first part, so it is not clear which is the second. Put just the two parts in the zip." ;;
+        4) die "$(basename -- "$zip") does not have all the parts of Ollie OS. Put all of them (2, 4, ...) in the zip." ;;
+        5) die "the parts in $(basename -- "$zip") do not fit together (other big files in it?). Put just the parts of Ollie OS in the zip." ;;
         6) die "could not unpack $(basename -- "$zip") (is the drive full? it needs about 3 GB free)." ;;
         *) die "could not unpack $(basename -- "$zip"); it may be broken. Download or make it again." ;;
         esac
@@ -358,7 +389,7 @@ if [[ -z "$iso" ]]; then
     done < <(search_dirs)
 fi
 if [[ -z "$iso" ]]; then
-    echo "Could not find Ollie OS (the ISO, its two parts, or a zip of them) in Downloads or next to this app."
+    echo "Could not find Ollie OS (the ISO, its parts, or a zip of them) in Downloads or next to this app."
     pick_dir=""
     if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
         if have kdialog; then
