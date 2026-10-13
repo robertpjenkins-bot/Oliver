@@ -1,0 +1,208 @@
+#!/bin/bash
+# Ollie OS Updater: pick an Ollie OS ISO you already have, and it is brought
+# up to the newest Ollie OS, with the fixes that make an installed Ollie OS
+# start on any computer (Dells too). Everything happens on this computer: the
+# newest Ollie OS files are inside this app, so nothing big is downloaded.
+#
+# The result is a new ISO next to the old one (the old one is kept), with the
+# same ID, so its boot menus and USB Maker work as before. USB Maker picks the
+# newest ISO in the folder by itself.
+#
+# Rebuilding the system image keeps every file's owner exactly, which needs
+# the administrator password (on SteamOS set one with  passwd  in Konsole; on
+# Ollie OS none is needed). It needs about 12 GB of free space for a while.
+#
+#   ollie-update [ISO]
+set -uo pipefail
+
+readonly MIB=$((1024 * 1024)) GIB=$((1024 * 1024 * 1024))
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
+say() { printf '\n%s==>%s %s%s%s\n' "$teal$bold" "$reset" "$bold" "$*" "$reset"; }
+die() {
+    printf '\n%sError:%s %s\n\nPress Enter to close.' "$red$bold" "$reset" "$*" >&2
+    read -r _ || true
+    exit 1
+}
+have() { command -v "$1" >/dev/null 2>&1; }
+
+here="$(dirname "$(readlink -f "$0")")"
+# The newest Ollie OS files, and the tools to open and repack an ISO, inside the app.
+files="${OLLIE_UPDATE_FILES:-$here/../share/ollie-update/airootfs}"
+tools="${OLLIE_UPDATE_TOOLS:-$here/../lib/ollie-update/bin}"
+for t in xorriso unsquashfs mksquashfs; do
+    if [[ -x "$tools/$t" ]]; then
+        printf -v "T_$t" '%s' "$tools/$t"
+    elif have "$t"; then
+        printf -v "T_$t" '%s' "$(command -v "$t")"
+    else
+        printf -v "T_$t" '%s' ""
+    fi
+done
+
+# --- A terminal to talk in -------------------------------------------------------
+if [[ ! -t 0 && -z "${OLLIE_UPDATE_IN_TERMINAL:-}" ]]; then
+    export OLLIE_UPDATE_IN_TERMINAL=1
+    self="${APPIMAGE:-$(realpath -- "$0")}"
+    for term in konsole gnome-terminal kgx xfce4-terminal xterm; do
+        have "$term" || continue
+        case "$term" in
+        konsole) exec konsole --hold -e "$self" "$@" ;;
+        gnome-terminal | kgx) exec "$term" -- "$self" "$@" ;;
+        *) exec "$term" -hold -e "$self" "$@" ;;
+        esac
+    done
+    exit 1
+fi
+
+printf '\n%s  Ollie OS Updater%s  (makes your Ollie OS ISO the newest one, Dell-ready)\n' "$bold" "$reset"
+[[ -d "$files" ]] || die "this copy of the Updater has no Ollie OS files inside."
+[[ -n "$T_xorriso" && -n "$T_unsquashfs" && -n "$T_mksquashfs" ]] || die "this copy of the Updater is missing its ISO tools."
+
+# --- 1. Which ISO --------------------------------------------------------------------
+iso="${1:-}"
+if [[ -z "$iso" ]]; then
+    mapfile -t isos < <(find "$HOME/Downloads" "$HOME/Desktop" "$HOME" "$(dirname "${APPIMAGE:-$0}")" \
+        -maxdepth 3 -type f -iname 'ollie-os*.iso' -size +500M -printf '%T@ %p\n' 2>/dev/null |
+        sort -rn | cut -d' ' -f2- | awk '!seen[$0]++')
+    if ((${#isos[@]} == 0)); then
+        die "no Ollie OS ISO found in Downloads, on the Desktop or in your home folder. Download it first (Ollie OS Get ISO does that), then run this again."
+    elif ((${#isos[@]} == 1)); then
+        iso="${isos[0]}"
+    else
+        say "Which Ollie OS ISO? (newest first)"
+        echo
+        for i in "${!isos[@]}"; do
+            printf '  %d) %s  (%s MB, %s)\n' $((i + 1)) "${isos[i]}" "$(($(stat -c %s "${isos[i]}") / MIB))" \
+                "$(date -r "${isos[i]}" '+%d %b %H:%M')"
+        done
+        echo
+        read -rp "Which one? [1-${#isos[@]}] " pick || die "no answer."
+        [[ "$pick" =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#isos[@]})) || die "no such ISO."
+        iso="${isos[pick - 1]}"
+    fi
+fi
+[[ -f "$iso" ]] || die "no ISO file at $iso."
+iso="$(realpath -- "$iso")"
+say "ISO: $iso"
+
+# --- 2. What is new ------------------------------------------------------------------------
+work="$(mktemp -d "${TMPDIR:-/tmp}/ollie-update.XXXXXX")"
+trap 'rm -rf "$work" 2>/dev/null; sudo -n rm -rf "$work" 2>/dev/null' EXIT
+"$T_xorriso" -osirrox on -indev "$iso" -extract /arch/x86_64/airootfs.sfs "$work/old.sfs" >/dev/null 2>&1 ||
+    die "this is not an Ollie OS ISO, or it is incomplete (download it again)."
+changed=()
+while IFS= read -r -d '' f; do
+    rel="${f#"$files"/}"
+    if [[ -L "$f" ]]; then
+        # A link the ISO does not have yet.
+        "$T_unsquashfs" -lls "$work/old.sfs" "$rel" 2>/dev/null | grep -q -- "-> $(readlink "$f")\$" || changed+=("$rel")
+    elif ! cmp -s "$f" <("$T_unsquashfs" -cat "$work/old.sfs" "$rel" 2>/dev/null); then
+        changed+=("$rel")
+    fi
+done < <(find "$files" \( -type f -o -type l \) -print0 | sort -z)
+if ((${#changed[@]} == 0)); then
+    printf '\n  %sThis ISO is already the newest Ollie OS.%s It installs Ollie OS that starts on any computer, Dells too.\n\n' "$green$bold" "$reset"
+    exit 0
+fi
+echo
+echo "  Newer in this Updater (${#changed[@]} file(s)), including:"
+printf '%s\n' "${changed[@]}" | grep -q ollie-install &&
+    echo "    - the installer: an installed Ollie OS now starts on any computer (the Dell fix)"
+printf '%s\n' "${changed[@]}" | sed -n 's|^usr/local/bin/|    - |p' | grep -v ollie-install | head -n 8
+echo
+read -rp "Make an updated ISO next to this one? (the old one is kept) [Y/n] " a || a=n
+[[ "$a" != [nN]* ]] || { echo "Nothing changed."; exit 0; }
+
+# --- 3. Room and the password ------------------------------------------------------------
+need=$((10 * GIB))
+best="" best_free=0
+for d in "${TMPDIR:-/tmp}" /var/tmp "$HOME" "$(dirname "$iso")"; do
+    [[ -d "$d" && -w "$d" ]] || continue
+    f="$(df --output=avail -B1 "$d" 2>/dev/null | tail -n1 | tr -d ' ')"
+    ((f > best_free)) && { best="$d"; best_free="$f"; }
+done
+((best_free > need)) || die "not enough free space: updating needs about 10 GB for a while, the most free anywhere here is $((best_free / GIB)) GB. Free some space (or run this on Ollie OS from a USB Maker drive) and try again."
+if [[ "$best" != "${TMPDIR:-/tmp}" ]]; then
+    rm -rf "$work"
+    work="$(mktemp -d "$best/ollie-update.XXXXXX")"
+    "$T_xorriso" -osirrox on -indev "$iso" -extract /arch/x86_64/airootfs.sfs "$work/old.sfs" >/dev/null 2>&1 || die "could not read the ISO."
+fi
+out_free="$(df --output=avail -B1 "$(dirname "$iso")" | tail -n1 | tr -d ' ')"
+iso_bytes="$(stat -c %s "$iso")"
+((out_free > iso_bytes + 2 * GIB)) || die "not enough room next to the ISO for the updated one (it needs about $(((iso_bytes + 2 * GIB) / GIB)) GB)."
+
+if [[ $EUID -ne 0 ]]; then
+    echo
+    echo "Rebuilding the system image keeps every file's owner, which needs the administrator password."
+    echo "(On SteamOS, if you never set one: open Konsole, type  passwd  and press Enter.)"
+    sudo -v || die "that password did not work."
+fi
+asroot() { if [[ $EUID -eq 0 ]]; then "$@"; else sudo "$@"; fi; }
+# The administrator cannot see inside a running AppImage: work from copies.
+cp -a "$tools/.." "$work/toolkit" && cp -a "$files" "$work/files" || die "could not copy the Updater's tools (is the disk full?)."
+tools="$work/toolkit/bin" files="$work/files"
+T_xorriso="$tools/xorriso" T_unsquashfs="$tools/unsquashfs" T_mksquashfs="$tools/mksquashfs"
+[[ -x "$T_xorriso" ]] || T_xorriso="$(command -v xorriso)"
+[[ -x "$T_unsquashfs" ]] || T_unsquashfs="$(command -v unsquashfs)"
+[[ -x "$T_mksquashfs" ]] || T_mksquashfs="$(command -v mksquashfs)"
+
+# --- 4. Rebuild ---------------------------------------------------------------------------
+say "Opening the system image (a few minutes)"
+asroot "$T_unsquashfs" -no-progress -d "$work/root" "$work/old.sfs" >/dev/null || die "could not open the system image."
+rm -f "$work/old.sfs" 2>/dev/null || asroot rm -f "$work/old.sfs"
+
+say "Adding the newest Ollie OS files"
+for rel in "${changed[@]}"; do
+    if [[ -L "$files/$rel" ]]; then
+        asroot mkdir -p "$(dirname "$work/root/$rel")"
+        asroot ln -sfn "$(readlink "$files/$rel")" "$work/root/$rel"
+    else
+        mode=0644
+        [[ "$rel" == usr/local/bin/* ]] && mode=0755
+        asroot install -D -o 0 -g 0 -m "$mode" "$files/$rel" "$work/root/$rel"
+    fi
+    echo "  $rel"
+done
+
+say "Sealing the system image (10 to 30 minutes, depending on the computer)"
+asroot "$T_mksquashfs" "$work/root" "$work/airootfs.sfs" -noappend -comp xz -Xbcj x86 -b 1M -Xdict-size 1M >/dev/null ||
+    die "could not seal the system image (is the disk full?)."
+asroot rm -rf "$work/root"
+asroot chown "$(id -u):$(id -g)" "$work/airootfs.sfs"
+(cd "$work" && sha512sum airootfs.sfs >airootfs.sha512)
+
+say "Writing the updated ISO"
+uuid="$(blkid -o value -s UUID "$iso" 2>/dev/null)"
+label="$(blkid -o value -s LABEL "$iso" 2>/dev/null)"
+[[ -n "$uuid" && -n "$label" ]] || die "could not read the ISO's ID (blkid is missing?)."
+base="$(basename -- "$iso" .iso)"
+base="${base%-updated}"
+out="$(dirname "$iso")/$base-updated.iso"
+rm -f -- "$out.writing"
+"$T_xorriso" -indev "$iso" -outdev "$out.writing" -boot_image any replay \
+    -volid "$label" -volume_date uuid "${uuid//-/}" \
+    -update "$work/airootfs.sfs" /arch/x86_64/airootfs.sfs \
+    -update "$work/airootfs.sha512" /arch/x86_64/airootfs.sha512 >/dev/null 2>&1 ||
+    { rm -f -- "$out.writing"; die "could not write the updated ISO."; }
+[[ "$(blkid -o value -s UUID "$out.writing")" == "$uuid" ]] ||
+    { rm -f -- "$out.writing"; die "the updated ISO came out wrong; nothing was changed."; }
+mv -f -- "$out.writing" "$out"
+sha256sum "$out" | sed 's|  .*/|  |' >"$out.sha256"
+
+printf '\n  %sDone:%s %s\n' "$green$bold" "$reset" "$out"
+echo "  It is the newest Ollie OS: an installed Ollie OS starts on any computer, Dells too."
+echo "  Your old ISO is still there: $iso"
+
+# --- 5. Straight on to USB Maker -----------------------------------------------------------
+maker="$(find "$(dirname "$iso")" "$HOME/Downloads" -maxdepth 2 -type f -iname 'Ollie-OS-USB-Maker*.AppImage' ! -iname '*Zip*' 2>/dev/null | head -n1)"
+if [[ -n "${OLLIE_USB_MAKER:-}" && -x "$OLLIE_USB_MAKER" ]]; then maker="$OLLIE_USB_MAKER"; fi
+if [[ -n "$maker" ]]; then
+    echo
+    read -rp "Put it on a drive now with USB Maker? [Y/n] " a || a=n
+    if [[ "$a" != [nN]* ]]; then
+        chmod +x -- "$maker" 2>/dev/null || true
+        export OLLIE_USB_IN_TERMINAL=1
+        exec "$maker" "$out"
+    fi
+fi
+echo

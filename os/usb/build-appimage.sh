@@ -5,6 +5,7 @@
 #   Ollie-OS-Drive-Doctor-x86_64.AppImage   checks an Ollie OS drive and fixes it
 #   Ollie-OS-Get-ISO-x86_64.AppImage        downloads the ISO next to USB Maker
 #   Ollie-OS-Installer-x86_64.AppImage      downloads the ISO, then USB Maker
+#   Ollie-OS-Updater-x86_64.AppImage        brings an ISO up to the newest Ollie OS
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -109,3 +110,43 @@ APPRUN
     rm -rf "$appdir"
 }
 build_installer
+
+# The Updater carries the Ollie OS files changed since the ISO on the release
+# was built (UPDATE_BASE), and xorriso and squashfs-tools with the libraries
+# they need beyond the C library, taken from this (build) computer.
+build_updater() {
+    local appdir="$out/OllieUpdater.AppDir" kit rel b lib base="${UPDATE_BASE:-dc16a2a}"
+    rm -rf "$appdir"
+    kit="$appdir/usr/lib/ollie-update"
+    install -d "$kit/bin" "$kit/libexec" "$kit/lib"
+    for b in xorriso unsquashfs mksquashfs; do
+        install -m 0755 "$(command -v "$b")" "$kit/libexec/$b"
+        ldd "$(command -v "$b")" | awk '$3 ~ /^\// {print $3}' | while read -r lib; do
+            case "$(basename "$lib")" in libc.so* | libm.so* | ld-linux* | libpthread* | libdl.so* | librt.so*) continue ;; esac
+            cp -nL "$lib" "$kit/lib/"
+        done
+        printf '#!/bin/sh\nd="$(dirname "$(readlink -f "$0")")"\nLD_LIBRARY_PATH="$d/../lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" exec "$d/../libexec/%s" "$@"\n' "$b" >"$kit/bin/$b"
+        chmod 0755 "$kit/bin/$b"
+    done
+    (cd "$os/.." && git diff --name-only "$base" HEAD -- os/profile/airootfs) | while read -r rel; do
+        rel="${rel#os/profile/airootfs/}"
+        [[ -e "$os/profile/airootfs/$rel" || -L "$os/profile/airootfs/$rel" ]] || continue
+        mkdir -p "$(dirname "$appdir/usr/share/ollie-update/airootfs/$rel")"
+        cp -a "$os/profile/airootfs/$rel" "$appdir/usr/share/ollie-update/airootfs/$rel"
+    done
+    install -D -m 0755 "$here/ollie-update" "$appdir/usr/bin/ollie-update"
+    install -D -m 0755 "$here/ollie-usb" "$appdir/usr/bin/ollie-usb"
+    cat >"$appdir/AppRun" <<'APPRUN'
+#!/bin/sh
+# AppImage entry point: update the ISO, then hand over to USB Maker.
+HERE="$(dirname "$(readlink -f "$0")")"
+export OLLIE_USB_MAKER="$HERE/usr/bin/ollie-usb"
+exec "$HERE/usr/bin/ollie-update" "$@"
+APPRUN
+    chmod 0755 "$appdir/AppRun"
+    install -m 0644 "$here/ollie-update.desktop" "$appdir/ollie-update.desktop"
+    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
+    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Updater-x86_64.AppImage"
+    rm -rf "$appdir"
+}
+build_updater

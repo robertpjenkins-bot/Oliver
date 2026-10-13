@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS Updater
+Comment=Make an Ollie OS ISO the newest one, ready for any computer
+Exec=ollie-update
+Icon=ollie-os
+Terminal=false
+Categories=System;
