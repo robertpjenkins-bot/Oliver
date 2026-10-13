@@ -4,6 +4,7 @@
 #   Ollie-OS-USB-Maker-Zip-x86_64.AppImage  the Zip edition: takes only a zip
 #   Ollie-OS-Drive-Doctor-x86_64.AppImage   checks an Ollie OS drive and fixes it
 #   Ollie-OS-Get-ISO-x86_64.AppImage        downloads the ISO next to USB Maker
+#   Ollie-OS-Installer-x86_64.AppImage      downloads the ISO, then USB Maker
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -87,3 +88,24 @@ APPRUN
     rm -rf "$appdir"
 }
 build_get_iso
+
+# Get ISO and USB Maker in one: download, then straight on to choosing the drive.
+build_installer() {
+    local appdir="$out/OllieInstaller.AppDir"
+    rm -rf "$appdir"
+    install -D -m 0755 "$here/ollie-get-iso" "$appdir/usr/bin/ollie-get-iso"
+    install -D -m 0755 "$here/ollie-usb" "$appdir/usr/bin/ollie-usb"
+    cat >"$appdir/AppRun" <<'APPRUN'
+#!/bin/sh
+# AppImage entry point: download Ollie OS, then hand over to USB Maker.
+HERE="$(dirname "$(readlink -f "$0")")"
+export OLLIE_USB_MAKER="$HERE/usr/bin/ollie-usb"
+exec "$HERE/usr/bin/ollie-get-iso" "$@"
+APPRUN
+    chmod 0755 "$appdir/AppRun"
+    install -m 0644 "$here/ollie-installer.desktop" "$appdir/ollie-installer.desktop"
+    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
+    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Installer-x86_64.AppImage"
+    rm -rf "$appdir"
+}
+build_installer

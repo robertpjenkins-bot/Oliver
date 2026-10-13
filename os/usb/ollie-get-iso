@@ -8,6 +8,10 @@
 # time in ~/.config/ollie-os/github-token, readable only by you.
 #
 #   ollie-get-iso [FOLDER]
+#
+# In the Ollie OS Installer AppImage, OLLIE_USB_MAKER names the USB Maker
+# carried inside it: the ISO then goes in Downloads and USB Maker starts
+# straight away, at choosing the drive.
 set -uo pipefail
 
 readonly REPO="${OLLIE_REPO:-robertpjenkins-bot/Oliver}"
@@ -44,7 +48,11 @@ if [[ ! -t 0 && -z "${OLLIE_GET_IN_TERMINAL:-}" ]]; then
     exit 1
 fi
 
-printf '\n%s  Ollie OS Get ISO%s  (downloads Ollie OS for USB Maker)\n' "$bold" "$reset"
+if [[ -n "${OLLIE_USB_MAKER:-}" ]]; then
+    printf '\n%s  Ollie OS Installer%s  (downloads Ollie OS, then puts it on a drive)\n' "$bold" "$reset"
+else
+    printf '\n%s  Ollie OS Get ISO%s  (downloads Ollie OS for USB Maker)\n' "$bold" "$reset"
+fi
 have curl || die "curl is missing on this computer."
 have python3 || die "python3 is missing on this computer."
 
@@ -63,6 +71,8 @@ except Exception:
 
 # --- 1. Where to put it: next to USB Maker ------------------------------------------
 dest="${1:-}"
+bundled_maker="${OLLIE_USB_MAKER:-}"
+[[ -n "$bundled_maker" && -z "$dest" ]] && dest="$HOME/Downloads"
 if [[ -z "$dest" ]]; then
     maker="$(find "$HOME/Downloads" "$HOME/Desktop" "$HOME" "$(dirname "${APPIMAGE:-$0}")" \
         -maxdepth 3 -type f -iname 'Ollie-OS-USB-Maker*.AppImage' -printf '%T@ %p\n' 2>/dev/null |
@@ -172,13 +182,17 @@ if [[ -z "${done_iso:-}" ]]; then
 fi
 
 # --- 4. Straight on to USB Maker -----------------------------------------------------
+export OLLIE_USB_IN_TERMINAL=1
+if [[ -n "$bundled_maker" && -x "$bundled_maker" ]]; then
+    say "Choosing the drive to put Ollie OS on"
+    exec "$bundled_maker" "$out"
+fi
 maker="$(find "$dest" -maxdepth 1 -type f -iname 'Ollie-OS-USB-Maker*.AppImage' ! -iname '*Zip*' | head -n1)"
 if [[ -n "$maker" ]]; then
     echo
     read -rp "Start USB Maker now to put Ollie OS on a drive? [Y/n] " a || a=n
     if [[ "$a" != [nN]* ]]; then
         chmod +x -- "$maker" 2>/dev/null || true
-        export OLLIE_USB_IN_TERMINAL=1
         exec "$maker" "$out"
     fi
 fi
