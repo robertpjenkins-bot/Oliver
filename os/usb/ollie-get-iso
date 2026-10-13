@@ -111,8 +111,27 @@ if [[ -z "$release" ]]; then
     echo "  2. Sign in to GitHub and type this code:  ${bold}${green}$user_code${reset}"
     echo "  3. Press Authorize. This window carries on by itself."
     echo
-    have kdialog && kdialog --title "Ollie OS Get ISO" --passivepopup \
-        "Open github.com/login/device and type: $user_code" 60 >/dev/null 2>&1 &
+    # Copy the code and open the page, so it is only paste and Authorize.
+    copied=false
+    if have qdbus && qdbus org.kde.klipper /klipper setClipboardContents "$user_code" >/dev/null 2>&1; then
+        copied=true
+    elif have qdbus6 && qdbus6 org.kde.klipper /klipper setClipboardContents "$user_code" >/dev/null 2>&1; then
+        copied=true
+    elif have wl-copy && printf '%s' "$user_code" | wl-copy 2>/dev/null; then
+        copied=true
+    elif have xclip && printf '%s' "$user_code" | xclip -selection clipboard 2>/dev/null; then
+        copied=true
+    fi
+    if $copied; then
+        echo "  The code is copied: in the page that opens, paste it (Ctrl+V) and press Continue, then Authorize."
+    fi
+    if have xdg-open; then
+        xdg-open "https://github.com/login/device" >/dev/null 2>&1 &
+        echo "  Opening github.com/login/device in your browser..."
+    fi
+    echo
+    have kdialog && kdialog --title "Ollie OS" --passivepopup \
+        "GitHub sign-in code: $user_code$($copied && echo ' (copied, just paste it)')" 120 >/dev/null 2>&1 &
     token=""
     for ((i = 0; i < 180; i++)); do
         sleep "${interval:-5}"
