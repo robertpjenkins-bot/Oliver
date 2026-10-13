@@ -20,11 +20,20 @@ truncate -s 30G "$disk"
 
 accel=tcg cpu=max
 if [[ -w /dev/kvm ]]; then accel=kvm cpu=host; fi
-ovmf=""
-for f in /usr/share/ovmf/OVMF.fd /usr/share/OVMF/OVMF_CODE.fd /usr/share/qemu/OVMF.fd; do
-    [[ -f "$f" ]] && { ovmf="$f"; break; }
+# UEFI firmware: one file (-bios), or code and settings files (pflash).
+fw=()
+for f in /usr/share/ovmf/OVMF.fd /usr/share/qemu/OVMF.fd; do
+    [[ -f "$f" ]] && { fw=(-bios "$f"); break; }
 done
-[[ -n "$ovmf" ]] || { echo "no OVMF (UEFI firmware) found"; exit 1; }
+if ((${#fw[@]} == 0)); then
+    for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd; do
+        [[ -f "$f" ]] || continue
+        cp "${f/CODE/VARS}" "$out/vars.fd"
+        fw=(-drive "if=pflash,format=raw,readonly=on,file=$f" -drive "if=pflash,format=raw,file=$out/vars.fd")
+        break
+    done
+fi
+((${#fw[@]} > 0)) || { echo "no OVMF (UEFI firmware) found"; exit 1; }
 
 boot="$out/bootfiles"
 rm -rf "$boot"
@@ -37,7 +46,7 @@ options="$(awk '$1 == "options" {$1 = ""; print substr($0, 2)}' "$(ls "$boot"/en
 
 ok=true
 echo "== 1. Installing onto the empty disk"
-timeout 2400 qemu-system-x86_64 -machine q35,accel=$accel -cpu $cpu -smp 2 -m 4096 -bios "$ovmf" \
+timeout "${INSTALL_TIMEOUT:-2400}" qemu-system-x86_64 -machine q35,accel=$accel -cpu $cpu -smp 2 -m 4096 "${fw[@]}" \
     -kernel "$boot/vmlinuz-linux" -initrd "$boot/initramfs-linux.img" \
     -append "$options console=tty0 console=ttyS0,115200 ollie.selftest=install" \
     -cdrom "$iso" -drive "file=$disk,format=raw,if=virtio" -device virtio-vga -display none \
@@ -64,7 +73,7 @@ ioptions="${ioptions/ quiet/}"
 # On a different "computer" from the one it was installed on: an older PC
 # type, other graphics, and the drive plugged in over USB, the way it is
 # taken to a friend's computer.
-qemu-system-x86_64 -machine pc,accel=$accel -cpu $cpu -smp 2 -m 4096 -bios "$ovmf" \
+qemu-system-x86_64 -machine pc,accel=$accel -cpu $cpu -smp 2 -m 4096 "${fw[@]}" \
     -kernel "$inst/vmlinuz-linux" -initrd "$inst/initramfs-linux.img" \
     -append "$ioptions console=tty0 console=ttyS0,115200" \
     -device qemu-xhci -drive "file=$disk,format=raw,if=none,id=usbdisk" -device usb-storage,drive=usbdisk \
@@ -74,7 +83,7 @@ qemu=$!
 trap 'kill $qemu 2>/dev/null || true' EXIT
 
 result=""
-for ((t = 0; t < 600; t += 10)); do
+for ((t = 0; t < ${BOOT_TIMEOUT:-600}; t += 10)); do
     sleep 10
     if grep -aqE 'Failed to mount .*sysroot|emergency mode|Cannot open access to console' "$out/installed.log"; then result=FAIL; sleep 5; break; fi
     if grep -aqE 'Started .*Simple Desktop Display Manager|Reached target .*Graphical' "$out/installed.log"; then result=PASS; break; fi
