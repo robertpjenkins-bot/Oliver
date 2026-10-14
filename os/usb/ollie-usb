@@ -21,7 +21,10 @@
 set -euo pipefail
 
 readonly BOOT_SIZE_GIB=5
-readonly DATA_SIZE_GIB=20
+# Ollie OS's own space (apps, games, files): 20 GB unless chosen otherwise on a
+# bigger drive; everything after it is the shared part.
+readonly DATA_SIZE_GIB=20 DATA_MIN_GIB=8
+data_gib="${OLLIE_USB_DATA_GIB:-$DATA_SIZE_GIB}"
 readonly MIN_SHARE_MIB=256
 readonly FAT32_MAX_FILE=$((4 * 1024 * 1024 * 1024 - 1))
 readonly MIB=$((1024 * 1024))
@@ -474,6 +477,35 @@ dev_bytes="$(lsblk -bdno SIZE "$dev")"
 ((dev_bytes >= need_bytes)) || die "$dev is smaller than 25 GB."
 share_mib=$((dev_bytes / MIB - (BOOT_SIZE_GIB + DATA_SIZE_GIB) * 1024 - 8))
 
+# --- 3b. On a bigger drive: how much for Ollie OS, how much shared --------------------
+# The shared part opens on Windows, macOS and SteamOS; Ollie OS's own part holds
+# what you install and save in Ollie OS.
+if ! $handed_over && ((share_mib >= 8 * 1024)); then
+    rest_gib=$(((dev_bytes / MIB - BOOT_SIZE_GIB * 1024 - 8) / 1024))
+    echo
+    say "How should the space on this drive be split?"
+    echo
+    printf '  1) Ollie OS %2d GB, shared %3d GB   (the usual)\n' "$DATA_SIZE_GIB" $((rest_gib - DATA_SIZE_GIB))
+    printf '  2) Ollie OS %2d GB, shared %3d GB   (most for Windows / Mac files)\n' "$DATA_MIN_GIB" $((rest_gib - DATA_MIN_GIB))
+    ((rest_gib - 40 >= 1)) &&
+        printf '  3) Ollie OS %2d GB, shared %3d GB   (more for games and apps)\n' 40 $((rest_gib - 40))
+    echo "  Or type a number of GB for Ollie OS ($DATA_MIN_GIB to $((rest_gib - 1)))."
+    echo
+    ask answer "Which? [1]"
+    case "${answer:-1}" in
+    1) data_gib=$DATA_SIZE_GIB ;;
+    2) data_gib=$DATA_MIN_GIB ;;
+    3) ((rest_gib - 40 >= 1)) && data_gib=40 || die "no such choice." ;;
+    *)
+        [[ "$answer" =~ ^[0-9]+$ ]] && ((answer >= DATA_MIN_GIB && answer < rest_gib)) ||
+            die "type 1, 2, 3, or a number of GB from $DATA_MIN_GIB to $((rest_gib - 1))."
+        data_gib=$answer
+        ;;
+    esac
+    echo "  Ollie OS gets $data_gib GB, the shared part about $((rest_gib - data_gib)) GB."
+fi
+share_mib=$((dev_bytes / MIB - (BOOT_SIZE_GIB + data_gib) * 1024 - 8))
+
 # --- 4. The shared space: exFAT when this computer can make it, else FAT32 ----------------
 if ! $handed_over; then
     share_fs=none
@@ -701,15 +733,15 @@ install_with_udisks() {
     say "Formatting"
     boot_part="$(ud_partition $((1 * MIB)) $((BOOT_SIZE_GIB * GIB)) \
         c12a7328-f81f-11d2-ba4b-00a0c93ec93b OLLIE_BOOT vfat OLLIE_BOOT)" || return 1
-    ud_partition $((1 * MIB + BOOT_SIZE_GIB * GIB)) $((DATA_SIZE_GIB * GIB)) \
+    ud_partition $((1 * MIB + BOOT_SIZE_GIB * GIB)) $((data_gib * GIB)) \
         0fc63daf-8483-4772-8e79-3d69d8477de4 OLLIE_DATA ext4 OLLIE_DATA >/dev/null || return 1
     if [[ "$share_fs" != none ]]; then
         # Everything after the first two, short of the backup GPT at the end.
         end=$(((dev_bytes - 2 * MIB) / MIB * MIB))
         share_type=exfat
         [[ "$share_fs" == fat32 ]] && share_type=vfat
-        ud_partition $((1 * MIB + (BOOT_SIZE_GIB + DATA_SIZE_GIB) * GIB)) \
-            $((end - 1 * MIB - (BOOT_SIZE_GIB + DATA_SIZE_GIB) * GIB)) \
+        ud_partition $((1 * MIB + (BOOT_SIZE_GIB + data_gib) * GIB)) \
+            $((end - 1 * MIB - (BOOT_SIZE_GIB + data_gib) * GIB)) \
             ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 OLLIE_SHARE "$share_type" OLLIE_SHARE >/dev/null ||
             echo "(Could not create the shared part; Ollie OS itself is unaffected.)"
     fi
@@ -845,7 +877,7 @@ install_as_root() {
     {
         echo "label: gpt"
         echo "size=${BOOT_SIZE_GIB}GiB, type=uefi, name=OLLIE_BOOT"
-        echo "size=${DATA_SIZE_GIB}GiB, type=linux, name=OLLIE_DATA"
+        echo "size=${data_gib}GiB, type=linux, name=OLLIE_DATA"
         # Microsoft basic data, so Windows and macOS mount it.
         [[ "$share_fs" != none ]] && echo "type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, name=OLLIE_SHARE"
     } | sfdisk --quiet --wipe always --wipe-partitions always "$dev"
@@ -956,7 +988,7 @@ ask answer "Or type P to use an administrator password now (Enter quits):"
 copy="$(mktemp /tmp/ollie-usb.XXXXXX)"
 cat -- "${BASH_SOURCE[0]}" >"$copy"
 chmod 755 "$copy"
-handover=(OLLIE_USB_IN_TERMINAL=1 "OLLIE_USB_DEV=$dev" "OLLIE_USB_SHARE_FS=$share_fs")
+handover=(OLLIE_USB_IN_TERMINAL=1 "OLLIE_USB_DEV=$dev" "OLLIE_USB_SHARE_FS=$share_fs" "OLLIE_USB_DATA_GIB=$data_gib")
 if have sudo; then
     sudo -v || die "that password did not work. On SteamOS, set one with  passwd  in Konsole."
     exec sudo "${handover[@]}" bash "$copy" "$iso"
