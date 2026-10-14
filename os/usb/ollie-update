@@ -110,8 +110,12 @@ printf '%s\n' "${changed[@]}" | grep -q ollie-install &&
     echo "    - the installer: an installed Ollie OS now starts on any computer (the Dell fix)"
 printf '%s\n' "${changed[@]}" | sed -n 's|^usr/local/bin/|    - |p' | grep -v ollie-install | head -n 8
 echo
-read -rp "Make an updated ISO next to this one? (the old one is kept) [Y/n] " a || a=n
-[[ "$a" != [nN]* ]] || { echo "Nothing changed."; exit 0; }
+# OLLIE_UPDATE_YES=1: started by Get ISO / Installer, which carry on afterwards.
+auto="${OLLIE_UPDATE_YES:-}"
+if [[ -z "$auto" ]]; then
+    read -rp "Make an updated ISO next to this one? (the old one is kept) [Y/n] " a || a=n
+    [[ "$a" != [nN]* ]] || { echo "Nothing changed."; exit 0; }
+fi
 
 # --- 3. Room ------------------------------------------------------------------------------
 # The old and new system images and the new ISO: about 6 GB, for a while.
@@ -220,6 +224,7 @@ echo "  It is the newest Ollie OS: an installed Ollie OS starts on any computer,
 echo "  Your old ISO is still there: $iso"
 
 # --- 5. Straight on to USB Maker -----------------------------------------------------------
+[[ -n "$auto" ]] && exit 0
 maker="$(find "$(dirname "$iso")" "$HOME/Downloads" -maxdepth 2 -type f -iname 'Ollie-OS-USB-Maker*.AppImage' ! -iname '*Zip*' 2>/dev/null | head -n1)"
 if [[ -n "${OLLIE_USB_MAKER:-}" && -x "$OLLIE_USB_MAKER" ]]; then maker="$OLLIE_USB_MAKER"; fi
 if [[ -n "$maker" ]]; then

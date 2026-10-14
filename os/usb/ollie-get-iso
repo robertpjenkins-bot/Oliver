@@ -200,6 +200,23 @@ if [[ -z "${done_iso:-}" ]]; then
     printf '\n  %sDone:%s %s\n' "$green$bold" "$reset" "$out"
 fi
 
+# --- 3b. Make it the newest Ollie OS -------------------------------------------------------
+# With the Updater inside (Get ISO and Installer AppImages): the ISO on the
+# release becomes the newest Ollie OS right away, the Dell fix included.
+if [[ -n "${OLLIE_UPDATER:-}" && -x "$OLLIE_UPDATER" && -s "${out%.iso}-updated.iso" &&
+    "${out%.iso}-updated.iso" -nt "$out" ]]; then
+    out="${out%.iso}-updated.iso"
+    printf '\n  %sThe newest Ollie OS is already made:%s %s\n' "$green$bold" "$reset" "$out"
+elif [[ -n "${OLLIE_UPDATER:-}" && -x "$OLLIE_UPDATER" ]]; then
+    say "Making it the newest Ollie OS"
+    OLLIE_UPDATE_YES=1 OLLIE_UPDATE_IN_TERMINAL=1 "$OLLIE_UPDATER" "$out" ||
+        die "could not update the ISO (see above). The ISO from GitHub is still in $dest."
+    if [[ -f "${out%.iso}-updated.iso" ]]; then
+        out="${out%.iso}-updated.iso"
+        printf '\n  %sThe newest Ollie OS is:%s %s\n' "$green$bold" "$reset" "$out"
+    fi
+fi
+
 # --- 4. Straight on to USB Maker -----------------------------------------------------
 export OLLIE_USB_IN_TERMINAL=1
 if [[ -n "$bundled_maker" && -x "$bundled_maker" ]]; then
