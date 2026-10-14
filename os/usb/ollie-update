@@ -8,9 +8,9 @@
 # same ID, so its boot menus and USB Maker work as before. USB Maker picks the
 # newest ISO in the folder by itself.
 #
-# Rebuilding the system image keeps every file's owner exactly, which needs
-# the administrator password (on SteamOS set one with  passwd  in Konsole; on
-# Ollie OS none is needed). It needs about 12 GB of free space for a while.
+# No administrator password is needed: the system image is rebuilt from a
+# stream of the old one, keeping every file's owner and permissions. It needs
+# about 4 GB of free space for a while.
 #
 #   ollie-update [ISO]
 set -uo pipefail
@@ -87,7 +87,7 @@ say "ISO: $iso"
 
 # --- 2. What is new ------------------------------------------------------------------------
 work="$(mktemp -d "${TMPDIR:-/tmp}/ollie-update.XXXXXX")"
-trap 'rm -rf "$work" 2>/dev/null; sudo -n rm -rf "$work" 2>/dev/null' EXIT
+trap 'rm -rf "$work" 2>/dev/null' EXIT
 "$T_xorriso" -osirrox on -indev "$iso" -extract /arch/x86_64/airootfs.sfs "$work/old.sfs" >/dev/null 2>&1 ||
     die "this is not an Ollie OS ISO, or it is incomplete (download it again)."
 changed=()
@@ -113,62 +113,88 @@ echo
 read -rp "Make an updated ISO next to this one? (the old one is kept) [Y/n] " a || a=n
 [[ "$a" != [nN]* ]] || { echo "Nothing changed."; exit 0; }
 
-# --- 3. Room and the password ------------------------------------------------------------
-need=$((10 * GIB))
+# --- 3. Room ------------------------------------------------------------------------------
+# The old and new system images and the new ISO: about 6 GB, for a while.
+need=$((4 * GIB))
 best="" best_free=0
 for d in "${TMPDIR:-/tmp}" /var/tmp "$HOME" "$(dirname "$iso")"; do
     [[ -d "$d" && -w "$d" ]] || continue
     f="$(df --output=avail -B1 "$d" 2>/dev/null | tail -n1 | tr -d ' ')"
     ((f > best_free)) && { best="$d"; best_free="$f"; }
 done
-((best_free > need)) || die "not enough free space: updating needs about 10 GB for a while, the most free anywhere here is $((best_free / GIB)) GB. Free some space (or run this on Ollie OS from a USB Maker drive) and try again."
-if [[ "$best" != "${TMPDIR:-/tmp}" ]]; then
+((best_free > need)) || die "not enough free space: updating needs about 4 GB for a while, the most free anywhere here is $((best_free / GIB)) GB. Free some space and try again."
+if [[ "$best" != "$(dirname "$work")" ]]; then
     rm -rf "$work"
     work="$(mktemp -d "$best/ollie-update.XXXXXX")"
     "$T_xorriso" -osirrox on -indev "$iso" -extract /arch/x86_64/airootfs.sfs "$work/old.sfs" >/dev/null 2>&1 || die "could not read the ISO."
 fi
 out_free="$(df --output=avail -B1 "$(dirname "$iso")" | tail -n1 | tr -d ' ')"
 iso_bytes="$(stat -c %s "$iso")"
-((out_free > iso_bytes + 2 * GIB)) || die "not enough room next to the ISO for the updated one (it needs about $(((iso_bytes + 2 * GIB) / GIB)) GB)."
+((out_free > iso_bytes + 256 * MIB)) || die "not enough room next to the ISO for the updated one (it needs about $(((iso_bytes + 256 * MIB) / GIB + 1)) GB)."
+cp -a "$files" "$work/files" || die "could not copy the new Ollie OS files (is the disk full?)."
+files="$work/files"
 
-if [[ $EUID -ne 0 ]]; then
-    echo
-    echo "Rebuilding the system image keeps every file's owner, which needs the administrator password."
-    echo "(On SteamOS, if you never set one: open Konsole, type  passwd  and press Enter.)"
-    sudo -v || die "that password did not work."
-fi
-asroot() { if [[ $EUID -eq 0 ]]; then "$@"; else sudo "$@"; fi; }
-# The administrator cannot see inside a running AppImage: work from copies.
-cp -a "$tools/.." "$work/toolkit" && cp -a "$files" "$work/files" || die "could not copy the Updater's tools (is the disk full?)."
-tools="$work/toolkit/bin" files="$work/files"
-T_xorriso="$tools/xorriso" T_unsquashfs="$tools/unsquashfs" T_mksquashfs="$tools/mksquashfs"
-[[ -x "$T_xorriso" ]] || T_xorriso="$(command -v xorriso)"
-[[ -x "$T_unsquashfs" ]] || T_unsquashfs="$(command -v unsquashfs)"
-[[ -x "$T_mksquashfs" ]] || T_mksquashfs="$(command -v mksquashfs)"
-
-# --- 4. Rebuild ---------------------------------------------------------------------------
-say "Opening the system image (a few minutes)"
-asroot "$T_unsquashfs" -no-progress -d "$work/root" "$work/old.sfs" >/dev/null || die "could not open the system image."
-rm -f "$work/old.sfs" 2>/dev/null || asroot rm -f "$work/old.sfs"
-
-say "Adding the newest Ollie OS files"
+# --- 4. Rebuild, without the administrator password ----------------------------------------
+# The old image is streamed straight into the new one as squashfs "pseudo
+# file" definitions, with every owner, permission and time kept, and nothing
+# unpacked; the newer files take the place of the old ones. The stream
+# cannot carry extended attributes, so the few programs that have them
+# (file capabilities) get them back from this list, and the result is
+# checked against the old image.
+readonly CAPS=(
+    "usr/bin/kwin_wayland security.capability=0x0100000200008000000000000000000000000000"
+    "usr/bin/newuidmap security.capability=0x0100000280000000000000000000000000000000"
+    "usr/bin/newgidmap security.capability=0x0100000240000000000000000000000000000000"
+    "usr/lib/gstreamer-1.0/gst-ptp-helper security.capability=0x0100000200140000000000000000000000000000"
+    "usr/lib/ksysguard/ksgrd_network_helper security.capability=0x0100000200200000000000000000000000000000"
+    "usr/lib/ksystemstats_intel_helper security.capability=0x0100000200000000000000004000000000000000"
+)
+in_old() { "$T_unsquashfs" -lls "$work/old.sfs" "$1" 2>/dev/null | grep -q "squashfs-root/$1\$\|squashfs-root/$1 -> "; }
+now="$(date +%s)"
+pf="$work/new-files.pf"
+: >"$pf"
+excludes=()
+declare -A made_dirs=()
 for rel in "${changed[@]}"; do
+    # Folders the old image does not have yet.
+    d="$(dirname "$rel")" missing=()
+    while [[ "$d" != . && -z "${made_dirs[$d]:-}" ]] && ! in_old "$d"; do
+        missing=("$d" "${missing[@]}")
+        d="$(dirname "$d")"
+    done
+    for d in "${missing[@]}"; do
+        printf '"%s" D %s 0755 0 0\n' "$d" "$now" >>"$pf"
+        made_dirs[$d]=1
+    done
+    in_old "$rel" && excludes+=("$rel")
     if [[ -L "$files/$rel" ]]; then
-        asroot mkdir -p "$(dirname "$work/root/$rel")"
-        asroot ln -sfn "$(readlink "$files/$rel")" "$work/root/$rel"
+        printf '"%s" S %s 0777 0 0 %s\n' "$rel" "$now" "$(readlink "$files/$rel")" >>"$pf"
     else
         mode=0644
         [[ "$rel" == usr/local/bin/* ]] && mode=0755
-        asroot install -D -o 0 -g 0 -m "$mode" "$files/$rel" "$work/root/$rel"
+        printf '"%s" F %s %s 0 0 cat "%s"\n' "$rel" "$now" "$mode" "$files/$rel" >>"$pf"
     fi
-    echo "  $rel"
+done
+for c in "${CAPS[@]}"; do
+    in_old "${c%% *}" && printf '"%s" x %s\n' "${c%% *}" "${c#* }" >>"$pf"
 done
 
-say "Sealing the system image (10 to 30 minutes, depending on the computer)"
-asroot "$T_mksquashfs" "$work/root" "$work/airootfs.sfs" -noappend -comp xz -Xbcj x86 -b 1M -Xdict-size 1M >/dev/null ||
-    die "could not seal the system image (is the disk full?)."
-asroot rm -rf "$work/root"
-asroot chown "$(id -u):$(id -g)" "$work/airootfs.sfs"
+say "Rebuilding the system image (10 to 30 minutes, depending on the computer)"
+echo "  No password needed. The newer files:"
+printf '    %s\n' "${changed[@]}"
+if ! "$T_unsquashfs" -no-xattrs -excludes -pf - "$work/old.sfs" "${excludes[@]}" 2>"$work/read.log" |
+    "$T_mksquashfs" - "$work/airootfs.sfs" -pf - -pf "$pf" -noappend -comp xz -Xbcj x86 -b 1M -Xdict-size 1M \
+        -no-progress >"$work/write.log" 2>&1; then
+    tail -n 5 "$work/read.log" "$work/write.log" >&2
+    die "could not rebuild the system image (is the disk full?)."
+fi
+grep -q 'Failed to read\|creating empty file' "$work/write.log" && die "could not read one of the new Ollie OS files; nothing was changed."
+# Same special program permissions as before, or the new image is not used.
+xold="$("$T_unsquashfs" -s "$work/old.sfs" 2>/dev/null | awk '/Number of xattr ids/ {print $NF}')"
+xnew="$("$T_unsquashfs" -s "$work/airootfs.sfs" 2>/dev/null | awk '/Number of xattr ids/ {print $NF}')"
+[[ "${xold:-0}" == "${xnew:-0}" ]] ||
+    die "this ISO has special program permissions this Updater does not know ($xnew of $xold kept); nothing was changed. A newer Updater is needed for it."
+rm -f "$work/old.sfs"
 (cd "$work" && sha512sum airootfs.sfs >airootfs.sha512)
 
 say "Writing the updated ISO"
