@@ -272,3 +272,9 @@ them without rebuilding its environment.
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+## Etros
+
+[`etros/`](etros/) builds Etros, a Super Metroid–styled Batocera for the
+Raspberry Pi 5 and the R36S on one SD card, with Ollie OS for downloading
+ROMs. See [etros/README.md](etros/README.md).

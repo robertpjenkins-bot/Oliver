@@ -1,0 +1,41 @@
+#!/bin/sh
+# The Ollie OS desktop: Bobby on the wallpaper, a panel, desktop icons.
+xset s off -dpms 2>/dev/null
+
+# Handhelds whose panel is mounted sideways report it; turn the picture to match.
+out=$(xrandr --query | awk '/ connected/{print $1; exit}')
+case "$(xrandr --prop | sed -n 's/.*panel orientation: *//p' | head -n1)" in
+    "Left Side Up")  xrandr --output "$out" --rotate right ;;
+    "Right Side Up") xrandr --output "$out" --rotate left ;;
+    "Upside Down")   xrandr --output "$out" --rotate inverted ;;
+esac
+
+if mountpoint -q /userdata; then
+    ln -sfn /userdata/downloads "$HOME/Downloads"
+    ln -sfn /userdata/roms "$HOME/ROMs"
+else
+    mkdir -p "$HOME/Downloads"
+    xmessage -center "Batocera's storage is not set up yet. Start Etros once first, so your downloads have somewhere to go." &
+fi
+
+# Your own picture of Bobby wins over the built-in placeholder.
+wallpaper=/usr/share/ollie/bobby.png
+for f in /userdata/ollie/bobby.png /userdata/ollie/bobby.jpg /userdata/ollie/bobby.jpeg; do
+    if test -f "$f"; then wallpaper=$f; break; fi
+done
+mkdir -p "$HOME/.config/pcmanfm/default"
+cat > "$HOME/.config/pcmanfm/default/desktop-items-0.conf" <<CONF
+[*]
+wallpaper_mode=crop
+wallpaper=$wallpaper
+desktop_bg=#020414
+desktop_fg=#f0f0f8
+desktop_shadow=#000000
+show_trash=0
+show_mounts=0
+CONF
+
+tint2 &
+pcmanfm --desktop &
+nm-applet &
+exec openbox

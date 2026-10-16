@@ -1,0 +1,96 @@
+name: Etros image
+
+# Builds the Etros SD card image and publishes it as a release. Run it from
+# the Actions tab ("Run workflow"). It takes about an hour, most of it
+# installing Ollie OS's packages under arm64 emulation.
+#
+# The image is several GB, more than a private repository's artifact storage
+# allows, so it is attached to a release in parts of under 2 GB each (the
+# largest file a release takes). See etros/README.md for putting them back
+# together.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ollie:
+        description: Include Ollie OS
+        type: boolean
+        default: true
+  pull_request:
+    paths: ['etros/**', '.github/workflows/etros.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck busybox squashfs-tools \
+            mtools u-boot-tools lz4 cpio fdisk dosfstools e2fsprogs ffmpeg python3-pil
+      - name: Lint
+        run: |
+          cd etros
+          shellcheck build.sh scripts/*.sh ollie/build-ollie.sh layer/etc/init.d/S13etros \
+            layer/usr/bin/etros-* initrd/etros-hook.sh -s bash
+          shellcheck -e SC2016 test/*.sh
+      - name: Unit tests
+        run: python3 -m unittest discover -s etros/test -v
+      - name: Batocera's initramfs init
+        run: |
+          curl -fsSL -o init \
+            https://raw.githubusercontent.com/batocera-linux/batocera.linux/master/package/batocera/boot/batocera-initramfs/init
+      - name: Build a card from stand-in images
+        run: |
+          sudo etros/test/make-fake-images.sh init fake
+          sudo SKIP_OLLIE=1 VERSION=test PI5_IMAGE=fake/pi5.img.gz R36S_IMAGE=fake/r36s.img.gz \
+            etros/build.sh "$PWD/out"
+      - name: Boot checks
+        run: sudo etros/test/initrd-test.sh init out/fat/etros/etros.squashfs
+
+  image:
+    if: github.event_name == 'workflow_dispatch'
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Make room
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo mkdir -p /mnt/etros && sudo chown "$USER" /mnt/etros
+          df -h / /mnt
+      - name: Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends squashfs-tools mtools u-boot-tools lz4 \
+            cpio fdisk dosfstools e2fsprogs ffmpeg python3-pil xz-utils mmdebstrap \
+            qemu-user-static binfmt-support debian-archive-keyring
+      - name: Build
+        run: |
+          skip=1; [ "${{ inputs.ollie }}" = true ] && skip=0
+          sudo SKIP_OLLIE=$skip etros/build.sh /mnt/etros
+      - name: Split for the release
+        id: split
+        run: |
+          cd /mnt/etros
+          img=$(ls etros-*.img.xz)
+          split -b 1900M -d -a 2 "$img" "$img.part"
+          sha256sum "$img" > "$img.sha256"
+          echo "version=${img#etros-}" | sed 's/\.img\.xz$//' >> "$GITHUB_OUTPUT"
+          ls -lh
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="etros-${{ steps.split.outputs.version }}-${{ github.run_number }}"
+          cd /mnt/etros
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Etros ${{ steps.split.outputs.version }}" \
+            --notes "Download every .part file, join them (see etros/README.md), and write the .img.xz to an SD card with Raspberry Pi Imager or balenaEtcher." \
+            etros-*.img.xz.part* etros-*.img.xz.sha256

@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Boot into Ollie OS.sh</path>
+		<name>Boot into Ollie OS</name>
+		<desc>Restart into Ollie OS, a small desktop with a web browser. Anything you save in its Downloads folder is sorted into your ROM folders when you come back to Etros. Restart Ollie OS, or hold SELECT + START, to return here.</desc>
+		<image>/usr/share/emulationstation/themes/etros-metroid/art/ollie.png</image>
+	</game>
+	<game>
+		<path>./Sort downloaded ROMs.sh</path>
+		<name>Sort downloaded ROMs</name>
+		<desc>Move ROMs from /userdata/downloads into the folder for their console. Files whose console can't be told from the name (.bin, .iso, .cue, .chd, arcade .zip) stay in downloads for you to move yourself. This also happens on every boot.</desc>
+		<image>/usr/share/emulationstation/themes/etros-metroid/art/sort.png</image>
+	</game>
+</gameList>

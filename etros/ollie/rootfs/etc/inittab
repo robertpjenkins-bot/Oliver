@@ -1,0 +1,10 @@
+# Ollie OS: sysvinit, one auto-logged-in desktop on tty1.
+id:2:initdefault:
+si::sysinit:/etc/init.d/rcS
+l0:0:wait:/etc/init.d/rc 0
+l1:1:wait:/etc/init.d/rc 1
+l2:2:wait:/etc/init.d/rc 2
+l6:6:wait:/etc/init.d/rc 6
+ca:12345:ctrlaltdel:/sbin/shutdown -t1 -r now
+1:2345:respawn:/sbin/agetty --autologin ollie --noclear tty1 linux
+2:23:respawn:/sbin/agetty tty2 linux

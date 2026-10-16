@@ -1,0 +1,3 @@
+#!/bin/bash
+# Runs the entries of the ETROS system in EmulationStation.
+exec bash "$1"

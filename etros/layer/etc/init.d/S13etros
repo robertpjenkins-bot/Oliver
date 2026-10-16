@@ -1,0 +1,78 @@
+#!/bin/bash
+# Etros setup, run on every boot after /userdata is mounted and before the
+# splash and EmulationStation start.
+
+test "$1" = "start" || exit 0
+
+ETROS=/usr/share/etros
+CONF=/userdata/system/batocera.conf
+ES_SETTINGS=/userdata/system/configs/emulationstation/es_settings.cfg
+STATE=/userdata/system/etros
+LOG=/userdata/system/logs/etros.log
+
+mkdir -p "$STATE" /userdata/system/logs /userdata/downloads /userdata/ollie
+exec >> "$LOG" 2>&1
+echo "--- $(date '+%F %T') $(cat "$ETROS/version" 2>/dev/null)"
+
+set_conf() {
+    if grep -qE "^[ #]*$1=" "$CONF"; then
+        sed -i -E "s|^[ #]*$1=.*|$1=$2|" "$CONF"
+    else
+        echo "$1=$2" >> "$CONF"
+    fi
+}
+
+# Batocera's updater replaces the files on the boot partition with a
+# single-board layout, which would leave the other device unbootable.
+if test -f "$CONF"; then
+    set_conf updates.enabled 0
+fi
+
+# Things done once per card, which the user may change afterwards.
+if ! test -e "$STATE/setup-done"; then
+    test -f "$CONF" && set_conf system.hostname ETROS
+    theme='<string name="ThemeSet" value="etros-metroid" />'
+    if ! test -f "$ES_SETTINGS"; then
+        mkdir -p "$(dirname "$ES_SETTINGS")"
+        printf '<?xml version="1.0"?>\n<config>\n\t%s\n</config>\n' "$theme" > "$ES_SETTINGS"
+    elif grep -q 'name="ThemeSet"' "$ES_SETTINGS"; then
+        sed -i -E 's|<string name="ThemeSet" value="[^"]*"|<string name="ThemeSet" value="etros-metroid"|' "$ES_SETTINGS"
+    elif grep -q '</config>' "$ES_SETTINGS"; then
+        sed -i "s|</config>|\t${theme}\n</config>|" "$ES_SETTINGS"
+    else
+        echo "$theme" >> "$ES_SETTINGS"
+    fi
+    touch "$STATE/setup-done"
+fi
+
+# The ETROS system in EmulationStation: refresh its entries every boot so a
+# new Etros build brings new ones.
+mkdir -p /userdata/roms/etros
+cp -f "$ETROS"/menu/*.sh /userdata/roms/etros/
+chmod +x /userdata/roms/etros/*.sh
+cp -f "$ETROS/menu/gamelist.xml" /userdata/roms/etros/gamelist.xml
+
+# The splash video is made for 16:9 screens; the R36S is 4:3.
+if read -r size < /sys/class/graphics/fb0/virtual_size 2>/dev/null; then
+    w=${size%,*} h=${size#*,}
+    if [ $((w * 3)) -eq $((h * 4)) ] || [ $((h * 3)) -eq $((w * 4)) ]; then
+        cp -f "$ETROS/splash-4x3.mp4" /usr/share/batocera/splash/splash.mp4
+    fi
+fi
+
+# Games copied into my-roms on the BATOCERA drive from a computer: add them
+# (patching any ROM hacks) and empty the folder so they are added only once.
+# If a patch doesn't fit its ROM, everything stays put and the reason is in
+# the log.
+if find /boot/my-roms -type f ! -name README.txt 2>/dev/null | grep -q .; then
+    if /usr/bin/etros-add-my-roms /boot/my-roms /userdata/roms; then
+        mount -o remount,rw /boot
+        find /boot/my-roms -type f ! -name README.txt -delete
+        mount -o remount,ro /boot
+    fi
+fi
+
+# Anything downloaded in Ollie OS is ready to play by the time the menu shows.
+/usr/bin/etros-sort-roms
+
+exit 0

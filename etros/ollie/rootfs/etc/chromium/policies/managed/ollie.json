@@ -1,0 +1,12 @@
+{
+  "DownloadDirectory": "/userdata/downloads",
+  "PromptForDownloadLocation": false,
+  "HomepageLocation": "file:///usr/share/ollie/start.html",
+  "HomepageIsNewTabPage": false,
+  "RestoreOnStartup": 4,
+  "RestoreOnStartupURLs": ["file:///usr/share/ollie/start.html"],
+  "BrowserSignin": 0,
+  "PasswordManagerEnabled": false,
+  "DefaultBrowserSettingEnabled": false,
+  "MetricsReportingEnabled": false
+}

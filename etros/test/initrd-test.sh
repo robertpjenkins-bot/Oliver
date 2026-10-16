@@ -1,0 +1,143 @@
+#!/bin/bash
+# Run Batocera's /init, with the Etros patch, in a throwaway chroot and check
+# where each kind of boot ends up. Needs root (mounts) and a kernel with
+# squashfs, overlay and loop support; busybox stands in for the initramfs.
+#
+#   initrd-test.sh BATOCERA_INIT ETROS_SQUASHFS
+#
+# Only the boot partition is faked: a tmpfs instead of FAT, and the device
+# tree's "compatible" string from a file. switch_root is replaced by a
+# script that reports what the new root looks like instead of switching.
+set -euo pipefail
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+ETROS=$(dirname "$HERE")
+INIT=$(realpath "$1")
+LAYER=$(realpath "$2")
+T=$(mktemp -d)
+trap 'umount -R "$T"/root/* 2>/dev/null || true; rm -rf "$T"' EXIT
+fails=0
+
+squash() {  # squash OUT WHOAMI [extra files as path=content...]
+    local out=$1 dir
+    dir=$(mktemp -d -p "$T")
+    mkdir -p "$dir/sbin" "$dir/boot" "$dir/overlay" "$dir/sys" "$dir/proc" "$dir/dev"
+    echo "$2" > "$dir/whoami"
+    shift 2
+    for kv in "$@"; do
+        mkdir -p "$(dirname "$dir/${kv%%=*}")"
+        echo "${kv#*=}" > "$dir/${kv%%=*}"
+    done
+    mksquashfs "$dir" "$out" -quiet -no-progress -noappend > /dev/null
+}
+
+# The boot partition as Etros lays it out.
+FAT=$T/fat
+mkdir -p "$FAT/boot" "$FAT/etros/pi5" "$FAT/etros/r36s"
+squash "$FAT/etros/pi5/batocera.update" batocera-pi5 lib/modules/6.12-pi5/marker=pi5
+squash "$FAT/etros/r36s/batocera.update" batocera-r36s lib/modules/6.12-r36s/marker=r36s
+echo bcm2712 > "$FAT/etros/pi5/batocera.board"
+echo r36s > "$FAT/etros/r36s/batocera.board"
+cp "$LAYER" "$FAT/etros/etros.squashfs"
+squash "$FAT/etros/ollie.squashfs" ollie
+echo batocera > "$FAT/etros/next-boot"
+
+# A minimal initramfs: busybox, the patched init and the hook.
+R=$T/root
+mkdir -p "$R/bin" "$R/dev" "$R/fatsrc" "$R/dt"
+cp "$(command -v busybox)" "$R/bin/busybox"
+for lib in $(ldd "$R/bin/busybox" | grep -o '/[^ ]*'); do
+    mkdir -p "$R$(dirname "$lib")"
+    cp "$lib" "$R$lib"
+done
+for applet in $(busybox --list); do
+    [ "$applet" = switch_root ] || ln -sf busybox "$R/bin/$applet"
+done
+cp "$INIT" "$R/init"
+python3 "$ETROS/scripts/patch-init.py" "$R/init"
+cp "$ETROS/initrd/etros-hook.sh" "$R/etros-hook.sh"
+# Boot "partition": a tmpfs filled from FAT and made read-only, like the
+# real one. The kernel command line is not ours to set, so give the loop
+# a device name and mount our tmpfs in its place.
+sed -i -e 's|read -r cmdline < /proc/cmdline|cmdline="dev=fake"|' \
+       -e 's|^    /bin/ash$|    exit 1|' \
+       -e 's|if mount -o $mount_options "${1}" *\/boot_root; then return 0; fi|mount -t tmpfs tmpfs /boot_root \&\& cp -a /fatsrc/. /boot_root/ \&\& mount -o remount,ro /boot_root \&\& return 0|' \
+       "$R/init"
+grep -q 'cp -a /fatsrc' "$R/init"
+cat > "$R/bin/switch_root" <<'EOF'
+#!/bin/ash
+# Report the root we would have switched to.
+new=$1
+echo "root=$(cat $new/whoami)"
+echo "board=$(cat $new/boot/boot/batocera.board 2>/dev/null)"
+echo "layer=$(test -e $new/etc/init.d/S13etros && echo yes || echo no)"
+echo "modules=$(cat $new/.batocera/lib/modules/*/marker 2>/dev/null)"
+echo "next=$(cat $new/boot/etros/next-boot)"
+# Batocera remounts /boot read-write to save settings; /boot/boot must follow.
+mkdir -p /proc && mount -t proc proc /proc
+if mount -o remount,rw $new/boot && touch $new/boot/boot/written; then echo "boot-writable=yes"; else echo "boot-writable=no"; fi
+mount -o remount,ro $new/boot
+EOF
+chmod +x "$R/bin/switch_root"
+
+boot() {  # boot COMPATIBLE  -> report on stdout, boot partition saved back
+    rm -rf "${R:?}/fatsrc"
+    cp -a "$FAT" "$R/fatsrc"
+    printf '%b\0' "$1" > "$R/dt/compatible"
+    timeout 60 unshare -m chroot "$R" /bin/env ETROS_COMPATIBLE=/dt/compatible PATH=/bin /bin/ash -c '
+        /init > /log 2>&1
+        cat /log
+        # keep what the boot changed on the boot partition for the next boot
+        mkdir -p /proc && mount -t proc proc /proc
+        umount -l /new_root/boot/boot
+        rm -rf /fatsrc/*; cp -a /new_root/boot/. /fatsrc/' > "$T/log" 2>&1 || true
+    grep -E '^[a-z-]+=' "$T/log" || true
+    rm -rf "$FAT"
+    cp -a "$R/fatsrc" "$FAT"
+}
+
+expect() {  # expect REPORT KEY VALUE
+    if grep -qx "$2=$3" <<< "$1"; then
+        echo "  ok   $2=$3"
+    else
+        echo "  FAIL $2: wanted $3, got $(grep "^$2=" <<< "$1" || echo nothing)"
+        fails=$((fails + 1))
+    fi
+}
+
+echo "Pi 5, first boot"
+out=$(boot brcm,bcm2712)
+expect "$out" root batocera-pi5
+expect "$out" board bcm2712
+expect "$out" layer yes
+expect "$out" boot-writable yes
+if test -f "$FAT/etros/pi5/batocera"; then
+    echo "  ok   batocera.update installed"
+else
+    echo "  FAIL batocera.update not installed"
+    fails=$((fails + 1))
+fi
+
+echo "R36S, same card"
+out=$(boot "gameconsole,r36s\0rockchip,rk3326")
+expect "$out" root batocera-r36s
+expect "$out" board r36s
+expect "$out" layer yes
+
+echo "R36S, Boot into Ollie OS"
+echo ollie > "$FAT/etros/next-boot"
+out=$(boot "gameconsole,r36s\0rockchip,rk3326")
+expect "$out" root ollie
+expect "$out" modules r36s
+expect "$out" next batocera
+
+echo "R36S, the boot after Ollie OS"
+out=$(boot "gameconsole,r36s\0rockchip,rk3326")
+expect "$out" root batocera-r36s
+
+if [ "$fails" -ne 0 ]; then
+    echo "$fails check(s) failed; last init log:"
+    cat "$T/log"
+    exit 1
+fi
+echo "all boot checks passed"

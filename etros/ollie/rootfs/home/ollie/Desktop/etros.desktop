@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Back to Etros
+Exec=sudo /usr/local/bin/ollie-boot-batocera
+Icon=system-reboot

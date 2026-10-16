@@ -1,0 +1,15 @@
+#!/bin/bash
+# Restart into Ollie OS. The choice lasts one boot: restarting or switching
+# off in Ollie OS brings the device back to Batocera.
+
+if ! test -f /boot/etros/ollie.squashfs; then
+    echo "Ollie OS is not on this card" >&2
+    exit 1
+fi
+
+mount -o remount,rw /boot || exit 1
+echo ollie > /boot/etros/next-boot
+sync
+mount -o remount,ro /boot
+
+shutdown -r now
