@@ -1,0 +1,7 @@
+#!/bin/sh
+# Leave Ollie OS. The boot partition already says "batocera" (Ollie OS only
+# runs for one boot), so file away the downloads and restart.
+mkdir -p /userdata/system/logs
+python3 /usr/local/bin/etros-sort-roms >> /userdata/system/logs/etros.log 2>&1
+sync
+exec systemctl reboot

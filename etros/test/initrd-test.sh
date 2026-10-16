@@ -1,19 +1,23 @@
 #!/bin/bash
-# Run Batocera's /init, with the Etros patch, in a throwaway chroot and check
-# where each kind of boot ends up. Needs root (mounts) and a kernel with
+# Run an Etros-patched Batocera initramfs (as the installer writes it to the
+# card) in a throwaway chroot and check where each kind of boot ends up. Needs root (mounts) and a kernel with
 # squashfs, overlay and loop support; busybox stands in for the initramfs.
 #
-#   initrd-test.sh BATOCERA_INIT ETROS_SQUASHFS
+#   initrd-test.sh INITRD ETROS_SQUASHFS [BUSYBOX_CONFIG]
+#
+# INITRD is etros/pi5/initrd.lz4 from a card the installer made.
+#
+# BUSYBOX_CONFIG is Batocera's initramfs busybox.config; only the commands
+# it enables are available in the sandbox, as on the real device.
 #
 # Only the boot partition is faked: a tmpfs instead of FAT, and the device
 # tree's "compatible" string from a file. switch_root is replaced by a
 # script that reports what the new root looks like instead of switching.
 set -euo pipefail
 
-HERE=$(cd "$(dirname "$0")" && pwd)
-ETROS=$(dirname "$HERE")
-INIT=$(realpath "$1")
+INITRD=$(realpath "$1")
 LAYER=$(realpath "$2")
+BBCONFIG=${3:-}
 T=$(mktemp -d)
 trap 'umount -R "$T"/root/* 2>/dev/null || true; rm -rf "$T"' EXIT
 fails=0
@@ -39,7 +43,12 @@ squash "$FAT/etros/r36s/batocera.update" batocera-r36s lib/modules/6.12-r36s/mar
 echo bcm2712 > "$FAT/etros/pi5/batocera.board"
 echo r36s > "$FAT/etros/r36s/batocera.board"
 cp "$LAYER" "$FAT/etros/etros.squashfs"
-squash "$FAT/etros/ollie.squashfs" ollie
+# Ollie OS: an ext4 root file system, plus Etros's files for it.
+mkdir -p "$T/ollie/sbin" "$T/ollie/lib/modules" "$T/ollie/lib/firmware" "$T/ollie/boot" "$T/ollie/sys" "$T/ollie/proc" "$T/ollie/dev"
+echo ollie > "$T/ollie/whoami"
+mkfs.ext4 -q -L rootfs -d "$T/ollie" "$T/ollie.img" 32M
+mkdir -p "$FAT/etros/ollie/etc"
+echo "from etros" > "$FAT/etros/ollie/etc/etros-marker"
 echo batocera > "$FAT/etros/next-boot"
 
 # A minimal initramfs: busybox, the patched init and the hook.
@@ -50,12 +59,27 @@ for lib in $(ldd "$R/bin/busybox" | grep -o '/[^ ]*'); do
     mkdir -p "$R$(dirname "$lib")"
     cp "$lib" "$R$lib"
 done
-for applet in $(busybox --list); do
-    [ "$applet" = switch_root ] || ln -sf busybox "$R/bin/$applet"
+if [ -n "$BBCONFIG" ]; then
+    applets=$(sed -n 's/^CONFIG_\([A-Z0-9_]*\)=y$/\1/p' "$BBCONFIG" | tr '[:upper:]' '[:lower:]' | grep -vxE 'feature_.*')
+else
+    applets=$(busybox --list)
+fi
+for applet in $applets; do
+    # names in busybox.config that are not commands are harmless links
+    case "$applet" in switch_root|busybox) continue ;; esac
+    ln -sf busybox "$R/bin/$applet"
 done
-cp "$INIT" "$R/init"
-python3 "$ETROS/scripts/patch-init.py" "$R/init"
-cp "$ETROS/initrd/etros-hook.sh" "$R/etros-hook.sh"
+ln -sf busybox "$R/bin/sh"
+# The test's own tools, kept out of the PATH the boot script runs with.
+mkdir -p "$R/hbin"
+for applet in $(busybox --list); do
+    [ "$applet" = switch_root ] || ln -sf ../bin/busybox "$R/hbin/$applet"
+done
+cp "$T/ollie.img" "$R/ollie.img"
+# The patched /init and the hook, from the initramfs itself.
+(cd "$T" && mkdir unpacked && cd unpacked && lz4 -dc "$INITRD" | cpio -id --quiet init etros-hook.sh)
+cp "$T/unpacked/init" "$T/unpacked/etros-hook.sh" "$R/"
+grep -q 'etros_start' "$R/init"
 # Boot "partition": a tmpfs filled from FAT and made read-only, like the
 # real one. The kernel command line is not ours to set, so give the loop
 # a device name and mount our tmpfs in its place.
@@ -65,13 +89,15 @@ sed -i -e 's|read -r cmdline < /proc/cmdline|cmdline="dev=fake"|' \
        "$R/init"
 grep -q 'cp -a /fatsrc' "$R/init"
 cat > "$R/bin/switch_root" <<'EOF'
-#!/bin/ash
+#!/bin/busybox ash
 # Report the root we would have switched to.
+PATH=/hbin
 new=$1
 echo "root=$(cat $new/whoami)"
 echo "board=$(cat $new/boot/boot/batocera.board 2>/dev/null)"
 echo "layer=$(test -e $new/etc/init.d/S13etros && echo yes || echo no)"
-echo "modules=$(cat $new/.batocera/lib/modules/*/marker 2>/dev/null)"
+echo "modules=$(cat $new/lib/modules/*/marker 2>/dev/null)"
+echo "etros-files=$(cat $new/etc/etros-marker 2>/dev/null)"
 echo "next=$(cat $new/boot/etros/next-boot)"
 # Batocera remounts /boot read-write to save settings; /boot/boot must follow.
 mkdir -p /proc && mount -t proc proc /proc
@@ -84,8 +110,8 @@ boot() {  # boot COMPATIBLE  -> report on stdout, boot partition saved back
     rm -rf "${R:?}/fatsrc"
     cp -a "$FAT" "$R/fatsrc"
     printf '%b\0' "$1" > "$R/dt/compatible"
-    timeout 60 unshare -m chroot "$R" /bin/env ETROS_COMPATIBLE=/dt/compatible PATH=/bin /bin/ash -c '
-        /init > /log 2>&1
+    timeout 60 unshare -m chroot "$R" /bin/busybox env ETROS_COMPATIBLE=/dt/compatible ETROS_OLLIE_ROOT=/ollie.img PATH=/hbin /bin/busybox ash -c '
+        PATH=/bin /init > /log 2>&1
         cat /log
         # keep what the boot changed on the boot partition for the next boot
         mkdir -p /proc && mount -t proc proc /proc
@@ -129,6 +155,7 @@ echo ollie > "$FAT/etros/next-boot"
 out=$(boot "gameconsole,r36s\0rockchip,rk3326")
 expect "$out" root ollie
 expect "$out" modules r36s
+expect "$out" etros-files "from etros"
 expect "$out" next batocera
 
 echo "R36S, the boot after Ollie OS"

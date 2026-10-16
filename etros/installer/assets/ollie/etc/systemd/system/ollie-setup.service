@@ -1,0 +1,13 @@
+[Unit]
+Description=Set up Ollie OS for Etros
+DefaultDependencies=no
+After=local-fs.target
+Before=display-manager.service lightdm.service getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /usr/local/sbin/ollie-setup
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

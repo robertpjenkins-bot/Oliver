@@ -1,0 +1,13 @@
+#!/bin/sh
+# Turn on Etros's services in Ollie OS. Files copied from the FAT boot
+# partition can't be symlinks, so a generator does the enabling.
+normal=$1
+early=$2
+mkdir -p "$normal/multi-user.target.wants"
+for unit in ollie-setup.service ollie-padmouse.service ollie-wifi.service; do
+    ln -sf "/etc/systemd/system/$unit" "$normal/multi-user.target.wants/$unit"
+done
+# Raspberry Pi OS's first-boot wizard asks for a user name and password,
+# which can't be typed on a handheld. Ollie OS sets its user up itself.
+ln -sf /dev/null "$early/userconfig.service"
+exit 0

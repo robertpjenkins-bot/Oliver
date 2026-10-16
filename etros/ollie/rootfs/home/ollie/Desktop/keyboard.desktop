@@ -1,5 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Keyboard
-Exec=/usr/local/bin/ollie-keyboard-toggle
-Icon=input-keyboard

@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Bobby wallpaper
+Exec=sh -c 'sleep 3; pcmanfm --set-wallpaper=/usr/share/ollie/bobby.png --wallpaper-mode=crop'
+NoDisplay=true

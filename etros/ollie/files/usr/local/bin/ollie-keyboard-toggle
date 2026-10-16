@@ -1,0 +1,14 @@
+#!/bin/sh
+# Show or hide the on-screen keyboard (X on a gamepad). Raspberry Pi OS's
+# keyboard is squeekboard; wvkbd is the fallback if it's installed instead.
+set -- sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0
+if visible=$(busctl --user get-property "$@" Visible 2>/dev/null); then
+    if [ "$visible" = "b true" ]; then
+        busctl --user call "$@" SetVisible b false
+    else
+        busctl --user call "$@" SetVisible b true
+    fi
+    exit 0
+fi
+pkill -x wvkbd-mobintl && exit 0
+command -v wvkbd-mobintl >/dev/null && exec wvkbd-mobintl -L 200

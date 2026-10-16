@@ -3,15 +3,21 @@
 # the boot partition is mounted on /boot_root, so everything here runs as
 # part of do_root() and may use its helpers and variables.
 #
+# Batocera's initramfs busybox is small: no tr, grep, sync, chmod, tar or
+# ln. Stick to cat, cp, mkdir, mount, umount, echo, test and shell builtins.
+#
 # One SD card carries two Batocera builds, one for the Raspberry Pi 5 and one
-# for the R36S, plus Ollie OS. Their squashfs images live side by side on the
+# for the R36S, plus Ollie OS. Their system images live side by side on the
 # boot partition:
 #
 #   /etros/pi5/batocera     Pi 5 system image (and its saved overlay, version...)
 #   /etros/r36s/batocera    R36S system image
 #   /etros/etros.squashfs   the Etros layer, shared by both boards
-#   /etros/ollie.squashfs   Ollie OS
+#   /etros/ollie/           Etros's files for Ollie OS, copied in on each start
 #   /etros/next-boot        "ollie" to start Ollie OS once on the next boot
+#
+# Ollie OS itself is a Raspberry Pi OS root file system on its own partition,
+# labelled "rootfs".
 #
 # Batocera expects its images in /boot/boot, so the directory for the board
 # we are running on is bound over /boot_root/boot and the rest of Batocera
@@ -22,8 +28,10 @@ ETROS_LAYER=
 
 etros_board() {
     local compat
-    compat=$(tr '\0' ' ' < "${ETROS_COMPATIBLE:-/proc/device-tree/compatible}" 2>/dev/null)
-    case " ${compat} " in
+    # The file is a list of NUL-separated strings; the shell drops the NULs,
+    # which leaves the names run together but still searchable.
+    compat=$(cat "${ETROS_COMPATIBLE:-/proc/device-tree/compatible}" 2>/dev/null)
+    case "${compat}" in
         *bcm2712*) echo pi5 ;;
         *rk3326*)  echo r36s ;;
     esac
@@ -50,35 +58,42 @@ etros_bind_board() {
 # turning the device off and on again always comes back to Batocera.
 etros_want_ollie() {
     local next
-    test -f /boot_root/etros/ollie.squashfs || return 1
     read -r next < /boot_root/etros/next-boot 2>/dev/null || return 1
     test "${next}" = "ollie" || return 1
 
     mount -o remount,rw /boot_root || return 1
     echo batocera > /boot_root/etros/next-boot
-    sync
     mount -o remount,ro /boot_root || return 1
     return 0
 }
 
 etros_boot_ollie() {
     echo "etros: starting Ollie OS"
-    mount -t tmpfs -o size=512M tmpfs /overlay_root                       || return 1
-    mkdir -p /overlay_root/base /overlay_root/overlay /overlay_root/work   || return 1
-    mount /boot_root/etros/ollie.squashfs /overlay_root/base              || return 1
-    mount -t overlay overlay -o rw,lowerdir=/overlay_root/base,upperdir=/overlay_root/overlay,workdir=/overlay_root/work /new_root || return 1
+    mount -o rw "${ETROS_OLLIE_ROOT:-LABEL=rootfs}" /new_root || return 1
 
-    # Ollie OS runs on this board's Batocera kernel, so it borrows the
-    # matching modules and firmware from the Batocera image. Its
-    # /lib/modules and /lib/firmware point into /.batocera.
-    mkdir -p /new_root/.batocera /new_root/boot /new_root/run/etros-overlay || return 1
-    mount -o ro /boot_root/boot/batocera /new_root/.batocera || echo "etros: no Batocera image to take drivers from"
+    # Etros's settings and scripts for Ollie OS. Copied every start so a new
+    # Etros brings new ones; Ollie OS's own setup service fixes permissions,
+    # which the FAT partition cannot carry.
+    if test -d /boot_root/etros/ollie
+    then
+        cp -r /boot_root/etros/ollie/. /new_root/ || return 1
+    fi
 
-    mount --move /boot_root    /new_root/boot              || return 1
-    mount --move /overlay_root /new_root/run/etros-overlay || return 1
-    mount --move /sys          /new_root/sys               || return 1
-    mount --move /proc         /new_root/proc              || return 1
-    mount --move /dev          /new_root/dev               || return 1
+    # Ollie OS runs on this board's Batocera kernel, so it uses that
+    # kernel's modules and firmware, from the Batocera image.
+    mkdir -p /new_root/.batocera /new_root/boot /new_root/lib/modules /new_root/lib/firmware || return 1
+    if mount -o ro /boot_root/boot/batocera /new_root/.batocera
+    then
+        mount --bind /new_root/.batocera/lib/modules  /new_root/lib/modules
+        mount --bind /new_root/.batocera/lib/firmware /new_root/lib/firmware
+    else
+        echo "etros: no Batocera image to take drivers from"
+    fi
+
+    mount --move /boot_root /new_root/boot || return 1
+    mount --move /sys       /new_root/sys  || return 1
+    mount --move /proc      /new_root/proc || return 1
+    mount --move /dev       /new_root/dev  || return 1
 
     exec switch_root /new_root /sbin/init
 }
@@ -100,14 +115,12 @@ etros_start() {
     etros_bind_board || return 1
     if etros_want_ollie
     then
-        # Only returns if Ollie OS could not be started. Batocera's own
-        # path below needs a clean /overlay_root and /new_root to work with.
+        # Only returns if Ollie OS could not be started; carry on into
+        # Batocera with a clean /new_root.
         etros_boot_ollie
         echo "etros: Ollie OS failed to start, falling back to Batocera"
-        umount /new_root/.batocera 2>/dev/null
+        umount /new_root/lib/firmware /new_root/lib/modules /new_root/.batocera 2>/dev/null
         umount /new_root 2>/dev/null
-        umount /overlay_root/base 2>/dev/null
-        umount /overlay_root 2>/dev/null
     fi
     return 0
 }

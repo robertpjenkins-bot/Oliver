@@ -1,5 +1,6 @@
 #!/bin/bash
-# Make stand-ins for the Batocera Pi 5 and R36S images, laid out like the
+# Make stand-ins for the Batocera Pi 5 and R36S images (and their
+# boot.tar.xz update archives), and for Raspberry Pi OS, laid out like the
 # real ones (see board/batocera/broadcom/bcm2712 and rockchip/rk3326/r36s in
 # batocera.linux), so the image assembly can be tested without downloading
 # several gigabytes. The initramfs holds Batocera's real /init.
@@ -61,5 +62,18 @@ dd if="$OUT/loader.bin" of="$OUT/r36s.img" bs=1K seek=32 conv=notrunc status=non
 dd if="$OUT/loader.bin" of="$OUT/r36s.img" bs=1M seek=8 conv=notrunc status=none
 dd if="$OUT/loader.bin" of="$OUT/r36s.img" bs=1M seek=12 conv=notrunc status=none
 
+# Batocera's boot.tar.xz is the boot partition's contents, with the
+# system image still named batocera.update.
+(cd "$P" && tar -cJf "$OUT/pi5-boot.tar.xz" ./*)
+(cd "$R" && tar -cJf "$OUT/r36s-boot.tar.xz" ./*)
 gzip -1 -f "$OUT/pi5.img" "$OUT/r36s.img"
+
+# Raspberry Pi OS: a FAT firmware partition and an ext4 root labelled rootfs.
+O=$T/rpios; mkdir -p "$O/etc" "$O/sbin" "$O/usr/lib/modules"
+echo "raspios" > "$O/etc/rpi-issue"
+mkfs.ext4 -q -L rootfs -d "$O" "$T/root.ext4" 48M
+truncate -s $(( (4 + 16 + 48) * 1024 * 1024 )) "$OUT/rpios.img"
+printf 'label: dos\nstart=8192, size=32768, type=c\nstart=40960, size=98304, type=83\n' | sfdisk -q "$OUT/rpios.img"
+dd if="$T/root.ext4" of="$OUT/rpios.img" bs=1M seek=20 conv=notrunc status=none
+xz -T0 -1 -f "$OUT/rpios.img"
 ls -l "$OUT"

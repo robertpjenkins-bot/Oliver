@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Move downloaded ROMs into the folders Batocera reads them from.
+
+Files are sorted by extension. An extension that several systems share (.bin,
+.iso, .cue, .chd...) says nothing about which console a game is for, so those
+files are left in the downloads folder rather than guessed at; move them by
+hand into /userdata/roms/<system>. A .zip holding ROMs of a single known type
+goes to that system, still zipped, since Batocera's emulators read zips.
+Arcade zips cannot be told apart from other zips, so put those in
+/userdata/roms/mame yourself.
+
+Runs on both Ollie OS and Batocera, so it only uses the standard library.
+"""
+import argparse
+import os
+import shutil
+import sys
+import zipfile
+
+SYSTEMS = {
+    "nes": "nes", "unf": "nes", "unif": "nes", "fds": "fds",
+    "sfc": "snes", "smc": "snes", "fig": "snes", "swc": "snes",
+    "gb": "gb", "gbc": "gbc", "gba": "gba",
+    "n64": "n64", "z64": "n64", "v64": "n64",
+    "nds": "nds",
+    "md": "megadrive", "gen": "megadrive", "smd": "megadrive",
+    "sms": "mastersystem", "gg": "gamegear", "sg": "sg1000", "32x": "sega32x",
+    "pce": "pcengine", "sgx": "supergrafx",
+    "a26": "atari2600", "a52": "atari5200", "a78": "atari7800",
+    "lnx": "lynx", "j64": "jaguar", "jag": "jaguar",
+    "ngp": "ngp", "ngc": "ngpc",
+    "ws": "wonderswan", "wsc": "wonderswancolor",
+    "vb": "virtualboy", "col": "colecovision", "int": "intellivision",
+    "pbp": "psp", "cso": "psp",
+    "d64": "c64", "t64": "c64", "prg": "c64",
+    "z80": "zxspectrum", "tzx": "zxspectrum",
+    "mx1": "msx1", "mx2": "msx2",
+    "p8": "pico8",
+}
+
+# Browsers write these while a download is still running.
+PARTIAL = (".crdownload", ".part", ".download", ".tmp")
+
+
+def extension(name):
+    lower = name.lower()
+    if lower.endswith(".p8.png"):
+        return "p8"
+    return os.path.splitext(lower)[1].lstrip(".")
+
+
+def zip_system(path):
+    """The system for a zip whose files all share one known ROM extension."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = [n for n in z.namelist() if not n.endswith("/")]
+    except (zipfile.BadZipFile, OSError):
+        return None
+    systems = {SYSTEMS.get(extension(n)) for n in names}
+    if len(systems) == 1:
+        return systems.pop()
+    return None
+
+
+def system_for(path):
+    ext = extension(path)
+    if ext == "zip":
+        return zip_system(path)
+    return SYSTEMS.get(ext)
+
+
+def sort_downloads(downloads, roms, dry_run=False, out=sys.stdout):
+    moved = left = 0
+    if not os.path.isdir(downloads):
+        return moved, left
+    for name in sorted(os.listdir(downloads)):
+        src = os.path.join(downloads, name)
+        if not os.path.isfile(src) or name.startswith(".") or name.lower().endswith(PARTIAL):
+            continue
+        system = system_for(src)
+        if system is None:
+            left += 1
+            continue
+        dest_dir = os.path.join(roms, system)
+        dest = os.path.join(dest_dir, name)
+        if os.path.exists(dest):
+            print(f"kept {name}: {system} already has a file with that name", file=out)
+            left += 1
+            continue
+        print(f"{name} -> roms/{system}", file=out)
+        if not dry_run:
+            os.makedirs(dest_dir, exist_ok=True)
+            shutil.move(src, dest)
+        moved += 1
+    return moved, left
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--downloads", default="/userdata/downloads")
+    p.add_argument("--roms", default="/userdata/roms")
+    p.add_argument("-n", "--dry-run", action="store_true")
+    args = p.parse_args()
+    moved, left = sort_downloads(args.downloads, args.roms, args.dry_run)
+    print(f"moved {moved}, left {left} in {args.downloads}")
+
+
+if __name__ == "__main__":
+    main()

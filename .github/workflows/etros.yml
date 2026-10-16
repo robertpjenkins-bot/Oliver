@@ -1,99 +1,56 @@
-name: Etros image
+name: Etros
 
-# Builds the Etros SD card image and publishes it as a release. Run it from
-# the Actions tab ("Run workflow"). It takes about an hour, most of it
-# installing Ollie OS's packages under arm64 emulation.
-#
-# The image is several GB, more than a private repository's artifact storage
-# allows, so it is attached to a release in parts of under 2 GB each (the
-# largest file a release takes). See etros/README.md for putting them back
-# together.
+# Tests for Etros and its installer. The installer itself is built with
+# etros/installer/build-dist.sh; nothing here builds or publishes a card.
 
 on:
-  workflow_dispatch:
-    inputs:
-      ollie:
-        description: Include Ollie OS
-        type: boolean
-        default: true
   pull_request:
     paths: ['etros/**', '.github/workflows/etros.yml']
   push:
     branches: [claude/happy-heisenberg-5vvn6r]
     paths: ['etros/**', '.github/workflows/etros.yml']
 
-permissions:
-  contents: write
-
 jobs:
   test:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: etros/installer/go.mod
       - name: Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends shellcheck busybox squashfs-tools \
-            mtools u-boot-tools lz4 cpio fdisk dosfstools e2fsprogs ffmpeg python3-pil
+            mtools u-boot-tools lz4 cpio fdisk dosfstools e2fsprogs xz-utils
       - name: Lint
         run: |
           cd etros
-          shellcheck build.sh scripts/*.sh ollie/build-ollie.sh layer/etc/init.d/S13etros \
-            layer/usr/bin/etros-* initrd/etros-hook.sh -s bash
+          shellcheck -s bash layer/etc/init.d/S13etros layer/usr/bin/etros-* initrd/etros-hook.sh scripts/*.sh installer/*.sh
+          shellcheck -s sh ollie/files/usr/local/sbin/ollie-setup ollie/files/usr/local/bin/ollie-boot-batocera \
+            ollie/files/usr/local/bin/ollie-wifi-from-batocera ollie/files/usr/local/bin/ollie-keyboard-toggle \
+            ollie/files/etc/systemd/system-generators/ollie-generator
           shellcheck -e SC2016 test/*.sh
-      - name: Unit tests
-        run: python3 -m unittest discover -s etros/test -v
-      - name: Batocera's initramfs init
+          test -z "$(gofmt -l installer)"
+      - name: Batocera's initramfs
         run: |
-          curl -fsSL -o init \
-            https://raw.githubusercontent.com/batocera-linux/batocera.linux/master/package/batocera/boot/batocera-initramfs/init
-      - name: Build a card from stand-in images
+          base=https://raw.githubusercontent.com/batocera-linux/batocera.linux/master/package/batocera/boot/batocera-initramfs
+          curl -fsSL -o init "$base/init"
+          curl -fsSL -o busybox.config "$base/busybox.config"
+      - name: Unit tests
+        run: |
+          python3 -m unittest discover -s etros/test -v
+          cd etros/installer && BATOCERA_INIT=$GITHUB_WORKSPACE/init go test -v ./...
+      - name: Install onto an image file from stand-in downloads
         run: |
           sudo etros/test/make-fake-images.sh init fake
-          sudo SKIP_OLLIE=1 VERSION=test PI5_IMAGE=fake/pi5.img.gz R36S_IMAGE=fake/r36s.img.gz \
-            etros/build.sh "$PWD/out"
+          (cd etros/installer && go build -o ../../etros-installer .)
+          ETROS_SMALL_FILE=10 ./etros-installer -target file:card.img -pi5-boot fake/pi5-boot.tar.xz \
+            -r36s-boot fake/r36s-boot.tar.xz -r36s-image fake/r36s.img.gz -rpios fake/rpios.img.xz
+          start=$(sfdisk -J card.img | jq '.partitiontable.partitions[0].start')
+          size=$(sfdisk -J card.img | jq '.partitiontable.partitions[0].size')
+          dd if=card.img of=fat.img bs=512 skip="$start" count="$size" status=none
+          fsck.fat -n fat.img
+          MTOOLS_SKIP_CHECK=1 mcopy -i fat.img ::/etros/pi5/initrd.lz4 pi5-initrd.lz4
       - name: Boot checks
-        run: sudo etros/test/initrd-test.sh init out/fat/etros/etros.squashfs
-
-  image:
-    if: github.event_name != 'pull_request'
-    needs: test
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Make room
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo mkdir -p /mnt/etros && sudo chown "$USER" /mnt/etros
-          df -h / /mnt
-      - name: Tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends squashfs-tools mtools u-boot-tools lz4 \
-            cpio fdisk dosfstools e2fsprogs ffmpeg python3-pil xz-utils mmdebstrap \
-            qemu-user-static binfmt-support debian-archive-keyring
-      - name: Build
-        run: |
-          skip=0; [ "${{ inputs.ollie }}" = false ] && skip=1
-          sudo SKIP_OLLIE=$skip etros/build.sh /mnt/etros
-      - name: Split for the release
-        id: split
-        run: |
-          cd /mnt/etros
-          img=$(ls etros-*.img.xz)
-          split -b 1900M -d -a 2 "$img" "$img.part"
-          sha256sum "$img" > "$img.sha256"
-          echo "version=${img#etros-}" | sed 's/\.img\.xz$//' >> "$GITHUB_OUTPUT"
-          ls -lh
-      - name: Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tag="etros-${{ steps.split.outputs.version }}-${{ github.run_number }}"
-          cd /mnt/etros
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Etros ${{ steps.split.outputs.version }}" \
-            --notes "Download every .part file, join them (see etros/README.md), and write the .img.xz to an SD card with Raspberry Pi Imager or balenaEtcher." \
-            etros-*.img.xz.part* etros-*.img.xz.sha256
+        run: sudo etros/test/initrd-test.sh pi5-initrd.lz4 etros/installer/assets/etros.squashfs busybox.config

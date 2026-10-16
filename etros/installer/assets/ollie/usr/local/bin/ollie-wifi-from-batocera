@@ -1,0 +1,24 @@
+#!/bin/sh
+# Join the Wi-Fi networks already set up in Batocera, so there is nothing to
+# type on a handheld. Networks added in Ollie OS itself are kept as usual.
+CONF=/userdata/system/batocera.conf
+test -f "$CONF" || exit 0
+
+get() { sed -n "s/^$1=//p" "$CONF" | tail -n1; }
+
+test "$(get wifi.enabled)" = 1 || exit 0
+nmcli radio wifi on
+for n in "" 2 3; do
+    ssid=$(get "wifi$n.ssid")
+    key=$(get "wifi$n.key")
+    test -n "$ssid" || continue
+    if ! nmcli -t -f NAME connection show | grep -qxF "$ssid"; then
+        if test -n "$key"; then
+            nmcli connection add type wifi con-name "$ssid" ssid "$ssid" \
+                wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$key" >/dev/null
+        else
+            nmcli connection add type wifi con-name "$ssid" ssid "$ssid" >/dev/null
+        fi
+    fi
+done
+exit 0

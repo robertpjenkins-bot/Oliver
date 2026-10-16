@@ -1,1 +1,0 @@
-ollie ALL=(root) NOPASSWD: /usr/local/bin/ollie-boot-batocera, /sbin/poweroff

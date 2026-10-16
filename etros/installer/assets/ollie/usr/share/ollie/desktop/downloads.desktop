@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Downloads
+Exec=pcmanfm /userdata/downloads
+Icon=folder-download
+Terminal=false

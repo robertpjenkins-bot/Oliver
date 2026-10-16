@@ -1,6 +1,0 @@
-#!/bin/sh
-# Leave Ollie OS. The boot partition already says "batocera" (Ollie OS only
-# runs for one boot), so this just files away the downloads and restarts.
-/usr/local/bin/etros-sort-roms >> /userdata/system/logs/etros.log 2>&1
-sync
-exec /sbin/shutdown -r now

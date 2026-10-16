@@ -1,0 +1,71 @@
+#!/bin/sh
+# Ollie OS setup, run as root before the desktop starts, every boot. Each
+# step checks before it changes anything.
+
+# The files Etros copies in come from a FAT partition, which has no
+# permissions to carry over.
+chmod 0755 /usr/local/sbin/ollie-setup /usr/local/bin/ollie-* /usr/local/bin/etros-sort-roms \
+    /etc/systemd/system-generators/ollie-generator
+chmod 0644 /etc/fstab /etc/systemd/system/ollie-*.service /etc/chromium/policies/managed/ollie.json \
+    /etc/xdg/autostart/ollie-wallpaper.desktop /usr/share/ollie/* /usr/share/ollie/desktop/* 2>/dev/null
+
+# The desktop user, logged in automatically.
+if ! id ollie >/dev/null 2>&1; then
+    groups=
+    for g in sudo video render input audio netdev plugdev users gpio; do
+        getent group "$g" >/dev/null && groups="$groups,$g"
+    done
+    useradd -m -s /bin/bash -G "${groups#,}" ollie
+    passwd -d ollie
+fi
+echo 'ollie ALL=(root) NOPASSWD: /usr/local/bin/ollie-boot-batocera' > /etc/sudoers.d/ollie
+chmod 0440 /etc/sudoers.d/ollie
+if test -f /etc/lightdm/lightdm.conf; then
+    if grep -qE '^#?autologin-user=' /etc/lightdm/lightdm.conf; then
+        sed -i -E 's/^#?autologin-user=.*/autologin-user=ollie/' /etc/lightdm/lightdm.conf
+    else
+        sed -i 's/^\[Seat:\*\]$/[Seat:*]\nautologin-user=ollie/' /etc/lightdm/lightdm.conf
+    fi
+fi
+rm -f /etc/xdg/autostart/piwiz.desktop
+id rpi-first-boot-wizard >/dev/null 2>&1 && userdel -r rpi-first-boot-wizard 2>/dev/null
+
+# Shared storage with Batocera.
+if mountpoint -q /userdata; then
+    mkdir -p /userdata/downloads /userdata/ollie
+    chmod 1777 /userdata/downloads
+    chown ollie: /userdata/ollie
+fi
+
+# Home: Downloads is Batocera's downloads folder; desktop shortcuts.
+H=/home/ollie
+mkdir -p "$H/Desktop" "$H/.config/libfm"
+if mountpoint -q /userdata && ! test -L "$H/Downloads"; then
+    rmdir "$H/Downloads" 2>/dev/null || mv "$H/Downloads" "$H/Downloads.old" 2>/dev/null
+    ln -s /userdata/downloads "$H/Downloads"
+fi
+cp /usr/share/ollie/desktop/*.desktop "$H/Desktop/"
+chmod 0755 "$H"/Desktop/*.desktop
+printf '[config]\nquick_exec=1\n' > "$H/.config/libfm/libfm.conf"
+chown -R ollie: "$H/Desktop" "$H/.config"
+
+# Bobby: your own picture wins over the built-in one.
+for f in /userdata/ollie/bobby.png /userdata/ollie/bobby.jpg /userdata/ollie/bobby.jpeg; do
+    if test -f "$f"; then
+        cp "$f" /usr/share/ollie/bobby.png
+        break
+    fi
+done
+for conf in /etc/xdg/pcmanfm/*/desktop-items-*.conf "$H"/.config/pcmanfm/*/desktop-items-*.conf; do
+    test -f "$conf" || continue
+    sed -i -E -e 's|^wallpaper=.*|wallpaper=/usr/share/ollie/bobby.png|' \
+              -e 's|^wallpaper_mode=.*|wallpaper_mode=crop|' "$conf"
+done
+
+# The root file system was copied in at its original size; grow it into
+# the rest of its partition once.
+if ! test -e /var/lib/ollie/resized; then
+    mkdir -p /var/lib/ollie
+    resize2fs "$(findmnt -no SOURCE /)" && touch /var/lib/ollie/resized
+fi
+exit 0

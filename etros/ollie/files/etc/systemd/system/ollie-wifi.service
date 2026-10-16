@@ -1,0 +1,11 @@
+[Unit]
+Description=Join the Wi-Fi networks set up in Batocera
+After=NetworkManager.service ollie-setup.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /usr/local/bin/ollie-wifi-from-batocera
+
+[Install]
+WantedBy=multi-user.target

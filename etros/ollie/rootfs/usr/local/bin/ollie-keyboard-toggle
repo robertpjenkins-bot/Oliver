@@ -1,8 +1,0 @@
-#!/bin/sh
-# Show or hide the on-screen keyboard (X button on a gamepad).
-for kb in onboard matchbox-keyboard; do
-    if pkill -x "$kb"; then exit 0; fi
-done
-for kb in onboard matchbox-keyboard; do
-    command -v "$kb" >/dev/null && exec "$kb"
-done
