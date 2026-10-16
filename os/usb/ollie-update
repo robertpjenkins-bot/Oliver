@@ -88,8 +88,21 @@ say "ISO: $iso"
 # --- 2. What is new ------------------------------------------------------------------------
 work="$(mktemp -d "${TMPDIR:-/tmp}/ollie-update.XXXXXX")"
 trap 'rm -rf "$work" 2>/dev/null' EXIT
-"$T_xorriso" -osirrox on -indev "$iso" -extract /arch/x86_64/airootfs.sfs "$work/old.sfs" >/dev/null 2>&1 ||
-    die "this is not an Ollie OS ISO, or it is incomplete (download it again)."
+# The system image out of the ISO, checked against the checksum the ISO
+# carries: a damaged or half-downloaded ISO is caught here, not later.
+read_image() {
+    "$T_xorriso" -osirrox on -indev "$iso" -extract /arch/x86_64/airootfs.sfs "$work/old.sfs" \
+        -extract /arch/x86_64/airootfs.sha512 "$work/old.sha512" >/dev/null 2>&1 ||
+        die "this is not an Ollie OS ISO, or it is incomplete. Download it again (Ollie OS Get ISO does that)."
+    if [[ -s "$work/old.sha512" ]]; then
+        echo "  Checking the ISO is undamaged..."
+        [[ "$(sha512sum "$work/old.sfs" | awk '{print $1}')" == "$(awk '{print $1; exit}' "$work/old.sha512")" ]] ||
+            die "this ISO is damaged or incomplete (its system image does not match its checksum), so it cannot be updated. Download it again (Ollie OS Get ISO does that), then run this again."
+    fi
+    # Every path in the old image, for quick lookups.
+    "$T_unsquashfs" -d '' -ls "$work/old.sfs" 2>/dev/null | sed -n 's|^/||p' >"$work/old.list"
+}
+read_image
 changed=()
 while IFS= read -r -d '' f; do
     rel="${f#"$files"/}"
@@ -130,7 +143,7 @@ done
 if [[ "$best" != "$(dirname "$work")" ]]; then
     rm -rf "$work"
     work="$(mktemp -d "$best/ollie-update.XXXXXX")"
-    "$T_xorriso" -osirrox on -indev "$iso" -extract /arch/x86_64/airootfs.sfs "$work/old.sfs" >/dev/null 2>&1 || die "could not read the ISO."
+    read_image
 fi
 out_free="$(df --output=avail -B1 "$(dirname "$iso")" | tail -n1 | tr -d ' ')"
 iso_bytes="$(stat -c %s "$iso")"
@@ -153,7 +166,7 @@ readonly CAPS=(
     "usr/lib/ksysguard/ksgrd_network_helper security.capability=0x0100000200200000000000000000000000000000"
     "usr/lib/ksystemstats_intel_helper security.capability=0x0100000200000000000000004000000000000000"
 )
-in_old() { "$T_unsquashfs" -lls "$work/old.sfs" "$1" 2>/dev/null | grep -q "squashfs-root/$1\$\|squashfs-root/$1 -> "; }
+in_old() { grep -qxF -- "$1" "$work/old.list"; }
 now="$(date +%s)"
 pf="$work/new-files.pf"
 : >"$pf"
@@ -183,16 +196,33 @@ for c in "${CAPS[@]}"; do
     in_old "${c%% *}" && printf '"%s" x %s\n' "${c%% *}" "${c#* }" >>"$pf"
 done
 
+# What went wrong, kept for whoever helps (the work folder is removed on exit).
+keep_logs() {
+    {
+        echo "Ollie OS Updater problem, $(date)"
+        echo "ISO: $iso"
+        echo "Work folder: $work ($(df -h --output=avail "$work" | tail -n1) free)"
+        echo "== reading the old image"; tail -n 20 "$work/read.log"
+        echo "== writing the new image"; tail -n 40 "$work/write.log"
+        echo "== new files"; cat "$pf"
+    } >"$HOME/Ollie-OS-Updater-problem.txt" 2>/dev/null
+}
+
 say "Rebuilding the system image (10 to 30 minutes, depending on the computer)"
 echo "  No password needed. The newer files:"
 printf '    %s\n' "${changed[@]}"
 if ! "$T_unsquashfs" -no-xattrs -excludes -pf - "$work/old.sfs" "${excludes[@]}" 2>"$work/read.log" |
     "$T_mksquashfs" - "$work/airootfs.sfs" -pf - -pf "$pf" -noappend -comp xz -Xbcj x86 -b 1M -Xdict-size 1M \
         -no-progress >"$work/write.log" 2>&1; then
-    tail -n 5 "$work/read.log" "$work/write.log" >&2
-    die "could not rebuild the system image (is the disk full?)."
+    keep_logs
+    die "could not rebuild the system image (is the disk full?). Details: $HOME/Ollie-OS-Updater-problem.txt"
 fi
-grep -q 'Failed to read\|creating empty file' "$work/write.log" && die "could not read one of the new Ollie OS files; nothing was changed."
+if grep -q 'Failed to read\|creating empty file' "$work/write.log"; then
+    keep_logs
+    echo >&2
+    grep 'Failed to read' "$work/write.log" | head -n 5 >&2
+    die "could not read part of the files while rebuilding; nothing was changed. Details: $HOME/Ollie-OS-Updater-problem.txt"
+fi
 # Same special program permissions as before, or the new image is not used.
 xold="$("$T_unsquashfs" -s "$work/old.sfs" 2>/dev/null | awk '/Number of xattr ids/ {print $NF}')"
 xnew="$("$T_unsquashfs" -s "$work/airootfs.sfs" 2>/dev/null | awk '/Number of xattr ids/ {print $NF}')"
