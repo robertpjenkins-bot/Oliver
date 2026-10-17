@@ -10,7 +10,13 @@ card, with Ollie OS) onto a card. Needs a 32 GB or bigger card.
               Yes when it asks for administrator rights.
      Mac:     right-click etros-installer, choose Open (the first time).
               It asks for your password.
-     Linux:   run ./etros-installer in a terminal. It asks for your password.
+     Linux:   double-click "Etros Installer" (the launcher). If your file
+              manager asks, choose Run, or right-click it and choose
+              "Allow Launching" first. Double-clicking etros-installer
+              itself also opens a terminal. Or, in a terminal:
+              ./etros-installer   It asks for your password.
+     Chromebook: double-clicking can't start it. Open the Terminal app,
+              then: cd "Etros Installer - Linux" && ./etros-installer
 
 2. It looks in your Downloads folder, and in this folder, for:
      - an Etros image (etros-....img.gz). If there is one, it writes it to

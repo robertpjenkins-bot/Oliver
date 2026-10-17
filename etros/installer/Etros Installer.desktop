@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Etros Installer
+Comment=Put Etros on a microSD card
+Exec=sh -c "cd \\"\\$(dirname \\"\\$1\\")\\" && chmod +x etros-installer && ETROS_PAUSE=1 exec ./etros-installer" sh %k
+Terminal=true
+Icon=media-flash
+Categories=System;

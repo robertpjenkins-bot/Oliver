@@ -13,6 +13,9 @@ package() {  # package GOOS GOARCH ZIPNAME
     CGO_ENABLED=0 GOOS=$1 GOARCH=$2 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$dir/$exe" .
     sed 's/$/\r/' "READ ME.txt" > "$dir/READ ME.txt"
     chmod +x "$dir/$exe"
+    if [ "$1" = linux ]; then
+        install -m 0755 "Etros Installer.desktop" "$dir/Etros Installer.desktop"
+    fi
     (cd dist/stage && zip -q -9 -r "../$3.zip" "$3")
 }
 package windows amd64 "Etros Installer - Windows"

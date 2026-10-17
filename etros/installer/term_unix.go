@@ -14,7 +14,9 @@ func setupTerminal() {
 	setColours(err == nil && st.Mode()&os.ModeCharDevice != 0 && os.Getenv("TERM") != "dumb")
 }
 
-func pauseOnExit() bool { return false }
+// pauseOnExit is set when the installer opened its own terminal window,
+// which would otherwise close as soon as it ends.
+func pauseOnExit() bool { return os.Getenv("ETROS_PAUSE") == "1" }
 
 // relaunchElevated runs the installer again through sudo, which writing to
 // a card needs. It only returns if that can't be done; the installer then

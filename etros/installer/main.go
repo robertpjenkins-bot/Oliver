@@ -63,6 +63,9 @@ func main() {
 	case *target != "" || *write != "":
 		err = runCLI(opts, *target, *write, *yes)
 	default:
+		if openInTerminal() {
+			return
+		}
 		if !*elevated && relaunchElevated() {
 			return
 		}
