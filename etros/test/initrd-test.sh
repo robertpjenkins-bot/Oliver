@@ -46,6 +46,7 @@ cp "$LAYER" "$FAT/etros/etros.squashfs"
 # Ollie OS: an ext4 root file system, plus Etros's files for it.
 mkdir -p "$T/ollie/sbin" "$T/ollie/lib/modules" "$T/ollie/lib/firmware" "$T/ollie/boot" "$T/ollie/sys" "$T/ollie/proc" "$T/ollie/dev"
 echo ollie > "$T/ollie/whoami"
+ln -s ../lib/systemd/systemd "$T/ollie/sbin/init"  # as in Raspberry Pi OS
 mkfs.ext4 -q -L rootfs -d "$T/ollie" "$T/ollie.img" 32M
 # The same Ollie OS as a file on the storage partition, as cards put
 # together without a password have it.
@@ -170,6 +171,19 @@ out=$(BOOT_ENV="ETROS_SHARE=/share.img" boot "raspberrypi,5-model-b\0brcm,bcm271
 expect "$out" root ollie
 expect "$out" modules pi5
 expect "$out" next batocera
+
+echo "Pi 5, Ollie OS missing: back to Batocera, with the reason left on the card"
+echo ollie > "$FAT/etros/next-boot"
+rm -f "$FAT/etros/last-ollie-boot.txt"
+out=$(BOOT_ENV="ETROS_SHARE=/no-such-share.img" boot "raspberrypi,5-model-b\0brcm,bcm2712")
+expect "$out" root batocera-pi5
+expect "$out" next batocera
+if grep -q "did not start" "$FAT/etros/last-ollie-boot.txt" 2>/dev/null; then
+    echo "  ok   reason saved: $(cat "$FAT/etros/last-ollie-boot.txt")"
+else
+    echo "  FAIL no etros/last-ollie-boot.txt"
+    fails=$((fails + 1))
+fi
 
 echo "R36S, the boot after Ollie OS"
 out=$(boot "gameconsole,r36s\0rockchip,rk3326")

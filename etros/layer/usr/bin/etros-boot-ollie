@@ -2,7 +2,8 @@
 # Restart into Ollie OS. The choice lasts one boot: restarting or switching
 # off in Ollie OS brings the device back to Batocera.
 
-if ! test -f /boot/etros/ollie.squashfs; then
+# Cards made with Ollie OS carry its Etros files in /boot/etros/ollie.
+if ! test -d /boot/etros/ollie; then
     echo "Ollie OS is not on this card" >&2
     exit 1
 fi

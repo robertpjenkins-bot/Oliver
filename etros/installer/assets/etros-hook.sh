@@ -93,11 +93,20 @@ etros_mount_ollie() {
     fi
     mount -o rw "$(etros_ollie_device)" /new_root 2>/dev/null && return 0
     mkdir -p /share_root || return 1
-    mount -o rw "${ETROS_SHARE:-LABEL=SHARE}" /share_root || return 1
-    if mount -o loop,rw /share_root/etros/ollie-rootfs.img /new_root
+    if ! mount -o rw "${ETROS_SHARE:-LABEL=SHARE}" /share_root
+    then
+        ETROS_WHY="no partition 3 for Ollie OS, and the SHARE partition would not mount"
+        return 1
+    fi
+    if ! test -f /share_root/etros/ollie-rootfs.img
+    then
+        ETROS_WHY="Ollie OS is not on this card (no partition 3, no etros/ollie-rootfs.img on SHARE)"
+    elif mount -o loop,rw /share_root/etros/ollie-rootfs.img /new_root
     then
         ETROS_SHARE_MOUNTED=1
         return 0
+    else
+        ETROS_WHY="etros/ollie-rootfs.img on SHARE would not mount (unfinished copy?)"
     fi
     umount /share_root
     return 1
@@ -124,6 +133,14 @@ etros_boot_ollie() {
         mount --bind /new_root/.batocera/lib/firmware /new_root/lib/firmware
     else
         echo "etros: no Batocera image to take drivers from"
+    fi
+
+    # Without this, switch_root would fail with no way back (an unfinished
+    # copy of Ollie OS, say), and the device would just stop.
+    if ! test -e /new_root/sbin/init && ! test -L /new_root/sbin/init
+    then
+        ETROS_WHY="Ollie OS is incomplete on this card (no /sbin/init); put Etros on the card again"
+        return 1
     fi
 
     mount --move /boot_root /new_root/boot || return 1
@@ -159,8 +176,16 @@ etros_start() {
     then
         # Only returns if Ollie OS could not be started; carry on into
         # Batocera with a clean /new_root.
+        ETROS_WHY="Ollie OS could not be mounted"
         etros_boot_ollie
-        echo "etros: Ollie OS failed to start, falling back to Batocera"
+        echo "etros: Ollie OS failed to start, falling back to Batocera: ${ETROS_WHY}"
+        # Leave the reason on the card, in etros/last-ollie-boot.txt on the
+        # BATOCERA drive, so it can be read on a computer.
+        if mount -o remount,rw /boot_root 2>/dev/null
+        then
+            echo "Ollie OS did not start: ${ETROS_WHY}" > /boot_root/etros/last-ollie-boot.txt
+            mount -o remount,ro /boot_root
+        fi
         umount /new_root/lib/firmware /new_root/lib/modules /new_root/.batocera 2>/dev/null
         umount /new_root 2>/dev/null
         umount /share_root 2>/dev/null
