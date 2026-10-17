@@ -42,6 +42,8 @@ echo dtb > "$P/bcm2712-rpi-5-b.dtb"; echo dtbo > "$P/overlays/vc4-kms-v3d-pi5.dt
 echo "pi5 kernel" > "$P/boot/linux"; initrd "$P/boot/initrd.lz4"
 echo "pi5 squashfs" > "$P/boot/batocera.update"; echo bcm2712 > "$P/boot/batocera.board"
 echo same > "$P/overlays/shared.txt"
+: > "$P/overlays/README"   # real images have empty files, e.g. a README
+: > "$P/boot/empty.marker"
 image pi5 1 "$P"
 
 # R36S
@@ -55,6 +57,7 @@ initrd "$T/r36s-initrd.lz4"
 mkimage -A arm64 -O linux -T ramdisk -C none -n uInitrd -d "$T/r36s-initrd.lz4" "$R/uInitrd" > /dev/null
 echo "r36s squashfs" > "$R/boot/batocera.update"; echo r36s > "$R/boot/batocera.board"
 echo same > "$R/overlays/shared.txt"
+: > "$R/README"
 image r36s 16 "$R"
 # idbloader at 32K, U-Boot at 8M, trust at 12M
 head -c 65536 /dev/urandom > "$OUT/loader.bin"

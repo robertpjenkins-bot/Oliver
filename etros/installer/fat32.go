@@ -486,10 +486,17 @@ func (v *FATVolume) WriteTo(w io.Writer, streams map[string]func(emit func(path 
 		}
 		k := 0
 		err := stream(func(path string, r io.Reader) error {
+			// Empty files may or may not be mentioned by the stream.
+			for k < len(run) && run[k].size == 0 && !strings.EqualFold(run[k].name, baseOf(path)) {
+				k++
+			}
 			if k >= len(run) {
 				return fmt.Errorf("stream %s: unexpected file %s", key, path)
 			}
 			n := run[k]
+			if !strings.EqualFold(n.name, baseOf(path)) {
+				return fmt.Errorf("stream %s: expected %s, got %s", key, n.name, path)
+			}
 			k++
 			got, err := io.Copy(w, io.LimitReader(r, n.size+1))
 			if err != nil {
@@ -519,4 +526,11 @@ type zeroReader struct{}
 func (zeroReader) Read(p []byte) (int, error) {
 	clear(p)
 	return len(p), nil
+}
+
+func baseOf(p string) string {
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[i+1:]
+	}
+	return p
 }

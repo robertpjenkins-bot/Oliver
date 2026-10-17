@@ -184,7 +184,8 @@ func (s *imageSource) Files() ([]bootFile, error) {
 		}
 		f := bootFile{path: e.path, size: e.size}
 		if e.collect {
-			f.data = e.data[:e.size]
+			f.data = make([]byte, e.size)
+			copy(f.data, e.data)
 		}
 		out = append(out, f)
 	}

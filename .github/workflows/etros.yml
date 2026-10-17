@@ -47,6 +47,9 @@ jobs:
           (cd etros/installer && go build -o ../../etros-installer .)
           ETROS_SMALL_FILE=10 ./etros-installer -target file:card.img -pi5-boot fake/pi5-boot.tar.xz \
             -r36s-boot fake/r36s-boot.tar.xz -r36s-image fake/r36s.img.gz -rpios fake/rpios.img.xz
+          # Again from Batocera's disk images, as batocera.org offers them.
+          ETROS_SMALL_FILE=10 ./etros-installer -target file:card2.img -pi5-boot fake/pi5.img.gz \
+            -r36s-boot fake/r36s.img.gz -rpios fake/rpios.img.xz
           start=$(sfdisk -J card.img | jq '.partitiontable.partitions[0].start')
           size=$(sfdisk -J card.img | jq '.partitiontable.partitions[0].size')
           dd if=card.img of=fat.img bs=512 skip="$start" count="$size" status=none

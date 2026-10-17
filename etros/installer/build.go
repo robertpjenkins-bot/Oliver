@@ -306,7 +306,7 @@ func Plan(o Options, rep Reporter) (*Card, error) {
 				continue
 			}
 			byPath[key] = placed{board, f}
-			if data != nil {
+			if data != nil || f.size == 0 {
 				vol.AddBytes(dest, data)
 			} else {
 				vol.AddStreamed(dest, f.size, board)
