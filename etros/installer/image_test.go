@@ -79,7 +79,9 @@ func TestWriteImageRefusesSmallCard(t *testing.T) {
 func TestClassify(t *testing.T) {
 	cases := map[string]string{
 		"etros-2026-10-17.img.gz":                     "etros",
-		"Etros.zip":                                   "etros",
+		"Etros.zip":                                   "etros-zip",
+		"Etros Maker - Linux (11).zip":                "",
+		"Etros Installer - Windows.zip":               "",
 		"batocera-bcm2712-43-20261001.img.gz":         "pi5",
 		"batocera-rk3326-r36s-43-20261001.img.gz":     "r36s",
 		"boot-r36s-43.tar.xz":                         "r36s",

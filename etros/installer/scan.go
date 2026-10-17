@@ -4,6 +4,7 @@ package main
 // a finished Etros image, Batocera downloads, an Ollie OS image, games.
 
 import (
+	"archive/zip"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -88,8 +89,12 @@ func classify(name string) string {
 	switch {
 	case strings.HasSuffix(n, ".part") || strings.HasSuffix(n, ".crdownload"):
 		return ""
-	case strings.HasPrefix(n, "etros") && hasSuffix(n, append(imageExts, ".zip")...):
+	case strings.Contains(n, "installer") || strings.Contains(n, "maker"):
+		return "" // Etros Maker or the Installer itself, not an image
+	case strings.HasPrefix(n, "etros") && hasSuffix(n, imageExts...):
 		return "etros"
+	case strings.HasPrefix(n, "etros") && strings.HasSuffix(n, ".zip"):
+		return "etros-zip"
 	case strings.Contains(n, "bcm2712") && hasSuffix(n, append(imageExts, ".tar.xz")...):
 		return "pi5"
 	case strings.Contains(n, "r36s") && hasSuffix(n, append(imageExts, ".tar.xz")...):
@@ -133,6 +138,11 @@ func scan() Found {
 			switch classify(e.Name()) {
 			case "etros":
 				f.Etros = append(f.Etros, ff)
+			case "etros-zip":
+				// Only a zip that really has an Etros image in it.
+				if zipHasImage(path) {
+					f.Etros = append(f.Etros, ff)
+				}
 			case "pi5":
 				f.Pi5 = append(f.Pi5, ff)
 			case "r36s":
@@ -148,4 +158,18 @@ func scan() Found {
 		sort.Slice(*list, func(i, j int) bool { return (*list)[i].Mod.After((*list)[j].Mod) })
 	}
 	return f
+}
+
+func zipHasImage(path string) bool {
+	z, err := zip.OpenReader(path)
+	if err != nil {
+		return false
+	}
+	defer z.Close()
+	for _, f := range z.File {
+		if hasSuffix(strings.ToLower(f.Name), imageExts...) {
+			return true
+		}
+	}
+	return false
 }
