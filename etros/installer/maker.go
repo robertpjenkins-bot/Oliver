@@ -54,10 +54,14 @@ func runMaker(o Options) error {
 			heading("FOUND AN ETROS IMAGE")
 			fmt.Printf("  %s1%s  Put %s on a drive\n", cYellow, cReset, baseName(f.Etros[0].Path))
 			fmt.Printf("  %s2%s  Make a new one\n  %sq%s  Quit\n", cYellow, cReset, cYellow, cReset)
-			switch t.ask("Choose") {
+			a := ""
+			for a != "1" && a != "2" && a != "q" {
+				a = strings.ToLower(t.ask("Type 1, 2 or q:"))
+			}
+			switch a {
 			case "1":
-				return t.offerWrite(f.Etros[0].Path)
-			case "q", "Q":
+				return t.writeLoop(f.Etros[0].Path)
+			case "q":
 				return nil
 			}
 		}
@@ -133,27 +137,38 @@ func runMaker(o Options) error {
 
 // offerWrite asks whether to put the image on a drive now.
 func (t *tui) offerWrite(path string) error {
+	heading("PUT IT ON A DRIVE?")
+	fmt.Printf("  %s1%s  Yes, choose the SD card or USB drive now\n", cYellow, cReset)
+	fmt.Printf("  %s2%s  No, I'll use Raspberry Pi Imager or balenaEtcher later\n", cYellow, cReset)
 	for {
-		heading("PUT IT ON A DRIVE?")
-		fmt.Printf("  %s1%s  Yes, choose the SD card or USB drive now\n", cYellow, cReset)
-		fmt.Printf("  %s2%s  No, I'll use Raspberry Pi Imager or balenaEtcher later\n", cYellow, cReset)
-		switch t.ask("Choose") {
-		case "1":
-			disk, ok, err := t.pickCard()
-			if err != nil {
-				return err
-			}
-			if !ok {
-				continue
-			}
-			if err := t.writeImageTo(path, disk); err != nil {
-				logf("ERROR: %v", err)
-				fmt.Printf("\n%sSOMETHING WENT WRONG:%s %v\n", cRed, cReset, err)
-				note("This is also saved in etros-installer-log.txt in your Downloads.")
-				continue
-			}
+		a := strings.ToLower(t.ask("Type 1 or 2:"))
+		switch {
+		case a == "1" || a == "y" || a == "yes" || a == "":
+			return t.writeLoop(path)
+		case a == "2" || a == "n" || a == "no" || a == "q":
+			t.laterInstructions(path)
 			return nil
-		case "2":
+		}
+		note("Please type 1 (put it on a drive now) or 2 (do it later).")
+	}
+}
+
+// writeLoop writes the image to a drive, offering another go if that fails
+// or is stopped, but never just going round in circles.
+func (t *tui) writeLoop(path string) error {
+	for {
+		disk, ok, err := t.pickCard()
+		if err == nil && ok {
+			if err = t.writeImageTo(path, disk); err == nil {
+				return nil
+			}
+		}
+		if err != nil {
+			logf("ERROR: %v", err)
+			fmt.Printf("\n%sSOMETHING WENT WRONG:%s %v\n", cRed, cReset, err)
+			note("This is also saved in etros-installer-log.txt in your Downloads.")
+		}
+		if !t.yes("Try putting it on a drive again?", true) {
 			t.laterInstructions(path)
 			return nil
 		}

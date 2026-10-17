@@ -269,7 +269,7 @@ func (t *tui) pickCard() (disk Disk, ok bool, err error) {
 			fmt.Printf("  %s%d%s  %s %s(%s, %s)%s%s\n", cYellow, i+1, cReset, d.Name, cDim, gbs(d.Size), d.Path, cReset, warn)
 		}
 		fmt.Printf("  %sr%s  Look again    %sb%s  Back\n", cYellow, cReset, cYellow, cReset)
-		a := strings.ToLower(t.ask("Which card?"))
+		a := strings.ToLower(t.ask("Which drive? (its number, r or b)"))
 		if a == "b" {
 			return disk, false, nil
 		}
@@ -278,10 +278,19 @@ func (t *tui) pickCard() (disk Disk, ok bool, err error) {
 			disk = disks[n-1]
 			break
 		}
+		if a != "r" && a != "" {
+			if len(disks) == 0 {
+				note("There are no drives to pick yet. Put the card in, then press Enter to look again.")
+			} else {
+				note(fmt.Sprintf("Type a number from 1 to %d, r to look again, or b to go back.", len(disks)))
+			}
+		}
+		heading("CHOOSE THE DRIVE")
 	}
 	fmt.Printf("\n  %sEVERYTHING ON %s (%s) WILL BE ERASED.%s\n", cRed, strings.ToUpper(disk.Name), gbs(disk.Size), cReset)
-	if t.ask("Type ERASE to go on:") != "ERASE" {
-		note("Stopped. Nothing was written.")
+	a := strings.ToLower(t.ask("Type ERASE to go on (or anything else to stop):"))
+	if a != "erase" {
+		note("Stopped: you typed " + fmt.Sprintf("%q", a) + ", not ERASE. Nothing was written.")
 		return disk, false, nil
 	}
 	return disk, true, nil
@@ -344,7 +353,7 @@ func (t *tui) done() error {
 	note("2. The first start takes a few minutes. Don't switch it off.")
 	note("3. Ollie OS is under ETROS -> Boot into Ollie OS in the system list.")
 	note("4. To add games later, copy them into my-roms on the BATOCERA drive.")
-	t.ask("Press Enter to go back")
+	t.ask("Press Enter to finish")
 	return nil
 }
 
