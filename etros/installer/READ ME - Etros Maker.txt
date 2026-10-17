@@ -44,3 +44,10 @@ Bobby: put a picture called bobby.png in the "ollie" folder on the SHARE
 drive (\\ETROS\share\ollie over the network).
 
 Only use games you own.
+
+FIXING A CARD YOU ALREADY MADE
+Run Etros Maker with the card in the computer and choose 2, "Fix my Etros
+card". It updates Etros's own files on the BATOCERA drive and keeps your
+games, saves and settings. No password needed. If Ollie OS didn't start,
+Etros saves the reason in etros/last-ollie-boot.txt on the card, and the
+fixer shows it.

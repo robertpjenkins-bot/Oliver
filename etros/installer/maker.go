@@ -30,6 +30,10 @@ func runMaker(o Options) error {
 	note("the Super Metroid theme, the WELCOME TO ETROS screen, Ollie OS and your games.")
 	note("It makes an image file in Downloads. " + cBold + "No password needed." + cReset)
 
+	if done, err := t.startMenu(); done || err != nil {
+		return err
+	}
+
 	for {
 		heading("LOOKING IN DOWNLOADS")
 		f := scan()
@@ -48,22 +52,6 @@ func runMaker(o Options) error {
 		}
 		if len(f.R36S) > 0 {
 			line("Batocera, R36S", f.R36S, "")
-		}
-
-		if len(f.Etros) > 0 {
-			heading("FOUND AN ETROS IMAGE")
-			fmt.Printf("  %s1%s  Put %s on a drive\n", cYellow, cReset, baseName(f.Etros[0].Path))
-			fmt.Printf("  %s2%s  Make a new one\n  %sq%s  Quit\n", cYellow, cReset, cYellow, cReset)
-			a := ""
-			for a != "1" && a != "2" && a != "q" {
-				a = strings.ToLower(t.ask("Type 1, 2 or q:"))
-			}
-			switch a {
-			case "1":
-				return t.writeLoop(f.Etros[0].Path)
-			case "q":
-				return nil
-			}
 		}
 
 		if len(f.Pi5) == 0 {
@@ -213,4 +201,90 @@ func (t *tui) make(o Options) (string, error) {
 		return "", err
 	}
 	return path, os.Rename(path+".part", path)
+}
+
+// startMenu asks what to do. It returns done=true when there's nothing left
+// to do (fixed, written or quit); otherwise a new card is made.
+func (t *tui) startMenu() (bool, error) {
+	for {
+		var current string
+		heading("WHAT DO YOU WANT TO DO?")
+		fmt.Printf("  %s1%s  Make a new Etros card %s(recommended)%s\n", cYellow, cReset, cCyan, cReset)
+		fmt.Printf("  %s2%s  Fix my Etros card %s(quick: updates Etros, keeps your games and saves)%s\n", cYellow, cReset, cDim, cReset)
+		for _, e := range scan().Etros {
+			if imageIsCurrent(e.Path) {
+				current = e.Path
+				fmt.Printf("  %s3%s  Put %s on a drive %s(made earlier, up to date)%s\n", cYellow, cReset, baseName(e.Path), cDim, cReset)
+				break
+			}
+			logf("%s was made by an older Etros Maker", e.Path)
+		}
+		fmt.Printf("  %sq%s  Quit\n", cYellow, cReset)
+		switch a := strings.ToLower(t.ask("Type a number or q:")); {
+		case a == "1" || a == "":
+			return false, nil
+		case a == "2":
+			if t.fixLoop() {
+				return true, nil
+			}
+		case a == "3" && current != "":
+			return true, t.writeLoop(current)
+		case a == "q":
+			return true, nil
+		}
+	}
+}
+
+// fixLoop finds an Etros card on this computer and updates it. It returns
+// false to go back to the menu.
+func (t *tui) fixLoop() bool {
+	heading("FIX MY ETROS CARD")
+	for {
+		cards := etrosCardDirs()
+		if len(cards) == 0 {
+			note("No Etros card found. Put the card in (a card reader is fine), wait a few")
+			note("seconds, then press Enter. b goes back.")
+			if strings.ToLower(t.ask("Enter to look again, or b:")) == "b" {
+				return false
+			}
+			continue
+		}
+		dir := cards[0]
+		if len(cards) > 1 {
+			for i, c := range cards {
+				fmt.Printf("  %s%d%s  %s\n", cYellow, i+1, cReset, c)
+			}
+			var n int
+			if _, err := fmt.Sscan(t.ask("Which card?"), &n); err != nil || n < 1 || n > len(cards) {
+				continue
+			}
+			dir = cards[n-1]
+		}
+		note("Found an Etros card: " + dir)
+		if why, err := os.ReadFile(filepath.Join(dir, "etros", "last-ollie-boot.txt")); err == nil {
+			note("Last time: " + strings.TrimSpace(string(why)))
+		}
+		rep := newTermReporter()
+		err := fixCard(dir, rep)
+		rep.end()
+		if err != nil {
+			logf("ERROR: %v", err)
+			fmt.Printf("\n%sSOMETHING WENT WRONG:%s %v\n", cRed, cReset, err)
+			note("Choose 1 in the menu to make a new card instead.")
+			return false
+		}
+		closed := closeCard(dir)
+		fmt.Printf("\n%s  CARD FIXED%s\n\n", cYellow, cReset)
+		if closed {
+			note("1. Take the card out and put it back in your Raspberry Pi 5.")
+		} else {
+			note("1. Eject the card (in the file manager), then put it back in your Raspberry Pi 5.")
+		}
+		note("2. ETROS -> Boot into Ollie OS now restarts into Ollie OS.")
+		note("3. If Ollie OS still doesn't start, Etros comes back and saves why in")
+		note("   etros/last-ollie-boot.txt on the card; run this again and it shows it.")
+		note("   If it says the copy is incomplete, choose 1 to make a new card.")
+		t.ask("Press Enter to finish")
+		return true
+	}
 }

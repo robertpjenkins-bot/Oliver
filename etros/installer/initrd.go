@@ -135,6 +135,52 @@ const ubootMagic = 0x27051956
 // PatchInitrd returns a copy of a Batocera initramfs (bare lz4, or wrapped
 // in a U-Boot header as the R36S uses) with the Etros hook added.
 func PatchInitrd(in []byte) ([]byte, error) {
+	return editInitrd(in, func(entries []cpioEntry) ([]cpioEntry, error) {
+		found := false
+		var mode uint32 = 0o100755
+		for i, e := range entries {
+			if e.name == "init" || e.name == "./init" {
+				patched, err := patchInit(string(e.data))
+				if err != nil {
+					return nil, err
+				}
+				entries[i].data = []byte(patched)
+				mode = e.hdr[1]
+				found = true
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("initramfs has no /init")
+		}
+		hook := cpioEntry{name: "etros-hook.sh", data: etrosHook}
+		hook.hdr[0] = 0xE7505 // inode, unused by the kernel beyond uniqueness
+		hook.hdr[1] = mode
+		hook.hdr[4] = 1
+		return append(entries, hook), nil
+	})
+}
+
+// UpdateInitrdHook replaces the Etros hook in an initramfs Etros already
+// patched with this version's. It reports whether anything changed.
+func UpdateInitrdHook(in []byte) ([]byte, bool, error) {
+	changed := false
+	out, err := editInitrd(in, func(entries []cpioEntry) ([]cpioEntry, error) {
+		for i, e := range entries {
+			if e.name == "etros-hook.sh" || e.name == "./etros-hook.sh" {
+				changed = !bytes.Equal(e.data, etrosHook)
+				entries[i].data = etrosHook
+				return entries, nil
+			}
+		}
+		return nil, fmt.Errorf("this start-up file wasn't made by Etros")
+	})
+	if err != nil || !changed {
+		return in, false, err
+	}
+	return out, true, nil
+}
+
+func editInitrd(in []byte, edit func([]cpioEntry) ([]cpioEntry, error)) ([]byte, error) {
 	uboot := len(in) > 64 && binary.BigEndian.Uint32(in) == ubootMagic
 	payload := in
 	if uboot {
@@ -148,27 +194,9 @@ func PatchInitrd(in []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	found := false
-	var mode uint32 = 0o100755
-	for i, e := range entries {
-		if e.name == "init" || e.name == "./init" {
-			patched, err := patchInit(string(e.data))
-			if err != nil {
-				return nil, err
-			}
-			entries[i].data = []byte(patched)
-			mode = e.hdr[1]
-			found = true
-		}
+	if entries, err = edit(entries); err != nil {
+		return nil, err
 	}
-	if !found {
-		return nil, fmt.Errorf("initramfs has no /init")
-	}
-	hook := cpioEntry{name: "etros-hook.sh", data: etrosHook}
-	hook.hdr[0] = 0xE7505 // inode, unused by the kernel beyond uniqueness
-	hook.hdr[1] = mode
-	hook.hdr[4] = 1
-	entries = append(entries, hook)
 
 	var out bytes.Buffer
 	w := lz4.NewWriter(&out)

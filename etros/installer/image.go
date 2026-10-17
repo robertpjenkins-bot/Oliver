@@ -32,6 +32,7 @@ func newGzTarget(path string, size int64) (*gzTarget, error) {
 	}
 	bw := bufio.NewWriterSize(f, 4*mib)
 	gz, _ := gzip.NewWriterLevel(bw, gzip.BestSpeed)
+	gz.Comment = etrosStamp()
 	return &gzTarget{f: f, bw: bw, gz: gz, size: size}, nil
 }
 

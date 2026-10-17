@@ -304,10 +304,3 @@ func copyOllie(imagePath string, start, size int64, dest string, rep Reporter) e
 	}
 	return f.Close()
 }
-
-func syncDir(dir string) {
-	if d, err := os.Open(dir); err == nil {
-		d.Sync()
-		d.Close()
-	}
-}
