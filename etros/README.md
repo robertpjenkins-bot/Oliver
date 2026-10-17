@@ -23,7 +23,7 @@ Download the zip for your computer, unzip it, and run the installer inside:
 | --- | --- | --- |
 | Windows | `Etros Installer - Windows.zip` | Double-click **Etros Installer.exe**. If SmartScreen says "Windows protected your PC", choose **More info → Run anyway** (it isn't signed). Choose **Yes** for administrator rights. |
 | Mac | `Etros Installer - Mac (Apple chip).zip` or `(Intel).zip` | Right-click **etros-installer → Open** the first time (it isn't signed). It asks for your password. |
-| Linux | `Etros Installer - Linux.zip` | Double-click **Etros Installer** (choose **Run**, or right-click → **Allow Launching** first), or run `./etros-installer` in a terminal. It asks for your password. On a Chromebook, use the Terminal app. |
+| Linux | `Etros Installer - Linux.zip` | Double-click **Etros Installer** (choose **Run**, or right-click → **Allow Launching** first), or run `./etros-installer` in a terminal. No password on most desktops: it writes the card through UDisks, like GNOME Disks does, and only falls back to `sudo` if that isn't allowed. On a Chromebook, use the Terminal app. |
 
 It runs in a terminal window. First it looks in your **Downloads** folder
 (and the folder it was unzipped to) for:

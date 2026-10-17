@@ -14,7 +14,10 @@ card, with Ollie OS) onto a card. Needs a 32 GB or bigger card.
               manager asks, choose Run, or right-click it and choose
               "Allow Launching" first. Double-clicking etros-installer
               itself also opens a terminal. Or, in a terminal:
-              ./etros-installer   It asks for your password.
+              ./etros-installer
+              No password needed on most Linux desktops. If yours only
+              lets administrators write to cards, it asks once, when it
+              writes the card.
      Chromebook: double-clicking can't start it. Open the Terminal app,
               then: cd "Etros Installer - Linux" && ./etros-installer
 

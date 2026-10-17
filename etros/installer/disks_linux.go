@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/godbus/dbus/v5"
 )
 
 type lsblkDev struct {
@@ -82,10 +84,20 @@ func listDisks() ([]Disk, error) {
 }
 
 func canWriteDisks() (bool, string) {
-	if os.Geteuid() != 0 {
-		return false, "Run the installer with sudo to write to a card. You can still save an image file."
-	}
 	return true, ""
+}
+
+const udisks = "org.freedesktop.UDisks2"
+
+// udisksPath is the UDisks object for a device such as /dev/sdb.
+func udisksPath(dev string) dbus.ObjectPath {
+	return dbus.ObjectPath("/org/freedesktop/UDisks2/block_devices/" + strings.TrimPrefix(dev, "/dev/"))
+}
+
+// udisksCall calls a UDisks method, letting the desktop ask for a password
+// only if its rules require one for this device.
+func udisksCall(conn *dbus.Conn, dev, method string, args ...any) *dbus.Call {
+	return conn.Object(udisks, udisksPath(dev)).Call(method, dbus.FlagAllowInteractiveAuthorization, args...)
 }
 
 func openDisk(id string) (*diskTarget, error) {
@@ -102,30 +114,60 @@ func openDisk(id string) (*diskTarget, error) {
 	if disk == nil {
 		return nil, fmt.Errorf("%s is not a removable drive", id)
 	}
+	var children []string
 	devs, _ := lsblk()
 	for _, d := range devs {
-		if d.Path != id {
-			continue
-		}
-		for _, c := range d.Children {
-			if len(mounts(c)) > 0 {
-				if out, err := exec.Command("umount", c.Path).CombinedOutput(); err != nil {
-					return nil, fmt.Errorf("could not unmount %s: %s", c.Path, out)
+		if d.Path == id {
+			for _, c := range d.Children {
+				if len(mounts(c)) > 0 {
+					children = append(children, c.Path)
 				}
 			}
 		}
 	}
-	f, err := os.OpenFile(id, os.O_RDWR|os.O_EXCL, 0)
-	if err != nil {
-		return nil, err
+
+	if os.Geteuid() == 0 {
+		for _, c := range children {
+			if out, err := exec.Command("umount", c).CombinedOutput(); err != nil {
+				return nil, fmt.Errorf("could not unmount %s: %s", c, out)
+			}
+		}
+		f, err := os.OpenFile(id, os.O_RDWR|os.O_EXCL, 0)
+		if err != nil {
+			return nil, err
+		}
+		return &diskTarget{File: f, size: disk.Size}, nil
 	}
-	return &diskTarget{File: f, size: disk.Size}, nil
+
+	// As yourself: through UDisks, as GNOME Disks and USB writers do.
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return nil, errNeedsAdmin{fmt.Errorf("UDisks isn't available: %w", err)}
+	}
+	for _, c := range children {
+		if err := udisksCall(conn, c, udisks+".Filesystem.Unmount", map[string]dbus.Variant{}).Err; err != nil {
+			return nil, fmt.Errorf("could not unmount %s: %w", c, err)
+		}
+	}
+	var fd dbus.UnixFD
+	opts := map[string]dbus.Variant{}
+	if err := udisksCall(conn, id, udisks+".Block.OpenDevice", "rw", opts).Store(&fd); err != nil {
+		logf("UDisks OpenDevice: %v", err)
+		return nil, errNeedsAdmin{fmt.Errorf("this computer won't let you write to %s yourself: %w", id, err)}
+	}
+	return &diskTarget{File: os.NewFile(uintptr(fd), id), size: disk.Size, udisks: conn}, nil
 }
 
 func (d *diskTarget) Finish() error {
-	if err := d.Sync(); err != nil {
-		return err
+	err := d.Sync()
+	if cerr := d.Close(); err == nil {
+		err = cerr
 	}
-	exec.Command("blockdev", "--rereadpt", d.Name()).Run()
-	return d.Close()
+	if d.udisks != nil {
+		// Have the system read the new partition table.
+		udisksCall(d.udisks, d.Name(), udisks+".Block.Rescan", map[string]dbus.Variant{})
+	} else {
+		exec.Command("blockdev", "--rereadpt", d.Name()).Run()
+	}
+	return err
 }

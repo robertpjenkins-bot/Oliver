@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/godbus/dbus/v5"
 )
 
 // Disk is a removable drive the card can be written to.
@@ -21,5 +23,12 @@ func describe(d *Disk) {
 // diskTarget is an open disk being written.
 type diskTarget struct {
 	*os.File
-	size int64
+	size   int64
+	udisks *dbus.Conn // Linux: the connection the card was opened through
 }
+
+// errNeedsAdmin means writing to the card needs administrator rights after
+// all.
+type errNeedsAdmin struct{ error }
+
+func (e errNeedsAdmin) Unwrap() error { return e.error }

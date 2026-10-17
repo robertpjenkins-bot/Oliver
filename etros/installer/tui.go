@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -114,11 +115,16 @@ func runTUI(o Options) error {
 			})
 		} else {
 			item("Make Etros and write it to an SD card", func() error {
+				// Choose the card first, so the long build needs no one there.
+				disk, ok, err := t.pickCard()
+				if !ok || err != nil {
+					return err
+				}
 				path, err := t.build()
 				if err != nil {
 					return err
 				}
-				return t.writeToCard(path)
+				return t.writeImageTo(path, disk)
 			})
 			item("Make Etros and save it to Downloads (to write later)", func() error {
 				_, err := t.build()
@@ -243,17 +249,17 @@ func (t *tui) build() (string, error) {
 	return path, nil
 }
 
-// writeToCard asks which card and writes the image to it.
-func (t *tui) writeToCard(image string) error {
-	if ok, why := canWriteDisks(); !ok {
-		return fmt.Errorf("%s", why)
+// pickCard asks which card to use and for ERASE; ok is false if the person
+// backed out.
+func (t *tui) pickCard() (disk Disk, ok bool, err error) {
+	if can, why := canWriteDisks(); !can {
+		return disk, false, fmt.Errorf("%s", why)
 	}
 	heading("CHOOSE THE SD CARD")
-	var disk Disk
 	for {
 		disks, err := listDisks()
 		if err != nil {
-			return err
+			return disk, false, err
 		}
 		if len(disks) == 0 {
 			note("No SD cards or USB drives found. Put the card in.")
@@ -268,7 +274,7 @@ func (t *tui) writeToCard(image string) error {
 		fmt.Printf("  %sr%s  Look again    %sb%s  Back\n", cYellow, cReset, cYellow, cReset)
 		a := strings.ToLower(t.ask("Which card?"))
 		if a == "b" {
-			return nil
+			return disk, false, nil
 		}
 		var n int
 		if _, err := fmt.Sscan(a, &n); err == nil && n >= 1 && n <= len(disks) {
@@ -276,15 +282,38 @@ func (t *tui) writeToCard(image string) error {
 			break
 		}
 	}
-
 	fmt.Printf("\n  %sEVERYTHING ON %s (%s) WILL BE ERASED.%s\n", cRed, strings.ToUpper(disk.Name), gbs(disk.Size), cReset)
 	if t.ask("Type ERASE to go on:") != "ERASE" {
 		note("Stopped. Nothing was written.")
-		return nil
+		return disk, false, nil
 	}
+	return disk, true, nil
+}
 
+// writeToCard asks which card and writes the image to it.
+func (t *tui) writeToCard(image string) error {
+	disk, ok, err := t.pickCard()
+	if !ok || err != nil {
+		return err
+	}
+	return t.writeImageTo(image, disk)
+}
+
+// writeImageTo writes the image to a card already chosen.
+func (t *tui) writeImageTo(image string, disk Disk) error {
 	rep := newTermReporter()
 	out, err := openDisk(disk.ID)
+	var admin errNeedsAdmin
+	if errors.As(err, &admin) {
+		// Not allowed as yourself: write with administrator rights instead.
+		note(admin.Error())
+		if handled, err := elevatedWrite(image, disk.ID); handled {
+			if err != nil {
+				return fmt.Errorf("writing with administrator rights: %w", err)
+			}
+			return t.done()
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -299,6 +328,10 @@ func (t *tui) writeToCard(image string) error {
 	if err != nil {
 		return err
 	}
+	return t.done()
+}
+
+func (t *tui) done() error {
 	fmt.Printf("\n%s  MISSION COMPLETE%s\n\n", cYellow, cReset)
 	note("1. Put the card in your R36S or Raspberry Pi 5 and switch it on.")
 	note("2. The first start takes a few minutes. Don't switch it off.")

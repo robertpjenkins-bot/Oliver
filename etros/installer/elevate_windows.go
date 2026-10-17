@@ -42,3 +42,5 @@ func relaunchElevated() bool {
 	time.Sleep(3 * time.Second)
 	return true
 }
+
+func elevatedWrite(image, id string) (bool, error) { return false, nil }
