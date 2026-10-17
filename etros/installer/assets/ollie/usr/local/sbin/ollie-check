@@ -1,0 +1,51 @@
+#!/bin/sh
+# Ollie OS start-up check, run as early as systemd can. It leaves a report
+# in etros/ollie-log.txt on the BATOCERA drive, which a computer (and Etros
+# Maker's "Fix my Etros card") can read. If after three minutes there's no
+# desktop on the screen, it restarts into Etros rather than leaving the
+# screen black: Ollie OS only lasts one boot, so a restart is Etros.
+
+LOG=/boot/etros/ollie-log.txt
+
+report() {
+    mount -o remount,rw /boot 2>/dev/null
+    {
+        echo "Ollie OS, $(date)"
+        echo "$1"
+        echo
+        echo "== kernel =="
+        uname -a
+        echo
+        echo "== failed services =="
+        systemctl --failed --no-legend 2>&1
+        echo
+        echo "== display =="
+        systemctl status display-manager --no-pager -n 20 2>&1
+        ls -l /dev/dri 2>&1
+        echo
+        echo "== errors this boot =="
+        journalctl -b -p err --no-pager -n 80 2>&1
+    } > "$LOG.new" 2>&1
+    mv "$LOG.new" "$LOG"
+    sync
+    mount -o remount,ro /boot 2>/dev/null
+}
+
+desktop_up() {
+    systemctl is-active -q display-manager || return 1
+    for p in labwc wayfire lxsession lxpanel pcmanfm wf-panel-pi; do
+        pgrep -x "$p" >/dev/null && return 0
+    done
+    return 1
+}
+
+report "starting (systemd is running)"
+for _ in $(seq 1 36); do
+    sleep 5
+    if desktop_up; then
+        report "OK: the desktop is up"
+        exit 0
+    fi
+done
+report "NO DESKTOP after 3 minutes; restarting into Etros"
+systemctl reboot

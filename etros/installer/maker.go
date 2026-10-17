@@ -264,6 +264,13 @@ func (t *tui) fixLoop() bool {
 		if why, err := os.ReadFile(filepath.Join(dir, "etros", "last-ollie-boot.txt")); err == nil {
 			note("Last time: " + strings.TrimSpace(string(why)))
 		}
+		if b, err := os.ReadFile(filepath.Join(dir, "etros", "ollie-log.txt")); err == nil {
+			lines := strings.SplitN(string(b), "\n", 3)
+			if len(lines) >= 2 {
+				note("Ollie OS's last report: " + strings.TrimSpace(lines[1]))
+			}
+			note("(the whole report is etros/ollie-log.txt on the card's BATOCERA drive)")
+		}
 		rep := newTermReporter()
 		err := fixCard(dir, rep)
 		rep.end()

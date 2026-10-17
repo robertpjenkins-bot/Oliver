@@ -4,7 +4,7 @@
 
 # The files Etros copies in come from a FAT partition, which has no
 # permissions to carry over.
-chmod 0755 /usr/local/sbin/ollie-setup /usr/local/bin/ollie-* /usr/local/bin/etros-sort-roms \
+chmod 0755 /usr/local/sbin/ollie-setup /usr/local/sbin/ollie-check /usr/local/bin/ollie-* /usr/local/bin/etros-sort-roms \
     /etc/systemd/system-generators/ollie-generator
 chmod 0644 /etc/fstab /etc/systemd/system/ollie-*.service /etc/chromium/policies/managed/ollie.json \
     /etc/xdg/autostart/ollie-wallpaper.desktop /usr/share/ollie/* /usr/share/ollie/desktop/* 2>/dev/null
