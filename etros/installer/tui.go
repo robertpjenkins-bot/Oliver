@@ -37,7 +37,7 @@ var banner = []string{
 
 func showBanner() {
 	fmt.Println()
-	fmt.Printf("  %sENERGY 99%s  %s■ ■ ■ ■ ■ ■%s\n\n", cBold, cReset, cPink, cReset)
+	fmt.Printf("  %sENERGY 99%s  %s■ ■ ■ ■ ■ ■%s      %sversion %s%s\n\n", cBold, cReset, cPink, cReset, cDim, version, cReset)
 	fmt.Printf("              %sWELCOME TO%s\n", cCyan, cReset)
 	shades := []string{cYellow, cYellow, cOrange, cOrange, cRed, cBlue}
 	for i, line := range banner {

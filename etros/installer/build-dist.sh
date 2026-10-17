@@ -3,7 +3,7 @@
 # dist/.
 set -euo pipefail
 cd "$(dirname "$0")"
-VERSION=${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}
+VERSION=${VERSION:-$(date -u +%Y-%m-%d.%H%M)}  # shown on the title screen
 rm -rf dist && mkdir -p dist/stage
 package() {  # package GOOS GOARCH ZIPNAME [maker]
     local kind=${4:-installer}
@@ -12,7 +12,10 @@ package() {  # package GOOS GOARCH ZIPNAME [maker]
         exe=etros-maker readme="READ ME - Etros Maker.txt" desktop="Etros Maker.desktop"
     fi
     [ "$1" = windows ] && exe=$( [ "$kind" = maker ] && echo "Etros Maker.exe" || echo "Etros Installer.exe")
-    local dir="dist/stage/$3"
+    # The folder inside carries the version, so unzipping a newer one never
+    # lands on top of an older one.
+    local folder="$3 - version $VERSION"
+    local dir="dist/stage/$folder"
     mkdir -p "$dir"
     CGO_ENABLED=0 GOOS=$1 GOARCH=$2 go build -trimpath \
         -ldflags "-s -w -X main.version=$VERSION -X main.mode=$kind" -o "$dir/$exe" .
@@ -23,7 +26,7 @@ package() {  # package GOOS GOARCH ZIPNAME [maker]
             "Etros Installer.desktop" > "$dir/$desktop"
         chmod 0755 "$dir/$desktop"
     fi
-    (cd dist/stage && zip -q -9 -r "../$3.zip" "$3")
+    (cd dist/stage && zip -q -9 -r "../$3.zip" "$folder")
 }
 package windows amd64 "Etros Maker - Windows" maker
 package windows arm64 "Etros Maker - Windows (ARM)" maker
