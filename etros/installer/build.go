@@ -419,11 +419,18 @@ func rpiRootPartition(path string) (start, size int64, err error) {
 		return 0, 0, err
 	}
 	defer closer()
-	head := make([]byte, 512)
+	head := make([]byte, 64*1024)
 	if _, err := io.ReadFull(r, head); err != nil {
 		return 0, 0, fmt.Errorf("Ollie OS image: %w", err)
 	}
-	for _, p := range readMBR(head) {
+	// A CD/USB installer image (ISO) is a PC system, such as the PC
+	// version of Ollie OS. The Raspberry Pi 5 and the R36S have ARM
+	// processors and can't run it.
+	if string(head[0x8001:0x8006]) == "CD001" {
+		return 0, 0, fmt.Errorf("%s is an ISO for PCs; the Raspberry Pi 5 and R36S can't run it. "+
+			"Ollie OS for Etros needs an ARM (Raspberry Pi) image, such as Raspberry Pi OS 64-bit", filepath.Base(path))
+	}
+	for _, p := range readMBR(head[:512]) {
 		if p.kind == 0x83 && int64(p.count)*512 > size {
 			start, size = int64(p.start)*512, int64(p.count)*512
 		}

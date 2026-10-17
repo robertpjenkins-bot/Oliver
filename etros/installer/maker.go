@@ -9,8 +9,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
 
 // mode is "maker" in Etros Maker builds (set by build-dist.sh).
 var mode = "installer"
@@ -64,11 +70,29 @@ func runMaker(o Options) error {
 		}
 
 		heading("OPTIONS")
+		if len(f.PCOllie) > 0 {
+			note(cYellow + "Found " + baseName(f.PCOllie[0].Path) + ": that's Ollie OS for PCs." + cReset)
+			note("The Raspberry Pi 5 and R36S have ARM processors and can't run PC systems, so")
+			note("Etros's Ollie OS is a Raspberry Pi desktop instead (Bobby wallpaper, browser, Downloads).")
+		}
 		if len(f.Ollie) == 0 {
 			note("Ollie OS (the desktop for downloading ROMs, with Bobby on the wallpaper)")
-			note("needs Raspberry Pi OS: a 1.3 GB download, no password.")
+			note("needs a Raspberry Pi system image. Press Enter to download Raspberry Pi OS")
+			note("(1.3 GB, no password), or paste a download link to a Raspberry Pi (ARM) image.")
 		}
 		o.Ollie = t.yes("Include Ollie OS?", true)
+		if o.Ollie && len(f.Ollie) == 0 {
+			link := strings.Trim(t.ask("Download link (Enter for Raspberry Pi OS):"), `"' `)
+			switch {
+			case link == "":
+				o.Sources.RPiOS = ""
+			case isURL(link) || fileExists(link):
+				o.Sources.RPiOS = link
+			default:
+				note(cRed + "That isn't a web address (it should start with https://); using Raspberry Pi OS." + cReset)
+				o.Sources.RPiOS = ""
+			}
+		}
 		o.GamesDir = ""
 		if len(f.Games) > 0 && t.yes("Add your games from "+f.Games[0]+"?", true) {
 			o.GamesDir = f.Games[0]

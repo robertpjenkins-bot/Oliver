@@ -20,11 +20,12 @@ type foundFile struct {
 
 // Found is what a scan turned up; each list is newest first.
 type Found struct {
-	Etros []foundFile // finished Etros images
-	Pi5   []foundFile // Batocera for the Raspberry Pi 5
-	R36S  []foundFile // Batocera for the R36S
-	Ollie []foundFile // Ollie OS / Raspberry Pi OS images
-	Games []string    // my-roms folders
+	Etros   []foundFile // finished Etros images
+	Pi5     []foundFile // Batocera for the Raspberry Pi 5
+	R36S    []foundFile // Batocera for the R36S
+	Ollie   []foundFile // Ollie OS / Raspberry Pi OS images
+	PCOllie []foundFile // Ollie OS for PCs (x86 ISOs), which can't run here
+	Games   []string    // my-roms folders
 }
 
 // homeDir is the home of the person running the installer, even under sudo.
@@ -93,6 +94,8 @@ func classify(name string) string {
 		return "pi5"
 	case strings.Contains(n, "r36s") && hasSuffix(n, append(imageExts, ".tar.xz")...):
 		return "r36s"
+	case strings.Contains(n, "ollie") && strings.HasSuffix(n, ".iso"):
+		return "pc-ollie"
 	case strings.Contains(n, "ollie") && hasSuffix(n, imageExts...):
 		return "ollie"
 	case strings.Contains(n, "raspios") && strings.Contains(n, "arm64") && !strings.Contains(n, "lite") && hasSuffix(n, imageExts...):
@@ -136,6 +139,8 @@ func scan() Found {
 				f.R36S = append(f.R36S, ff)
 			case "ollie":
 				f.Ollie = append(f.Ollie, ff)
+			case "pc-ollie":
+				f.PCOllie = append(f.PCOllie, ff)
 			}
 		}
 	}
