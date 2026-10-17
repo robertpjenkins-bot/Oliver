@@ -269,7 +269,11 @@ func copyOllie(imagePath string, start, size int64, dest string, rep Reporter) e
 		return err
 	}
 	defer closer()
-	if _, err := io.CopyN(io.Discard, r, start); err != nil {
+	// The image is compressed, so getting to Ollie OS means unpacking all
+	// that comes before it. Count that in the progress too: it takes a while.
+	rep.Log("finding Ollie OS in the image, then copying it (takes a while; don't stop it)")
+	skip := &countingReader{r: io.LimitReader(r, start), p: func(d, _ int64) { rep.Progress(d, start+size) }}
+	if _, err := io.Copy(io.Discard, skip); err != nil {
 		return err
 	}
 	f, err := os.Create(dest)
@@ -292,7 +296,7 @@ func copyOllie(imagePath string, start, size int64, dest string, rep Reporter) e
 			}
 		}
 		off += n
-		rep.Progress(off, size)
+		rep.Progress(start+off, start+size)
 	}
 	if err := f.Truncate(size); err != nil {
 		f.Close()

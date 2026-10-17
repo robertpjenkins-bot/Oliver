@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 )
@@ -26,6 +27,16 @@ var version = "dev"
 
 func main() {
 	setupTerminal()
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		<-c
+		logf("stopped with Ctrl+C")
+		fmt.Printf("\n\n%sStopped.%s If it was putting Etros on a card, that card isn't finished:\n", cRed, cReset)
+		fmt.Println("run Etros Maker again and choose \"Put it on a drive\" to start the card over.")
+		fmt.Println("The image you made is still in Downloads, so it won't be made again.")
+		os.Exit(130)
+	}()
 	var (
 		list     = flag.Bool("list", false, "list the cards that can be written to, and exit")
 		target   = flag.String("target", "", "disk:ID (from -list) or file:PATH (.img or .img.gz)")

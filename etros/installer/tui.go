@@ -413,10 +413,22 @@ func (r *termReporter) Progress(done, total int64) {
 	filled := int(frac * width)
 	eta := ""
 	if el := time.Since(r.start); frac > 0.02 && frac < 1 {
-		left := time.Duration(float64(el) * (1 - frac) / frac).Round(time.Minute)
-		eta = fmt.Sprintf(" about %s left", strings.TrimSuffix(left.String(), "0s"))
+		eta = " " + timeLeft(time.Duration(float64(el)*(1-frac)/frac))
 	}
-	fmt.Printf("\r  %s%s%s%s%s %3.0f%%  %s / %s%s   ", cOrange, strings.Repeat("█", filled), cDim,
+	fmt.Printf("\r\x1b[K  %s%s%s%s%s %3.0f%%  %s / %s%s", cOrange, strings.Repeat("█", filled), cDim,
 		strings.Repeat("░", width-filled), cReset, frac*100, gbs(done), gbs(total), eta)
 	r.bar = true
+}
+
+func timeLeft(d time.Duration) string {
+	switch m := int(d.Round(time.Minute).Minutes()); {
+	case m < 1:
+		return "under a minute left"
+	case m == 1:
+		return "about 1 minute left"
+	case m < 60:
+		return fmt.Sprintf("about %d minutes left", m)
+	default:
+		return fmt.Sprintf("about %dh %02dm left", m/60, m%60)
+	}
 }
