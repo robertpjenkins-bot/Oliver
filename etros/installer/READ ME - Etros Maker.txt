@@ -1,0 +1,40 @@
+ETROS MAKER
+===========
+
+Turns Batocera for the Raspberry Pi 5 into Etros: the Super Metroid theme,
+the WELCOME TO ETROS screen, the ETROS menu with Ollie OS, and your games.
+It makes an image file. It never asks for a password.
+
+1. Put these in your Downloads folder:
+     - Batocera for the Raspberry Pi 5, from https://batocera.org/download
+       (a file like batocera-bcm2712-....img.gz). If it isn't there, Etros
+       Maker can download it for you.
+     - Optional: an Ollie OS image (ollie....img), or a Raspberry Pi OS
+       64-bit desktop image. If there's none, it can download Raspberry Pi
+       OS (1.3 GB) for Ollie OS.
+     - Optional: your games, in a folder called my-roms with one folder per
+       console inside (snes, gba, ...). ROM-hack patches (.bps, .ips) go
+       next to the game they patch.
+     - Optional: Batocera for the R36S too (batocera-...-r36s-....img.gz),
+       and the card will work in both.
+
+2. Run Etros Maker.
+     Windows: double-click "Etros Maker.exe". If Windows says it protected
+              your PC, choose More info, then Run anyway.
+     Mac:     right-click etros-maker, choose Open (the first time).
+     Linux:   double-click "Etros Maker" (choose Run, or right-click and
+              "Allow Launching" first), or run ./etros-maker in a terminal.
+     Chromebook: in the Terminal app: cd "Etros Maker - Linux" && ./etros-maker
+
+3. It saves etros-pi5-<date>.img.gz to Downloads.
+
+4. Put that on a 32 GB or bigger microSD card with Raspberry Pi Imager
+   (raspberrypi.com/software): Device Raspberry Pi 5, Operating system
+   "Use custom" and pick the file, Storage your card. balenaEtcher works
+   too.
+
+Ollie OS: in Etros, choose ETROS, then Boot into Ollie OS.
+Bobby: put a picture called bobby.png in the "ollie" folder on the SHARE
+drive (\\ETROS\share\ollie over the network).
+
+Only use games you own.

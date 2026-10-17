@@ -62,6 +62,13 @@ func main() {
 		}
 	case *target != "" || *write != "":
 		err = runCLI(opts, *target, *write, *yes)
+	case mode == "maker":
+		// Etros Maker only makes an image file, so it never asks for
+		// administrator rights.
+		if openInTerminal() {
+			return
+		}
+		err = runMaker(opts)
 	default:
 		if openInTerminal() {
 			return

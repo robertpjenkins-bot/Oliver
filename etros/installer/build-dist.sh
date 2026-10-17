@@ -5,19 +5,32 @@ set -euo pipefail
 cd "$(dirname "$0")"
 VERSION=${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}
 rm -rf dist && mkdir -p dist/stage
-package() {  # package GOOS GOARCH ZIPNAME
-    local exe=etros-installer
-    [ "$1" = windows ] && exe="Etros Installer.exe"
+package() {  # package GOOS GOARCH ZIPNAME [maker]
+    local kind=${4:-installer}
+    local exe=etros-installer readme="READ ME.txt" desktop="Etros Installer.desktop"
+    if [ "$kind" = maker ]; then
+        exe=etros-maker readme="READ ME - Etros Maker.txt" desktop="Etros Maker.desktop"
+    fi
+    [ "$1" = windows ] && exe=$( [ "$kind" = maker ] && echo "Etros Maker.exe" || echo "Etros Installer.exe")
     local dir="dist/stage/$3"
     mkdir -p "$dir"
-    CGO_ENABLED=0 GOOS=$1 GOARCH=$2 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$dir/$exe" .
-    sed 's/$/\r/' "READ ME.txt" > "$dir/READ ME.txt"
+    CGO_ENABLED=0 GOOS=$1 GOARCH=$2 go build -trimpath \
+        -ldflags "-s -w -X main.version=$VERSION -X main.mode=$kind" -o "$dir/$exe" .
+    sed 's/$/\r/' "$readme" > "$dir/READ ME.txt"
     chmod +x "$dir/$exe"
     if [ "$1" = linux ]; then
-        install -m 0755 "Etros Installer.desktop" "$dir/Etros Installer.desktop"
+        sed "s/etros-installer/$exe/g; s/Name=Etros Installer/Name=$( [ "$kind" = maker ] && echo 'Etros Maker' || echo 'Etros Installer')/" \
+            "Etros Installer.desktop" > "$dir/$desktop"
+        chmod 0755 "$dir/$desktop"
     fi
     (cd dist/stage && zip -q -9 -r "../$3.zip" "$3")
 }
+package windows amd64 "Etros Maker - Windows" maker
+package windows arm64 "Etros Maker - Windows (ARM)" maker
+package darwin  arm64 "Etros Maker - Mac (Apple chip)" maker
+package darwin  amd64 "Etros Maker - Mac (Intel)" maker
+package linux   amd64 "Etros Maker - Linux" maker
+package linux   arm64 "Etros Maker - Linux (ARM)" maker
 package windows amd64 "Etros Installer - Windows"
 package windows arm64 "Etros Installer - Windows (ARM)"
 package darwin  arm64 "Etros Installer - Mac (Apple chip)"

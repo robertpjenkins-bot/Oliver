@@ -49,6 +49,7 @@ const (
 type Options struct {
 	Sources  Sources
 	Ollie    bool   // include Ollie OS
+	NoR36S   bool   // the Raspberry Pi 5 only
 	GamesDir string // optional folder of games for my-roms
 	CacheDir string
 }
@@ -182,6 +183,7 @@ func mergeBootConf(pi, r36s []byte) []byte {
 type Card struct {
 	vol       *FATVolume
 	loader    []byte
+	boards    []string                   // "pi5", and "r36s" unless left out
 	boots     map[string]bootSource      // board -> its Batocera boot partition
 	streamed  map[string]map[string]bool // board -> archive paths written from the stream
 	rpiOS     string                     // Raspberry Pi OS image, if Ollie OS is included
@@ -196,6 +198,10 @@ func Plan(o Options, rep Reporter) (*Card, error) {
 	s := o.Sources
 	s.defaults()
 	c := &Card{boots: map[string]bootSource{}, streamed: map[string]map[string]bool{}}
+	c.boards = []string{"pi5", "r36s"}
+	if o.NoR36S {
+		c.boards = []string{"pi5"}
+	}
 	logf := func(f string, a ...any) { rep.Log(fmt.Sprintf(f, a...)) }
 
 	open := func(board, src, title string) error {
@@ -214,23 +220,27 @@ func Plan(o Options, rep Reporter) (*Card, error) {
 	if err := open("pi5", s.Pi5Boot, "Raspberry Pi 5"); err != nil {
 		return nil, err
 	}
-	if err := open("r36s", s.R36SBoot, "R36S"); err != nil {
-		return nil, err
+	if !o.NoR36S {
+		if err := open("r36s", s.R36SBoot, "R36S"); err != nil {
+			return nil, err
+		}
 	}
 
 	rep.Stage("Reading Batocera")
 	files := map[string][]bootFile{}
 	var err error
-	for _, board := range []string{"pi5", "r36s"} {
+	for _, board := range c.boards {
 		logf("reading the %s files", board)
 		if files[board], err = c.boots[board].Files(); err != nil {
 			return nil, err
 		}
 	}
 
-	// The R36S's bootloader comes from the start of its disk image.
-	c.loader = c.boots["r36s"].Loader()
-	if c.loader == nil {
+	// The R36S's bootloader comes from the start of its disk image. A Pi 5
+	// only card leaves that space empty.
+	if o.NoR36S {
+		c.loader = make([]byte, loaderEnd)
+	} else if c.loader = c.boots["r36s"].Loader(); c.loader == nil {
 		rep.Stage("Getting the R36S bootloader")
 		img := s.R36SImage
 		if img == "" {
@@ -264,7 +274,7 @@ func Plan(o Options, rep Reporter) (*Card, error) {
 	}
 	byPath := map[string]placed{}
 	var piConf, r36sConf []byte
-	for _, board := range []string{"pi5", "r36s"} {
+	for _, board := range c.boards {
 		c.streamed[board] = map[string]bool{}
 		for _, f := range files[board] {
 			dest := cardPath(board, f.path)
@@ -304,11 +314,17 @@ func Plan(o Options, rep Reporter) (*Card, error) {
 			}
 		}
 	}
-	if piConf == nil || r36sConf == nil {
-		return nil, fmt.Errorf("a Batocera download has no batocera-boot.conf; is it really a Batocera boot.tar.xz?")
+	if piConf == nil || (!o.NoR36S && r36sConf == nil) {
+		return nil, fmt.Errorf("a Batocera download has no batocera-boot.conf; is it really Batocera?")
 	}
-	vol.AddBytes("batocera-boot.conf", mergeBootConf(piConf, r36sConf))
-	for _, need := range []string{"etros/pi5/linux", "etros/pi5/initrd.lz4", "linux", "uInitrd", "boot.ini"} {
+	need := []string{"etros/pi5/linux", "etros/pi5/initrd.lz4", "config.txt"}
+	if o.NoR36S {
+		vol.AddBytes("batocera-boot.conf", piConf)
+	} else {
+		vol.AddBytes("batocera-boot.conf", mergeBootConf(piConf, r36sConf))
+		need = append(need, "linux", "uInitrd", "boot.ini")
+	}
+	for _, need := range need {
 		if vol.Lookup(need) == nil {
 			return nil, fmt.Errorf("the Batocera downloads are missing %s", need)
 		}
@@ -492,7 +508,7 @@ func (c *Card) Write(w io.WriterAt, rep Reporter, mbrLast bool) error {
 	// Windows can't spot the new partitions half way through, mount them,
 	// and refuse further writes to them; and a card whose writing was
 	// interrupted doesn't look like a working one.
-	rep.Stage("Writing the R36S bootloader")
+	rep.Stage("Writing the start of the card")
 	if mbrLast {
 		sw.Write(make([]byte, 512))
 	} else {
@@ -503,10 +519,10 @@ func (c *Card) Write(w io.WriterAt, rep Reporter, mbrLast bool) error {
 		return sw.err
 	}
 
-	rep.Stage("Writing the boot partition (Batocera for both devices)")
+	rep.Stage("Writing the boot partition (Batocera and Etros)")
 	stop := sw.tick(progress)
 	streams := map[string]func(func(string, io.Reader) error) error{}
-	for _, board := range []string{"pi5", "r36s"} {
+	for _, board := range c.boards {
 		board := board
 		streams[board] = func(emit func(string, io.Reader) error) error {
 			return c.boots[board].Stream(c.streamed[board], emit)

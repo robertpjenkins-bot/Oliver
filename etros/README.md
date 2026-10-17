@@ -15,6 +15,27 @@ Metroid. It includes **Ollie OS**, a desktop for downloading ROMs.
   console's folder when you go back to Etros.
 - **Your own games and ROM hacks** can be added from a computer.
 
+## Etros Maker (no password)
+
+**Etros Maker** never asks for a password, on any computer. It finds
+Batocera for the Raspberry Pi 5 in your Downloads, adds Etros to it (theme,
+splash, ETROS menu, Ollie OS, your games), and saves
+`etros-pi5-<date>.img.gz` to Downloads. You then put that on a card with
+[Raspberry Pi Imager](https://www.raspberrypi.com/software/) ("Use custom")
+or balenaEtcher.
+
+- If Batocera for the Pi 5 isn't in Downloads, it can download it.
+- An Ollie OS or Raspberry Pi OS image in Downloads is used for Ollie OS;
+  otherwise it can download Raspberry Pi OS.
+- A `my-roms` folder in Downloads is added as your games.
+- If Batocera for the R36S is in Downloads too, it can make the card work
+  in both devices.
+
+The zips are `Etros Maker - Windows.zip`, `- Mac (Apple chip).zip`,
+`- Mac (Intel).zip` and `- Linux.zip`. The Etros Installer below does the
+same, but also writes the card itself, which needs administrator rights on
+Windows and Mac.
+
 ## Installing
 
 Download the zip for your computer, unzip it, and run the installer inside:
