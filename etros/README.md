@@ -17,35 +17,40 @@ Metroid. It includes **Ollie OS**, a desktop for downloading ROMs.
 
 ## Installing
 
-Download the installer for your computer and run it:
+Download the zip for your computer, unzip it, and run the installer inside:
 
-| Computer | File | Notes |
+| Computer | Zip | Notes |
 | --- | --- | --- |
-| Windows | `Etros Installer.exe` | Choose **Yes** when Windows asks for administrator rights. If SmartScreen says "Windows protected your PC", choose **More info → Run anyway**: the installer isn't signed. |
-| Mac (M1 and later) | `etros-installer-mac-apple-silicon.zip` | Unzip, then **right-click → Open** the first time (it isn't signed). It asks for your password. |
-| Mac (Intel) | `etros-installer-mac-intel.zip` | As above. |
-| Linux | `etros-installer-linux-x86_64.zip` | Unzip and run `sudo ./etros-installer-linux-x86_64`. |
+| Windows | `Etros Installer - Windows.zip` | Double-click **Etros Installer.exe**. If SmartScreen says "Windows protected your PC", choose **More info → Run anyway** (it isn't signed). Choose **Yes** for administrator rights. |
+| Mac | `Etros Installer - Mac (Apple chip).zip` or `(Intel).zip` | Right-click **etros-installer → Open** the first time (it isn't signed). It asks for your password. |
+| Linux | `Etros Installer - Linux.zip` | Run `./etros-installer` in a terminal. It asks for your password. |
 
-The installer opens in your web browser:
+It runs in a terminal window. First it looks in your **Downloads** folder
+(and the folder it was unzipped to) for:
 
-1. Put a **32 GB or bigger** microSD card in your computer and pick it.
-2. Leave **Include Ollie OS** ticked (or untick it for a smaller, quicker
-   install).
-3. Optionally tick **Add my games** and give it your games folder (see below).
-4. Tick the box confirming the card will be erased, and choose
-   **INSTALL ETROS**.
+- **an Etros image** (`etros-….img.gz`, `.img`, `.img.xz`, or a `.zip`
+  with one inside). If there is one, it offers to write it straight to a
+  card.
+- **Batocera** for each device, as downloaded from batocera.org:
+  `batocera-bcm2712-….img.gz` for the Pi 5 and `batocera-…-r36s-….img.gz`
+  for the R36S. A `boot.tar.xz` works too.
+- **Ollie OS**: an `ollie….img` of your own, or a Raspberry Pi OS 64-bit
+  desktop image (`…raspios…arm64.img.xz`).
+- **your games**: a folder called `my-roms`.
 
-It downloads Batocera for both devices from Batocera's own servers (about
-6 GB) and Raspberry Pi OS for Ollie OS (about 1.3 GB). Then it builds the
-card and writes it. Downloads are kept, so a second card is much quicker.
-It can also save an image file to write later with balenaEtcher.
+Anything it doesn't find, it downloads. The first time, it makes the Etros
+image and saves it to Downloads as `etros-<date>.img.gz` (about 5 GB). Then
+it writes it to the card you pick, after you type **ERASE** to confirm.
+After that the image is found straight away, so more cards are quick. The
+image also works with balenaEtcher or Raspberry Pi Imager.
 
 Then put the card in either device and switch it on. The first start takes
 a few minutes while Batocera sets up its storage.
 
-Command line, for the curious: `etros-installer -list` shows the cards, and
-`etros-installer -target disk:ID` or `-target file:etros.img` installs
-without the window. `-help` lists the rest.
+For scripts: `etros-installer -list` shows the cards. Use
+`etros-installer -target file:etros.img.gz` to make an image,
+`-write etros.img.gz -target disk:ID` to write one, and `-help` for the
+rest.
 
 ## Your games (and ROM hacks)
 
@@ -62,8 +67,8 @@ My Games/gba/Metroid Fusion (USA).gba
 My Games/gba/Metroid - Zero Mission (USA).gba
 ```
 
-Either give that folder to the installer, or, after installing, put the
-card in your computer and copy them into **my-roms** on the **BATOCERA**
+Name that folder `my-roms` and put it in Downloads, and the installer adds
+it. Or, after installing, put the card in your computer and copy them into **my-roms** on the **BATOCERA**
 drive. On the next start Etros adds the games, applies the patches (the
 hack shows up as `<The hack>.sfc`), and empties `my-roms`. A `.bps` patch
 finds its game by itself. An `.ips` patch must be the only game in its
@@ -92,8 +97,8 @@ before restarting.
   use them: `.bin`, `.iso`, `.cue`, `.chd`, `.7z` and arcade `.zip`. Those
   stay in Downloads for you to move into **ROMs** yourself.
 
-Ollie OS is Raspberry Pi OS, running on the Batocera kernel of whichever
-device it's on. The first time it starts, it sets up its user, desktop and
+Ollie OS is Raspberry Pi OS (or your own Ollie OS image, if you put one in
+Downloads), running on the Batocera kernel of whichever device it's on. The first time it starts, it sets up its user, desktop and
 wallpaper, and grows into its partition, so that start is slower.
 
 ## How it works
@@ -108,7 +113,7 @@ microSD card
 │   ├─ etros/etros.squashfs      the Etros look and scripts, for both
 │   ├─ etros/ollie/              Etros's settings for Ollie OS
 │   └─ my-roms/                  drop-box for your games
-├─ partition 3     rootfs (ext4): Ollie OS
+├─ partition 3     Ollie OS (ext4)
 └─ partition 2     SHARE (ext4): games, saves, settings, downloads (shared)
 ```
 
@@ -123,8 +128,9 @@ to each one's boot script (initramfs). At start-up the hook:
 - boots Ollie OS instead if `etros/next-boot` says `ollie`, resetting it
   first, and lends Ollie OS that device's drivers.
 
-The installer is a single Go program with no dependencies. It writes the
-FAT32 partition itself, in one pass, straight onto the card. All the
+The installer is a single Go program with no dependencies. It reads the
+Batocera images and writes the FAT32 partition itself, in one pass each,
+without unpacking anything to disk. All the
 artwork is drawn by [`scripts/make-art.py`](scripts/make-art.py), with the
 Press Start 2P font (SIL Open Font License).
 
@@ -132,14 +138,14 @@ Press Start 2P font (SIL Open Font License).
 
 - `installer/gen-assets.sh` regenerates what the installer carries inside
   it, after you change `layer/`, `ollie/`, `initrd/` or the artwork.
-- `installer/build-dist.sh` builds the installer for every platform into
+- `installer/build-dist.sh` builds the zips for every platform into
   `installer/dist/`.
 - Tests:
   - `go test ./...` in `installer/`. Set `BATOCERA_INIT` to Batocera's real
     `init` to test against it.
   - `python3 -m unittest discover -s test` for the ROM sorting and patching.
   - `test/make-fake-images.sh`, then the installer with `-pi5-boot`,
-    `-r36s-boot`, `-r36s-image` and `-rpios` pointing at the fakes, then
+    `-r36s-boot` and `-rpios` pointing at the fakes, then
     `test/initrd-test.sh` on the resulting initramfs. This runs Batocera's
     boot script in a sandbox with only the commands Batocera's own
     initramfs has. `.github/workflows/etros.yml` shows the full sequence.

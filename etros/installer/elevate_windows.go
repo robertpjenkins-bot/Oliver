@@ -13,7 +13,7 @@ import (
 // which writing to a card needs; Windows asks first. It reports whether a
 // new copy took over. If the request is turned down this copy carries on,
 // able to save image files only.
-func relaunchElevated(port int) bool {
+func relaunchElevated() bool {
 	if windows.GetCurrentProcessToken().IsElevated() {
 		return false
 	}

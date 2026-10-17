@@ -1,0 +1,40 @@
+ETROS INSTALLER
+===============
+
+Puts Etros (Batocera for the Raspberry Pi 5 and the R36S, on one microSD
+card, with Ollie OS) onto a card. Needs a 32 GB or bigger card.
+
+1. Run the installer.
+     Windows: double-click "Etros Installer.exe". If Windows says it
+              protected your PC, choose More info, then Run anyway. Choose
+              Yes when it asks for administrator rights.
+     Mac:     right-click etros-installer, choose Open (the first time).
+              It asks for your password.
+     Linux:   run ./etros-installer in a terminal. It asks for your password.
+
+2. It looks in your Downloads folder, and in this folder, for:
+     - an Etros image (etros-....img.gz). If there is one, it writes it to
+       your card straight away.
+     - Batocera for each device (batocera-bcm2712-....img.gz for the Pi 5,
+       batocera-...-r36s-....img.gz for the R36S, from batocera.org)
+     - Ollie OS: an ollie....img or a Raspberry Pi OS 64-bit desktop image
+     - your games: a folder called my-roms, with one folder per console
+       inside (snes, gba, ...). ROM-hack patches (.bps, .ips) go next to
+       the game they patch.
+   Anything it doesn't find, it downloads.
+
+3. The first time, it makes the Etros image and saves it to Downloads
+   (about 5 GB), then writes it to your card. After that it reuses the
+   image, so more cards are quick. You can also write that image with
+   balenaEtcher or Raspberry Pi Imager.
+
+4. Put the card in your R36S or Raspberry Pi 5 and switch it on. The first
+   start takes a few minutes; don't switch it off.
+
+Ollie OS: in Etros, choose ETROS, then Boot into Ollie OS.
+Bobby: put a picture called bobby.png in the "ollie" folder on the SHARE
+drive (\\ETROS\share\ollie over the network).
+Adding games later: put the card in a computer and copy them into my-roms
+on the BATOCERA drive.
+
+Only use games you own.

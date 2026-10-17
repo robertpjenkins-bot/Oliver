@@ -16,8 +16,8 @@
 #   /etros/ollie/           Etros's files for Ollie OS, copied in on each start
 #   /etros/next-boot        "ollie" to start Ollie OS once on the next boot
 #
-# Ollie OS itself is a Raspberry Pi OS root file system on its own partition,
-# labelled "rootfs".
+# Ollie OS itself is a Linux root file system (Raspberry Pi OS, or an Ollie
+# OS image you supply) on partition 3.
 #
 # Batocera expects its images in /boot/boot, so the directory for the board
 # we are running on is bound over /boot_root/boot and the rest of Batocera
@@ -67,9 +67,24 @@ etros_want_ollie() {
     return 0
 }
 
+# Ollie OS is partition 3 of the card the boot partition (partition 1) is on.
+etros_ollie_device() {
+    local dev mnt rest
+    while read -r dev mnt rest
+    do
+        if test "${mnt}" = /boot_root
+        then
+            case "${dev}" in
+                /dev/*1) echo "${dev%1}3"; return 0 ;;
+            esac
+        fi
+    done < /proc/mounts
+    echo LABEL=rootfs
+}
+
 etros_boot_ollie() {
     echo "etros: starting Ollie OS"
-    mount -o rw "${ETROS_OLLIE_ROOT:-LABEL=rootfs}" /new_root || return 1
+    mount -o rw "${ETROS_OLLIE_ROOT:-$(etros_ollie_device)}" /new_root || return 1
 
     # Etros's settings and scripts for Ollie OS. Copied every start so a new
     # Etros brings new ones; Ollie OS's own setup service fixes permissions,

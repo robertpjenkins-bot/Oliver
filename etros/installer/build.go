@@ -99,6 +99,8 @@ func readBoot(path string) ([]bootFile, error) {
 	return files, err
 }
 
+type tarHeader = tar.Header
+
 func eachTarFile(path string, fn func(h *tar.Header, r io.Reader) error) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -180,7 +182,7 @@ func mergeBootConf(pi, r36s []byte) []byte {
 type Card struct {
 	vol       *FATVolume
 	loader    []byte
-	boots     map[string]string          // board -> boot.tar.xz path
+	boots     map[string]bootSource      // board -> its Batocera boot partition
 	streamed  map[string]map[string]bool // board -> archive paths written from the stream
 	rpiOS     string                     // Raspberry Pi OS image, if Ollie OS is included
 	rootStart int64                      // the Raspberry Pi OS root partition, within its image
@@ -193,43 +195,62 @@ type Card struct {
 func Plan(o Options, rep Reporter) (*Card, error) {
 	s := o.Sources
 	s.defaults()
-	c := &Card{boots: map[string]string{}, streamed: map[string]map[string]bool{}}
+	c := &Card{boots: map[string]bootSource{}, streamed: map[string]map[string]bool{}}
 	logf := func(f string, a ...any) { rep.Log(fmt.Sprintf(f, a...)) }
 
-	rep.Stage("Downloading Batocera for the Raspberry Pi 5")
-	var err error
-	if c.boots["pi5"], err = fetch(s.Pi5Boot, o.CacheDir, "batocera-pi5", rep.Progress, rep.Log); err != nil {
+	open := func(board, src, title string) error {
+		rep.Stage("Getting Batocera for the " + title)
+		path, err := fetch(src, o.CacheDir, "batocera-"+board, rep.Progress, rep.Log)
+		if err != nil {
+			return err
+		}
+		if isDiskImage(path) {
+			c.boots[board] = &imageSource{path: path}
+		} else {
+			c.boots[board] = tarSource{path}
+		}
+		return nil
+	}
+	if err := open("pi5", s.Pi5Boot, "Raspberry Pi 5"); err != nil {
 		return nil, err
 	}
-	rep.Stage("Downloading Batocera for the R36S")
-	if c.boots["r36s"], err = fetch(s.R36SBoot, o.CacheDir, "batocera-r36s", rep.Progress, rep.Log); err != nil {
+	if err := open("r36s", s.R36SBoot, "R36S"); err != nil {
 		return nil, err
-	}
-	rep.Stage("Getting the R36S bootloader")
-	img := s.R36SImage
-	if img == "" {
-		if img, err = r36sImageURL(s.R36SBoot); err != nil {
-			return nil, err
-		}
-	}
-	if c.loader, err = r36sLoader(img); err != nil {
-		return nil, err
-	}
-	if o.Ollie {
-		rep.Stage("Downloading Raspberry Pi OS for Ollie OS")
-		if c.rpiOS, err = fetch(s.RPiOS, o.CacheDir, "raspios", rep.Progress, rep.Log); err != nil {
-			return nil, err
-		}
-		if c.rootStart, c.rootSize, err = rpiRootPartition(c.rpiOS); err != nil {
-			return nil, err
-		}
 	}
 
 	rep.Stage("Reading Batocera")
 	files := map[string][]bootFile{}
+	var err error
 	for _, board := range []string{"pi5", "r36s"} {
 		logf("reading the %s files", board)
-		if files[board], err = readBoot(c.boots[board]); err != nil {
+		if files[board], err = c.boots[board].Files(); err != nil {
+			return nil, err
+		}
+	}
+
+	// The R36S's bootloader comes from the start of its disk image.
+	c.loader = c.boots["r36s"].Loader()
+	if c.loader == nil {
+		rep.Stage("Getting the R36S bootloader")
+		img := s.R36SImage
+		if img == "" {
+			if img, err = r36sImageURL(s.R36SBoot); err != nil {
+				return nil, err
+			}
+		}
+		if c.loader, err = r36sLoader(img); err != nil {
+			return nil, err
+		}
+	} else if len(c.loader) < loaderEnd {
+		return nil, fmt.Errorf("the R36S image doesn't look like one: its boot partition starts too early")
+	}
+
+	if o.Ollie {
+		rep.Stage("Getting Raspberry Pi OS for Ollie OS")
+		if c.rpiOS, err = fetch(s.RPiOS, o.CacheDir, "raspios", rep.Progress, rep.Log); err != nil {
+			return nil, err
+		}
+		if c.rootStart, c.rootSize, err = rpiRootPartition(c.rpiOS); err != nil {
 			return nil, err
 		}
 	}
@@ -337,6 +358,12 @@ func Plan(o Options, rep Reporter) (*Card, error) {
 	return c, nil
 }
 
+// isDiskImage tells a Batocera disk image from a boot.tar.xz.
+func isDiskImage(path string) bool {
+	p := strings.ToLower(path)
+	return strings.HasSuffix(p, ".img") || strings.HasSuffix(p, ".img.gz") || strings.HasSuffix(p, ".img.xz")
+}
+
 func roundMiB(n int64) int64 { return (n + mib - 1) / mib * mib }
 
 // addGames copies a folder of games into my-roms; Etros adds them, and
@@ -368,7 +395,8 @@ func addGames(vol *FATVolume, dir string, rep Reporter) error {
 	})
 }
 
-// rpiRootPartition finds the root partition in a Raspberry Pi OS image.
+// rpiRootPartition finds Ollie OS's root file system in a disk image: the
+// largest Linux partition (Raspberry Pi OS has one, after its firmware).
 func rpiRootPartition(path string) (start, size int64, err error) {
 	r, closer, err := openImage(path)
 	if err != nil {
@@ -377,13 +405,17 @@ func rpiRootPartition(path string) (start, size int64, err error) {
 	defer closer()
 	head := make([]byte, 512)
 	if _, err := io.ReadFull(r, head); err != nil {
-		return 0, 0, fmt.Errorf("Raspberry Pi OS image: %w", err)
+		return 0, 0, fmt.Errorf("Ollie OS image: %w", err)
 	}
-	parts := readMBR(head)
-	if len(parts) < 2 || parts[1].kind != 0x83 {
-		return 0, 0, fmt.Errorf("Raspberry Pi OS image: no Linux root partition where expected")
+	for _, p := range readMBR(head) {
+		if p.kind == 0x83 && int64(p.count)*512 > size {
+			start, size = int64(p.start)*512, int64(p.count)*512
+		}
 	}
-	return int64(parts[1].start) * 512, int64(parts[1].count) * 512, nil
+	if size == 0 {
+		return 0, 0, fmt.Errorf("%s has no Linux partition to use as Ollie OS", filepath.Base(path))
+	}
+	return start, size, nil
 }
 
 // openImage opens a disk image, decompressing .xz and .gz on the fly.
@@ -448,8 +480,10 @@ func (c *Card) fatEnd() int64 {
 	return c.shareStart
 }
 
-// Write puts the card onto w, which must be at least c.Size bytes.
-func (c *Card) Write(w io.WriterAt, rep Reporter) error {
+// Write puts the card onto w, which must be at least c.Size bytes. With
+// mbrLast the partition table is written at the very end (for a real card);
+// otherwise everything is written in order (for an image file).
+func (c *Card) Write(w io.WriterAt, rep Reporter, mbrLast bool) error {
 	sw := &seqWriter{w: w}
 	total := c.Size
 	progress := func() { rep.Progress(sw.done.Load(), total) }
@@ -459,7 +493,11 @@ func (c *Card) Write(w io.WriterAt, rep Reporter) error {
 	// and refuse further writes to them; and a card whose writing was
 	// interrupted doesn't look like a working one.
 	rep.Stage("Writing the R36S bootloader")
-	sw.Write(make([]byte, 512))
+	if mbrLast {
+		sw.Write(make([]byte, 512))
+	} else {
+		sw.Write(c.mbr())
+	}
 	sw.Write(c.loader[512:])
 	if sw.err != nil {
 		return sw.err
@@ -471,12 +509,7 @@ func (c *Card) Write(w io.WriterAt, rep Reporter) error {
 	for _, board := range []string{"pi5", "r36s"} {
 		board := board
 		streams[board] = func(emit func(string, io.Reader) error) error {
-			return eachTarFile(c.boots[board], func(h *tar.Header, r io.Reader) error {
-				if !c.streamed[board][h.Name] {
-					return nil
-				}
-				return emit(h.Name, r)
-			})
+			return c.boots[board].Stream(c.streamed[board], emit)
 		}
 	}
 	err := c.vol.WriteTo(sw, streams)
@@ -518,9 +551,11 @@ func (c *Card) Write(w io.WriterAt, rep Reporter) error {
 	if err := sw.Flush(); err != nil {
 		return err
 	}
-	rep.Stage("Writing the partition table")
-	if _, err := w.WriteAt(c.mbr(), 0); err != nil {
-		return err
+	if mbrLast {
+		rep.Stage("Writing the partition table")
+		if _, err := w.WriteAt(c.mbr(), 0); err != nil {
+			return err
+		}
 	}
 	progress()
 	return nil
