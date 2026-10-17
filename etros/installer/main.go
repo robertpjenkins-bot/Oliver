@@ -168,6 +168,9 @@ func runCLI(o Options, target, image string, yes bool) error {
 	rep := newTermReporter()
 	defer rep.end()
 
+	if image != "" && filesInstallSupported() {
+		return filesInstall(image, where, rep)
+	}
 	if image != "" {
 		d, err := openDisk(where)
 		if err != nil {

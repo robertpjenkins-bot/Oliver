@@ -307,6 +307,16 @@ func (t *tui) writeToCard(image string) error {
 
 // writeImageTo writes the image to a card already chosen.
 func (t *tui) writeImageTo(image string, disk Disk) error {
+	// Linux desktops: partitions and files only, which needs no password.
+	if filesInstallSupported() {
+		rep := newTermReporter()
+		err := filesInstall(image, disk.ID, rep)
+		rep.end()
+		if err != nil {
+			return err
+		}
+		return t.done()
+	}
 	// Without the rights to write to a drive, a copy of the installer that
 	// has them does the writing (Windows asks Yes/No, macOS for a password).
 	if can, _ := canWriteDisks(); !can {

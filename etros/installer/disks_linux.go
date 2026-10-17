@@ -104,10 +104,10 @@ func udisksPath(dev string) dbus.ObjectPath {
 	return dbus.ObjectPath("/org/freedesktop/UDisks2/block_devices/" + strings.TrimPrefix(dev, "/dev/"))
 }
 
-// udisksCall calls a UDisks method, letting the desktop ask for a password
-// only if its rules require one for this device.
+// udisksCall calls a UDisks method. It never lets UDisks ask for a password:
+// if one would be needed, the call fails instead.
 func udisksCall(conn *dbus.Conn, dev, method string, args ...any) *dbus.Call {
-	return conn.Object(udisks, udisksPath(dev)).Call(method, dbus.FlagAllowInteractiveAuthorization, args...)
+	return conn.Object(udisks, udisksPath(dev)).Call(method, 0, args...)
 }
 
 func openDisk(id string) (*diskTarget, error) {

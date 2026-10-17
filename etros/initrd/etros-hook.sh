@@ -82,9 +82,30 @@ etros_ollie_device() {
     echo LABEL=rootfs
 }
 
+# Ollie OS is either partition 3 (cards written whole) or a file on the
+# storage partition (cards put together without a password, see the
+# installer's udisks_linux.go).
+etros_mount_ollie() {
+    if test -n "${ETROS_OLLIE_ROOT}"
+    then
+        mount -o rw "${ETROS_OLLIE_ROOT}" /new_root
+        return
+    fi
+    mount -o rw "$(etros_ollie_device)" /new_root 2>/dev/null && return 0
+    mkdir -p /share_root || return 1
+    mount -o rw "${ETROS_SHARE:-LABEL=SHARE}" /share_root || return 1
+    if mount -o loop,rw /share_root/etros/ollie-rootfs.img /new_root
+    then
+        ETROS_SHARE_MOUNTED=1
+        return 0
+    fi
+    umount /share_root
+    return 1
+}
+
 etros_boot_ollie() {
     echo "etros: starting Ollie OS"
-    mount -o rw "${ETROS_OLLIE_ROOT:-$(etros_ollie_device)}" /new_root || return 1
+    etros_mount_ollie || return 1
 
     # Etros's settings and scripts for Ollie OS. Copied every start so a new
     # Etros brings new ones; Ollie OS's own setup service fixes permissions,
@@ -106,6 +127,12 @@ etros_boot_ollie() {
     fi
 
     mount --move /boot_root /new_root/boot || return 1
+    if test -n "${ETROS_SHARE_MOUNTED}"
+    then
+        # The file Ollie OS runs from has to stay open.
+        mkdir -p /new_root/.etros-share || return 1
+        mount --move /share_root /new_root/.etros-share || return 1
+    fi
     mount --move /sys       /new_root/sys  || return 1
     mount --move /proc      /new_root/proc || return 1
     mount --move /dev       /new_root/dev  || return 1
@@ -136,6 +163,7 @@ etros_start() {
         echo "etros: Ollie OS failed to start, falling back to Batocera"
         umount /new_root/lib/firmware /new_root/lib/modules /new_root/.batocera 2>/dev/null
         umount /new_root 2>/dev/null
+        umount /share_root 2>/dev/null
     fi
     return 0
 }

@@ -15,8 +15,8 @@ import (
 func relaunchElevated() bool { return false }
 
 // elevatedWrite writes an image to a card with sudo, for systems where
-// UDisks isn't available or won't allow it. sudo is tried without a
-// password first (Chromebooks and Raspberry Pi OS set it up that way).
+// UDisks isn't available or won't allow it, but only where sudo needs no
+// password (Chromebooks, Raspberry Pi OS and Ollie OS are set up that way).
 func elevatedWrite(image, id string) (bool, error) {
 	if os.Geteuid() == 0 {
 		return false, nil
@@ -39,7 +39,7 @@ func elevatedWrite(image, id string) (bool, error) {
 		logf("writing with sudo (no password needed)")
 		return true, run("-n")
 	}
-	fmt.Println("This computer only lets administrators write to cards, so it needs your password once.")
-	logf("writing with sudo (password)")
-	return true, run()
+	// Etros never asks for a password.
+	return true, fmt.Errorf("this computer wants the administrator password to write the whole drive, which Etros won't ask for. " +
+		"Put the image on the card with Raspberry Pi Imager instead")
 }

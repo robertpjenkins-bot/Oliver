@@ -28,7 +28,13 @@ It makes an image file. It never asks for a password.
 
 3. It saves etros-pi5-<date>.img.gz to Downloads.
 
-4. Put that on a 32 GB or bigger microSD card with Raspberry Pi Imager
+4. It then offers to put it on a drive for you. Pick the SD card from the
+   list and type ERASE. On Linux (Steam Machine / SteamOS desktop mode,
+   Ubuntu, ...) this needs no password: Etros makes the partitions and
+   copies the files, which Linux lets you do on your own drives. On Windows
+   it asks Yes/No; on a Mac, macOS wants your password.
+
+   Or put it on a 32 GB or bigger microSD card yourself with Raspberry Pi Imager
    (raspberrypi.com/software): Device Raspberry Pi 5, Operating system
    "Use custom" and pick the file, Storage your card. balenaEtcher works
    too.

@@ -47,6 +47,11 @@ cp "$LAYER" "$FAT/etros/etros.squashfs"
 mkdir -p "$T/ollie/sbin" "$T/ollie/lib/modules" "$T/ollie/lib/firmware" "$T/ollie/boot" "$T/ollie/sys" "$T/ollie/proc" "$T/ollie/dev"
 echo ollie > "$T/ollie/whoami"
 mkfs.ext4 -q -L rootfs -d "$T/ollie" "$T/ollie.img" 32M
+# The same Ollie OS as a file on the storage partition, as cards put
+# together without a password have it.
+mkdir -p "$T/share/etros"
+cp "$T/ollie.img" "$T/share/etros/ollie-rootfs.img"
+mkfs.ext4 -q -L SHARE -d "$T/share" "$T/share.img" 64M
 mkdir -p "$FAT/etros/ollie/etc"
 echo "from etros" > "$FAT/etros/ollie/etc/etros-marker"
 echo batocera > "$FAT/etros/next-boot"
@@ -76,6 +81,7 @@ for applet in $(busybox --list); do
     [ "$applet" = switch_root ] || ln -sf ../bin/busybox "$R/hbin/$applet"
 done
 cp "$T/ollie.img" "$R/ollie.img"
+cp "$T/share.img" "$R/share.img"
 # The patched /init and the hook, from the initramfs itself.
 (cd "$T" && mkdir unpacked && cd unpacked && lz4 -dc "$INITRD" | cpio -id --quiet init etros-hook.sh)
 cp "$T/unpacked/init" "$T/unpacked/etros-hook.sh" "$R/"
@@ -110,7 +116,7 @@ boot() {  # boot COMPATIBLE  -> report on stdout, boot partition saved back
     rm -rf "${R:?}/fatsrc"
     cp -a "$FAT" "$R/fatsrc"
     printf '%b\0' "$1" > "$R/dt/compatible"
-    timeout 60 unshare -m chroot "$R" /bin/busybox env ETROS_COMPATIBLE=/dt/compatible ETROS_OLLIE_ROOT=/ollie.img PATH=/hbin /bin/busybox ash -c '
+    timeout 60 unshare -m chroot "$R" /bin/busybox env ETROS_COMPATIBLE=/dt/compatible "${BOOT_ENV:-ETROS_OLLIE_ROOT=/ollie.img}" PATH=/hbin /bin/busybox ash -c '
         PATH=/bin /init > /log 2>&1
         cat /log
         # keep what the boot changed on the boot partition for the next boot
@@ -156,6 +162,13 @@ out=$(boot "gameconsole,r36s\0rockchip,rk3326")
 expect "$out" root ollie
 expect "$out" modules r36s
 expect "$out" etros-files "from etros"
+expect "$out" next batocera
+
+echo "Pi 5, Ollie OS kept as a file on the storage partition"
+echo ollie > "$FAT/etros/next-boot"
+out=$(BOOT_ENV="ETROS_SHARE=/share.img" boot "raspberrypi,5-model-b\0brcm,bcm2712")
+expect "$out" root ollie
+expect "$out" modules pi5
 expect "$out" next batocera
 
 echo "R36S, the boot after Ollie OS"

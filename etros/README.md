@@ -30,6 +30,15 @@ or balenaEtcher.
 - A `my-roms` folder in Downloads is added as your games.
 - If Batocera for the R36S is in Downloads too, it can make the card work
   in both devices.
+- It then offers to put the image on an SD card you pick. On Linux,
+  including a Steam Machine in SteamOS desktop mode, that needs **no
+  password**. Linux's UDisks wants the administrator password to write a
+  whole drive, but not to partition, format and fill one. So Etros makes
+  the BATOCERA and SHARE partitions, copies the boot files in, and keeps
+  Ollie OS as a file on SHARE (`etros/ollie-rootfs.img`), which the boot
+  hook mounts. That way works for Pi 5 cards. An R36S card also needs its
+  bootloader written outside any partition, so it still needs a
+  whole-drive write.
 
 The zips are `Etros Maker - Windows.zip`, `- Mac (Apple chip).zip`,
 `- Mac (Intel).zip` and `- Linux.zip`. The Etros Installer below does the
