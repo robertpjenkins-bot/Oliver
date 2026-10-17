@@ -85,7 +85,7 @@ grep -q 'etros_start' "$R/init"
 # a device name and mount our tmpfs in its place.
 sed -i -e 's|read -r cmdline < /proc/cmdline|cmdline="dev=fake"|' \
        -e 's|^    /bin/ash$|    exit 1|' \
-       -e 's|if mount -o $mount_options "${1}" *\/boot_root; then return 0; fi|mount -t tmpfs tmpfs /boot_root \&\& cp -a /fatsrc/. /boot_root/ \&\& mount -o remount,ro /boot_root \&\& return 0|' \
+       -e 's|if mount -o [^ ]* "${1}" *\/boot_root; then return 0; fi|mount -t tmpfs tmpfs /boot_root \&\& cp -a /fatsrc/. /boot_root/ \&\& mount -o remount,ro /boot_root \&\& return 0|' \
        "$R/init"
 grep -q 'cp -a /fatsrc' "$R/init"
 cat > "$R/bin/switch_root" <<'EOF'

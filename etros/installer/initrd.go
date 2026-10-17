@@ -28,9 +28,22 @@ var initEdits = []struct{ before, anchor, replace string }{
 	{"", "lowerdir=/overlay_root/base$EXTRALAYERS,", "lowerdir=${ETROS_LAYER}/overlay_root/base$EXTRALAYERS,"},
 }
 
+// Batocera 42 and earlier (before December 2025) have no extra layers.
+var olderLowerdir = [2]string{"lowerdir=/overlay_root/base,", "lowerdir=${ETROS_LAYER}/overlay_root/base,"}
+
 func patchInit(init string) (string, error) {
 	if strings.Contains(init, "etros-hook.sh") {
 		return "", fmt.Errorf("init is already patched for Etros")
+	}
+	if !strings.Contains(init, initEdits[2].anchor) && strings.Count(init, olderLowerdir[0]) == 1 {
+		init = strings.Replace(init, olderLowerdir[0], olderLowerdir[1], 1)
+		for _, e := range initEdits[:2] {
+			if n := strings.Count(init, e.anchor); n != 1 {
+				return "", fmt.Errorf("Batocera's boot script has changed: expected one %q, found %d", strings.TrimSpace(e.anchor), n)
+			}
+			init = strings.Replace(init, e.anchor, e.before+e.anchor, 1)
+		}
+		return init, nil
 	}
 	for _, e := range initEdits {
 		if n := strings.Count(init, e.anchor); n != 1 {

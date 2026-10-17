@@ -43,4 +43,28 @@ func relaunchElevated() bool {
 	return true
 }
 
-func elevatedWrite(image, id string) (bool, error) { return false, nil }
+// elevatedWrite has a copy of the installer with administrator rights write
+// the image (Windows shows a Yes/No box), and waits for it to finish.
+func elevatedWrite(image, id string) (bool, error) {
+	if windows.GetCurrentProcessToken().IsElevated() {
+		return false, nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return false, nil
+	}
+	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+	argList := strings.Join([]string{
+		q("-write"), q(windows.EscapeArg(image)), q("-target"), q("disk:" + id), q("-yes"), q("-pause"),
+	}, ",")
+	fmt.Println("Windows will ask whether to let Etros make changes: choose Yes.")
+	fmt.Println("The writing happens in a new window; this one waits for it.")
+	logf("writing %s to disk %s in an elevated copy", image, id)
+	out, err := powershell(fmt.Sprintf(
+		`$p = Start-Process -FilePath %s -ArgumentList %s -Verb RunAs -Wait -PassThru; exit $p.ExitCode`,
+		q(exe), argList))
+	if err != nil {
+		return true, fmt.Errorf("it didn't finish (did you choose No?) %s", strings.TrimSpace(string(out)))
+	}
+	return true, nil
+}

@@ -101,3 +101,18 @@ func TestPatchInitRefusesUnknownScript(t *testing.T) {
 		t.Error("patched a script without the anchors")
 	}
 }
+
+func TestPatchInitOlderBatocera(t *testing.T) {
+	// Batocera 42 and earlier: no $EXTRALAYERS on the overlay mount.
+	old := "do_root() {\n    # update the squashfs\n    true\n    # mount the future root in read write\n" +
+		"    mount -t overlay overlay -o rw,lowerdir=/overlay_root/base,upperdir=/u /new_root\n}\n"
+	got, err := patchInit(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{". /etros-hook.sh && etros_start", "etros_mount_layer", "lowerdir=${ETROS_LAYER}/overlay_root/base,"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}

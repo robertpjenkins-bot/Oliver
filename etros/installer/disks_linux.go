@@ -51,6 +51,16 @@ func mounts(d lsblkDev) []string {
 }
 
 func listDisks() ([]Disk, error) {
+	// For tests: a file standing in for a removable drive.
+	if p := os.Getenv("ETROS_TEST_DISK"); p != "" {
+		st, err := os.Stat(p)
+		if err != nil {
+			return nil, err
+		}
+		d := Disk{ID: p, Path: p, Name: "Test drive", Size: st.Size()}
+		describe(&d)
+		return []Disk{d}, nil
+	}
 	devs, err := lsblk()
 	if err != nil {
 		return nil, err
@@ -126,13 +136,13 @@ func openDisk(id string) (*diskTarget, error) {
 		}
 	}
 
-	if os.Geteuid() == 0 {
+	if os.Geteuid() == 0 || os.Getenv("ETROS_TEST_DISK") != "" {
 		for _, c := range children {
 			if out, err := exec.Command("umount", c).CombinedOutput(); err != nil {
 				return nil, fmt.Errorf("could not unmount %s: %s", c, out)
 			}
 		}
-		f, err := os.OpenFile(id, os.O_RDWR|os.O_EXCL, 0)
+		f, err := os.OpenFile(id, os.O_RDWR, 0)
 		if err != nil {
 			return nil, err
 		}

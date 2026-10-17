@@ -31,6 +31,7 @@ func main() {
 		target   = flag.String("target", "", "disk:ID (from -list) or file:PATH (.img or .img.gz)")
 		write    = flag.String("write", "", "write this Etros image to -target disk:ID instead of making one")
 		yes      = flag.Bool("yes", false, "don't ask before erasing the card")
+		pause    = flag.Bool("pause", false, "wait for Enter before closing")
 		noOllie  = flag.Bool("no-ollie", false, "leave out Ollie OS")
 		games    = flag.String("games", "", "folder of your games (one folder per console) to put on the card")
 		elevated = flag.Bool("elevated", false, "internal: already asked for administrator rights")
@@ -42,7 +43,23 @@ func main() {
 	flag.StringVar(&s.RPiOS, "rpios", "", "Ollie OS: an Ollie OS or Raspberry Pi OS 64-bit desktop image (file or URL)")
 	flag.StringVar(&s.Channel, "channel", "", "Batocera release channel (default stable)")
 	cache := flag.String("cache", defaultCache(), "where to keep downloads")
+	patchOnly := flag.String("patch-initrd", "", "for testing: add the Etros hook to this initramfs, writing it to -target file:PATH")
 	flag.Parse()
+
+	if *patchOnly != "" {
+		in, err := os.ReadFile(*patchOnly)
+		if err == nil {
+			var out []byte
+			if out, err = PatchInitrd(in); err == nil {
+				err = os.WriteFile(strings.TrimPrefix(*target, "file:"), out, 0o644)
+			}
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	opts := Options{Sources: s, Ollie: !*noOllie, GamesDir: *games, CacheDir: *cache}
 	logPath := openLog()
@@ -62,6 +79,10 @@ func main() {
 		}
 	case *target != "" || *write != "":
 		err = runCLI(opts, *target, *write, *yes)
+		if *pause && err == nil {
+			fmt.Printf("\n%sDone.%s The drive is ready.\n", cYellow, cReset)
+			waitForEnter()
+		}
 	case mode == "maker":
 		// Etros Maker only makes an image file, so it never asks for
 		// administrator rights.
@@ -84,7 +105,7 @@ func main() {
 		if logPath != "" {
 			fmt.Fprintln(os.Stderr, "The log is in "+logPath)
 		}
-		if pauseOnExit() {
+		if pauseOnExit() || *pause {
 			waitForEnter()
 		}
 		os.Exit(1)

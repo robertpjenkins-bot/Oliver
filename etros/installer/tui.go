@@ -252,17 +252,14 @@ func (t *tui) build() (string, error) {
 // pickCard asks which card to use and for ERASE; ok is false if the person
 // backed out.
 func (t *tui) pickCard() (disk Disk, ok bool, err error) {
-	if can, why := canWriteDisks(); !can {
-		return disk, false, fmt.Errorf("%s", why)
-	}
-	heading("CHOOSE THE SD CARD")
+	heading("CHOOSE THE DRIVE")
 	for {
 		disks, err := listDisks()
 		if err != nil {
 			return disk, false, err
 		}
 		if len(disks) == 0 {
-			note("No SD cards or USB drives found. Put the card in.")
+			note("No SD cards or USB drives found. Put the card in (a card reader or USB drive), then press r.")
 		}
 		for i, d := range disks {
 			warn := ""
@@ -301,6 +298,16 @@ func (t *tui) writeToCard(image string) error {
 
 // writeImageTo writes the image to a card already chosen.
 func (t *tui) writeImageTo(image string, disk Disk) error {
+	// Without the rights to write to a drive, a copy of the installer that
+	// has them does the writing (Windows asks Yes/No, macOS for a password).
+	if can, _ := canWriteDisks(); !can {
+		if handled, err := elevatedWrite(image, disk.ID); handled {
+			if err != nil {
+				return fmt.Errorf("writing the drive: %w", err)
+			}
+			return t.done()
+		}
+	}
 	rep := newTermReporter()
 	out, err := openDisk(disk.ID)
 	var admin errNeedsAdmin

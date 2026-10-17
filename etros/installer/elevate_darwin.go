@@ -30,4 +30,17 @@ func relaunchElevated() bool {
 	return false
 }
 
-func elevatedWrite(image, id string) (bool, error) { return false, nil }
+// elevatedWrite writes the image with sudo; macOS asks for your password.
+func elevatedWrite(image, id string) (bool, error) {
+	if os.Geteuid() == 0 {
+		return false, nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return false, nil
+	}
+	fmt.Println("macOS only lets administrators write to drives: enter your Mac password.")
+	cmd := exec.Command("sudo", exe, "-write", image, "-target", "disk:"+id, "-yes")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return true, cmd.Run()
+}

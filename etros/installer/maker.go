@@ -50,6 +50,18 @@ func runMaker(o Options) error {
 			line("Batocera, R36S", f.R36S, "")
 		}
 
+		if len(f.Etros) > 0 {
+			heading("FOUND AN ETROS IMAGE")
+			fmt.Printf("  %s1%s  Put %s on a drive\n", cYellow, cReset, baseName(f.Etros[0].Path))
+			fmt.Printf("  %s2%s  Make a new one\n  %sq%s  Quit\n", cYellow, cReset, cYellow, cReset)
+			switch t.ask("Choose") {
+			case "1":
+				return t.offerWrite(f.Etros[0].Path)
+			case "q", "Q":
+				return nil
+			}
+		}
+
 		if len(f.Pi5) == 0 {
 			heading("BATOCERA FOR THE RASPBERRY PI 5 ISN'T IN DOWNLOADS")
 			note("Get it from " + cCyan + batoceraDownload + cReset + " (choose Raspberry Pi 5),")
@@ -114,16 +126,49 @@ func runMaker(o Options) error {
 			continue
 		}
 
-		fmt.Printf("\n%s  MISSION COMPLETE%s\n\n", cYellow, cReset)
-		fmt.Printf("  Your Etros image: %s%s%s\n\n", cBold, path, cReset)
-		note("Put it on a microSD card (32 GB or bigger) with Raspberry Pi Imager:")
-		note("  1. Open Raspberry Pi Imager (raspberrypi.com/software).")
-		note("  2. Device: Raspberry Pi 5.  Operating system: Use custom, then pick the file above.")
-		note("  3. Storage: your SD card.  Then Next, and No to the settings question.")
-		note("balenaEtcher works too: Flash from file.")
-		t.ask("Press Enter to finish")
-		return nil
+		fmt.Printf("\n  %sYour Etros image is ready:%s %s\n", cCyan, cReset, path)
+		return t.offerWrite(path)
 	}
+}
+
+// offerWrite asks whether to put the image on a drive now.
+func (t *tui) offerWrite(path string) error {
+	for {
+		heading("PUT IT ON A DRIVE?")
+		fmt.Printf("  %s1%s  Yes, choose the SD card or USB drive now\n", cYellow, cReset)
+		fmt.Printf("  %s2%s  No, I'll use Raspberry Pi Imager or balenaEtcher later\n", cYellow, cReset)
+		switch t.ask("Choose") {
+		case "1":
+			disk, ok, err := t.pickCard()
+			if err != nil {
+				return err
+			}
+			if !ok {
+				continue
+			}
+			if err := t.writeImageTo(path, disk); err != nil {
+				logf("ERROR: %v", err)
+				fmt.Printf("\n%sSOMETHING WENT WRONG:%s %v\n", cRed, cReset, err)
+				note("This is also saved in etros-installer-log.txt in your Downloads.")
+				continue
+			}
+			return nil
+		case "2":
+			t.laterInstructions(path)
+			return nil
+		}
+	}
+}
+
+func (t *tui) laterInstructions(path string) {
+	fmt.Printf("\n%s  MISSION COMPLETE%s\n\n", cYellow, cReset)
+	fmt.Printf("  Your Etros image: %s%s%s\n\n", cBold, path, cReset)
+	note("Put it on a microSD card (32 GB or bigger) with Raspberry Pi Imager:")
+	note("  1. Open Raspberry Pi Imager (raspberrypi.com/software).")
+	note("  2. Device: Raspberry Pi 5.  Operating system: Use custom, then pick the file above.")
+	note("  3. Storage: your SD card.  Then Next, and No to the settings question.")
+	note("balenaEtcher works too: Flash from file.")
+	t.ask("Press Enter to finish")
 }
 
 // make builds the image into Downloads.
