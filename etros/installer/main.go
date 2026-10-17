@@ -20,7 +20,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 var version = "dev"
@@ -46,6 +45,8 @@ func main() {
 	flag.Parse()
 
 	opts := Options{Sources: s, Ollie: !*noOllie, GamesDir: *games, CacheDir: *cache}
+	logPath := openLog()
+	defer crashGuard(logPath)
 
 	var err error
 	switch {
@@ -68,9 +69,13 @@ func main() {
 		err = runTUI(opts)
 	}
 	if err != nil {
+		logf("ERROR: %v", err)
 		fmt.Fprintf(os.Stderr, "\n%setros-installer:%s %v\n", cRed, cReset, err)
+		if logPath != "" {
+			fmt.Fprintln(os.Stderr, "The log is in "+logPath)
+		}
 		if pauseOnExit() {
-			time.Sleep(30 * time.Second)
+			waitForEnter()
 		}
 		os.Exit(1)
 	}

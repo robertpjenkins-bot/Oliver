@@ -3,8 +3,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
@@ -28,6 +30,15 @@ func relaunchElevated() bool {
 	verb, _ := windows.UTF16PtrFromString("runas")
 	file, _ := windows.UTF16PtrFromString(exe)
 	params, _ := windows.UTF16PtrFromString(strings.Join(args, " "))
+	fmt.Println("Etros Installer needs administrator rights to write to the SD card.")
+	fmt.Println("Choose Yes in the box Windows shows (it may be behind this window).")
 	err = windows.ShellExecute(0, verb, file, params, nil, windows.SW_SHOWNORMAL)
-	return err == nil
+	if err != nil {
+		logf("administrator rights not given: %v", err)
+		fmt.Println("Carrying on without them: you can still make an image file.")
+		return false
+	}
+	fmt.Println("The installer is carrying on in a new window.")
+	time.Sleep(3 * time.Second)
+	return true
 }

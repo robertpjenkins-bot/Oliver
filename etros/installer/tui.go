@@ -54,6 +54,7 @@ type tui struct {
 func (t *tui) ask(prompt string) string {
 	fmt.Printf("%s> %s%s ", cOrange, prompt, cReset)
 	line, err := t.in.ReadString('\n')
+	logf("asked %q, answered %q", prompt, strings.TrimSpace(line))
 	if err != nil && line == "" {
 		fmt.Println()
 		os.Exit(0)
@@ -136,7 +137,9 @@ func runTUI(o Options) error {
 			continue
 		}
 		if err := choices[n-1](); err != nil {
+			logf("ERROR: %v", err)
 			fmt.Printf("\n%sSOMETHING WENT WRONG:%s %v\n", cRed, cReset, err)
+			note("This is also saved in etros-installer-log.txt in your Downloads.")
 			note("Downloads are kept, so trying again is quicker.")
 			t.ask("Press Enter to go back")
 		}
@@ -152,6 +155,7 @@ func (t *tui) report() {
 			fmt.Printf("  %s·%s %-22s %s%s%s\n", cDim, cReset, what, cDim, missing, cReset)
 		}
 	}
+	logf("scan: etros=%v pi5=%v r36s=%v ollie=%v games=%v", f.Etros, f.Pi5, f.R36S, f.Ollie, f.Games)
 	line("Etros image", f.Etros, "none yet")
 	if len(f.Etros) == 0 {
 		line("Batocera, Pi 5", f.Pi5, "not found, will download")
@@ -322,6 +326,7 @@ func (r *termReporter) end() {
 }
 
 func (r *termReporter) Stage(s string) {
+	logf("STAGE %s", s)
 	r.end()
 	r.stage = s
 	r.start = time.Now()
@@ -329,6 +334,7 @@ func (r *termReporter) Stage(s string) {
 }
 
 func (r *termReporter) Log(s string) {
+	logf("  %s", s)
 	r.end()
 	fmt.Printf("  %s%s%s\n", cDim, s, cReset)
 }

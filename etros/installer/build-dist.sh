@@ -16,6 +16,7 @@ package() {  # package GOOS GOARCH ZIPNAME
     (cd dist/stage && zip -q -9 -r "../$3.zip" "$3")
 }
 package windows amd64 "Etros Installer - Windows"
+package windows arm64 "Etros Installer - Windows (ARM)"
 package darwin  arm64 "Etros Installer - Mac (Apple chip)"
 package darwin  amd64 "Etros Installer - Mac (Intel)"
 package linux   amd64 "Etros Installer - Linux"
