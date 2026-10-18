@@ -1,6 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=ROMs
-Exec=pcmanfm /userdata/roms
-Icon=folder
-Terminal=false

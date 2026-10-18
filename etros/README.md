@@ -107,8 +107,9 @@ folder.
 ## Ollie OS
 
 Choose **ETROS → Boot into Ollie OS** in the system list. The device
-restarts into a desktop with **Web Browser**, **Downloads**, **ROMs**,
-**Keyboard** and **Back to Etros**. Downloads go straight into the shared
+restarts into a desktop with **Web Browser**, **Downloads**, **My ROMs**,
+**All my games**, **Keyboard** and **Back to Etros**. In the home folder
+**My ROMs** sits right next to **Downloads**. Downloads go straight into the shared
 Downloads folder, and **Back to Etros** sorts them into your ROM folders
 before restarting.
 

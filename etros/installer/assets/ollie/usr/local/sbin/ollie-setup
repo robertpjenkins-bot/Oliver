@@ -39,16 +39,52 @@ if mountpoint -q /userdata; then
     chown ollie: /userdata/ollie
 fi
 
-# Home: Downloads is Batocera's downloads folder; desktop shortcuts.
+# Home: Downloads is Batocera's downloads folder, and right next to it is
+# My ROMs, where ROMs go to be sorted into their consoles (etros-sort-roms,
+# run by ollie-myroms.service).
 H=/home/ollie
-mkdir -p "$H/Desktop" "$H/.config/libfm"
-if mountpoint -q /userdata && ! test -L "$H/Downloads"; then
-    rmdir "$H/Downloads" 2>/dev/null || mv "$H/Downloads" "$H/Downloads.old" 2>/dev/null
-    ln -s /userdata/downloads "$H/Downloads"
+mkdir -p "$H/Desktop" "$H/.config/libfm" "$H/.config/gtk-3.0"
+link() {  # link TARGET NAME: NAME in the home folder (or Desktop) opens TARGET
+    if test -L "$2" || ! test -e "$2"; then
+        ln -sfn "$1" "$2"
+    fi
+}
+if mountpoint -q /userdata; then
+    if ! test -L "$H/Downloads"; then
+        rmdir "$H/Downloads" 2>/dev/null || mv "$H/Downloads" "$H/Downloads.old" 2>/dev/null
+    fi
+    link /userdata/downloads "$H/Downloads"
+    link "/userdata/downloads/My ROMs" "$H/My ROMs"
+    link /userdata/roms "$H/All my games"
+    # The file manager's sidebar: My ROMs right under Downloads.
+    printf 'file://%s/Downloads Downloads\nfile://%s/My%%20ROMs My ROMs\nfile://%s/All%%20my%%20games All my games\n' \
+        "$H" "$H" "$H" > "$H/.config/gtk-3.0/bookmarks"
 fi
-cp /usr/share/ollie/desktop/*.desktop "$H/Desktop/"
+
+# The desktop: folders are links to the folders themselves, which open with a
+# double-click; programs are launchers, which run without asking first
+# (quick_exec, for the user and for everyone).
+rm -f "$H"/Desktop/downloads.desktop "$H"/Desktop/roms.desktop "$H"/Desktop/my-roms.desktop
+link /userdata/downloads "$H/Desktop/Downloads"
+link "/userdata/downloads/My ROMs" "$H/Desktop/My ROMs"
+link /userdata/roms "$H/Desktop/All my games"
+for f in /usr/share/ollie/desktop/*.desktop; do
+    case "$(basename "$f")" in
+        downloads.desktop|roms.desktop|my-roms.desktop) ;;
+        *) cp "$f" "$H/Desktop/" ;;
+    esac
+done
 chmod 0755 "$H"/Desktop/*.desktop
 printf '[config]\nquick_exec=1\n' > "$H/.config/libfm/libfm.conf"
+conf=/etc/xdg/libfm/libfm.conf
+if test -f "$conf"; then
+    if grep -q '^quick_exec=' "$conf"; then
+        sed -i 's/^quick_exec=.*/quick_exec=1/' "$conf"
+    else
+        sed -i 's/^\[config\]$/[config]\nquick_exec=1/' "$conf"
+    fi
+fi
+chown -h ollie: "$H/Downloads" "$H/My ROMs" "$H/All my games" "$H"/Desktop/* 2>/dev/null
 chown -R ollie: "$H/Desktop" "$H/.config"
 
 # Bobby: your own picture wins over the built-in one.

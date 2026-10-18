@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=My ROMs
-Comment=Put ROMs here: they go to the right console by themselves
-Exec=pcmanfm "/userdata/downloads/My ROMs"
-Icon=folder-games
-Terminal=false
