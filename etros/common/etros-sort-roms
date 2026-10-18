@@ -406,6 +406,16 @@ def sort_my_roms(base, roms, dry_run=False, out=sys.stdout, settle=0):
                 continue
             moved += _move(src, roms, system, out, dry_run)
 
+    # What an older sorter couldn't place may be recognised now (a .7z, say).
+    stuck = os.path.join(base, NOT_SORTED)
+    if os.path.isdir(stuck):
+        for name in sorted(os.listdir(stuck)):
+            src = os.path.join(stuck, name)
+            if os.path.isfile(src) and not _busy(name) and _settled(src, now, settle):
+                system = system_for(src)
+                if system:
+                    moved += _move(src, roms, system, out, dry_run)
+
     skip = set(CONSOLE_FOLDERS) | {NOT_SORTED}
     for top, dirs, files in os.walk(base):
         if top == base:

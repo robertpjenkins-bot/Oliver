@@ -164,5 +164,21 @@ class ArchiveTest(unittest.TestCase):
                 self.assertEqual(sorter.system_for(arc), "snes", method)
 
 
+
+class NotSortedRetryTest(unittest.TestCase):
+    def test_a_file_left_in_not_sorted_is_placed_once_recognised(self):
+        with tempfile.TemporaryDirectory() as d:
+            base, roms = os.path.join(d, "My ROMs"), os.path.join(d, "roms")
+            stuck = os.path.join(base, sorter.NOT_SORTED)
+            os.makedirs(stuck)
+            with zipfile.ZipFile(os.path.join(stuck, "Zelda (USA).zip"), "w") as z:
+                z.writestr("Zelda (USA).gbc", b"x")
+                z.writestr("readme.txt", b"hi")
+            open(os.path.join(stuck, "Crash.bin"), "w").write("x")
+            sorter.sort_my_roms(base, roms, out=io.StringIO())
+            self.assertTrue(os.path.exists(os.path.join(roms, "gbc", "Zelda (USA).zip")))
+            self.assertTrue(os.path.exists(os.path.join(stuck, "Crash.bin")))
+
+
 if __name__ == "__main__":
     unittest.main()
