@@ -3,7 +3,7 @@ Description=Move ROMs put in Downloads/My ROMs into their console's folder
 After=local-fs.target ollie-setup.service
 
 [Service]
-ExecStart=/usr/bin/python3 /usr/local/bin/etros-sort-roms --downloads "/userdata/downloads/My ROMs" --watch --settle 5
+ExecStart=/usr/bin/python3 /usr/local/bin/etros-sort-roms --downloads "/userdata/downloads/My ROMs" --my-roms --watch --settle 5
 Restart=always
 RestartSec=10
 

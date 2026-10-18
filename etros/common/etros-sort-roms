@@ -102,6 +102,127 @@ def sort_downloads(downloads, roms, dry_run=False, out=sys.stdout, settle=0):
     return moved, left
 
 
+# Downloads/My ROMs has a folder per console: anything put in one goes to
+# that console, whatever its extension. These are the names shown, and the
+# Batocera folder each one fills.
+CONSOLE_FOLDERS = {
+    "NES": "nes", "SNES": "snes", "Nintendo 64": "n64",
+    "Game Boy": "gb", "Game Boy Color": "gbc", "Game Boy Advance": "gba",
+    "Nintendo DS": "nds",
+    "Sega Genesis - Mega Drive": "megadrive", "Sega Master System": "mastersystem",
+    "Sega Game Gear": "gamegear", "Sega CD": "segacd", "Sega Saturn": "saturn",
+    "Dreamcast": "dreamcast",
+    "PlayStation": "psx", "PSP": "psp",
+    "Arcade": "mame", "Neo Geo": "neogeo",
+    "PC Engine - TurboGrafx-16": "pcengine",
+    "Atari 2600": "atari2600", "Atari Lynx": "lynx",
+    "DOS": "dos", "ScummVM": "scummvm",
+}
+NOT_SORTED = "Not sorted - move these into a console folder"
+README = """MY ROMS
+
+Put a ROM here and Etros moves it to the right console by itself, in a few
+seconds. It works out the console from the file (.sfc is SNES, .gba is Game
+Boy Advance, and so on).
+
+Some files could be for many consoles: .bin, .iso, .cue, .chd, .7z and arcade
+.zip. Put those in the console's folder here instead (PlayStation, Arcade...).
+Anything in a console folder goes to that console, and a game that is a folder
+of files moves as one.
+
+Files Etros can't place go into "%s".
+""" % NOT_SORTED
+
+
+def _settled(path, now, settle):
+    """Nothing in path (a file or a folder) changed in the last settle seconds."""
+    if not settle:
+        return True
+    newest = os.path.getmtime(path)
+    if os.path.isdir(path):
+        for top, dirs, files in os.walk(path):
+            for n in dirs + files:
+                try:
+                    newest = max(newest, os.path.getmtime(os.path.join(top, n)))
+                except OSError:
+                    pass
+    return now - newest >= settle
+
+
+def _busy(name):
+    return name.startswith(".") or name.lower().endswith(PARTIAL)
+
+
+def _move(src, roms, system, out, dry_run):
+    dest_dir = os.path.join(roms, system)
+    dest = os.path.join(dest_dir, os.path.basename(src))
+    if os.path.exists(dest):
+        print(f"kept {os.path.basename(src)}: {system} already has one with that name", file=out)
+        return False
+    print(f"{os.path.basename(src)} -> roms/{system}", file=out)
+    if not dry_run:
+        os.makedirs(dest_dir, exist_ok=True)
+        shutil.move(src, dest)
+    return True
+
+
+def sort_my_roms(base, roms, dry_run=False, out=sys.stdout, settle=0):
+    """Sort Downloads/My ROMs: console folders first, then loose files (also
+    inside downloaded folders). Returns how many games moved."""
+    now = time.time()
+    moved = 0
+    if not dry_run:
+        # This runs as root; the folders must be open to the person dropping
+        # ROMs in (Ollie OS's desktop user, or a computer on the network).
+        for name in [NOT_SORTED, *CONSOLE_FOLDERS]:
+            folder = os.path.join(base, name)
+            if not os.path.isdir(folder):
+                os.makedirs(folder)
+                os.chmod(folder, 0o777)
+        readme = os.path.join(base, "READ ME.txt")
+        if not os.path.exists(readme):
+            with open(readme, "w") as f:
+                f.write(README)
+
+    for name, system in CONSOLE_FOLDERS.items():
+        folder = os.path.join(base, name)
+        if not os.path.isdir(folder):
+            continue
+        for entry in sorted(os.listdir(folder)):
+            src = os.path.join(folder, entry)
+            if _busy(entry) or not _settled(src, now, settle):
+                continue
+            moved += _move(src, roms, system, out, dry_run)
+
+    skip = set(CONSOLE_FOLDERS) | {NOT_SORTED}
+    for top, dirs, files in os.walk(base):
+        if top == base:
+            dirs[:] = [d for d in dirs if d not in skip]
+        for name in sorted(files):
+            src = os.path.join(top, name)
+            if (top == base and name == "READ ME.txt") or _busy(name) or not _settled(src, now, settle):
+                continue
+            system = system_for(src)
+            if system and _move(src, roms, system, out, dry_run):
+                moved += 1
+            elif not system and not dry_run:
+                dest = os.path.join(base, NOT_SORTED, name)
+                if not os.path.exists(dest):
+                    print(f"{name}: can't tell which console, moved to \"{NOT_SORTED}\"", file=out)
+                    shutil.move(src, dest)
+    # Downloaded folders left empty after sorting.
+    if not dry_run:
+        for entry in os.listdir(base):
+            path = os.path.join(base, entry)
+            if entry not in skip and os.path.isdir(path):
+                for top, _, _ in sorted(os.walk(path), reverse=True):
+                    try:
+                        os.rmdir(top)
+                    except OSError:
+                        pass
+    return moved
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--downloads", default="/userdata/downloads")
@@ -112,15 +233,24 @@ def main():
     p.add_argument("--settle", type=float, default=0,
                    help="leave files changed in the last this many seconds")
     p.add_argument("--on-move", help="command to run after moving something")
+    p.add_argument("--my-roms", action="store_true",
+                   help="DOWNLOADS is the My ROMs folder: with a folder per console")
     args = p.parse_args()
-    if not args.watch:
-        moved, left = sort_downloads(args.downloads, args.roms, args.dry_run, settle=args.settle)
+
+    def once(settle):
+        if args.my_roms:
+            return sort_my_roms(args.downloads, args.roms, args.dry_run, settle=settle)
+        moved, left = sort_downloads(args.downloads, args.roms, args.dry_run, settle=settle)
         print(f"moved {moved}, left {left} in {args.downloads}")
+        return moved
+
+    if not args.watch:
+        once(args.settle)
         return
     os.makedirs(args.downloads, exist_ok=True)
     while True:
         try:
-            moved, _ = sort_downloads(args.downloads, args.roms, settle=args.settle)
+            moved = once(args.settle)
             sys.stdout.flush()
             if moved and args.on_move:
                 subprocess.run(args.on_move, shell=True)

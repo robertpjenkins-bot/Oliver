@@ -105,5 +105,38 @@ class SettleTest(unittest.TestCase):
             self.assertTrue(os.path.exists(new))
 
 
+
+class MyRomsTest(unittest.TestCase):
+    def test_console_folders_loose_files_and_not_sorted(self):
+        with tempfile.TemporaryDirectory() as d:
+            base, roms = os.path.join(d, "My ROMs"), os.path.join(d, "roms")
+            os.makedirs(base)
+            sorter.sort_my_roms(base, roms, out=io.StringIO())  # makes the folders
+            self.assertTrue(os.path.isdir(os.path.join(base, "PlayStation")))
+            self.assertTrue(os.path.isfile(os.path.join(base, "READ ME.txt")))
+
+            def put(rel):
+                p = os.path.join(base, rel)
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                open(p, "wb").write(b"x")
+            put("Super Metroid (USA).sfc")                  # loose: by extension
+            put("Downloaded pack/Metroid Fusion.gba")       # inside a downloaded folder
+            put("Crash.bin")                                # loose but ambiguous
+            put("PlayStation/Spyro (USA)/Spyro.cue")        # a multi-file game
+            put("PlayStation/Spyro (USA)/Spyro.bin")
+            put("Arcade/sf2.zip")                           # arcade zip
+            put("Partial.sfc.crdownload")                   # still downloading
+
+            moved = sorter.sort_my_roms(base, roms, out=io.StringIO())
+            self.assertEqual(moved, 4)
+            for rel in ("snes/Super Metroid (USA).sfc", "gba/Metroid Fusion.gba",
+                        "psx/Spyro (USA)/Spyro.cue", "psx/Spyro (USA)/Spyro.bin", "mame/sf2.zip"):
+                self.assertTrue(os.path.exists(os.path.join(roms, rel)), rel)
+            self.assertTrue(os.path.exists(os.path.join(base, sorter.NOT_SORTED, "Crash.bin")))
+            self.assertTrue(os.path.exists(os.path.join(base, "Partial.sfc.crdownload")))
+            self.assertFalse(os.path.exists(os.path.join(base, "Downloaded pack")))
+            self.assertTrue(os.path.isdir(os.path.join(base, "PlayStation")))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -79,8 +79,8 @@ fi
 # \\ETROS\share\downloads\My ROMs) goes to its console's folder within
 # seconds, and the game list is reloaded so it shows straight away.
 mkdir -p "/userdata/downloads/My ROMs"
-/usr/bin/etros-sort-roms --downloads "/userdata/downloads/My ROMs"
-/usr/bin/etros-sort-roms --downloads "/userdata/downloads/My ROMs" --watch --settle 5 \
+/usr/bin/etros-sort-roms --downloads "/userdata/downloads/My ROMs" --my-roms
+/usr/bin/etros-sort-roms --downloads "/userdata/downloads/My ROMs" --my-roms --watch --settle 5 \
     --on-move "curl -s -o /dev/null http://localhost:1234/reloadgames" \
     < /dev/null >> /userdata/system/logs/etros.log 2>&1 &
 
