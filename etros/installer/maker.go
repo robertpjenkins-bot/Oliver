@@ -83,32 +83,11 @@ func runMaker(o Options) error {
 			note("The Raspberry Pi 5 and R36S have ARM processors and can't run PC systems, so")
 			note("Etros needs Ollie OS for ARM (ollie-os-arm64.img.xz) instead.")
 		}
-		if len(f.Ollie) == 0 || !isOllieArm(f.Ollie[0].Path) {
-			note(cBold + "Ollie OS for ARM" + cReset + " isn't in Downloads. To use it, download")
-			note(cCyan + "ollie-os-arm64.img.xz" + cReset + " from " + cCyan + ollieArmRelease + cReset)
-			note("(you need to be logged in to GitHub), then press r to look again.")
-			if len(f.Ollie) == 0 {
-				note("Or press Enter to use Raspberry Pi OS (1.3 GB download) instead.")
-			} else {
-				note("Or press Enter to use " + baseName(f.Ollie[0].Path) + " instead.")
-			}
-			if strings.ToLower(t.ask("r to look again, Enter to go on:")) == "r" {
-				continue
-			}
+		if len(f.Ollie) == 0 {
+			note("Ollie OS (the desktop for downloading ROMs) is made from Raspberry Pi OS.")
+			note("It isn't in Downloads yet, so Etros Maker downloads it (1.3 GB, no password).")
 		}
 		o.Ollie = t.yes("Include Ollie OS?", true)
-		if o.Ollie && len(f.Ollie) == 0 {
-			link := strings.Trim(t.ask("Download link (Enter for Raspberry Pi OS):"), `"' `)
-			switch {
-			case link == "":
-				o.Sources.RPiOS = ""
-			case isURL(link) || fileExists(link):
-				o.Sources.RPiOS = link
-			default:
-				note(cRed + "That isn't a web address (it should start with https://); using Raspberry Pi OS." + cReset)
-				o.Sources.RPiOS = ""
-			}
-		}
 		o.GamesDir = ""
 		if len(f.Games) > 0 && t.yes("Add your games from "+f.Games[0]+"?", true) {
 			o.GamesDir = f.Games[0]
