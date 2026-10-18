@@ -90,5 +90,20 @@ class SortTest(unittest.TestCase):
         self.assertEqual(sorter.sort_downloads("/nonexistent", self.roms), (0, 0))
 
 
+class SettleTest(unittest.TestCase):
+    def test_leaves_files_still_arriving(self):
+        with tempfile.TemporaryDirectory() as d:
+            dl, roms = os.path.join(d, "My ROMs"), os.path.join(d, "roms")
+            os.makedirs(dl)
+            old, new = os.path.join(dl, "Old.sfc"), os.path.join(dl, "New.gba")
+            for p in (old, new):
+                open(p, "wb").write(b"x")
+            os.utime(old, (0, 0))
+            moved, _ = sorter.sort_downloads(dl, roms, out=io.StringIO(), settle=5)
+            self.assertEqual(moved, 1)
+            self.assertTrue(os.path.exists(os.path.join(roms, "snes", "Old.sfc")))
+            self.assertTrue(os.path.exists(new))
+
+
 if __name__ == "__main__":
     unittest.main()

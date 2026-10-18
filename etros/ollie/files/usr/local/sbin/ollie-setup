@@ -32,8 +32,8 @@ id rpi-first-boot-wizard >/dev/null 2>&1 && userdel -r rpi-first-boot-wizard 2>/
 
 # Shared storage with Batocera.
 if mountpoint -q /userdata; then
-    mkdir -p /userdata/downloads /userdata/ollie
-    chmod 1777 /userdata/downloads
+    mkdir -p /userdata/downloads "/userdata/downloads/My ROMs" /userdata/ollie
+    chmod 1777 /userdata/downloads "/userdata/downloads/My ROMs"
     chown ollie: /userdata/ollie
 fi
 

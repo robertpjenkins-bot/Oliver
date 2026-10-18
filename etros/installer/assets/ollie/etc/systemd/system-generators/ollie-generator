@@ -4,7 +4,7 @@
 normal=$1
 early=$2
 mkdir -p "$normal/multi-user.target.wants"
-for unit in ollie-check.service ollie-setup.service ollie-padmouse.service ollie-wifi.service; do
+for unit in ollie-check.service ollie-setup.service ollie-myroms.service ollie-padmouse.service ollie-wifi.service; do
     ln -sf "/etc/systemd/system/$unit" "$normal/multi-user.target.wants/$unit"
 done
 # Raspberry Pi OS's first-boot wizard asks for a user name and password,

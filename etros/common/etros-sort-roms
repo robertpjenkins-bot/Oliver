@@ -14,7 +14,9 @@ Runs on both Ollie OS and Batocera, so it only uses the standard library.
 import argparse
 import os
 import shutil
+import subprocess
 import sys
+import time
 import zipfile
 
 SYSTEMS = {
@@ -69,13 +71,18 @@ def system_for(path):
     return SYSTEMS.get(ext)
 
 
-def sort_downloads(downloads, roms, dry_run=False, out=sys.stdout):
+def sort_downloads(downloads, roms, dry_run=False, out=sys.stdout, settle=0):
+    """Sort the files in downloads. With settle, files changed in the last
+    settle seconds are left for next time: they may still be arriving."""
     moved = left = 0
     if not os.path.isdir(downloads):
         return moved, left
+    now = time.time()
     for name in sorted(os.listdir(downloads)):
         src = os.path.join(downloads, name)
         if not os.path.isfile(src) or name.startswith(".") or name.lower().endswith(PARTIAL):
+            continue
+        if settle and now - os.path.getmtime(src) < settle:
             continue
         system = system_for(src)
         if system is None:
@@ -100,9 +107,26 @@ def main():
     p.add_argument("--downloads", default="/userdata/downloads")
     p.add_argument("--roms", default="/userdata/roms")
     p.add_argument("-n", "--dry-run", action="store_true")
+    p.add_argument("--watch", action="store_true",
+                   help="keep going, sorting whatever arrives (for the My ROMs folder)")
+    p.add_argument("--settle", type=float, default=0,
+                   help="leave files changed in the last this many seconds")
+    p.add_argument("--on-move", help="command to run after moving something")
     args = p.parse_args()
-    moved, left = sort_downloads(args.downloads, args.roms, args.dry_run)
-    print(f"moved {moved}, left {left} in {args.downloads}")
+    if not args.watch:
+        moved, left = sort_downloads(args.downloads, args.roms, args.dry_run, settle=args.settle)
+        print(f"moved {moved}, left {left} in {args.downloads}")
+        return
+    os.makedirs(args.downloads, exist_ok=True)
+    while True:
+        try:
+            moved, _ = sort_downloads(args.downloads, args.roms, settle=args.settle)
+            sys.stdout.flush()
+            if moved and args.on_move:
+                subprocess.run(args.on_move, shell=True)
+        except OSError as e:
+            print(f"etros-sort-roms: {e}", file=sys.stderr)
+        time.sleep(3)
 
 
 if __name__ == "__main__":

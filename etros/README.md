@@ -121,6 +121,10 @@ before restarting.
   **Y** right-clicks, **B** goes back, **X** shows the keyboard, the right
   stick scrolls, **L/R** page up and down, and **START/SELECT** are Enter
   and Escape. Hold **SELECT+START** to go back to Etros.
+- **My ROMs:** put a ROM in **Downloads → My ROMs** (in Ollie OS, or over
+  the network at `\\ETROS\share\downloads\My ROMs`) and within a few
+  seconds it moves to its console's folder. In Etros the game list reloads
+  so it shows straight away.
 - Ollie OS lasts one boot. Restarting, or switching off, always comes back
   to Etros.
 - Some files can't be sorted from the name alone, because many consoles
