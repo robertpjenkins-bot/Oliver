@@ -2,6 +2,7 @@ import importlib.machinery
 import importlib.util
 import io
 import os
+import shutil
 import tempfile
 import unittest
 import zipfile
@@ -136,6 +137,31 @@ class MyRomsTest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(base, "Partial.sfc.crdownload")))
             self.assertFalse(os.path.exists(os.path.join(base, "Downloaded pack")))
             self.assertTrue(os.path.isdir(os.path.join(base, "PlayStation")))
+
+
+
+class ArchiveTest(unittest.TestCase):
+    def test_zip_with_a_readme_beside_the_game(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "Metroid Fusion (USA).zip")
+            with zipfile.ZipFile(p, "w") as z:
+                z.writestr("Metroid Fusion (USA).gba", b"x" * 100)
+                z.writestr("readme.txt", b"hi")
+                z.writestr("box.jpg", b"img")
+            self.assertEqual(sorter.system_for(p), "gba")
+
+    @unittest.skipUnless(shutil.which("7z"), "needs 7z to make the test archives")
+    def test_7z_read_without_a_7z_program(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as d:
+            rom = os.path.join(d, "Super Metroid (USA).sfc")
+            open(rom, "wb").write(os.urandom(50000))
+            open(os.path.join(d, "readme.txt"), "w").write("hi")
+            for method in ("-m0=LZMA2", "-m0=LZMA", "-m0=Copy", "-mhc=off"):
+                arc = os.path.join(d, "game%s.7z" % method)
+                subprocess.run(["7z", "a", "-bd", "-bso0", method, arc, rom, os.path.join(d, "readme.txt")], check=True)
+                self.assertEqual(sorter.sevenzip_names(arc), ["Super Metroid (USA).sfc", "readme.txt"], method)
+                self.assertEqual(sorter.system_for(arc), "snes", method)
 
 
 if __name__ == "__main__":

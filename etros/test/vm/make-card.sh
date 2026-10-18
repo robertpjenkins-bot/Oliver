@@ -37,6 +37,9 @@ dd if=etros.img of=share/etros/ollie-rootfs.img bs=512 skip="$ostart" count="$os
 # Test ROMs waiting to be sorted.
 echo snes > "share/downloads/My ROMs/Super Metroid (USA).sfc"
 echo psx > "share/downloads/My ROMs/PlayStation/Tekken 3.chd"
+cp /tmp/claude-0/7zt/lzma2.7z "share/downloads/My ROMs/Super Mario World (USA).7z"
+python3 -c 'import zipfile; z=zipfile.ZipFile("share/downloads/My ROMs/Metroid Fusion (USA).zip","w"); z.writestr("Metroid Fusion (USA).gba", b"x"*1000); z.writestr("readme.txt", b"hi"); z.close()'
+
 sharesize=$(( (24 * 1024 * 1024 * 1024 / 512 - fstart - fsize) / 2048 ))
 mkfs.ext4 -q -F -L SHARE -d share share.ext4 "${sharesize}M"
 dd if=share.ext4 of=card.img bs=512 seek=$((fstart + fsize)) conv=notrunc,sparse status=none

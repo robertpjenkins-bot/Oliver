@@ -51,14 +51,226 @@ def extension(name):
     return os.path.splitext(lower)[1].lstrip(".")
 
 
-def zip_system(path):
-    """The system for a zip whose files all share one known ROM extension."""
-    try:
-        with zipfile.ZipFile(path) as z:
-            names = [n for n in z.namelist() if not n.endswith("/")]
-    except (zipfile.BadZipFile, OSError):
+# What ROM downloads carry besides the game: they don't say which console.
+EXTRAS = {"txt", "nfo", "diz", "url", "htm", "html", "pdf", "jpg", "jpeg", "png", "gif", "bmp",
+          "md", "doc", "rtf", "xml", "dat", "sfv", "md5", "sha1", "ini", "cfg", "srm", "sav"}
+
+
+def sevenzip_names(path):
+    """The file names in a .7z, read with Python alone: Raspberry Pi OS
+    doesn't come with a 7z program. Handles archives whose header is
+    stored plain or packed with LZMA or LZMA2, as 7-Zip writes them."""
+    import lzma
+    import struct
+
+    with open(path, "rb") as f:
+        start = f.read(32)
+        if len(start) < 32 or start[:6] != b"7z\xbc\xaf\x27\x1c":
+            return None
+        offset, size = struct.unpack_from("<QQ", start, 12)
+        f.seek(32 + offset)
+        header = f.read(size)
+
+        class Reader:
+            def __init__(self, data):
+                self.d, self.i = data, 0
+
+            def byte(self):
+                self.i += 1
+                return self.d[self.i - 1]
+
+            def num(self):  # 7z's variable-length number
+                first = self.byte()
+                mask, value = 0x80, 0
+                for n in range(8):
+                    if not first & mask:
+                        return value | ((first & (mask - 1)) << (8 * n))
+                    value |= self.byte() << (8 * n)
+                    mask >>= 1
+                return value
+
+            def take(self, n):
+                self.i += n
+                return self.d[self.i - n:self.i]
+
+            def bits(self, count):  # a defined-bits vector, maybe "all defined"
+                if self.byte():
+                    return [True] * count
+                out, b, mask = [], 0, 0
+                for _ in range(count):
+                    if not mask:
+                        b, mask = self.byte(), 0x80
+                    out.append(bool(b & mask))
+                    mask >>= 1
+                return out
+
+        def streams_info(r):
+            """Pack position, pack sizes and folders (coders, unpack sizes)."""
+            info = {"pos": 0, "packs": [], "folders": []}
+            while True:
+                t = r.byte()
+                if t == 0x00:
+                    return info
+                if t == 0x06:  # PackInfo
+                    info["pos"] = r.num()
+                    n = r.num()
+                    while True:
+                        t2 = r.byte()
+                        if t2 == 0x00:
+                            break
+                        if t2 == 0x09:
+                            info["packs"] = [r.num() for _ in range(n)]
+                        elif t2 == 0x0A:
+                            for ok in r.bits(n):
+                                if ok:
+                                    r.take(4)
+                elif t == 0x07:  # UnPackInfo
+                    assert r.byte() == 0x0B
+                    nf = r.num()
+                    assert r.byte() == 0  # not external
+                    for _ in range(nf):
+                        coders, outs = [], 0
+                        for _ in range(r.num()):
+                            flags = r.byte()
+                            cid = r.take(flags & 0x0F)
+                            nout = 1
+                            if flags & 0x10:
+                                r.num()
+                                nout = r.num()
+                            props = r.take(r.num()) if flags & 0x20 else b""
+                            coders.append((cid, props))
+                            outs += nout
+                        for _ in range(outs - 1):  # bind pairs
+                            r.num(); r.num()
+                        info["folders"].append({"coders": coders, "outs": outs})
+                    assert r.byte() == 0x0C
+                    for fo in info["folders"]:
+                        fo["sizes"] = [r.num() for _ in range(fo["outs"])]
+                    t2 = r.byte()
+                    if t2 == 0x0A:
+                        for ok in r.bits(nf):
+                            if ok:
+                                r.take(4)
+                        t2 = r.byte()
+                    assert t2 == 0x00
+                elif t == 0x08:  # SubStreamsInfo: not needed for names
+                    counts = [1] * len(info["folders"])
+                    while True:
+                        t2 = r.byte()
+                        if t2 == 0x00:
+                            break
+                        if t2 == 0x0D:
+                            counts = [r.num() for _ in info["folders"]]
+                        elif t2 == 0x09:
+                            for c in counts:
+                                for _ in range(c - 1):
+                                    r.num()
+                        elif t2 == 0x0A:
+                            total = sum(counts)
+                            for ok in r.bits(total):
+                                if ok:
+                                    r.take(4)
+                else:
+                    raise ValueError("7z: unexpected %#x" % t)
+
+        r = Reader(header)
+        t = r.byte()
+        if t == 0x17:  # the header itself is packed
+            info = streams_info(r)
+            folder = info["folders"][0]
+            cid, props = folder["coders"][0]
+            if cid == b"\x03\x01\x01":  # LZMA
+                lc, lp, pb = props[0] % 9, (props[0] // 9) % 5, props[0] // 45
+                dict_size = struct.unpack_from("<I", props, 1)[0]
+                filt = {"id": lzma.FILTER_LZMA1, "dict_size": dict_size, "lc": lc, "lp": lp, "pb": pb}
+            elif cid == b"\x21":  # LZMA2
+                filt = {"id": lzma.FILTER_LZMA2}
+            elif cid == b"\x00":  # stored
+                filt = None
+            else:
+                return None
+            f.seek(32 + info["pos"])
+            packed = f.read(info["packs"][0])
+            if filt is None:
+                header = packed
+            else:
+                dec = lzma.LZMADecompressor(lzma.FORMAT_RAW, filters=[filt])
+                header = dec.decompress(packed, max_length=folder["sizes"][-1])
+            r = Reader(header)
+            t = r.byte()
+        if t != 0x01:
+            return None
+        names = []
+        while True:
+            t = r.byte()
+            if t == 0x00:
+                break
+            if t == 0x02:  # archive properties
+                while r.byte() != 0x00:
+                    r.take(r.num())
+            elif t in (0x03, 0x04):
+                streams_info(r)
+            elif t == 0x05:  # FilesInfo
+                n = r.num()
+                dirs = [False] * n
+                while True:
+                    p = r.byte()
+                    if p == 0x00:
+                        break
+                    data = Reader(r.take(r.num()))
+                    if p == 0x11:  # names
+                        data.byte()  # not external
+                        raw = data.d[data.i:]
+                        names = [s for s in raw.decode("utf-16-le").split("\x00")][:n]
+                    elif p == 0x15:  # attributes: a folder has 0x10
+                        defined = data.bits(n)
+                        data.byte()
+                        for k in range(n):
+                            if defined[k]:
+                                attr = struct.unpack("<I", data.take(4))[0]
+                                dirs[k] = bool(attr & 0x10)
+                return [nm for nm, d in zip(names, dirs) if not d]
+        return names
+
+
+def archive_names(path):
+    """The file names inside a .zip, .7z or .rar, or None if it can't be read."""
+    ext = extension(path)
+    if ext == "zip":
+        try:
+            with zipfile.ZipFile(path) as z:
+                return [n for n in z.namelist() if not n.endswith("/")]
+        except (zipfile.BadZipFile, OSError):
+            return None
+    if ext == "7z":
+        try:
+            names = sevenzip_names(path)
+        except Exception:  # a damaged or unusual archive: try a program below
+            names = None
+        if names:
+            return names
+    # Otherwise (and for .rar) a program, if there is one: 7z or bsdtar.
+    for cmd in (["7z", "l", "-ba", "-slt", path], ["7zr", "l", "-ba", "-slt", path], ["bsdtar", "-tf", path]):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if r.returncode != 0:
+            continue
+        if cmd[0] == "bsdtar":
+            return [n for n in r.stdout.splitlines() if n and not n.endswith("/")]
+        return [l[len("Path = "):] for l in r.stdout.splitlines()
+                if l.startswith("Path = ") and l[len("Path = "):] != path]
+    return None
+
+
+def archive_system(path):
+    """The system for an archive whose games all share one known ROM
+    extension (readme files and pictures beside them don't count)."""
+    names = archive_names(path)
+    if not names:
         return None
-    systems = {SYSTEMS.get(extension(n)) for n in names}
+    systems = {SYSTEMS.get(extension(n)) for n in names if extension(n) not in EXTRAS}
     if len(systems) == 1:
         return systems.pop()
     return None
@@ -66,8 +278,8 @@ def zip_system(path):
 
 def system_for(path):
     ext = extension(path)
-    if ext == "zip":
-        return zip_system(path)
+    if ext in ("zip", "7z", "rar"):
+        return archive_system(path)
     return SYSTEMS.get(ext)
 
 

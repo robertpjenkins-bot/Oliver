@@ -19,6 +19,11 @@ report() {
         echo "== storage (SHARE at /userdata) =="
         findmnt /userdata 2>&1 || echo "NOT MOUNTED"
         echo
+        echo "== My ROMs =="
+        journalctl -b -u ollie-myroms --no-pager -o cat -n 40 2>&1
+        echo "In Not sorted:"
+        find "/userdata/downloads/My ROMs/Not sorted - move these into a console folder" -mindepth 1 -maxdepth 1 2>&1
+        echo
         echo "== failed services =="
         systemctl --failed --no-legend 2>&1
         echo
@@ -46,8 +51,12 @@ report "starting (systemd is running)"
 for _ in $(seq 1 36); do
     sleep 5
     if desktop_up; then
-        report "OK: the desktop is up"
-        exit 0
+        # Keep the report current while Ollie OS runs, so it also shows what
+        # happened to ROMs put in My ROMs.
+        while true; do
+            report "OK: the desktop is up"
+            sleep 120
+        done
     fi
 done
 report "NO DESKTOP after 3 minutes; restarting into Etros"
