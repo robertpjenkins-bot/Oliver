@@ -50,7 +50,8 @@ ln -s ../lib/systemd/systemd "$T/ollie/sbin/init"  # as in Raspberry Pi OS
 mkfs.ext4 -q -L rootfs -d "$T/ollie" "$T/ollie.img" 32M
 # The same Ollie OS as a file on the storage partition, as cards put
 # together without a password have it.
-mkdir -p "$T/share/etros"
+mkdir -p "$T/share/etros" "$T/share/roms"
+echo "from share" > "$T/share/roms/marker"
 cp "$T/ollie.img" "$T/share/etros/ollie-rootfs.img"
 mkfs.ext4 -q -L SHARE -d "$T/share" "$T/share.img" 64M
 mkdir -p "$FAT/etros/ollie/etc"
@@ -106,6 +107,7 @@ echo "layer=$(test -e $new/etc/init.d/S13etros && echo yes || echo no)"
 echo "modules=$(cat $new/lib/modules/*/marker 2>/dev/null)"
 echo "etros-files=$(cat $new/etc/etros-marker 2>/dev/null)"
 echo "next=$(cat $new/boot/etros/next-boot)"
+echo "userdata=$(cat $new/userdata/roms/marker 2>/dev/null)"
 # Batocera remounts /boot read-write to save settings; /boot/boot must follow.
 mkdir -p /proc && mount -t proc proc /proc
 if mount -o remount,rw $new/boot && touch $new/boot/boot/written; then echo "boot-writable=yes"; else echo "boot-writable=no"; fi
@@ -170,6 +172,7 @@ echo ollie > "$FAT/etros/next-boot"
 out=$(BOOT_ENV="ETROS_SHARE=/share.img" boot "raspberrypi,5-model-b\0brcm,bcm2712")
 expect "$out" root ollie
 expect "$out" modules pi5
+expect "$out" userdata "from share"
 expect "$out" next batocera
 
 echo "Pi 5, Ollie OS missing: back to Batocera, with the reason left on the card"

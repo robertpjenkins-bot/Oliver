@@ -16,6 +16,9 @@ report() {
         echo "== kernel =="
         uname -a
         echo
+        echo "== storage (SHARE at /userdata) =="
+        findmnt /userdata 2>&1 || echo "NOT MOUNTED"
+        echo
         echo "== failed services =="
         systemctl --failed --no-legend 2>&1
         echo

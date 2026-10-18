@@ -34,6 +34,23 @@ id rpi-first-boot-wizard >/dev/null 2>&1 && userdel -r rpi-first-boot-wizard 2>/
 
 # Shared storage with Batocera.
 if mountpoint -q /userdata; then
+    # Older Etros didn't always mount it, and then downloads were saved into
+    # Ollie OS's own /userdata folder, hidden now under the real one. Move
+    # them to the shared Downloads, where Etros sorts them.
+    mkdir -p /run/ollie-under
+    if mount --bind / /run/ollie-under 2>/dev/null; then
+        under=/run/ollie-under/userdata
+        for f in "$under"/downloads/* "$under"/downloads/.[!.]* "$under"/roms/*/*; do
+            test -e "$f" || continue
+            case "$f" in
+                "$under"/roms/*) dest=/userdata/roms/$(basename "$(dirname "$f")") ;;
+                *) dest=/userdata/downloads ;;
+            esac
+            mkdir -p "$dest"
+            test -e "$dest/$(basename "$f")" || mv "$f" "$dest/"
+        done
+        umount /run/ollie-under
+    fi
     mkdir -p /userdata/downloads "/userdata/downloads/My ROMs" /userdata/ollie
     chmod 1777 /userdata/downloads "/userdata/downloads/My ROMs"
     chown ollie: /userdata/ollie

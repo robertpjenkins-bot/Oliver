@@ -1,3 +1,3 @@
-# Ollie OS, as set up by Etros. The root file system is mounted read-write
-# before Ollie OS starts, and the boot partition is already at /boot.
-LABEL=SHARE   /userdata  ext4  defaults,noatime,nofail  0  0
+# Ollie OS, as set up by Etros. Etros mounts everything before Ollie OS
+# starts: the root file system, the boot partition at /boot, and SHARE
+# (Batocera's storage: ROMs, downloads, saves) at /userdata.

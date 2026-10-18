@@ -82,6 +82,21 @@ etros_ollie_device() {
     echo LABEL=rootfs
 }
 
+# The SHARE partition (Batocera's /userdata) is partition 2.
+etros_share_device() {
+    local dev mnt rest
+    while read -r dev mnt rest
+    do
+        if test "${mnt}" = /boot_root
+        then
+            case "${dev}" in
+                /dev/*1) echo "${dev%1}2"; return 0 ;;
+            esac
+        fi
+    done < /proc/mounts
+    echo LABEL=SHARE
+}
+
 # Ollie OS is either partition 3 (cards written whole) or a file on the
 # storage partition (cards put together without a password, see the
 # installer's udisks_linux.go).
@@ -93,7 +108,7 @@ etros_mount_ollie() {
     fi
     mount -o rw "$(etros_ollie_device)" /new_root 2>/dev/null && return 0
     mkdir -p /share_root || return 1
-    if ! mount -o rw "${ETROS_SHARE:-LABEL=SHARE}" /share_root
+    if ! mount -o rw "${ETROS_SHARE:-$(etros_share_device)}" /share_root
     then
         ETROS_WHY="no partition 3 for Ollie OS, and the SHARE partition would not mount"
         return 1
@@ -144,11 +159,17 @@ etros_boot_ollie() {
     fi
 
     mount --move /boot_root /new_root/boot || return 1
+    # Batocera's storage (ROMs, downloads, saves) is /userdata in Ollie OS
+    # too, mounted here so it's there before anything in Ollie OS starts.
+    # When Ollie OS runs from a file on it, it's mounted already and has to
+    # stay that way.
+    mkdir -p /new_root/userdata || return 1
     if test -n "${ETROS_SHARE_MOUNTED}"
     then
-        # The file Ollie OS runs from has to stay open.
-        mkdir -p /new_root/.etros-share || return 1
-        mount --move /share_root /new_root/.etros-share || return 1
+        mount --move /share_root /new_root/userdata || return 1
+    elif ! mount -o rw "${ETROS_SHARE:-$(etros_share_device)}" /new_root/userdata
+    then
+        echo "etros: could not mount SHARE for Ollie OS"
     fi
     mount --move /sys       /new_root/sys  || return 1
     mount --move /proc      /new_root/proc || return 1
