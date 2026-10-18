@@ -61,18 +61,28 @@ fi
 # run by ollie-myroms.service).
 H=/home/ollie
 mkdir -p "$H/Desktop" "$H/.config/libfm" "$H/.config/gtk-3.0"
-link() {  # link TARGET NAME: NAME in the home folder (or Desktop) opens TARGET
-    if test -L "$2" || ! test -e "$2"; then
-        ln -sfn "$1" "$2"
+# Each is a real folder with the shared storage mounted into it (a bind
+# mount), not a link: links show up as links, or as broken ones, in the file
+# manager, and some programs' save windows don't follow them.
+place() {  # place TARGET FOLDER: FOLDER shows what's in TARGET
+    mountpoint -q "$2" && return 0
+    if test -L "$2"; then
+        rm -f "$2"
+    elif test -d "$2" && test -n "$(ls -A "$2" 2>/dev/null)"; then
+        mv "$2" "$2.old"  # keep anything that was there
     fi
+    mkdir -p "$2"
+    chown ollie: "$2"
+    mount --bind "$1" "$2"
 }
 if mountpoint -q /userdata; then
-    if ! test -L "$H/Downloads"; then
-        rmdir "$H/Downloads" 2>/dev/null || mv "$H/Downloads" "$H/Downloads.old" 2>/dev/null
-    fi
-    link /userdata/downloads "$H/Downloads"
-    link "/userdata/downloads/My ROMs" "$H/My ROMs"
-    link /userdata/roms "$H/All my games"
+    mkdir -p /userdata/roms
+    # So ROMs can also be put straight into a console's folder.
+    chmod 0777 /userdata/roms
+    find /userdata/roms -mindepth 1 -maxdepth 1 -type d -exec chmod 0777 {} +
+    place /userdata/downloads "$H/Downloads"
+    place "/userdata/downloads/My ROMs" "$H/My ROMs"
+    place /userdata/roms "$H/All my games"
     # The file manager's sidebar: My ROMs right under Downloads.
     printf 'file://%s/Downloads Downloads\nfile://%s/My%%20ROMs My ROMs\nfile://%s/All%%20my%%20games All my games\n' \
         "$H" "$H" "$H" > "$H/.config/gtk-3.0/bookmarks"
@@ -82,9 +92,11 @@ fi
 # double-click; programs are launchers, which run without asking first
 # (quick_exec, for the user and for everyone).
 rm -f "$H"/Desktop/downloads.desktop "$H"/Desktop/roms.desktop "$H"/Desktop/my-roms.desktop
-link /userdata/downloads "$H/Desktop/Downloads"
-link "/userdata/downloads/My ROMs" "$H/Desktop/My ROMs"
-link /userdata/roms "$H/Desktop/All my games"
+if mountpoint -q /userdata; then
+    place /userdata/downloads "$H/Desktop/Downloads"
+    place "/userdata/downloads/My ROMs" "$H/Desktop/My ROMs"
+    place /userdata/roms "$H/Desktop/All my games"
+fi
 for f in /usr/share/ollie/desktop/*.desktop; do
     case "$(basename "$f")" in
         downloads.desktop|roms.desktop|my-roms.desktop) ;;
@@ -101,8 +113,8 @@ if test -f "$conf"; then
         sed -i 's/^\[config\]$/[config]\nquick_exec=1/' "$conf"
     fi
 fi
-chown -h ollie: "$H/Downloads" "$H/My ROMs" "$H/All my games" "$H"/Desktop/* 2>/dev/null
-chown -R ollie: "$H/Desktop" "$H/.config"
+chown ollie: "$H/Desktop" "$H"/Desktop/*.desktop
+chown -R ollie: "$H/.config"
 
 # Bobby: your own picture wins over the built-in one.
 for f in /userdata/ollie/bobby.png /userdata/ollie/bobby.jpg /userdata/ollie/bobby.jpeg; do
