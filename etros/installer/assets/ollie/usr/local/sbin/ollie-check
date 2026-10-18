@@ -33,7 +33,7 @@ report() {
 
 desktop_up() {
     systemctl is-active -q display-manager || return 1
-    for p in labwc wayfire lxsession lxpanel pcmanfm wf-panel-pi; do
+    for p in plasmashell kwin_wayland kwin_x11 labwc wayfire lxsession lxpanel pcmanfm wf-panel-pi; do
         pgrep -x "$p" >/dev/null && return 0
     done
     return 1

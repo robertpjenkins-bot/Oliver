@@ -10,9 +10,11 @@ chmod 0644 /etc/fstab /etc/systemd/system/ollie-*.service /etc/chromium/policies
     /etc/xdg/autostart/ollie-wallpaper.desktop /usr/share/ollie/* /usr/share/ollie/desktop/* 2>/dev/null
 
 # The desktop user, logged in automatically.
+# (Ollie OS for ARM logs "ollie" in through SDDM, Raspberry Pi OS through
+# LightDM; admin tasks need no password for the wheel group on Ollie OS.)
 if ! id ollie >/dev/null 2>&1; then
     groups=
-    for g in sudo video render input audio netdev plugdev users gpio; do
+    for g in wheel sudo video render input audio netdev plugdev users gpio; do
         getent group "$g" >/dev/null && groups="$groups,$g"
     done
     useradd -m -s /bin/bash -G "${groups#,}" ollie

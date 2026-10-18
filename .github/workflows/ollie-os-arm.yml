@@ -1,0 +1,77 @@
+name: Ollie OS for ARM
+
+# Builds Ollie OS for the Raspberry Pi 5 and R36S (see etros/ollie-arm) and
+# publishes it as the "Ollie OS for ARM (newest)" release, for Etros Maker.
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Branch with Ollie OS's sources (os/)
+        default: claude/fervent-gates-cs7smv
+  push:
+    paths:
+      - "etros/ollie-arm/**"
+      - ".github/workflows/ollie-os-arm.yml"
+
+permissions:
+  contents: write
+
+env:
+  # The branch Ollie OS (os/, cmd/, packaging/) is developed on.
+  OLLIE_SOURCE: ${{ inputs.source || 'claude/fervent-gates-cs7smv' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get Ollie OS's sources
+        run: |
+          git fetch --depth 1 origin "$OLLIE_SOURCE"
+          git worktree add --detach ollie-src FETCH_HEAD
+          ls ollie-src/os/profile
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ollie-src/go.mod
+
+      - name: Make room on the runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune -af
+          df -h / /mnt
+
+      - name: Install the build tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-user-static binfmt-support libarchive-tools e2fsprogs librsvg2-bin xz-utils fdisk
+          # Run ARM programs through QEMU.
+          sudo update-binfmts --enable qemu-aarch64 || true
+          ls /proc/sys/fs/binfmt_misc/ | grep -i aarch64
+
+      - name: Build Ollie OS for ARM
+        run: sudo env WORK=/mnt/ollie-arm PATH="$PATH" GOCACHE=/tmp/gocache GOPATH=/tmp/gopath bash etros/ollie-arm/build.sh ollie-src out
+
+      - name: Publish it as the "Ollie OS for ARM (newest)" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd out
+          size=$(stat -c %s ollie-os-arm64.img.xz)
+          if (( size >= 2047 * 1024 * 1024 )); then
+            echo "::error::the image is $((size / 1024 / 1024)) MB, over GitHub's 2 GB limit for a release file"
+            exit 1
+          fi
+          src=$(git -C ../ollie-src rev-parse --short HEAD)
+          gh release delete ollie-os-arm-newest --yes --cleanup-tag 2>/dev/null || true
+          gh release create ollie-os-arm-newest --prerelease --target "$GITHUB_SHA" \
+            --title "Ollie OS for ARM (newest)" \
+            --notes "Ollie OS for the Raspberry Pi 5 and R36S (ARM), for Etros.
+          Built on $(date -u '+%Y-%m-%d %H:%M UTC') from Ollie OS $OLLIE_SOURCE ($src).
+
+          Download **ollie-os-arm64.img.xz** into Downloads, then run Etros Maker:
+          it uses it for Boot into Ollie OS." \
+            ollie-os-arm64.img.xz ollie-os-arm64.img.xz.sha256

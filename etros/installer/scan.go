@@ -157,6 +157,8 @@ func scan() Found {
 	for _, list := range []*[]foundFile{&f.Etros, &f.Pi5, &f.R36S, &f.Ollie} {
 		sort.Slice(*list, func(i, j int) bool { return (*list)[i].Mod.After((*list)[j].Mod) })
 	}
+	// Ollie OS itself before Raspberry Pi OS, whichever is newer.
+	sort.SliceStable(f.Ollie, func(i, j int) bool { return isOllieArm(f.Ollie[i].Path) && !isOllieArm(f.Ollie[j].Path) })
 	return f
 }
 
@@ -172,4 +174,10 @@ func zipHasImage(path string) bool {
 		}
 	}
 	return false
+}
+
+// isOllieArm tells Ollie OS for ARM (ollie-os-arm64.img.xz, from the
+// "Ollie OS for ARM" release) from Raspberry Pi OS.
+func isOllieArm(path string) bool {
+	return strings.Contains(strings.ToLower(baseName(path)), "ollie")
 }

@@ -23,6 +23,10 @@ var mode = "installer"
 
 const batoceraDownload = "https://batocera.org/download"
 
+// Where Ollie OS for ARM is published (.github/workflows/ollie-os-arm.yml).
+// The repository is private, so it's downloaded in a browser, logged in.
+const ollieArmRelease = "https://github.com/robertpjenkins-bot/Oliver/releases/tag/ollie-os-arm-newest"
+
 func runMaker(o Options) error {
 	t := &tui{in: bufio.NewReader(os.Stdin), opts: o}
 	showBanner()
@@ -77,12 +81,20 @@ func runMaker(o Options) error {
 		if len(f.PCOllie) > 0 {
 			note(cYellow + "Found " + baseName(f.PCOllie[0].Path) + ": that's Ollie OS for PCs." + cReset)
 			note("The Raspberry Pi 5 and R36S have ARM processors and can't run PC systems, so")
-			note("Etros's Ollie OS is a Raspberry Pi desktop instead (Bobby wallpaper, browser, Downloads).")
+			note("Etros needs Ollie OS for ARM (ollie-os-arm64.img.xz) instead.")
 		}
-		if len(f.Ollie) == 0 {
-			note("Ollie OS (the desktop for downloading ROMs, with Bobby on the wallpaper)")
-			note("needs a Raspberry Pi system image. Press Enter to download Raspberry Pi OS")
-			note("(1.3 GB, no password), or paste a download link to a Raspberry Pi (ARM) image.")
+		if len(f.Ollie) == 0 || !isOllieArm(f.Ollie[0].Path) {
+			note(cBold + "Ollie OS for ARM" + cReset + " isn't in Downloads. To use it, download")
+			note(cCyan + "ollie-os-arm64.img.xz" + cReset + " from " + cCyan + ollieArmRelease + cReset)
+			note("(you need to be logged in to GitHub), then press r to look again.")
+			if len(f.Ollie) == 0 {
+				note("Or press Enter to use Raspberry Pi OS (1.3 GB download) instead.")
+			} else {
+				note("Or press Enter to use " + baseName(f.Ollie[0].Path) + " instead.")
+			}
+			if strings.ToLower(t.ask("r to look again, Enter to go on:")) == "r" {
+				continue
+			}
 		}
 		o.Ollie = t.yes("Include Ollie OS?", true)
 		if o.Ollie && len(f.Ollie) == 0 {
