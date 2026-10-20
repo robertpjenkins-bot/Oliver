@@ -127,6 +127,13 @@ for conf in /etc/xdg/pcmanfm/*/desktop-items-*.conf "$H"/.config/pcmanfm/*/deskt
     test -f "$conf" || continue
     sed -i -E -e 's|^wallpaper=.*|wallpaper=/usr/share/ollie/bobby.png|' \
               -e 's|^wallpaper_mode=.*|wallpaper_mode=crop|' "$conf"
+    # Downloads, My ROMs and All my games are folders with the shared storage
+    # mounted into them, so the desktop would show each again as a drive.
+    if grep -q '^show_mounts=' "$conf"; then
+        sed -i 's|^show_mounts=.*|show_mounts=0|' "$conf"
+    else
+        echo 'show_mounts=0' >> "$conf"
+    fi
 done
 
 # The root file system was copied in at its original size; grow it into

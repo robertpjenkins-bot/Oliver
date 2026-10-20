@@ -1,0 +1,9 @@
+#!/bin/sh
+# The desktop's Internet Archive icon: archive.org in Firefox, or in
+# Chromium when there's no Firefox.
+for b in firefox firefox-esr chromium chromium-browser x-www-browser; do
+    if command -v "$b" >/dev/null 2>&1; then
+        exec "$b" https://archive.org
+    fi
+done
+exit 1

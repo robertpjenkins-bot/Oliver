@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Internet Archive
+Comment=archive.org in Firefox
+Exec=/usr/local/bin/ollie-internet-archive
+Icon=applications-internet
+Terminal=false
