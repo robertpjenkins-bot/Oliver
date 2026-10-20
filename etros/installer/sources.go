@@ -186,15 +186,63 @@ var imgGzLink = regexp.MustCompile(`href="([^"]+\.img\.gz)"`)
 // r36sImageURL finds the R36S image next to its boot.tar.xz.
 func r36sImageURL(bootURL string) (string, error) {
 	dir := bootURL[:strings.LastIndex(bootURL, "/")+1]
-	listing, err := getText(dir)
+	if listing, err := getText(dir); err == nil {
+		for _, m := range imgGzLink.FindAllStringSubmatch(listing, -1) {
+			name := m[1][strings.LastIndex(m[1], "/")+1:]
+			return dir + name, nil
+		}
+	}
+	// Batocera's update server doesn't list its folders, but names images
+	// in a fixed way: batocera-<board>-<version>-<build date>.img.gz, with
+	// the chip family first when the board is one of several (batocera-
+	// rk3326-r36s-...). The version and date are in batocera.version.
+	ver, err := getText(dir + "batocera.version")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("can't find Batocera for the R36S's full image: %w", err)
 	}
-	for _, m := range imgGzLink.FindAllStringSubmatch(listing, -1) {
-		name := m[1][strings.LastIndex(m[1], "/")+1:]
-		return dir + name, nil
+	f := strings.Fields(ver)
+	if len(f) < 2 {
+		return "", fmt.Errorf("can't read Batocera's version (%q)", strings.TrimSpace(ver))
 	}
-	return "", fmt.Errorf("no R36S image (.img.gz) listed at %s", dir)
+	version := f[0]
+	day, err := time.Parse("2006/01/02", f[1])
+	if err != nil {
+		return "", fmt.Errorf("can't read Batocera's version date (%q)", f[1])
+	}
+	parts := strings.Split(strings.TrimSuffix(dir, "/"), "/")
+	board := parts[len(parts)-3] // .../<board>/<channel>/last/
+	var names []string
+	for _, d := range []int{0, 1, -1, 2} { // the image is made around the version's date
+		date := day.AddDate(0, 0, d).Format("20060102")
+		for _, prefix := range []string{"batocera-rk3326-" + board, "batocera-" + board} {
+			names = append(names, fmt.Sprintf("%s-%s-%s.img.gz", prefix, version, date))
+		}
+	}
+	for _, name := range names {
+		if ok, err := exists(dir + name); err != nil {
+			return "", err
+		} else if ok {
+			logf("R36S image: %s", dir+name)
+			return dir + name, nil
+		}
+	}
+	return "", fmt.Errorf("couldn't find Batocera's full image for the R36S (the start-up code is in it). " +
+		"Download Batocera for the R36S from batocera.org (choose R36S) into Downloads and try again")
+}
+
+// exists asks a web server whether url is there, without downloading it.
+func exists(url string) (bool, error) {
+	req, err := http.NewRequest("HEAD", url, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("can't reach Batocera's downloads: %w", err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK, nil
 }
 
 // The R36S's bootloader lives in the first 16 MiB of its image, ahead of
