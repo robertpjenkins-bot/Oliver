@@ -196,3 +196,52 @@ func cardHasR36S(dir string) bool {
 	}
 	return false
 }
+
+// The R36S has had several screens over the years. Batocera switches the
+// right one on when overlays/mipi-panel.dtbo is a copy of that screen's
+// file (overlays/mipi-panel.dtbo.<name>); with none, only the first screen
+// works and the others stay black.
+var r36sScreens = []struct{ name, file string }{
+	{"Original R36S screen", ""},
+	{"Screen 1", "r36s-panel1"},
+	{"Screen 2", "r36s-panel2"},
+	{"Screen 3", "r36s-panel3"},
+	{"Screen 4", "r36s-panel4"},
+	{"R36S clone", "r36s_clone"},
+}
+
+// r36sScreen tells which screen the card is set for (an index into
+// r36sScreens), from etros/r36s-screen.txt.
+func r36sScreen(dir string) int {
+	b, _ := os.ReadFile(filepath.Join(dir, "etros", "r36s-screen.txt"))
+	for i, s := range r36sScreens {
+		if strings.TrimSpace(string(b)) == s.file {
+			return i
+		}
+	}
+	return 0
+}
+
+// setR36SScreen sets the card at dir for screen i.
+func setR36SScreen(dir string, i int) error {
+	target := filepath.Join(dir, "overlays", "mipi-panel.dtbo")
+	s := r36sScreens[i]
+	if s.file == "" {
+		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	} else {
+		b, err := os.ReadFile(target + "." + s.file)
+		if err != nil {
+			return fmt.Errorf("this card has no file for %s (%v)", s.name, err)
+		}
+		if err := os.WriteFile(target, b, 0o644); err != nil {
+			return err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "etros", "r36s-screen.txt"), []byte(s.file+"\n"), 0o644); err != nil {
+		return err
+	}
+	syncDir(filepath.Join(dir, "overlays"))
+	return nil
+}

@@ -317,6 +317,9 @@ func (t *tui) fixLoop() bool {
 			t.ask("Press Enter to go back")
 			return false
 		}
+		if cardHasR36S(dir) {
+			t.chooseR36SScreen(dir)
+		}
 		closed := closeCard(dir)
 		fmt.Printf("\n%s  CARD UPDATED%s\n\n", cYellow, cReset)
 		if closed {
@@ -338,4 +341,42 @@ func runUpdater(o Options) error {
 	note("My ROMs. Your games, saves and settings stay. " + cBold + "No password needed." + cReset)
 	t.fixLoop()
 	return nil
+}
+
+// chooseR36SScreen lets the person pick their R36S's screen; a black R36S
+// screen usually means the card is set for a different one.
+func (t *tui) chooseR36SScreen(dir string) {
+	cur := r36sScreen(dir)
+	heading("R36S SCREEN")
+	note("R36S units have different screens. If your R36S starts but its screen stays")
+	note("black, the card is set for a different screen: pick the next one here, and")
+	note("try again. (The R36S's light comes on even when the screen stays black.)")
+	for i, s := range r36sScreens {
+		mark := ""
+		if i == cur {
+			mark = cCyan + "  <- set now" + cReset
+		}
+		fmt.Printf("  %s%d%s  %s%s\n", cYellow, i, cReset, s.name, mark)
+	}
+	next := (cur + 1) % len(r36sScreens)
+	for {
+		a := strings.TrimSpace(t.ask(fmt.Sprintf("Which screen? (a number, Enter keeps %d, n tries the next: %d)", cur, next)))
+		i := cur
+		switch {
+		case a == "":
+			return
+		case strings.EqualFold(a, "n"):
+			i = next
+		default:
+			if _, err := fmt.Sscan(a, &i); err != nil || i < 0 || i >= len(r36sScreens) {
+				continue
+			}
+		}
+		if err := setR36SScreen(dir, i); err != nil {
+			note(cRed + "Couldn't set the screen: " + err.Error() + cReset)
+			continue
+		}
+		note("Set for: " + r36sScreens[i].name)
+		return
+	}
 }

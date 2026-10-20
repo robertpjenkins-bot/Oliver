@@ -7,7 +7,7 @@ func TestCleanDroppedPath(t *testing.T) {
 		"/home/deck/Downloads/batocera-rk3326-r36s-43.img.gz": "/home/deck/Downloads/batocera-rk3326-r36s-43.img.gz",
 		"'/home/deck/Downloads/My Files/b.img.gz' ":           "/home/deck/Downloads/My Files/b.img.gz",
 		`"/home/deck/Downloads/b.img.gz"`:                     "/home/deck/Downloads/b.img.gz",
-		`/home/deck/Downloads/My\ Files/b\ \(1\).img.gz`:  "/home/deck/Downloads/My Files/b (1).img.gz",
+		`/home/deck/Downloads/My\ Files/b\ \(1\).img.gz`:      "/home/deck/Downloads/My Files/b (1).img.gz",
 		"file:///home/deck/Downloads/My%20Files/b.img.gz":     "/home/deck/Downloads/My Files/b.img.gz",
 		"": "",
 	} {
