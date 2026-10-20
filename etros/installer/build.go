@@ -353,6 +353,13 @@ func Plan(o Options, rep Reporter) (*Card, error) {
 	for _, sys := range []string{"snes", "gba", "gb", "gbc", "nes", "n64", "nds", "megadrive", "psx"} {
 		vol.Dir("my-roms/" + sys)
 	}
+	if !o.NoR36S {
+		// The R36S starts from code outside any partition (32K to 16M).
+		// Cards put together without a password can't have it written
+		// there, so it also goes on as a file, which Etros writes into
+		// place the first time the card starts in the Pi 5 (S13etros).
+		vol.AddBytes("etros/r36s/bootloader.bin", c.loader[64*sectorSize:loaderEnd])
+	}
 	if o.GamesDir != "" {
 		if err := addGames(vol, o.GamesDir, rep); err != nil {
 			return nil, err

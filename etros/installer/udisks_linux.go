@@ -108,8 +108,8 @@ func filesInstall(imagePath, id string, rep Reporter) error {
 		return err
 	}
 	for _, e := range img.files {
-		if strings.EqualFold(e.path, "uInitrd") {
-			return fmt.Errorf("this image is for the R36S as well, whose start-up code can't be copied on without the administrator password. Make a Raspberry Pi 5 only image (answer n to the R36S question), or use Raspberry Pi Imager")
+		if strings.EqualFold(e.path, "etros/r36s/bootloader.bin") {
+			rep.Log("the R36S's start-up code goes into place the first time this card starts in the Pi 5")
 		}
 	}
 

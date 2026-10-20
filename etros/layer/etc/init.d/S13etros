@@ -72,6 +72,36 @@ if find /boot/my-roms -type f ! -name README.txt 2>/dev/null | grep -q .; then
     fi
 fi
 
+# The R36S starts from code outside any partition, between 32K and 16M on the
+# card. Cards put together without a password (Etros Maker on Linux) carry it
+# as a file instead; write it into place, so the card also starts in the
+# R36S. Only into the free space before the first partition, and only when
+# it isn't there already.
+blob=/boot/etros/r36s/bootloader.bin
+if [ -f "$blob" ]; then
+    part=$(awk '$2 == "/boot" { print $1; exit }' /proc/mounts)
+    case "$part" in
+        /dev/mmcblk*p1|/dev/nvme*p1) disk=${part%p1} ;;
+        /dev/sd?1) disk=${part%1} ;;
+        *) disk= ;;
+    esac
+    sectors=$(( $(stat -c %s "$blob") / 512 ))
+    # Where the first partition starts, from the card's partition table.
+    start=0
+    [ -b "$disk" ] && start=$(od -An -tu4 -j454 -N4 "$disk" | tr -d ' ')
+    if [ -b "$disk" ] && [ "${start:-0}" -ge $((64 + sectors)) ]; then
+        have=$(dd if="$disk" bs=512 skip=64 count="$sectors" 2>/dev/null | md5sum | cut -d' ' -f1)
+        want=$(md5sum < "$blob" | cut -d' ' -f1)
+        if [ "$have" != "$want" ]; then
+            if dd if="$blob" of="$disk" bs=512 seek=64 conv=notrunc,fsync 2>/dev/null; then
+                echo "etros: wrote the R36S start-up code to $disk" >> /userdata/system/logs/etros.log
+            else
+                echo "etros: could not write the R36S start-up code to $disk" >> /userdata/system/logs/etros.log
+            fi
+        fi
+    fi
+fi
+
 # Anything downloaded in Ollie OS is ready to play by the time the menu shows.
 /usr/bin/etros-sort-roms
 
