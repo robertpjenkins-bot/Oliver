@@ -6,6 +6,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -297,13 +298,16 @@ func (t *tui) fixLoop() bool {
 		}
 
 		var err error
+		changed := 0
 		for attempt := 1; attempt <= 2; attempt++ {
 			if attempt == 2 {
 				note(cYellow + "That didn't work: " + err.Error() + cReset)
 				note("Trying again...")
 			}
 			rep := newTermReporter()
-			err = fixCard(dir, rep)
+			var n int
+			n, err = fixCard(dir, rep)
+			changed += n
 			rep.end()
 			if err == nil {
 				break
@@ -321,6 +325,10 @@ func (t *tui) fixLoop() bool {
 			t.ask("Press Enter to go back")
 			return false
 		}
+		if changed == 0 {
+			note(cCyan + "Already up to date: this card has the newest Etros, nothing needed changing." + cReset)
+		}
+		showCardContents(dir)
 		if cardHasR36S(dir) {
 			t.chooseR36SScreen(dir)
 		}
@@ -427,4 +435,28 @@ func (t *tui) reportR36S(dir string) {
 		}
 		note(cYellow + "So if its screen was black, it's the screen setting:" + cReset + " pick the next one below.")
 	}
+}
+
+// showCardContents lists what the Etros card at dir has, so it can be seen
+// that everything is there.
+func showCardContents(dir string) {
+	has := func(rel string) bool {
+		_, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel)))
+		return err == nil
+	}
+	wine, _ := filepath.Glob(filepath.Join(dir, "etros", "wine", "wine-*.tar.xz"))
+	layer, _ := os.ReadFile(filepath.Join(dir, "etros", "etros.squashfs"))
+	heading("ON THIS CARD")
+	line := func(ok bool, what, missing string) {
+		if ok {
+			fmt.Printf("  %s✔%s %s\n", cCyan, cReset, what)
+		} else {
+			fmt.Printf("  %s✘%s %s %s(%s)%s\n", cRed, cReset, what, cDim, missing, cReset)
+		}
+	}
+	line(bytes.Equal(layer, etrosLayer), "Etros (theme, My ROMs, menu music, Windows and OS folders)", "not the newest")
+	line(has("etros/pi5"), "Raspberry Pi 5", "not on this card")
+	line(cardHasR36S(dir), "R36S", "not on this card: Etros Updater can add it")
+	line(has("etros/ollie"), "Ollie OS (Boot into Ollie OS, Internet Archive)", "made without Ollie OS")
+	line(len(wine) > 0, "Wine, for Windows programs on the Pi 5", "couldn't be added: put wine-10.0-amd64-wow64.tar.xz in Downloads")
 }

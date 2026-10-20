@@ -15,7 +15,7 @@ func TestFixCard(t *testing.T) {
 		t.Skip("set ETROS_TEST_CARD_DIR")
 	}
 	os.WriteFile(filepath.Join(dir, "etros", "last-ollie-boot.txt"), []byte("x"), 0o644)
-	if err := fixCard(dir, nopReporter{}); err != nil {
+	if _, err := fixCard(dir, nopReporter{}); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "etros", "etros.squashfs")); !bytes.Equal(b, etrosLayer) {
@@ -29,7 +29,7 @@ func TestFixCard(t *testing.T) {
 		t.Error("old Ollie OS report left behind")
 	}
 	// Running it again changes nothing.
-	if err := fixCard(dir, nopReporter{}); err != nil {
-		t.Fatal(err)
+	if n, err := fixCard(dir, nopReporter{}); err != nil || n != 0 {
+		t.Fatalf("second run: changed %d, %v", n, err)
 	}
 }

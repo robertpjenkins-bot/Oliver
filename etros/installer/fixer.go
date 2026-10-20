@@ -66,8 +66,9 @@ func etrosCardDirs() []string {
 	return out
 }
 
-// fixCard brings the Etros files on the BATOCERA drive at dir up to date.
-func fixCard(dir string, rep Reporter) error {
+// fixCard brings the Etros files on the BATOCERA drive at dir up to date,
+// and says how many it changed (none when the card was up to date already).
+func fixCard(dir string, rep Reporter) (changed int, err error) {
 	write := func(rel string, data []byte) error {
 		p := filepath.Join(dir, filepath.FromSlash(rel))
 		if old, err := os.ReadFile(p); err == nil && bytes.Equal(old, data) {
@@ -86,12 +87,13 @@ func fixCard(dir string, rep Reporter) error {
 			return err
 		}
 		rep.Log("updated " + rel)
+		changed++
 		return nil
 	}
 
 	rep.Stage("Updating Etros on the card")
 	if err := write("etros/etros.squashfs", etrosLayer); err != nil {
-		return err
+		return changed, err
 	}
 	for _, rel := range []string{"etros/pi5/initrd.lz4", "uInitrd"} {
 		p := filepath.Join(dir, filepath.FromSlash(rel))
@@ -100,15 +102,15 @@ func fixCard(dir string, rep Reporter) error {
 			continue
 		}
 		if err != nil {
-			return err
+			return changed, err
 		}
-		out, changed, err := UpdateInitrdHook(in)
+		out, hookChanged, err := UpdateInitrdHook(in)
 		if err != nil {
-			return fmt.Errorf("%s: %w", rel, err)
+			return changed, fmt.Errorf("%s: %w", rel, err)
 		}
-		if changed {
+		if hookChanged {
 			if err := write(rel, out); err != nil {
-				return err
+				return changed, err
 			}
 		}
 	}
@@ -124,8 +126,23 @@ func fixCard(dir string, rep Reporter) error {
 			return write("etros/ollie/"+strings.TrimPrefix(p, "assets/ollie/"), b)
 		})
 		if err != nil {
-			return err
+			return changed, err
 		}
+		// Files older Etros put there that this one doesn't have any more.
+		ollieDir := filepath.Join(dir, "etros", "ollie")
+		filepath.WalkDir(ollieDir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			rel, _ := filepath.Rel(ollieDir, p)
+			if _, err := fs.Stat(ollieFiles, "assets/ollie/"+filepath.ToSlash(rel)); err != nil {
+				if os.Remove(p) == nil {
+					rep.Log("removed old etros/ollie/" + filepath.ToSlash(rel))
+					changed++
+				}
+			}
+			return nil
+		})
 	}
 	// Wine for the Windows folder, if the card has none yet (Pi 5 cards).
 	if have, _ := filepath.Glob(filepath.Join(dir, "etros", "wine", "wine-*.tar.xz")); len(have) == 0 {
@@ -136,9 +153,10 @@ func fixCard(dir string, rep Reporter) error {
 			}
 			if p, ok := getWine(src, defaultCache(), rep); ok {
 				if err := copyFile(p, filepath.Join(dir, "etros", "wine", wineName(src)), rep); err != nil {
-					return fmt.Errorf("adding Wine: %w", err)
+					return changed, fmt.Errorf("adding Wine: %w", err)
 				}
 				rep.Log("added Wine for the Windows folder")
+				changed++
 			}
 		}
 	}
@@ -146,8 +164,12 @@ func fixCard(dir string, rep Reporter) error {
 	// SHARE fills a card put together without a password, so Batocera's
 	// resize on start has nothing to do and shows a failure each start.
 	if shareFillsCard(dir) {
-		if err := noAutoresize(dir); err != nil {
-			return err
+		if b, _ := os.ReadFile(filepath.Join(dir, "batocera-boot.conf")); bytes.Contains(b, []byte("\nautoresize=true")) {
+			if err := noAutoresize(dir); err != nil {
+				return changed, err
+			}
+			rep.Log("turned off Batocera's resize on start (the storage already fills the card)")
+			changed++
 		}
 	}
 
@@ -155,7 +177,7 @@ func fixCard(dir string, rep Reporter) error {
 	os.Remove(filepath.Join(dir, "etros", "last-ollie-boot.txt"))
 	syncDir(filepath.Join(dir, "etros"))
 	syncDir(dir)
-	return nil
+	return changed, nil
 }
 
 func syncDir(dir string) {
