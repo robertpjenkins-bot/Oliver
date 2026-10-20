@@ -94,6 +94,12 @@ func main() {
 			fmt.Printf("\n%sDone.%s The drive is ready.\n", cYellow, cReset)
 			waitForEnter()
 		}
+	case mode == "updater":
+		// Like Etros Maker: only ordinary files on the card, no password.
+		if openInTerminal() {
+			return
+		}
+		err = runUpdater(opts)
 	case mode == "maker":
 		// Etros Maker only makes an image file, so it never asks for
 		// administrator rights.

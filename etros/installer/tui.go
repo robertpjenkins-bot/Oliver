@@ -35,13 +35,23 @@ var banner = []string{
 	"╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝ ╚══════╝",
 }
 
-func showBanner() {
+func showBanner() { showTitle("") }
+
+// showTitle draws the title screen; a subtitle such as "ETROS UPDATER"
+// replaces "WELCOME TO".
+func showTitle(sub string) {
 	fmt.Println()
 	fmt.Printf("  %sENERGY 99%s  %s■ ■ ■ ■ ■ ■%s      %sversion %s%s\n\n", cBold, cReset, cPink, cReset, cDim, version, cReset)
-	fmt.Printf("              %sWELCOME TO%s\n", cCyan, cReset)
+	if sub == "" {
+		fmt.Printf("              %sWELCOME TO%s\n", cCyan, cReset)
+	}
 	shades := []string{cYellow, cYellow, cOrange, cOrange, cRed, cBlue}
 	for i, line := range banner {
 		fmt.Printf("  %s%s%s\n", shades[i], line, cReset)
+	}
+	if sub != "" {
+		fmt.Printf("\n                  %s%s%s\n\n", cCyan+cBold, sub, cReset)
+		return
 	}
 	fmt.Printf("\n  %sTHE LAST CARTRIDGE IS IN CAPTIVITY.\n  THE GALAXY IS AT PEACE...%s\n\n", cDim, cReset)
 }

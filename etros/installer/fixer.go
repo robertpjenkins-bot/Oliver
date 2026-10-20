@@ -53,7 +53,11 @@ func imageIsCurrent(path string) bool {
 // this computer (folders with etros/etros.squashfs in them).
 func etrosCardDirs() []string {
 	var out []string
-	for _, dir := range mountedDirs() {
+	dirs := mountedDirs()
+	if t := os.Getenv("ETROS_TEST_MOUNTS"); t != "" { // for tests
+		dirs = strings.Split(t, ":")
+	}
+	for _, dir := range dirs {
 		if _, err := os.Stat(filepath.Join(dir, "etros", "etros.squashfs")); err == nil {
 			out = append(out, dir)
 		}

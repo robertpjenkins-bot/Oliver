@@ -201,7 +201,7 @@ func (t *tui) startMenu() (bool, error) {
 		var current string
 		heading("WHAT DO YOU WANT TO DO?")
 		fmt.Printf("  %s1%s  Make a new Etros card %s(recommended)%s\n", cYellow, cReset, cCyan, cReset)
-		fmt.Printf("  %s2%s  Fix my Etros card %s(quick: updates Etros, keeps your games and saves)%s\n", cYellow, cReset, cDim, cReset)
+		fmt.Printf("  %s2%s  Etros Updater %s(update my Etros card, keeps your games and saves)%s\n", cYellow, cReset, cDim, cReset)
 		for _, e := range scan().Etros {
 			if imageIsCurrent(e.Path) {
 				current = e.Path
@@ -226,32 +226,30 @@ func (t *tui) startMenu() (bool, error) {
 	}
 }
 
-// fixLoop finds an Etros card on this computer and updates it. It returns
-// false to go back to the menu.
+// fixLoop is the Etros Updater: pick an Etros card on this computer and
+// bring it up to date, trying once more if that fails. It returns false to
+// go back to the menu.
 func (t *tui) fixLoop() bool {
-	heading("FIX MY ETROS CARD")
 	for {
+		heading("ETROS UPDATER: SELECT A DRIVE")
 		cards := etrosCardDirs()
 		if len(cards) == 0 {
 			note("No Etros card found. Put the card in (a card reader is fine), wait a few")
-			note("seconds, then press Enter. b goes back.")
-			if strings.ToLower(t.ask("Enter to look again, or b:")) == "b" {
-				return false
-			}
+			note("seconds, then press Enter.")
+		}
+		for i, c := range cards {
+			fmt.Printf("  %s%d%s  Etros card at %s\n", cYellow, i+1, cReset, c)
+		}
+		fmt.Printf("  %sr%s  Look again    %sb%s  Back\n", cYellow, cReset, cYellow, cReset)
+		a := strings.ToLower(t.ask("Which drive? (its number, r or b)"))
+		if a == "b" || a == "q" {
+			return false
+		}
+		var n int
+		if _, err := fmt.Sscan(a, &n); err != nil || n < 1 || n > len(cards) {
 			continue
 		}
-		dir := cards[0]
-		if len(cards) > 1 {
-			for i, c := range cards {
-				fmt.Printf("  %s%d%s  %s\n", cYellow, i+1, cReset, c)
-			}
-			var n int
-			if _, err := fmt.Sscan(t.ask("Which card?"), &n); err != nil || n < 1 || n > len(cards) {
-				continue
-			}
-			dir = cards[n-1]
-		}
-		note("Found an Etros card: " + dir)
+		dir := cards[n-1]
 		if why, err := os.ReadFile(filepath.Join(dir, "etros", "last-ollie-boot.txt")); err == nil {
 			note("Last time: " + strings.TrimSpace(string(why)))
 		}
@@ -262,27 +260,51 @@ func (t *tui) fixLoop() bool {
 			}
 			note("(the whole report is etros/ollie-log.txt on the card's BATOCERA drive)")
 		}
-		rep := newTermReporter()
-		err := fixCard(dir, rep)
-		rep.end()
+
+		var err error
+		for attempt := 1; attempt <= 2; attempt++ {
+			if attempt == 2 {
+				note(cYellow + "That didn't work: " + err.Error() + cReset)
+				note("Trying again...")
+			}
+			rep := newTermReporter()
+			err = fixCard(dir, rep)
+			rep.end()
+			if err == nil {
+				break
+			}
+			logf("update attempt %d: %v", attempt, err)
+		}
 		if err != nil {
-			logf("ERROR: %v", err)
-			fmt.Printf("\n%sSOMETHING WENT WRONG:%s %v\n", cRed, cReset, err)
-			note("Choose 1 in the menu to make a new card instead.")
+			logf("ERROR: update failed: %v", err)
+			fmt.Printf("\n%s  UPDATE FAILED%s\n\n", cRed, cReset)
+			note("Etros Updater tried twice and couldn't update the card:")
+			note("  " + err.Error())
+			note("Nothing on the card was lost: what couldn't be updated is still the old version.")
+			note("Check the card isn't locked (the little switch on its side), or make a new card")
+			note("with Etros Maker. This is also saved in etros-installer-log.txt in Downloads.")
+			t.ask("Press Enter to go back")
 			return false
 		}
 		closed := closeCard(dir)
-		fmt.Printf("\n%s  CARD FIXED%s\n\n", cYellow, cReset)
+		fmt.Printf("\n%s  CARD UPDATED%s\n\n", cYellow, cReset)
 		if closed {
-			note("1. Take the card out and put it back in your Raspberry Pi 5.")
+			note("1. Take the card out and put it back in your Raspberry Pi 5 or R36S.")
 		} else {
-			note("1. Eject the card (in the file manager), then put it back in your Raspberry Pi 5.")
+			note("1. Eject the card (in the file manager), then put it back in your Raspberry Pi 5 or R36S.")
 		}
-		note("2. ETROS -> Boot into Ollie OS now restarts into Ollie OS.")
-		note("3. If Ollie OS still doesn't start, Etros comes back and saves why in")
-		note("   etros/last-ollie-boot.txt on the card; run this again and it shows it.")
-		note("   If it says the copy is incomplete, choose 1 to make a new card.")
+		note("2. Your games, saves and settings are all still there.")
 		t.ask("Press Enter to finish")
 		return true
 	}
+}
+
+// runUpdater is the Etros Updater on its own: straight to choosing a card.
+func runUpdater(o Options) error {
+	t := &tui{in: bufio.NewReader(os.Stdin), opts: o}
+	showTitle("ETROS UPDATER")
+	note("Brings an Etros card up to date: the newest Etros, Ollie OS's settings and")
+	note("My ROMs. Your games, saves and settings stay. " + cBold + "No password needed." + cReset)
+	t.fixLoop()
+	return nil
 }

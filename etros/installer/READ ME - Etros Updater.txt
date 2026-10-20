@@ -1,0 +1,14 @@
+ETROS UPDATER
+
+Brings an Etros card up to date: the newest Etros, Ollie OS's settings and
+My ROMs. Your games, saves and settings stay on the card.
+
+1. Put the Etros card in this computer (a card reader is fine).
+2. Double-click Etros Updater (on Linux: Etros Updater, then Run; on a Mac:
+   right-click, Open; on Windows: Etros Updater.exe).
+3. Pick the card from the list.
+4. When it says CARD UPDATED, take the card out and put it back in your
+   Raspberry Pi 5 or R36S.
+
+If an update fails, Etros Updater tries once more. If it fails again it
+says why, and nothing on the card is lost. No password is ever needed.
