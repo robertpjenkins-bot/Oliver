@@ -128,14 +128,16 @@ func fetch(src, cacheDir, name string, p Progress, log func(string)) (string, er
 	defer resp.Body.Close()
 	// Name the cache file after where a redirect landed, so a new release
 	// is a new file.
-	final := resp.Request.URL.String()
+	// Only the host and path: some (GitHub's) carry a signature that changes
+	// every time.
+	final := resp.Request.URL.Host + resp.Request.URL.Path
 	sum := md5.Sum([]byte(final))
-	dest := filepath.Join(cacheDir, name+"-"+hex.EncodeToString(sum[:4])+filepath.Ext(final))
+	dest := filepath.Join(cacheDir, name+"-"+hex.EncodeToString(sum[:4])+path.Ext(resp.Request.URL.Path))
 	if st, err := os.Stat(dest); err == nil && resp.ContentLength > 0 && st.Size() == resp.ContentLength {
 		log("using the copy downloaded earlier: " + filepath.Base(dest))
 		return dest, nil
 	}
-	log("downloading " + final)
+	log("downloading " + src)
 	tmp := dest + ".part"
 	f, err := os.Create(tmp)
 	if err != nil {

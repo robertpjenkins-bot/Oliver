@@ -264,6 +264,34 @@ func (t *tui) fixLoop() bool {
 			note("(the whole report is etros/ollie-log.txt on the card's BATOCERA drive)")
 		}
 
+		// A card made without the R36S: offer to add it.
+		if !cardHasR36S(dir) {
+			heading("THIS CARD HAS NO R36S PART")
+			note("It was made for the Raspberry Pi 5 only, so the R36S can't start from it")
+			note("(that's the black screen). Etros Updater can add the R36S: it copies your games,")
+			note("saves and settings to this computer, makes the card again with both devices,")
+			note("and puts everything back. It downloads Batocera for the R36S if it isn't in")
+			note("Downloads. No password needed.")
+			if !addR36SSupported() {
+				note(cYellow + "On this computer that isn't possible: make a new card with Etros Maker (option 1)." + cReset)
+			} else if t.yes("Add the R36S to this card?", true) {
+				if err := t.remakeWithR36S(dir); err != nil {
+					logf("ERROR: adding the R36S: %v", err)
+					fmt.Printf("\n%s  UPDATE FAILED%s\n\n", cRed, cReset)
+					note("Adding the R36S didn't work: " + err.Error())
+					t.ask("Press Enter to go back")
+					return false
+				}
+				fmt.Printf("\n%s  CARD UPDATED, WITH THE R36S%s\n\n", cYellow, cReset)
+				note("1. Put the card in your Raspberry Pi 5 and switch it on once, until Etros")
+				note("   shows. That puts the R36S's start-up code in place.")
+				note("2. Then the same card starts in your R36S too.")
+				note("3. Your games, saves and settings are back on the card.")
+				t.ask("Press Enter to finish")
+				return true
+			}
+		}
+
 		var err error
 		for attempt := 1; attempt <= 2; attempt++ {
 			if attempt == 2 {

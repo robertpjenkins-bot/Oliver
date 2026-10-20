@@ -186,3 +186,13 @@ func copyFile(src, dest string, rep Reporter) error {
 	}
 	return os.Rename(dest+".new", dest)
 }
+
+// cardHasR36S tells whether the Etros card at dir was made with the R36S.
+func cardHasR36S(dir string) bool {
+	for _, p := range []string{"uInitrd", "etros/r36s"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p))); err == nil {
+			return true
+		}
+	}
+	return false
+}
