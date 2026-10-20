@@ -6,8 +6,10 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -441,4 +443,47 @@ func timeLeft(d time.Duration) string {
 	default:
 		return fmt.Sprintf("about %dh %02dm left", m/60, m%60)
 	}
+}
+
+// askForFile asks for a file, which can be dragged onto the terminal
+// window: that types its location, sometimes in quotes, with backslashes
+// before spaces, or as a file:// link. Empty means none.
+func (t *tui) askForFile(title, how, otherwise string) string {
+	heading(title)
+	note(how)
+	note("(If a menu pops up when you drop it, choose " + cBold + "Paste Location" + cReset + ".)")
+	note(otherwise)
+	for {
+		p := cleanDroppedPath(t.ask("File:"))
+		if p == "" {
+			return ""
+		}
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p
+		}
+		note(cRed + "Can't find a file at " + p + cReset + ". Try dropping it again, or press Enter.")
+	}
+}
+
+func cleanDroppedPath(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) >= 2 && (s[0] == '\'' || s[0] == '"') && s[len(s)-1] == s[0] {
+		s = s[1 : len(s)-1]
+	}
+	if strings.HasPrefix(s, "file://") {
+		if u, err := url.Parse(s); err == nil {
+			s = u.Path
+		}
+	}
+	if runtime.GOOS != "windows" {
+		var b strings.Builder
+		for i := 0; i < len(s); i++ {
+			if s[i] == '\\' && i+1 < len(s) {
+				i++
+			}
+			b.WriteByte(s[i])
+		}
+		s = b.String()
+	}
+	return s
 }

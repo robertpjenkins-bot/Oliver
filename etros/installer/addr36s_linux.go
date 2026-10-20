@@ -151,8 +151,11 @@ func (t *tui) remakeWithR36S(dir string) error {
 	}
 	if len(f.R36S) > 0 {
 		o.Sources.R36SBoot = f.R36S[0].Path
-	} else {
-		note("Batocera for the R36S isn't in Downloads, so Etros Updater downloads it.")
+		note("Using " + baseName(f.R36S[0].Path) + " for the R36S.")
+	} else if p := t.askForFile("BATOCERA FOR THE R36S",
+		"Drag Batocera for the R36S (the .img.gz from batocera.org) onto this window, then press Enter.",
+		"Or just press Enter to let Etros Updater download it."); p != "" {
+		o.Sources.R36SBoot = p
 	}
 	if len(f.Ollie) > 0 {
 		o.Sources.RPiOS = f.Ollie[0].Path
