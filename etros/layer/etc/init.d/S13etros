@@ -102,6 +102,11 @@ if [ -f "$blob" ]; then
     fi
 fi
 
+# The Windows and OS folders, with a note in each on what goes there.
+mkdir -p /userdata/roms/windows /userdata/roms/os
+[ -f /userdata/roms/windows/_READ_ME.txt ] || cp /usr/share/etros/windows-READ-ME.txt /userdata/roms/windows/_READ_ME.txt
+[ -f /userdata/roms/os/_READ_ME.txt ] || cp /usr/share/etros/os-READ-ME.txt /userdata/roms/os/_READ_ME.txt
+
 # Anything downloaded in Ollie OS is ready to play by the time the menu shows.
 /usr/bin/etros-sort-roms
 

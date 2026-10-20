@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -126,6 +127,22 @@ func fixCard(dir string, rep Reporter) error {
 			return err
 		}
 	}
+	// Wine for the Windows folder, if the card has none yet (Pi 5 cards).
+	if have, _ := filepath.Glob(filepath.Join(dir, "etros", "wine", "wine-*.tar.xz")); len(have) == 0 {
+		if _, err := os.Stat(filepath.Join(dir, "etros", "pi5")); err == nil {
+			src := wineLatest
+			if f := scan(); len(f.Wine) > 0 {
+				src = f.Wine[0].Path
+			}
+			if p, ok := getWine(src, defaultCache(), rep); ok {
+				if err := copyFile(p, filepath.Join(dir, "etros", "wine", wineName(src)), rep); err != nil {
+					return fmt.Errorf("adding Wine: %w", err)
+				}
+				rep.Log("added Wine for the Windows folder")
+			}
+		}
+	}
+
 	// An Ollie OS start that went wrong before the fix is old news.
 	os.Remove(filepath.Join(dir, "etros", "last-ollie-boot.txt"))
 	syncDir(filepath.Join(dir, "etros"))
@@ -138,4 +155,34 @@ func syncDir(dir string) {
 		d.Sync()
 		d.Close()
 	}
+}
+
+// copyFile copies src to dest (through dest.new, so a cut-short copy never
+// looks finished).
+func copyFile(src, dest string, rep Reporter) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	st, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	out, err := os.Create(dest + ".new")
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, &countingReader{r: in, p: func(d, _ int64) { rep.Progress(d, st.Size()) }})
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(dest + ".new")
+		return err
+	}
+	return os.Rename(dest+".new", dest)
 }

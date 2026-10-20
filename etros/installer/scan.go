@@ -27,6 +27,7 @@ type Found struct {
 	Ollie   []foundFile // Ollie OS / Raspberry Pi OS images
 	PCOllie []foundFile // Ollie OS for PCs (x86 ISOs), which can't run here
 	Games   []string    // my-roms folders
+	Wine    []foundFile // Wine for PCs, for the Windows folder
 }
 
 // homeDir is the home of the person running the installer, even under sudo.
@@ -89,7 +90,9 @@ func classify(name string) string {
 	switch {
 	case strings.HasSuffix(n, ".part") || strings.HasSuffix(n, ".crdownload"):
 		return ""
-	case strings.Contains(n, "installer") || strings.Contains(n, "maker"):
+	case strings.HasPrefix(n, "wine-") && strings.Contains(n, "amd64") && strings.HasSuffix(n, ".tar.xz"):
+		return "wine"
+	case strings.Contains(n, "installer") || strings.Contains(n, "maker") || strings.Contains(n, "updater"):
 		return "" // Etros Maker or the Installer itself, not an image
 	case strings.HasPrefix(n, "etros") && hasSuffix(n, imageExts...):
 		return "etros"
@@ -138,6 +141,8 @@ func scan() Found {
 			switch classify(e.Name()) {
 			case "etros":
 				f.Etros = append(f.Etros, ff)
+			case "wine":
+				f.Wine = append(f.Wine, ff)
 			case "etros-zip":
 				// Only a zip that really has an Etros image in it.
 				if zipHasImage(path) {

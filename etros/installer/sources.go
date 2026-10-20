@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -21,7 +22,10 @@ import (
 const (
 	batoceraBase = "https://updates.batocera.org"
 	rpiOSLatest  = "https://downloads.raspberrypi.com/raspios_arm64_latest"
-	userAgent    = "etros-installer"
+	// A PC (x86-64) build of Wine that needs no 32-bit libraries (WoW64),
+	// for Etros's Windows folder: the Pi 5 runs it through Box64.
+	wineLatest = "https://github.com/Kron4ek/Wine-Builds/releases/download/10.0/wine-10.0-amd64-wow64.tar.xz"
+	userAgent  = "etros-installer"
 )
 
 // Sources names each input as a local file or a URL. Empty means the
@@ -31,6 +35,7 @@ type Sources struct {
 	R36SBoot  string // Batocera boot.tar.xz for the R36S
 	R36SImage string // Batocera .img.gz for the R36S, for its bootloader
 	RPiOS     string // Raspberry Pi OS (64-bit, desktop) .img.xz, for Ollie OS
+	Wine      string // Wine for PCs (wine-*-amd64*.tar.xz), for the Windows folder; "none" for none
 	Channel   string // Batocera release channel, "stable" by default
 }
 
@@ -46,6 +51,9 @@ func (s *Sources) defaults() {
 	}
 	if s.RPiOS == "" {
 		s.RPiOS = rpiOSLatest
+	}
+	if s.Wine == "" {
+		s.Wine = wineLatest
 	}
 }
 
@@ -242,4 +250,29 @@ func readMBR(b []byte) []mbrPart {
 		out = append(out, mbrPart{e[4], uint64(binary.LittleEndian.Uint32(e[8:])), uint64(binary.LittleEndian.Uint32(e[12:]))})
 	}
 	return out
+}
+
+// wineName is the name Wine has on the card (etros/wine/<name>), which
+// etros-launch-windows looks for as wine-*.tar.xz.
+func wineName(src string) string {
+	name := path.Base(src)
+	if strings.HasPrefix(name, "wine-") && strings.HasSuffix(name, ".tar.xz") {
+		return name
+	}
+	return "wine-etros.tar.xz"
+}
+
+// getWine gets Wine (from Downloads or the web) and returns where it is. A
+// card without Wine still works; its Windows folder just says so.
+func getWine(src, cacheDir string, rep Reporter) (string, bool) {
+	if src == "none" {
+		return "", false
+	}
+	p, err := fetch(src, cacheDir, "wine", rep.Progress, rep.Log)
+	if err != nil {
+		rep.Log("note: couldn't get Wine for the Windows folder (" + err.Error() + "); put wine-10.0-amd64-wow64.tar.xz in Downloads and run Etros Updater to add it")
+		logf("wine: %v", err)
+		return "", false
+	}
+	return p, true
 }

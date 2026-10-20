@@ -1,0 +1,10 @@
+WINDOWS PROGRAMS (Raspberry Pi 5 only)
+
+Put a Windows program here (.exe, .msi, .bat, or a folder with the program
+in it) and start it from Windows in Etros's system list.
+
+The Pi 5 runs Windows programs through Box64 and Wine, trying Wine first,
+then Oliver, then Proton, Box86 and Steam, until one works. Lighter programs
+and older games work best. The R36S is too small for Windows programs.
+
+What happened is written to system/logs/etros-windows.log.

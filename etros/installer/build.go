@@ -353,6 +353,12 @@ func Plan(o Options, rep Reporter) (*Card, error) {
 	for _, sys := range []string{"snes", "gba", "gb", "gbc", "nes", "n64", "nds", "megadrive", "psx"} {
 		vol.Dir("my-roms/" + sys)
 	}
+	rep.Stage("Getting Wine for the Windows folder")
+	if p, ok := getWine(s.Wine, o.CacheDir, rep); ok {
+		if st, err := os.Stat(p); err == nil {
+			vol.AddOpener("etros/wine/"+wineName(s.Wine), st.Size(), func() (io.ReadCloser, error) { return os.Open(p) })
+		}
+	}
 	if !o.NoR36S {
 		// The R36S starts from code outside any partition (32K to 16M).
 		// Cards put together without a password can't have it written

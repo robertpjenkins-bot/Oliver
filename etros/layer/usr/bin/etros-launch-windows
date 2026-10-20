@@ -1,0 +1,121 @@
+#!/bin/bash
+# Run a Windows program from Etros's Windows folder (/userdata/roms/windows).
+#
+# The Pi 5 has an ARM processor and Windows programs are for PC (x86)
+# processors, so everything here runs through Box64, which translates PC
+# programs as they run. Batocera has Box64 but no Wine on ARM; Etros brings
+# a PC build of Wine (etros/wine/*.tar.xz on the boot partition, unpacked
+# here on first use).
+#
+# The runners are tried in this order, each only if the one before it
+# failed: Wine, Oliver (which picks the best Wine or Proton it can find),
+# Proton, Box86 and Steam. One that doesn't exist on this device is passed
+# over. A runner has failed if it stops with an error within 20 seconds.
+
+prog=$1
+log=/userdata/system/logs/etros-windows.log
+mkdir -p /userdata/system/logs
+exec >> "$log" 2>&1
+echo "=== $(date) $prog"
+
+say() {  # show a message on screen in EmulationStation, and log it
+    echo "$1"
+    curl -s -o /dev/null -d "$1" http://localhost:1234/notify 2>/dev/null
+}
+
+compat=$(tr -d '\0' < /proc/device-tree/compatible 2>/dev/null)
+case "$compat" in
+    *bcm2712*) ;;
+    *)
+        say "Windows programs need the Raspberry Pi 5: this device is too small for them."
+        exit 1 ;;
+esac
+
+etros=/userdata/system/etros
+wine_home=$etros/wine
+export WINEPREFIX=$etros/wineprefix
+export WINEDEBUG=-all
+export BOX64_LOG=0
+mkdir -p "$etros"
+
+# Hand PC (x86-64) programs to Box64 whenever one is started, so Wine and
+# anything Wine starts (and Oliver, which starts Wine itself) just run.
+if [ -x /usr/bin/box64 ] && [ -d /proc/sys/fs/binfmt_misc ]; then
+    mountpoint -q /proc/sys/fs/binfmt_misc || mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
+    if [ ! -e /proc/sys/fs/binfmt_misc/box64 ]; then
+        # The \x escapes are for the kernel to read, not the shell.
+        # shellcheck disable=SC2028
+        echo ':box64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00:\xff\xff\xff\xff\xff\xfe\xfe\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/box64:' \
+            > /proc/sys/fs/binfmt_misc/register 2>/dev/null
+    fi
+fi
+
+# Wine, unpacked from the boot partition the first time.
+if [ ! -x "$wine_home/bin/wine" ]; then
+    tarballs=(/boot/etros/wine/wine-*.tar.xz)
+    tarball=${tarballs[0]}
+    if [ -f "$tarball" ]; then
+        say "Setting up Windows programs for the first time (a minute or two)..."
+        rm -rf "$wine_home.new" && mkdir -p "$wine_home.new"
+        if tar -xJf "$tarball" -C "$wine_home.new" --strip-components=1; then
+            rm -rf "$wine_home" && mv "$wine_home.new" "$wine_home"
+        else
+            rm -rf "$wine_home.new"
+        fi
+    fi
+fi
+export PATH=$wine_home/bin:$PATH
+
+tried=()
+try() {  # try NAME COMMAND...: run it; true if it worked
+    local name=$1 start rc
+    shift
+    tried+=("$name")
+    echo "--- trying $name: $*"
+    start=$(date +%s)
+    "$@"
+    rc=$?
+    if [ "$rc" -eq 0 ] || [ $(( $(date +%s) - start )) -ge 20 ]; then
+        echo "--- $name ran it (exit $rc)"
+        return 0
+    fi
+    echo "--- $name failed (exit $rc)"
+    return 1
+}
+
+cd "$(dirname "$prog")" || exit 1
+case "${prog,,}" in
+    *.msi) args=(msiexec /i "$prog") ;;
+    *.bat) args=(cmd /c "$prog") ;;
+    *.lnk) args=(start /unix "$prog") ;;
+    *) args=("$prog") ;;
+esac
+
+if [ -x "$wine_home/bin/wine" ]; then
+    try Wine box64 "$wine_home/bin/wine" "${args[@]}" && exit 0
+else
+    echo "--- Wine isn't on this card"
+fi
+if [ -x /usr/bin/oliver ] && [ -x "$wine_home/bin/wine" ]; then
+    try Oliver /usr/bin/oliver run "$prog" && exit 0
+fi
+protons=("$etros"/proton/*/proton)
+proton=${protons[0]}
+if [ -x "$proton" ]; then
+    export STEAM_COMPAT_DATA_PATH=$etros/proton-data STEAM_COMPAT_CLIENT_INSTALL_PATH=$etros/proton-data
+    mkdir -p "$STEAM_COMPAT_DATA_PATH"
+    try Proton box64 "$proton" run "$prog" && exit 0
+fi
+if command -v box86 >/dev/null; then
+    try Box86 box86 "$wine_home/bin/wine" "${args[@]}" && exit 0
+fi
+if command -v steam >/dev/null; then
+    try Steam steam -applaunch "$prog" && exit 0
+fi
+
+if [ "${#tried[@]}" -eq 0 ]; then
+    say "This card has no Wine for Windows programs yet: run Etros Updater on a computer (with Wine in its Downloads)."
+else
+    say "$(basename "$prog") didn't start. Tried: ${tried[*]}. The details are in system/logs/etros-windows.log."
+fi
+exit 1

@@ -16,6 +16,10 @@ trap 'rm -rf "$STAGE"' EXIT
 cp -a "$ETROS/layer/." "$STAGE/"
 install -m 0755 "$ETROS/common/etros-sort-roms" "$STAGE/usr/bin/etros-sort-roms"
 install -m 0755 "$HERE/add-my-roms.py" "$STAGE/usr/bin/etros-add-my-roms"
+# Oliver, which picks the best way to run a Windows program (the Windows
+# folder, see etros-launch-windows), built for the Pi 5's ARM processor.
+(cd "$(dirname "$ETROS")" && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -buildvcs=false \
+    -ldflags "-s -w" -o "$STAGE/usr/bin/oliver" ./cmd/oliver)
 echo "Etros $VERSION" > "$STAGE/usr/share/etros/version"
 
 THEME="$STAGE/usr/share/emulationstation/themes/etros-metroid"

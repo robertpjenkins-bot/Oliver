@@ -1,0 +1,10 @@
+OLD OPERATING SYSTEMS (Raspberry Pi 5 only)
+
+Put the .iso (or floppy .img) of an old system here: DOS, Windows 3.1, 95
+or 98, and others of that age. Start it from "Old operating systems" in
+Etros's system list. It runs in DOSBox-X.
+
+The first time, the CD starts so you can install the system onto its own
+2 GB hard disk (kept in saves/os). After that the hard disk starts, with
+the CD still in drive D. Newer systems (Windows XP and later, today's
+Linux) are too big for this.

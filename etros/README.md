@@ -199,3 +199,28 @@ Press Start 2P font (SIL Open Font License).
   Batocera's R36S notes in `overlays/readme.txt` on the BATOCERA drive.
 - The Pi 5 and R36S share one `batocera.conf`. A video mode picked for the
   TV can look wrong on the handheld.
+
+## Windows and old operating systems (Raspberry Pi 5)
+
+- **Windows** (`roms/windows`): put a Windows program (.exe, .msi, .bat)
+  there and start it from Windows in the system list. The Pi 5 runs it
+  through Box64 with a PC build of Wine that Etros Maker or Etros Updater
+  puts on the card (`etros/wine/wine-*.tar.xz`, unpacked on first use).
+  `etros-launch-windows` tries Wine, then Oliver, then Proton, Box86 and
+  Steam (those that exist), and says on screen which it tried if none
+  worked; the details go to `system/logs/etros-windows.log`.
+- **Old operating systems** (`roms/os`): an .iso or floppy .img of DOS,
+  Windows 3.1, 95, 98 and the like, run in DOSBox-X by
+  `etros-launch-os`, with its own 2 GB hard disk in `saves/os/<name>`.
+  The CD starts until a system is installed, then the hard disk does.
+- Both are Pi 5 only: the R36S is too small, and says so.
+- My ROMs has **Windows** and **Old operating systems (OS)** folders too.
+
+## R36S
+
+The R36S starts from code outside any partition (32K to 16M on the card).
+Etros Maker also puts it on the card as `etros/r36s/bootloader.bin`, and
+the first time the card starts in the Pi 5, Etros writes it into place, so
+cards made without a password start in the R36S too. A card needs Batocera
+for the R36S in Downloads when it's made.
+

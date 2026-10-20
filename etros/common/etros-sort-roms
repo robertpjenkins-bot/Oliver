@@ -38,6 +38,7 @@ SYSTEMS = {
     "z80": "zxspectrum", "tzx": "zxspectrum",
     "mx1": "msx1", "mx2": "msx2",
     "p8": "pico8",
+    "exe": "windows", "msi": "windows",
 }
 
 # Browsers write these while a download is still running.
@@ -329,6 +330,7 @@ CONSOLE_FOLDERS = {
     "PC Engine - TurboGrafx-16": "pcengine",
     "Atari 2600": "atari2600", "Atari Lynx": "lynx",
     "DOS": "dos", "ScummVM": "scummvm",
+    "Windows": "windows", "Old operating systems (OS)": "os",
 }
 NOT_SORTED = "Not sorted - move these into a console folder"
 README = """MY ROMS

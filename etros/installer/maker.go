@@ -76,6 +76,9 @@ func runMaker(o Options) error {
 		if len(f.Ollie) > 0 {
 			o.Sources.RPiOS = f.Ollie[0].Path
 		}
+		if len(f.Wine) > 0 {
+			o.Sources.Wine = f.Wine[0].Path
+		}
 
 		heading("OPTIONS")
 		if len(f.PCOllie) > 0 {
