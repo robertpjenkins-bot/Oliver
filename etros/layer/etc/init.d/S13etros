@@ -135,6 +135,21 @@ if [ -n "$board" ] && mount -o remount,rw /boot 2>/dev/null; then
     mount -o remount,ro /boot
 fi
 
+# Menu music: songs put in the music folder (/userdata/music, "music" on the
+# SHARE drive) replace Batocera's own, which are hidden while there are any.
+mkdir -p /userdata/music
+if find /userdata/music -maxdepth 2 -type f \( -iname '*.ogg' -o -iname '*.mp3' \) | grep -q .; then
+    mkdir -p "$STATE/no-music"
+    mountpoint -q /usr/share/batocera/music || mount --bind "$STATE/no-music" /usr/share/batocera/music
+fi
+[ -f /userdata/music/_READ_ME.txt ] || cat > /userdata/music/_READ_ME.txt <<'EOT'
+MENU MUSIC
+
+Put .ogg or .mp3 songs here (the AM2R soundtrack, say) and they play in
+Etros's menus instead of Batocera's own music, from the next start.
+Take them all out to get Batocera's music back.
+EOT
+
 # The Windows and OS folders, with a note in each on what goes there.
 mkdir -p /userdata/roms/windows /userdata/roms/os
 [ -f /userdata/roms/windows/_READ_ME.txt ] || cp /usr/share/etros/windows-READ-ME.txt /userdata/roms/windows/_READ_ME.txt
