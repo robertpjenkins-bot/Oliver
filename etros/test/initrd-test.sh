@@ -156,6 +156,12 @@ fi
 echo "R36S, same card"
 out=$(boot "gameconsole,r36s\0rockchip,rk3326")
 expect "$out" root batocera-r36s
+if grep -q "reached Etros's start-up" "$FAT/etros/last-start-r36s.txt" 2>/dev/null; then
+    echo "  ok   R36S start noted on the card"
+else
+    echo "  FAIL no etros/last-start-r36s.txt"
+    fails=$((fails + 1))
+fi
 expect "$out" board r36s
 expect "$out" layer yes
 

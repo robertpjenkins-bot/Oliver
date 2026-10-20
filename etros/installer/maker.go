@@ -264,6 +264,10 @@ func (t *tui) fixLoop() bool {
 			note("(the whole report is etros/ollie-log.txt on the card's BATOCERA drive)")
 		}
 
+		if cardHasR36S(dir) {
+			t.reportR36S(dir)
+		}
+
 		// A card made without the R36S: offer to add it.
 		if !cardHasR36S(dir) {
 			heading("THIS CARD HAS NO R36S PART")
@@ -378,5 +382,49 @@ func (t *tui) chooseR36SScreen(dir string) {
 		}
 		note("Set for: " + r36sScreens[i].name)
 		return
+	}
+}
+
+// reportR36S says how far the R36S got the last time it started from this
+// card, from the notes Etros leaves there (etros/last-start-*.txt).
+func (t *tui) reportR36S(dir string) {
+	read := func(board string) []string {
+		b, err := os.ReadFile(filepath.Join(dir, "etros", "last-start-"+board+".txt"))
+		if err != nil {
+			return nil
+		}
+		return strings.Split(strings.TrimSpace(string(b)), "\n")
+	}
+	pi, r36s := read("pi5"), read("r36s")
+	heading("R36S: WHAT HAPPENED LAST TIME")
+	code := ""
+	for _, l := range pi {
+		if strings.HasPrefix(l, "R36S start-up code: ") {
+			code = strings.TrimPrefix(l, "R36S start-up code: ")
+		}
+	}
+	switch {
+	case pi == nil:
+		note("The Pi 5 hasn't started this card since Etros began keeping notes.")
+		note(cYellow + "Start it in the Pi 5 first" + cReset + " (until Etros shows): that puts the R36S's")
+		note("start-up code in place. Without it the R36S stays black.")
+	case code != "":
+		note("Pi 5, last start: R36S start-up code " + code + ".")
+	}
+	switch {
+	case r36s == nil:
+		note("R36S: it never got as far as Etros's start-up from this card.")
+		if code == "in place" || code == "put in place just now" {
+			note("So the R36S's own start-up code ran but didn't start Batocera, or didn't run at")
+			note("all. Check the card is in the R36S's " + cBold + "TF1" + cReset + " slot (the one marked OS / TF1).")
+		}
+	case len(r36s) == 1:
+		note("R36S: Etros's start-up ran, but Batocera didn't finish starting.")
+	default:
+		note("R36S: Batocera started (" + strings.TrimPrefix(r36s[1], "Batocera running, ") + ").")
+		if len(r36s) > 2 {
+			note("It was set for: " + strings.TrimPrefix(r36s[2], "screen file: "))
+		}
+		note(cYellow + "So if its screen was black, it's the screen setting:" + cReset + " pick the next one below.")
 	}
 }

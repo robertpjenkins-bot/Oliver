@@ -191,8 +191,19 @@ etros_mount_layer() {
     return 0
 }
 
+# A note on the card of how far each board got when it last started
+# (etros/last-start-<board>.txt), for Etros Updater to show: a screen that
+# stays black doesn't say whether anything started at all.
+etros_note_start() {
+    test -n "${ETROS_BOARD}" || return 0
+    mount -o remount,rw /boot_root 2>/dev/null || return 0
+    echo "reached Etros's start-up (kernel and initramfs ran)" > "/boot_root/etros/last-start-${ETROS_BOARD}.txt"
+    mount -o remount,ro /boot_root
+}
+
 etros_start() {
     etros_bind_board || return 1
+    etros_note_start
     if etros_want_ollie
     then
         # Only returns if Ollie OS could not be started; carry on into

@@ -78,7 +78,9 @@ fi
 # R36S. Only into the free space before the first partition, and only when
 # it isn't there already.
 blob=/boot/etros/r36s/bootloader.bin
+r36s_code="no R36S part on this card"
 if [ -f "$blob" ]; then
+    r36s_code="couldn't check (not started from an SD card or USB drive?)"
     part=$(awk '$2 == "/boot" { print $1; exit }' /proc/mounts)
     case "$part" in
         /dev/mmcblk*p1|/dev/nvme*p1) disk=${part%p1} ;;
@@ -92,14 +94,41 @@ if [ -f "$blob" ]; then
     if [ -b "$disk" ] && [ "${start:-0}" -ge $((64 + sectors)) ]; then
         have=$(dd if="$disk" bs=512 skip=64 count="$sectors" 2>/dev/null | md5sum | cut -d' ' -f1)
         want=$(md5sum < "$blob" | cut -d' ' -f1)
-        if [ "$have" != "$want" ]; then
-            if dd if="$blob" of="$disk" bs=512 seek=64 conv=notrunc,fsync 2>/dev/null; then
-                echo "etros: wrote the R36S start-up code to $disk" >> /userdata/system/logs/etros.log
+        if [ "$have" = "$want" ]; then
+            r36s_code="in place"
+        elif dd if="$blob" of="$disk" bs=512 seek=64 conv=notrunc,fsync 2>/dev/null; then
+            r36s_code="put in place just now"
+            echo "etros: wrote the R36S start-up code to $disk" >> /userdata/system/logs/etros.log
+        else
+            r36s_code="COULD NOT BE WRITTEN to $disk"
+            echo "etros: could not write the R36S start-up code to $disk" >> /userdata/system/logs/etros.log
+        fi
+    elif [ -b "$disk" ]; then
+        r36s_code="NO ROOM: the first partition starts at sector ${start:-?}"
+    fi
+fi
+
+# How far this board got (see etros_note_start in the boot hook).
+board=$(cat /boot/boot/batocera.board 2>/dev/null)
+case "$(tr -d '\0' < /proc/device-tree/compatible 2>/dev/null)" in
+    *bcm2712*) board=pi5 ;;
+    *rk3326*) board=r36s ;;
+esac
+if [ -n "$board" ] && mount -o remount,rw /boot 2>/dev/null; then
+    {
+        echo "reached Etros's start-up (kernel and initramfs ran)"
+        echo "Batocera running, $(date '+%Y-%m-%d %H:%M')"
+        [ "$board" = pi5 ] && echo "R36S start-up code: $r36s_code"
+        if [ "$board" = r36s ]; then
+            if [ -f /boot/overlays/mipi-panel.dtbo ]; then
+                echo "screen file: $(cat /boot/etros/r36s-screen.txt 2>/dev/null)"
             else
-                echo "etros: could not write the R36S start-up code to $disk" >> /userdata/system/logs/etros.log
+                echo "screen file: none (original screen)"
             fi
         fi
-    fi
+    } > "/boot/etros/last-start-$board.txt"
+    sync
+    mount -o remount,ro /boot
 fi
 
 # The Windows and OS folders, with a note in each on what goes there.
