@@ -100,7 +100,7 @@ func classify(name string) string {
 		return "etros-zip"
 	case strings.Contains(n, "bcm2712") && hasSuffix(n, append(imageExts, ".tar.xz")...):
 		return "pi5"
-	case strings.Contains(n, "r36s") && hasSuffix(n, append(imageExts, ".tar.xz")...):
+	case (strings.Contains(n, "r36s") || strings.Contains(n, "rk3326")) && hasSuffix(n, append(imageExts, ".tar.xz")...):
 		return "r36s"
 	case strings.Contains(n, "ollie") && strings.HasSuffix(n, ".iso"):
 		return "pc-ollie"

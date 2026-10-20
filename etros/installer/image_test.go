@@ -80,6 +80,7 @@ func TestClassify(t *testing.T) {
 	cases := map[string]string{
 		"etros-2026-10-17.img.gz":                     "etros",
 		"Etros.zip":                                   "etros-zip",
+		"batocera-rk3326-43-20260101.img.gz":          "r36s",
 		"Etros Maker - Linux (11).zip":                "",
 		"Etros Installer - Windows.zip":               "",
 		"batocera-bcm2712-43-20261001.img.gz":         "pi5",

@@ -70,6 +70,13 @@ func openShare(disk string) (string, func(), error) {
 func copyTree(src, dest string, skip func(rel string) bool, rep Reporter) (copied, unreadable int, err error) {
 	var total, done int64
 	filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
+		rel, _ := filepath.Rel(src, p)
+		if rel != "." && skip(filepath.ToSlash(rel)) {
+			if info != nil && info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if err == nil && info.Mode().IsRegular() {
 			total += info.Size()
 		}

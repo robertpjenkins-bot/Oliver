@@ -221,6 +221,13 @@ func Plan(o Options, rep Reporter) (*Card, error) {
 		return nil, err
 	}
 	if !o.NoR36S {
+		if s.R36SBoot == "" {
+			url, err := resolveR36SBoot(s.Channel)
+			if err != nil {
+				return nil, err
+			}
+			s.R36SBoot = url
+		}
 		if err := open("r36s", s.R36SBoot, "R36S"); err != nil {
 			return nil, err
 		}

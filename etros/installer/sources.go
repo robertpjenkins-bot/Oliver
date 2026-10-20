@@ -19,9 +19,11 @@ import (
 	"time"
 )
 
+// Where Batocera's downloads are (a variable for tests).
+var batoceraBase = "https://updates.batocera.org"
+
 const (
-	batoceraBase = "https://updates.batocera.org"
-	rpiOSLatest  = "https://downloads.raspberrypi.com/raspios_arm64_latest"
+	rpiOSLatest = "https://downloads.raspberrypi.com/raspios_arm64_latest"
 	// A PC (x86-64) build of Wine that needs no 32-bit libraries (WoW64),
 	// for Etros's Windows folder: the Pi 5 runs it through Box64.
 	wineLatest = "https://github.com/Kron4ek/Wine-Builds/releases/download/10.0/wine-10.0-amd64-wow64.tar.xz"
@@ -46,9 +48,7 @@ func (s *Sources) defaults() {
 	if s.Pi5Boot == "" {
 		s.Pi5Boot = fmt.Sprintf("%s/bcm2712/%s/last/boot.tar.xz", batoceraBase, s.Channel)
 	}
-	if s.R36SBoot == "" {
-		s.R36SBoot = fmt.Sprintf("%s/r36s/%s/last/boot.tar.xz", batoceraBase, s.Channel)
-	}
+	// R36SBoot stays empty: resolveR36SBoot finds where Batocera keeps it.
 	if s.RPiOS == "" {
 		s.RPiOS = rpiOSLatest
 	}
@@ -277,4 +277,33 @@ func getWine(src, cacheDir string, rep Reporter) (string, bool) {
 		return "", false
 	}
 	return p, true
+}
+
+// Batocera's names for its R36S download, newest first: it has been "r36s"
+// since late 2025 and was part of "rk3326" before.
+var r36sBoards = []string{"r36s", "rk3326"}
+
+// resolveR36SBoot finds the first of Batocera's R36S downloads that exists.
+func resolveR36SBoot(channel string) (string, error) {
+	var tried []string
+	for _, board := range r36sBoards {
+		url := fmt.Sprintf("%s/%s/%s/last/boot.tar.xz", batoceraBase, board, channel)
+		req, err := http.NewRequest("HEAD", url, nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("User-Agent", userAgent)
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("can't reach Batocera's downloads: %w", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			logf("R36S: using %s", url)
+			return url, nil
+		}
+		tried = append(tried, fmt.Sprintf("%s (%s)", url, resp.Status))
+	}
+	return "", fmt.Errorf("Batocera for the R36S isn't at any of the places it's usually kept (%s). "+
+		"Download it from batocera.org (choose R36S) into Downloads and try again", strings.Join(tried, ", "))
 }
