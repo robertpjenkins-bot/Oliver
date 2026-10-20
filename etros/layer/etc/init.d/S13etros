@@ -108,6 +108,10 @@ if [ -f "$blob" ]; then
     fi
 fi
 
+# Batocera's resize on first start writes its log to /tmp, gone after a
+# restart; keep it, for when its "Resize Error" shows.
+[ -f /tmp/resize.log ] && cp /tmp/resize.log /userdata/system/logs/batocera-resize.log
+
 # How far this board got (see etros_note_start in the boot hook).
 board=$(cat /boot/boot/batocera.board 2>/dev/null)
 case "$(tr -d '\0' < /proc/device-tree/compatible 2>/dev/null)" in

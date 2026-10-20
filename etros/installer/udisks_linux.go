@@ -184,6 +184,11 @@ func filesInstall(imagePath, id string, rep Reporter) error {
 	}
 	rep.Stage("Copying Batocera and Etros onto the boot partition")
 	err = copyImageFiles(img, bootDir, rep)
+	if err == nil {
+		// SHARE already fills the card: Batocera's resize on first start
+		// has nothing to do, and reports a failure when it finds that.
+		err = noAutoresize(bootDir)
+	}
 	syncDir(bootDir)
 	unmount(bootPart)
 	if err != nil {

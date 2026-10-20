@@ -10,9 +10,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -20,6 +22,34 @@ import (
 )
 
 func addR36SSupported() bool { return filesInstallSupported() }
+
+// shareFillsCard tells whether the SHARE partition of the card whose
+// BATOCERA drive is at dir reaches (within 16 MiB of) the end of the card.
+func shareFillsCard(dir string) bool {
+	disk, err := cardDisk(dir)
+	if err != nil {
+		return false
+	}
+	out, err := exec.Command("lsblk", "-J", "-b", "-o", "PATH,SIZE,START", disk).Output()
+	if err != nil {
+		return false
+	}
+	var v struct {
+		Blockdevices []struct {
+			Size     int64 `json:"size"`
+			Children []struct {
+				Size  int64 `json:"size"`
+				Start int64 `json:"start"`
+			} `json:"children"`
+		} `json:"blockdevices"`
+	}
+	if json.Unmarshal(out, &v) != nil || len(v.Blockdevices) == 0 || len(v.Blockdevices[0].Children) < 2 {
+		return false
+	}
+	d := v.Blockdevices[0]
+	share := d.Children[len(d.Children)-1]
+	return share.Start*512+share.Size >= d.Size-16<<20
+}
 
 // cardDisk is the whole drive the BATOCERA drive at dir is on (/dev/sdb).
 func cardDisk(dir string) (string, error) {

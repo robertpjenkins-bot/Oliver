@@ -143,6 +143,14 @@ func fixCard(dir string, rep Reporter) error {
 		}
 	}
 
+	// SHARE fills a card put together without a password, so Batocera's
+	// resize on start has nothing to do and shows a failure each start.
+	if shareFillsCard(dir) {
+		if err := noAutoresize(dir); err != nil {
+			return err
+		}
+	}
+
 	// An Ollie OS start that went wrong before the fix is old news.
 	os.Remove(filepath.Join(dir, "etros", "last-ollie-boot.txt"))
 	syncDir(filepath.Join(dir, "etros"))
@@ -244,4 +252,32 @@ func setR36SScreen(dir string, i int) error {
 	}
 	syncDir(filepath.Join(dir, "overlays"))
 	return nil
+}
+
+// noAutoresize turns off Batocera's "stretch SHARE to fill the card" on the
+// first start (autoresize in batocera-boot.conf), for cards whose SHARE
+// already fills them. It reports whether it changed anything.
+func noAutoresize(dir string) error {
+	p := filepath.Join(dir, "batocera-boot.conf")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var out []string
+	changed := false
+	for _, line := range strings.Split(string(b), "\n") {
+		t := strings.TrimSpace(line)
+		if k, v, ok := strings.Cut(t, "="); ok && strings.TrimSpace(k) == "autoresize" && strings.TrimSpace(v) == "true" {
+			line = "#autoresize=true # Etros: SHARE already fills the card"
+			changed = true
+		}
+		out = append(out, line)
+	}
+	if !changed {
+		return nil
+	}
+	return os.WriteFile(p, []byte(strings.Join(out, "\n")), 0o644)
 }
