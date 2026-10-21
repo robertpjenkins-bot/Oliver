@@ -272,11 +272,7 @@ func (t *tui) fixLoop() bool {
 			note("Last time: " + strings.TrimSpace(string(why)))
 		}
 		if b, err := os.ReadFile(filepath.Join(dir, "etros", "ollie-log.txt")); err == nil {
-			lines := strings.SplitN(string(b), "\n", 3)
-			if len(lines) >= 2 {
-				note("Ollie OS's last report: " + strings.TrimSpace(lines[1]))
-			}
-			note("(the whole report is etros/ollie-log.txt on the card's BATOCERA drive)")
+			showOllieReport(string(b))
 		}
 
 		if cardHasR36S(dir) {
@@ -508,4 +504,39 @@ func showCardContents(dir string) {
 	line(cardHasR36S(dir), "R36S", "not on this card: Etros Updater can add it")
 	line(has("etros/ollie"), "Ollie OS (Boot into Ollie OS, Internet Archive)", "made without Ollie OS")
 	line(len(wine) > 0, "Wine, for Windows programs on the Pi 5", "couldn't be added: put wine-10.0-amd64-wow64.tar.xz in Downloads")
+}
+
+// showOllieReport shows the parts of Ollie OS's last report
+// (etros/ollie-log.txt, written by ollie-check) that say why it didn't
+// reach its desktop.
+func showOllieReport(report string) {
+	lines := strings.Split(report, "\n")
+	if len(lines) < 2 {
+		return
+	}
+	status := strings.TrimSpace(lines[1])
+	note("Ollie OS's last report: " + status)
+	if strings.HasPrefix(status, "OK") {
+		note("(the whole report is etros/ollie-log.txt on the card's BATOCERA drive)")
+		return
+	}
+	section := ""
+	shown := map[string]int{}
+	limit := map[string]int{"failed services": 8, "X (the login screen)": 6, "the desktop (KDE Plasma)": 6}
+	for _, l := range lines[2:] {
+		if strings.HasPrefix(l, "== ") && strings.HasSuffix(l, " ==") {
+			section = strings.TrimSuffix(strings.TrimPrefix(l, "== "), " ==")
+			continue
+		}
+		l = strings.TrimSpace(l)
+		if l == "" || shown[section] >= limit[section] {
+			continue
+		}
+		if shown[section] == 0 {
+			note(cYellow + section + ":" + cReset)
+		}
+		note("  " + l)
+		shown[section]++
+	}
+	note("(the whole report is etros/ollie-log.txt on the card's BATOCERA drive)")
 }

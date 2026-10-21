@@ -7,7 +7,7 @@
 chmod 0755 /usr/local/sbin/ollie-setup /usr/local/sbin/ollie-check /usr/local/bin/ollie-* /usr/local/bin/etros-sort-roms \
     /etc/systemd/system-generators/ollie-generator
 chmod 0644 /etc/fstab /etc/systemd/system/ollie-*.service /etc/chromium/policies/managed/ollie.json \
-    /etc/xdg/autostart/ollie-wallpaper.desktop /usr/share/ollie/* /usr/share/ollie/desktop/* 2>/dev/null
+    /etc/xdg/autostart/ollie-wallpaper.desktop /etc/X11/xorg.conf.d/99-ollie-pi5.conf /usr/share/ollie/* /usr/share/ollie/desktop/* 2>/dev/null
 
 # The desktop user, logged in automatically.
 # (Ollie OS for ARM logs "ollie" in through SDDM, Raspberry Pi OS through

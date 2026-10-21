@@ -29,7 +29,16 @@ report() {
         echo
         echo "== display =="
         systemctl status display-manager --no-pager -n 20 2>&1
-        ls -l /dev/dri 2>&1
+        ls -l /dev/dri /dev/dri/by-path 2>&1
+        journalctl -b -u display-manager -u sddm --no-pager -o cat -n 40 2>&1
+        echo
+        echo "== X (the login screen) =="
+        for x in /var/log/Xorg.0.log /var/lib/sddm/.local/share/xorg/Xorg.0.log; do
+            test -f "$x" && grep -E '\((EE|WW)\)|Fatal|no screens' "$x" | tail -n 20
+        done
+        echo
+        echo "== the desktop (KDE Plasma) =="
+        journalctl -b _COMM=kwin_wayland _COMM=plasmashell _COMM=startplasma-wayland --no-pager -o cat -n 40 2>&1
         echo
         echo "== errors this boot =="
         journalctl -b -p err --no-pager -n 80 2>&1

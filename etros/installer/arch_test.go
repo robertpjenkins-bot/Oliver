@@ -17,3 +17,9 @@ func TestIsArchTarball(t *testing.T) {
 		}
 	}
 }
+
+func TestShowOllieReport(t *testing.T) {
+	showOllieReport("Ollie OS, now\nNO DESKTOP after 3 minutes; restarting into Etros\n\n== failed services ==\nsddm.service failed\n== display ==\nlots\n")
+	showOllieReport("Ollie OS, now\nOK: the desktop is up\n")
+	showOllieReport("")
+}

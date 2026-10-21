@@ -10,4 +10,8 @@ done
 # Raspberry Pi OS's first-boot wizard asks for a user name and password,
 # which can't be typed on a handheld. Ollie OS sets its user up itself.
 ln -sf /dev/null "$early/userconfig.service"
+# Arch Linux's: on its first start it asks for a keyboard layout and time
+# zone on the console, which Etros hides (console=tty3), so the screen stays
+# black waiting for an answer nobody can see or type.
+ln -sf /dev/null "$early/systemd-firstboot.service"
 exit 0

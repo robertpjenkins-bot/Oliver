@@ -22,7 +22,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # The same as etros-setup-arch, which does this on the Pi instead.
 packages=(
     plasma-desktop plasma-nm plasma-pa kscreen breeze breeze-gtk kde-gtk-config powerdevil
-    sddm sddm-kcm xdg-desktop-portal-kde
+    sddm sddm-kcm xdg-desktop-portal-kde xorg-server
     dolphin konsole kate ark gwenview spectacle kdialog
     firefox
     networkmanager bluez bluez-utils pipewire pipewire-pulse wireplumber
@@ -108,6 +108,10 @@ sed -i 's/^#\(en_US.UTF-8 UTF-8\)/\1/' "$root/etc/locale.gen"
 in_root locale-gen
 echo LANG=en_US.UTF-8 > "$root/etc/locale.conf"
 echo ollie-os > "$root/etc/hostname"
+# Nothing left for its first start to ask (on a console nobody can see).
+echo KEYMAP=us > "$root/etc/vconsole.conf"
+[ -e "$root/etc/localtime" ] || ln -sf /usr/share/zoneinfo/UTC "$root/etc/localtime"
+in_root systemctl mask systemd-firstboot.service
 in_root systemctl enable sddm NetworkManager bluetooth
 in_root systemctl set-default graphical.target
 in_root userdel -r alarm 2>/dev/null
