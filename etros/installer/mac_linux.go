@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -212,7 +213,131 @@ func runMacInstaller(o Options) error {
 	showTitle("ETROS MAC INSTALLER")
 	note("Puts Etros on an Intel Mac in place of Boot Camp's Windows. macOS and your Mac")
 	note("files stay. " + cBold + "No password needed." + cReset)
-	t.macLoop()
+	for {
+		heading("WHICH MAC?")
+		fmt.Printf("  %s1%s  A Mac that can do Target Disk Mode %s(plugged in here with a cable)%s\n", cYellow, cReset, cDim, cReset)
+		fmt.Printf("  %s2%s  Any other Intel Mac, like the 12-inch MacBook %s(get its downloads onto a USB drive)%s\n", cYellow, cReset, cDim, cReset)
+		fmt.Printf("  %sq%s  Quit\n", cYellow, cReset)
+		switch strings.ToLower(t.ask("Type 1, 2 or q:")) {
+		case "1":
+			t.macLoop()
+			return nil
+		case "2":
+			if t.macUSB() {
+				return nil
+			}
+		case "q", "b":
+			return nil
+		}
+	}
+}
+
+// usbDrives are the drives open here that a Mac can read (FAT, ExFAT, NTFS).
+func usbDrives() []string {
+	f, err := os.Open("/proc/mounts")
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	var out []string
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) < 3 {
+			continue
+		}
+		dir := unescapeMount(fields[1])
+		switch fields[2] {
+		case "vfat", "exfat", "ntfs", "ntfs3", "fuseblk":
+			if strings.HasPrefix(dir, "/run/media/") || strings.HasPrefix(dir, "/media/") {
+				out = append(out, dir)
+			}
+		}
+	}
+	return out
+}
+
+// macUSB puts Batocera for PCs and Arch Linux on a USB drive, for a Mac
+// that can't do Target Disk Mode: files copied from a USB drive aren't
+// marked as downloaded, so macOS doesn't stop to check them, and Etros Mac
+// Installer on the Mac finds them there and downloads nothing.
+func (t *tui) macUSB() bool {
+	heading("GET THE MAC'S DOWNLOADS ONTO A USB DRIVE")
+	note("Plug in a USB drive formatted FAT32 or ExFAT (about 4 GB free), then press Enter.")
+	note("(Ext4 drives, the Linux kind, can't be read by a Mac.)")
+	for {
+		drives := usbDrives()
+		for i, d := range drives {
+			fmt.Printf("  %s%d%s  %s %s(%s free)%s\n", cYellow, i+1, cReset, d, cDim, gbs(freeSpace(d)), cReset)
+		}
+		if len(drives) == 0 {
+			note("No FAT32 or ExFAT drive open yet.")
+		}
+		fmt.Printf("  %sr%s  Look again    %sb%s  Back\n", cYellow, cReset, cYellow, cReset)
+		a := strings.ToLower(t.ask("Which drive?"))
+		if a == "b" || a == "q" {
+			return false
+		}
+		var n int
+		if _, err := fmt.Sscan(a, &n); err != nil || n < 1 || n > len(drives) {
+			continue
+		}
+		dest := filepath.Join(drives[n-1], "Etros for Mac")
+		if err := macUSBCopy(dest); err != nil {
+			logf("ERROR: USB for the Mac: %v", err)
+			fmt.Printf("\n%s  THAT DIDN'T WORK%s\n\n", cRed, cReset)
+			note(err.Error())
+			t.ask("Press Enter to go back")
+			continue
+		}
+		closed := closeCard(drives[n-1])
+		fmt.Printf("\n%s  THE USB DRIVE IS READY%s\n\n", cYellow, cReset)
+		if !closed {
+			note("0. Eject it first (in Dolphin, right-click it, Safely Remove).")
+		}
+		note("1. Also copy Etros Mac Installer (app).zip onto it, if it isn't there.")
+		note("2. Plug it into the Mac. Copy Etros Mac Installer (app).zip from it to the Mac's")
+		note("   Desktop and double-click it, then double-click Etros Installer.")
+		note("3. Etros Installer finds Batocera and Arch Linux on the USB drive: no downloads,")
+		note("   and no waiting for macOS's check.")
+		t.ask("Press Enter to finish")
+		return true
+	}
+}
+
+func macUSBCopy(dest string) error {
+	rep := newTermReporter()
+	defer rep.end()
+	batocera, err := fetchPCBatocera(rep)
+	if err != nil {
+		return err
+	}
+	arch, err := fetchArchBootstrap(rep)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return err
+	}
+	need := int64(0)
+	for _, f := range []string{batocera, arch} {
+		if st, err := os.Stat(f); err == nil {
+			need += st.Size()
+		}
+	}
+	if free := freeSpace(dest); free >= 0 && free < need {
+		return fmt.Errorf("the USB drive needs %s free and has %s", gbs(need), gbs(free))
+	}
+	for src, name := range map[string]string{batocera: "batocera-x86_64-boot.tar.xz", arch: "archlinux-bootstrap-x86_64.tar.zst"} {
+		rep.Stage("Copying " + name + " onto the USB drive")
+		if err := copyFile(src, filepath.Join(dest, name), rep); err != nil {
+			if strings.Contains(err.Error(), "file too large") {
+				return fmt.Errorf("%s is too big for a FAT32 drive: format the USB drive as ExFAT and try again", name)
+			}
+			return err
+		}
+	}
+	syncDir(dest)
 	return nil
 }
 

@@ -25,3 +25,16 @@ can't do Target Disk Mode, like the 12-inch MacBook).
 In Etros, use a game controller: the 12-inch MacBook's keyboard and
 trackpad don't work in Batocera. They do in Ollie OS. Started normally, the
 Mac is macOS as before.
+
+NO WAITING, NO DOWNLOADS ON THE MAC
+Before downloading anything, Etros Installer looks everywhere on the Mac
+(Downloads, Desktop, Documents, USB drives...) for Batocera for PCs and Arch
+Linux. So on the Steam Machine, run Etros Mac Installer, choose 2 (get the
+Mac's downloads onto a USB drive), and copy Etros Mac Installer (app).zip
+onto that drive too. On the Mac, copy the zip from the USB drive and open
+it: files copied from a USB drive aren't checked by macOS, and Etros
+Installer finds Batocera and Arch Linux on the drive.
+
+If macOS says "Checking" or "Verifying" for ages: cancel it, open Terminal,
+type  xattr -cr  and a space, drag Etros Installer into the window, press
+Enter, then open Etros Installer again.

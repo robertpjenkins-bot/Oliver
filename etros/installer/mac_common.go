@@ -42,11 +42,9 @@ func pcBatoceraURL() string { return batoceraBase + "/x86_64/stable/last/boot.ta
 // getPCBatocera finds Batocera for PCs (its boot.tar.xz) in Downloads, or
 // downloads it.
 func (t *tui) getPCBatocera() (string, error) {
-	for _, pat := range []string{"*x86_64*boot*.tar.xz", "*x86_64*.boot.tar.xz"} {
-		if m, _ := filepath.Glob(filepath.Join(downloadsDir(), pat)); len(m) > 0 {
-			note("Using " + filepath.Base(m[0]) + " from Downloads.")
-			return m[0], nil
-		}
+	if p := findLocal(localBatocera); p != "" {
+		note("Using " + p + " (already on this computer).")
+		return p, nil
 	}
 	rep := newTermReporter()
 	defer rep.end()
@@ -101,11 +99,10 @@ func roomForDownloads(need int64) string {
 // fetchPCBatocera finds Batocera for PCs in Downloads or downloads it,
 // saying so through rep (for the Safari installer).
 func fetchPCBatocera(rep Reporter) (string, error) {
-	for _, pat := range []string{"*x86_64*boot*.tar.xz", "*x86_64*.boot.tar.xz"} {
-		if m, _ := filepath.Glob(filepath.Join(downloadsDir(), pat)); len(m) > 0 {
-			rep.Log("using " + filepath.Base(m[0]) + " from Downloads")
-			return m[0], nil
-		}
+	rep.Stage("Looking for Batocera for PCs on this Mac")
+	if p := findLocal(localBatocera); p != "" {
+		rep.Log("using " + p + ": no download needed")
+		return p, nil
 	}
 	if why := roomForDownloads(5 << 30); why != "" {
 		return "", errors.New(why)
@@ -117,9 +114,9 @@ func fetchPCBatocera(rep Reporter) (string, error) {
 // fetchArchBootstrap finds Arch Linux's bootstrap in Downloads or
 // downloads it.
 func fetchArchBootstrap(rep Reporter) (string, error) {
-	if m, _ := filepath.Glob(filepath.Join(downloadsDir(), "archlinux-bootstrap*x86_64*.tar.zst")); len(m) > 0 {
-		rep.Log("using " + filepath.Base(m[0]) + " from Downloads")
-		return m[0], nil
+	if p := findLocal(localArch); p != "" {
+		rep.Log("using " + p + ": no download needed")
+		return p, nil
 	}
 	if why := roomForDownloads(1 << 30); why != "" {
 		return "", errors.New(why)
@@ -131,9 +128,9 @@ func fetchArchBootstrap(rep Reporter) (string, error) {
 // getArchBootstrap finds Arch Linux's bootstrap tarball in Downloads, or
 // asks for it, or downloads it.
 func (t *tui) getArchBootstrap() (string, error) {
-	if m, _ := filepath.Glob(filepath.Join(downloadsDir(), "archlinux-bootstrap*x86_64*.tar.zst")); len(m) > 0 {
-		note("Using " + filepath.Base(m[0]) + " from Downloads.")
-		return m[0], nil
+	if p := findLocal(localArch); p != "" {
+		note("Using " + p + " (already on this computer).")
+		return p, nil
 	}
 	for {
 		p := t.askForFile("ARCH LINUX FOR OLLIE OS",
@@ -448,30 +445,23 @@ func reachable(urls []string) (bool, string) {
 // downloadChecks are the checks for what Etros downloads: Batocera for
 // PCs (needed) and Arch Linux (for Ollie OS), unless they're in Downloads.
 func downloadChecks() []macCheck {
-	inDownloads := func(pats ...string) bool {
-		for _, p := range pats {
-			if m, _ := filepath.Glob(filepath.Join(downloadsDir(), p)); len(m) > 0 {
-				return true
-			}
-		}
-		return false
-	}
 	var out []macCheck
 	bato := macCheck{Name: "Batocera for PCs can be downloaded (about 3 GB)", Blocking: true}
-	if inDownloads("*x86_64*boot*.tar.xz") {
-		bato.Name, bato.OK = "Batocera for PCs is in Downloads", true
+	haveBato := findLocal(localBatocera)
+	if haveBato != "" {
+		bato.Name, bato.OK, bato.Why = "Batocera for PCs is already on this Mac: no download", true, haveBato
 	} else if bato.OK, bato.Why = reachable(pcBatoceraURLs()); !bato.OK {
-		bato.Why = "this Mac can't reach batocera.org (" + bato.Why + "). Is it on the internet?"
+		bato.Why = "it isn't on this Mac, and this Mac can't reach batocera.org (" + bato.Why + "). Is it on the internet?"
 	}
 	arch := macCheck{Name: "Arch Linux can be downloaded, for Ollie OS (about 150 MB)"}
-	if inDownloads("archlinux-bootstrap*x86_64*.tar.zst") {
-		arch.Name, arch.OK = "Arch Linux is in Downloads, for Ollie OS", true
+	if p := findLocal(localArch); p != "" {
+		arch.Name, arch.OK, arch.Why = "Arch Linux is already on this Mac: no download", true, p
 	} else if arch.OK, arch.Why = reachable(archBootstrapURLs); !arch.OK {
-		arch.Why = "can't reach Arch Linux's download sites (" + arch.Why + "); Etros works without Ollie OS"
+		arch.Why = "it isn't on this Mac, and Arch Linux's download sites can't be reached (" + arch.Why + "); Etros works without Ollie OS"
 	}
 	room := macCheck{Name: "Room on this Mac for the downloads", Blocking: true}
 	need := int64(5 << 30)
-	if bato.OK && strings.HasSuffix(bato.Name, "Downloads") {
+	if haveBato != "" {
 		need = 1 << 30
 	}
 	if room.Why = roomForDownloads(need); room.Why == "" {

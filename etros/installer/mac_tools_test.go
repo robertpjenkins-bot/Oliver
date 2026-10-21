@@ -89,6 +89,8 @@ func fakeMacEnv(t *testing.T, st fakeMacState) string {
 	os.MkdirAll(filepath.Join(home, "Downloads"), 0o755)
 	writeFakePCBatocera(t, filepath.Join(home, "Downloads", "batocera-x86_64-43-20261001-boot.tar.xz"))
 	writeFakeBootstrap(t, filepath.Join(home, "Downloads", "archlinux-bootstrap-x86_64.tar.zst"))
+	t.Setenv("ETROS_TEST_SMALL_FILES", "1")
+	t.Setenv("ETROS_TEST_VOLUMES", filepath.Join(home, "NoVolumes"))
 	state := filepath.Join(home, "fakemac.json")
 	b, _ := json.Marshal(st)
 	os.WriteFile(state, b, 0o644)
@@ -337,7 +339,7 @@ func TestMacChecks(t *testing.T) {
 	if c := got["macOS 11.7.11"]; !c.OK {
 		t.Errorf("version: %+v", cs)
 	}
-	if c := got["Batocera for"]; !c.OK || !strings.Contains(c.Name, "Downloads") {
+	if c := got["Batocera for"]; !c.OK || !strings.Contains(c.Name, "already on this Mac") || !strings.Contains(c.Why, "Downloads") {
 		t.Errorf("Batocera: %+v", c)
 	}
 	if (darwinMac{}).wifiName() != "Jenkins Wi-Fi" {
@@ -389,5 +391,52 @@ func TestMacInstallWithoutArch(t *testing.T) {
 	checkEtrosOn(t, readFakeMac(t, state), "disk0", 3, 4, false)
 	if !strings.Contains(strings.Join(rep.lines, "\n"), "Ollie OS left out") {
 		t.Error("didn't say Ollie OS was left out")
+	}
+}
+
+// Batocera and Arch Linux only on a USB stick (put there on the Steam
+// Machine), and no internet: found there, nothing downloaded.
+func TestMacInstallFromUSBStick(t *testing.T) {
+	state := fakeMacEnv(t, macBook(""))
+	home := os.Getenv("HOME")
+	vols := filepath.Join(home, "Volumes")
+	t.Setenv("ETROS_TEST_VOLUMES", vols)
+	os.MkdirAll(filepath.Join(vols, "STICK", "Etros"), 0o755)
+	for _, f := range []string{"batocera-x86_64-43-20261001-boot.tar.xz", "archlinux-bootstrap-x86_64.tar.zst"} {
+		if err := os.Rename(filepath.Join(home, "Downloads", f), filepath.Join(vols, "STICK", "Etros", f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldB, oldA := batoceraBase, archBootstrapURLs
+	batoceraBase, archBootstrapURLs = "http://127.0.0.1:1", []string{"http://127.0.0.1:1/a.zst"}
+	defer func() { batoceraBase, archBootstrapURLs = oldB, oldA }()
+	rep := &logRep{}
+	if err := (darwinMac{}).install(pickTarget(t, "disk0s3"), 70<<30, "Jenkins Wi-Fi", "hunter2", rep); err != nil {
+		t.Fatalf("%v\n%s", err, strings.Join(rep.lines, "\n"))
+	}
+	checkEtrosOn(t, readFakeMac(t, state), "disk0", 3, 4, true)
+	log := strings.Join(rep.lines, "\n")
+	if !strings.Contains(log, filepath.Join("STICK", "Etros", "batocera-x86_64")) || strings.Contains(log, "Downloading") {
+		t.Errorf("didn't use the stick's copies:\n%s", log)
+	}
+}
+
+// The Steam Machine side: Batocera and Arch Linux onto a USB drive, named
+// so the Mac's installer finds them there.
+func TestMacUSBCopy(t *testing.T) {
+	fakeMacEnv(t, macBook(""))
+	usb := t.TempDir()
+	dest := filepath.Join(usb, "Etros for Mac")
+	if err := macUSBCopy(dest); err != nil {
+		t.Fatal(err)
+	}
+	// On the Mac: only the USB drive has them.
+	os.RemoveAll(filepath.Join(os.Getenv("HOME"), "Downloads"))
+	t.Setenv("ETROS_TEST_VOLUMES", filepath.Dir(usb))
+	if p := findLocal(localBatocera); p != filepath.Join(dest, "batocera-x86_64-boot.tar.xz") {
+		t.Errorf("Batocera on the USB drive: found %q", p)
+	}
+	if p := findLocal(localArch); p != filepath.Join(dest, "archlinux-bootstrap-x86_64.tar.zst") {
+		t.Errorf("Arch Linux on the USB drive: found %q", p)
 	}
 }

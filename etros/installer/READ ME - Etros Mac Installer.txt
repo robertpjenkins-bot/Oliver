@@ -18,3 +18,9 @@ files stay. No password is ever needed.
 In Etros, use a game controller: the Mac's own keyboard and trackpad don't
 work in Batocera. They do in Ollie OS (ETROS -> Boot into Ollie OS).
 Turned on normally, the Mac starts macOS as before.
+
+MACS WITHOUT TARGET DISK MODE (like the 12-inch MacBook)
+Choose 2: Etros Mac Installer downloads Batocera for PCs and Arch Linux onto
+a USB drive (FAT32 or ExFAT). Copy Etros Mac Installer (app).zip onto it
+too, then plug it into the Mac and run Etros Installer there: it finds them
+on the drive and downloads nothing.
