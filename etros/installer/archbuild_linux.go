@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,21 @@ func archBuildLog() string { return filepath.Join(defaultCache(), "arch-build.lo
 // buildArchHere makes Ollie OS from the Arch Linux ARM tarball and puts it
 // on the card's SHARE (mounted at share) in place of Raspberry Pi OS.
 func buildArchHere(tarball, share string, rep Reporter) error {
+	return buildArch(tarball, share, "", rep)
+}
+
+// buildArchPC makes Ollie OS for an Intel Mac from Arch Linux's bootstrap
+// tarball: its file system goes on SHARE (mounted at share), as on the Pi,
+// and its kernel and start-up files on the boot partition (at boot).
+func buildArchPC(tarball, share, boot string, rep Reporter) error {
+	if runtime.GOARCH != "amd64" {
+		return fmt.Errorf("%w: Ollie OS for Intel Macs can only be made on a PC", errArchCantRunHere)
+	}
+	return buildArch(tarball, share, boot, rep)
+}
+
+// buildArch runs archbuild.sh; boot is empty for the Pi.
+func buildArch(tarball, share, boot string, rep Reporter) error {
 	work := filepath.Join(defaultCache(), "arch-build")
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		return err
@@ -48,7 +64,11 @@ func buildArchHere(tarball, share string, rep Reporter) error {
 		return err
 	}
 	qemu := ""
-	if runtime.GOARCH != "arm64" {
+	if boot != "" {
+		if err := writeOllieFiles(filepath.Join(work, "ollie-files")); err != nil {
+			return err
+		}
+	} else if runtime.GOARCH != "arm64" {
 		if len(qemuAarch64) == 0 {
 			return errArchCantRunHere
 		}
@@ -88,6 +108,9 @@ func buildArchHere(tarball, share string, rep Reporter) error {
 	}
 
 	cmd := exec.Command("/bin/bash", script, tarball, work, img+".new", qemu)
+	if boot != "" {
+		cmd.Env = append(os.Environ(), "ETROS_TARGET=pc")
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags:                 syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
 		UidMappings:                []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
@@ -132,10 +155,45 @@ func buildArchHere(tarball, share string, rep Reporter) error {
 		}
 		return errors.New(why)
 	}
+	if boot != "" {
+		rep.Stage("Putting Ollie OS's kernel on the boot partition")
+		for _, f := range []string{"vmlinuz-linux", "initramfs-linux.img"} {
+			if err := copyFile(filepath.Join(work, "boot-out", f), filepath.Join(boot, f), rep); err != nil {
+				return err
+			}
+		}
+		syncDir(boot)
+	}
 	if err := os.Rename(img+".new", img); err != nil {
 		return err
 	}
 	syncDir(filepath.Dir(img))
 	os.RemoveAll(work)
 	return nil
+}
+
+// writeOllieFiles puts Etros's files for Ollie OS (assets/ollie) in dir, as
+// they go into Ollie OS: programs runnable, the rest not.
+func writeOllieFiles(dir string) error {
+	os.RemoveAll(dir)
+	return fs.WalkDir(ollieFiles, "assets/ollie", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel := strings.TrimPrefix(p, "assets/ollie/")
+		b, err := ollieFiles.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		mode := os.FileMode(0o644)
+		if strings.HasPrefix(rel, "usr/local/bin/") || strings.HasPrefix(rel, "usr/local/sbin/") ||
+			strings.Contains(rel, "system-generators/") {
+			mode = 0o755
+		}
+		dest := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(dest, b, mode)
+	})
 }

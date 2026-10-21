@@ -69,4 +69,5 @@ for _ in $(seq 1 36); do
     fi
 done
 report "NO DESKTOP after 3 minutes; restarting into Etros"
-systemctl reboot
+# (ollie-boot-batocera: on an Intel Mac a plain restart would start macOS)
+exec /bin/sh /usr/local/bin/ollie-boot-batocera

@@ -100,6 +100,12 @@ func main() {
 			return
 		}
 		err = runUpdater(opts)
+	case mode == "mac":
+		// Like Etros Updater: partitions and files through UDisks, no password.
+		if openInTerminal() {
+			return
+		}
+		err = runMacInstaller(opts)
 	case mode == "maker":
 		// Etros Maker only makes an image file, so it never asks for
 		// administrator rights.

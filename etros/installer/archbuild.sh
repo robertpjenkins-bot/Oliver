@@ -1,6 +1,8 @@
 #!/bin/bash
 # Make Ollie OS from Arch Linux ARM on this computer, for Etros Updater and
-# Etros Maker (archbuild_linux.go), so the Pi 5 doesn't have to.
+# Etros Maker (archbuild_linux.go), so the Pi 5 doesn't have to; or, with
+# ETROS_TARGET=pc, from Arch Linux for PCs, for Etros on an Intel Mac (Etros
+# Mac Installer), with its own kernel.
 #
 # Runs as "root" of a user namespace of its own: really the person running
 # Etros, so no password, and everything it makes belongs to them. Pi
@@ -11,12 +13,17 @@
 #
 #   archbuild.sh TARBALL WORK IMAGE [QEMU]
 #
+# For PCs, WORK/ollie-files is copied in (Etros's files for Ollie OS, which
+# the Pi's boot copies in each start instead), and the kernel and its
+# start-up files end up in WORK/boot-out, for the boot partition.
+#
 # Lines starting "STAGE " name the step it's on; "FAILED " says why it
 # stopped. Exit code 3: this computer can't run Pi programs at all.
 
 set -u
 tarball=$1 work=$2 img=$3 qemu=${4:-}
 root=$work/root
+target=${ETROS_TARGET:-pi5}
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # The same as etros-setup-arch, which does this on the Pi instead.
@@ -29,6 +36,12 @@ packages=(
     mesa vulkan-broadcom noto-fonts noto-fonts-emoji ttf-liberation
     python sudo nano bash-completion dosfstools e2fsprogs exfatprogs ntfs-3g
 )
+keyring=archlinuxarm
+if [ "$target" = pc ]; then
+    keyring=archlinux
+    packages=("${packages[@]/vulkan-broadcom/vulkan-intel}" intel-media-driver
+        base linux linux-firmware mkinitcpio kexec-tools)
+fi
 
 say() { echo "STAGE $1"; }
 undo() {
@@ -48,6 +61,66 @@ in_root() { chroot "$root" /usr/bin/env -i HOME=/root TERM=dumb PATH=/usr/local/
 # Nothing mounted here reaches the rest of the computer.
 mount --make-rprivate / 2>/dev/null
 
+# Ollie OS on a PC (an Intel Mac) starts with its own kernel, straight from
+# Etros (etros-boot-ollie), and finds its file system as on the Pi: the file
+# etros/ollie-rootfs.img on SHARE, whose partition is root=. Its start-up
+# (mkinitcpio) gets a hook for that, and the boot partition is its /boot.
+pc_setup() {
+    cp -r "$work/ollie-files/." "$root/" || return 1
+    cat > "$root/etc/fstab" <<'EOT'
+# Ollie OS on Etros (Intel Mac). Its start-up mounts the file system, from
+# etros/ollie-rootfs.img on SHARE, and SHARE itself at /userdata.
+LABEL=BATOCERA  /boot  vfat  rw,noatime,fmask=0022,dmask=0022,nofail  0  2
+EOT
+    mkdir -p "$root/etc/initcpio/install" "$root/etc/initcpio/hooks"
+    cat > "$root/etc/initcpio/install/etros" <<'EOT'
+#!/bin/bash
+build() {
+    add_module loop
+    add_module ext4
+    add_runscript
+}
+help() {
+    echo "Ollie OS on Etros: the file system is etros/ollie-rootfs.img on SHARE (root=)."
+}
+EOT
+    cat > "$root/etc/initcpio/hooks/etros" <<'EOT'
+#!/usr/bin/ash
+run_hook() {
+    modprobe -q loop
+    mount_handler=etros_mount_handler
+}
+etros_mount_handler() {
+    mkdir -p /share
+    if ! mount -t ext4 -o rw "$root" /share; then
+        err "Etros: couldn't mount SHARE ($root)"
+        launch_interactive_shell
+        return
+    fi
+    if ! mount -o loop,rw /share/etros/ollie-rootfs.img "$1"; then
+        err "Etros: couldn't open etros/ollie-rootfs.img on SHARE"
+        launch_interactive_shell
+        return
+    fi
+    mkdir -p "$1/userdata"
+    mount --move /share "$1/userdata"
+}
+EOT
+    # No autodetect: it would pick this computer's drivers, not the Mac's.
+    cat > "$root/etc/mkinitcpio.conf" <<'EOT'
+MODULES=(loop ext4)
+BINARIES=()
+FILES=()
+HOOKS=(base udev modconf kms keyboard block filesystems etros)
+EOT
+    in_root mkinitcpio -k /boot/vmlinuz-linux -g /boot/initramfs-linux.img || return 1
+    rm -rf "$work/boot-out"
+    mkdir -p "$work/boot-out"
+    cp "$root/boot/vmlinuz-linux" "$root/boot/initramfs-linux.img" "$work/boot-out/" || return 1
+    # /boot is the boot partition, where Etros finds the kernel.
+    rm -rf "${root:?}/boot/"*
+}
+
 for tool in tar mkfs.ext4 debugfs chroot; do
     command -v "$tool" >/dev/null || fail "this computer has no $tool" 3
 done
@@ -66,8 +139,16 @@ say "Unpacking Arch Linux"
 undo
 rm -rf "$root"
 mkdir -p "$root"
-tar -xpzf "$tarball" -C "$root" --numeric-owner --no-same-owner || fail "couldn't unpack $(basename "$tarball")"
+strip=()
+[ "$target" = pc ] && strip=(--strip-components=1) # archlinux-bootstrap: all in root.x86_64/
+tar -xpf "$tarball" -C "$root" --numeric-owner --no-same-owner "${strip[@]}" ||
+    fail "couldn't unpack $(basename "$tarball")"
 in_root /usr/bin/true || fail "this computer can't run Pi programs" 3
+if [ "$target" = pc ]; then
+    # The bootstrap has every mirror commented out.
+    # shellcheck disable=SC2016 # pacman's own $repo and $arch
+    echo 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch' > "$root/etc/pacman.d/mirrorlist"
+fi
 
 # Its own mount, so pacman can tell how much room there is.
 mount --bind "$root" "$root" || fail "couldn't mount Arch Linux's folder"
@@ -83,9 +164,9 @@ sed -i 's/^CheckSpace/#CheckSpace/; s/^DownloadUser/#DownloadUser/' "$root/etc/p
 
 say "Setting up pacman's keys"
 in_root pacman-key --init || fail "pacman-key --init failed"
-in_root pacman-key --populate archlinuxarm || fail "pacman-key --populate failed"
-# Ollie OS runs on Batocera's kernel, so Arch's isn't needed.
-in_root pacman -Rdd --noconfirm linux-aarch64 linux-firmware 2>/dev/null
+in_root pacman-key --populate "$keyring" || fail "pacman-key --populate failed"
+# On the Pi, Ollie OS runs on Batocera's kernel, so Arch's isn't needed.
+[ "$target" = pc ] || in_root pacman -Rdd --noconfirm linux-aarch64 linux-firmware 2>/dev/null
 
 say "Updating Arch Linux"
 ok=no
@@ -116,6 +197,10 @@ in_root systemctl enable sddm NetworkManager bluetooth
 in_root systemctl set-default graphical.target
 in_root userdel -r alarm 2>/dev/null
 echo "Ollie OS (Arch Linux ARM), set up $(date '+%Y-%m-%d')" > "$root/etc/ollie-os-arch"
+if [ "$target" = pc ]; then
+    sed -i 's/(Arch Linux ARM)/(Arch Linux)/' "$root/etc/ollie-os-arch"
+    pc_setup || fail "couldn't set up Ollie OS's start-up"
+fi
 in_root pacman -Scc --noconfirm >/dev/null 2>&1
 sed -i 's/^#CheckSpace/CheckSpace/; s/^#DownloadUser/DownloadUser/' "$root/etc/pacman.conf"
 rm -f "$root/etc/resolv.conf"

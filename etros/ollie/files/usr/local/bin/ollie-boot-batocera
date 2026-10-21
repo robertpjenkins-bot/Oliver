@@ -4,4 +4,11 @@
 mkdir -p /userdata/system/logs
 python3 /usr/local/bin/etros-sort-roms >> /userdata/system/logs/etros.log 2>&1
 sync
+# Intel Macs: a restart would start macOS, so start Batocera's kernel
+# straight from this one (kexec), as its own start-up menu would.
+if [ "$(uname -m)" = x86_64 ] && [ -f /boot/boot/linux ] && command -v kexec >/dev/null 2>&1; then
+    kexec -l /boot/boot/linux --initrd=/boot/boot/initrd.gz \
+        --append="label=BATOCERA console=tty3 quiet loglevel=0 vt.global_cursor_default=0" &&
+        exec systemctl kexec
+fi
 exec systemctl reboot

@@ -247,3 +247,27 @@ it's going on screen; Boot into Ollie OS waits for it. Etros Updater also
 offers to finish a card the Pi hasn't finished yet. The boot hook takes
 Ollie OS from SHARE first, then partition 3.
 
+
+## Etros on an Intel Mac
+
+Etros Mac Installer (Linux, like a Steam Machine) puts Etros on an Intel Mac
+in place of Boot Camp's Windows, with the Mac in Target Disk Mode (hold T at
+start-up, USB-C cable): its drive shows up as a USB drive, and everything is
+done through UDisks, without a password (installer/mac_linux.go). macOS
+stays; the Boot Camp partitions (Windows, its recovery, or an earlier Etros)
+become BATOCERA (8 GB, Batocera for PCs' boot.tar.xz, with the Etros hook
+in boot/initrd.gz, which is gzip there, and etros/etros.squashfs) and SHARE
+right after it, numbered one after the other as Batocera expects. The Mac
+starts Etros when Option is held ("EFI Boot").
+
+Batocera's PC kernel has no driver for the 12-inch MacBook's keyboard and
+trackpad, so Ollie OS there is Arch Linux for PCs with its own kernel, made
+on the computer from archlinux-bootstrap-x86_64.tar.zst (archbuild.sh with
+ETROS_TARGET=pc, natively, no qemu). Its file system is
+etros/ollie-rootfs.img on SHARE, as on the Pi; its kernel and initramfs are
+vmlinuz-linux and initramfs-linux.img on BATOCERA, which is its /boot. The
+initramfs has an Etros hook that mounts SHARE (root=) and the file in it.
+Boot into Ollie OS starts that kernel straight from Batocera's with
+etros-kexec (kexec_file_load, after Batocera's own shutdown scripts), since
+a restart would start macOS; ollie-boot-batocera goes back the same way
+with kexec-tools.

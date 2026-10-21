@@ -95,7 +95,7 @@ func fixCard(dir string, rep Reporter) (changed int, err error) {
 	if err := write("etros/etros.squashfs", etrosLayer); err != nil {
 		return changed, err
 	}
-	for _, rel := range []string{"etros/pi5/initrd.lz4", "uInitrd"} {
+	for _, rel := range []string{"etros/pi5/initrd.lz4", "uInitrd", "boot/initrd.gz"} {
 		p := filepath.Join(dir, filepath.FromSlash(rel))
 		in, err := os.ReadFile(p)
 		if os.IsNotExist(err) {
@@ -215,6 +215,13 @@ func copyFile(src, dest string, rep Reporter) error {
 		return err
 	}
 	return os.Rename(dest+".new", dest)
+}
+
+// isMacCard tells an Etros put on an Intel Mac (by its BATOCERA drive at
+// dir, see mac_linux.go) from a Pi 5 / R36S card.
+func isMacCard(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "etros", "intel-mac.txt"))
+	return err == nil
 }
 
 // cardHasR36S tells whether the Etros card at dir was made with the R36S.

@@ -1,0 +1,20 @@
+ETROS MAC INSTALLER
+
+Puts Etros (and Ollie OS) on an Intel Mac in place of Boot Camp's Windows,
+from a Steam Machine, Steam Deck or other Linux computer. macOS and your Mac
+files stay. No password is ever needed.
+
+1. Turn the Mac off and connect it to this computer with a USB-C cable.
+2. Turn the Mac on holding T until a USB symbol shows (Target Disk Mode).
+3. Double-click Etros Mac Installer, then Run.
+4. Pick the Mac, check what it will do, and type ERASE.
+   Everything in Boot Camp (Windows and its files) is deleted.
+5. It downloads Batocera for PCs (about 3 GB) and, for Ollie OS, Arch Linux,
+   and makes Ollie OS (30 to 60 minutes; this computer needs internet and
+   about 10 GB free).
+6. When it says ETROS IS ON THE MAC: hold the Mac's power button until it
+   turns off, unplug it, and turn it on holding Option. Choose EFI Boot.
+
+In Etros, use a game controller: the Mac's own keyboard and trackpad don't
+work in Batocera. They do in Ollie OS (ETROS -> Boot into Ollie OS).
+Turned on normally, the Mac starts macOS as before.

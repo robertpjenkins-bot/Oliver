@@ -2,6 +2,29 @@
 # Restart into Ollie OS. The choice lasts one boot: restarting or switching
 # off in Ollie OS brings the device back to Batocera.
 
+# Intel Macs (Etros in place of Boot Camp): Ollie OS has its own kernel on
+# the boot partition, started straight from this one (kexec), since a
+# restart would start macOS. Its start-up finds Ollie OS on SHARE (root=).
+if [ "$(uname -m)" = x86_64 ]; then
+    say() { curl -s -o /dev/null -d "$1" http://localhost:1234/notify 2>/dev/null; echo "$1" >&2; }
+    if [ ! -f /boot/vmlinuz-linux ] || [ ! -f /userdata/etros/ollie-rootfs.img ]; then
+        say "Ollie OS is not on this Mac: put Etros on it again with Etros Mac Installer."
+        exit 1
+    fi
+    share=$(findmnt -no SOURCE /userdata)
+    uuid=$(blkid -s PARTUUID -o value "$share" 2>/dev/null)
+    root=LABEL=SHARE
+    [ -n "$uuid" ] && root=PARTUUID=$uuid
+    if ! /usr/bin/etros-kexec load /boot/vmlinuz-linux /boot/initramfs-linux.img "root=$root rw quiet loglevel=3"; then
+        say "Ollie OS couldn't be started (see system/logs/etros.log)."
+        exit 1
+    fi
+    # Stop Batocera properly (the menu saves its lists), then switch.
+    setsid sh -c 'sleep 1; [ -x /etc/init.d/rcK ] && /etc/init.d/rcK; sync; exec /usr/bin/etros-kexec go' \
+        < /dev/null > /tmp/etros-kexec.log 2>&1 &
+    exit 0
+fi
+
 # Cards made with Ollie OS carry its Etros files in /boot/etros/ollie.
 if ! test -d /boot/etros/ollie; then
     echo "Ollie OS is not on this card" >&2

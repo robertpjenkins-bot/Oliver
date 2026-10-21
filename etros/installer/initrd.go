@@ -1,10 +1,12 @@
 package main
 
-// Patching Batocera's initramfs: unpack the lz4 cpio archive, add the Etros
-// hook to /init, and pack it again, all in memory.
+// Patching Batocera's initramfs: unpack the cpio archive (lz4 on the Pi 5
+// and R36S, gzip on PCs), add the Etros hook to /init, and pack it again,
+// all in memory.
 
 import (
 	"bytes"
+	"compress/gzip"
 	_ "embed"
 	"encoding/binary"
 	"fmt"
@@ -186,7 +188,17 @@ func editInitrd(in []byte, edit func([]cpioEntry) ([]cpioEntry, error)) ([]byte,
 	if uboot {
 		payload = in[64:]
 	}
-	raw, err := io.ReadAll(lz4.NewReader(bytes.NewReader(payload)))
+	gz := len(payload) > 2 && payload[0] == 0x1f && payload[1] == 0x8b
+	var raw []byte
+	var err error
+	if gz {
+		var zr *gzip.Reader
+		if zr, err = gzip.NewReader(bytes.NewReader(payload)); err == nil {
+			raw, err = io.ReadAll(zr)
+		}
+	} else {
+		raw, err = io.ReadAll(lz4.NewReader(bytes.NewReader(payload)))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("initramfs: %w", err)
 	}
@@ -199,6 +211,16 @@ func editInitrd(in []byte, edit func([]cpioEntry) ([]cpioEntry, error)) ([]byte,
 	}
 
 	var out bytes.Buffer
+	if gz {
+		zw, _ := gzip.NewWriterLevel(&out, gzip.BestCompression)
+		if _, err := zw.Write(writeCPIO(entries)); err != nil {
+			return nil, err
+		}
+		if err := zw.Close(); err != nil {
+			return nil, err
+		}
+		return out.Bytes(), nil
+	}
 	w := lz4.NewWriter(&out)
 	if err := w.Apply(lz4.LegacyOption(true), lz4.CompressionLevelOption(lz4.Level9)); err != nil {
 		return nil, err

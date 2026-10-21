@@ -11,6 +11,8 @@ package() {  # package GOOS GOARCH ZIPNAME [maker]
     local title="Etros Installer"
     if [ "$kind" = maker ]; then
         exe=etros-maker readme="READ ME - Etros Maker.txt" desktop="Etros Maker.desktop" title="Etros Maker"
+    elif [ "$kind" = mac ]; then
+        exe=etros-mac-installer readme="READ ME - Etros Mac Installer.txt" desktop="Etros Mac Installer.desktop" title="Etros Mac Installer"
     elif [ "$kind" = updater ]; then
         exe=etros-updater readme="READ ME - Etros Updater.txt" desktop="Etros Updater.desktop" title="Etros Updater"
     fi
@@ -42,6 +44,7 @@ package darwin  arm64 "Etros Updater - Mac (Apple chip)" updater
 package darwin  amd64 "Etros Updater - Mac (Intel)" updater
 package linux   amd64 "Etros Updater - Linux" updater
 package linux   arm64 "Etros Updater - Linux (ARM)" updater
+package linux   amd64 "Etros Mac Installer - Linux" mac
 package windows amd64 "Etros Installer - Windows"
 package windows arm64 "Etros Installer - Windows (ARM)"
 package darwin  arm64 "Etros Installer - Mac (Apple chip)"

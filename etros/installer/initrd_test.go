@@ -116,3 +116,36 @@ func TestPatchInitOlderBatocera(t *testing.T) {
 		}
 	}
 }
+
+// Batocera for PCs (x86-64, as on an Intel Mac) has a gzip initramfs.
+func TestPatchInitrdGzip(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "init"), []byte(batoceraInit(t)), 0o755)
+	cmd := exec.Command("sh", "-c", "find . -mindepth 1 | cpio -o -H newc --quiet | gzip -9")
+	cmd.Dir = dir
+	in, err := cmd.Output()
+	if err != nil {
+		t.Skip("needs cpio and gzip: ", err)
+	}
+	out, err := PatchInitrd(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(dir, "out.gz")
+	os.WriteFile(f, out, 0o644)
+	root := filepath.Join(dir, "root")
+	os.Mkdir(root, 0o755)
+	un := exec.Command("sh", "-c", "gzip -dc "+f+" | cpio -id --quiet")
+	un.Dir = root
+	if b, err := un.CombinedOutput(); err != nil {
+		t.Fatalf("unpacking: %v\n%s", err, b)
+	}
+	init, _ := os.ReadFile(filepath.Join(root, "init"))
+	hook, _ := os.ReadFile(filepath.Join(root, "etros-hook.sh"))
+	if !strings.Contains(string(init), ". /etros-hook.sh && etros_start") || !bytes.Equal(hook, etrosHook) {
+		t.Errorf("not patched:\n%s", init)
+	}
+	if again, changed, err := UpdateInitrdHook(out); err != nil || changed || !bytes.Equal(again, out) {
+		t.Errorf("updating an up-to-date one: changed=%v err=%v", changed, err)
+	}
+}

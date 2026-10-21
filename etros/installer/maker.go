@@ -220,6 +220,9 @@ func (t *tui) startMenu() (bool, error) {
 		heading("WHAT DO YOU WANT TO DO?")
 		fmt.Printf("  %s1%s  Make a new Etros card %s(recommended)%s\n", cYellow, cReset, cCyan, cReset)
 		fmt.Printf("  %s2%s  Etros Updater %s(update my Etros card, keeps your games and saves)%s\n", cYellow, cReset, cDim, cReset)
+		if macInstallSupported() {
+			fmt.Printf("  %s4%s  Put Etros on an Intel Mac %s(in place of Boot Camp's Windows)%s\n", cYellow, cReset, cDim, cReset)
+		}
 		for _, e := range scan().Etros {
 			if imageIsCurrent(e.Path) {
 				current = e.Path
@@ -238,6 +241,10 @@ func (t *tui) startMenu() (bool, error) {
 			}
 		case a == "3" && current != "":
 			return true, t.writeLoop(current)
+		case a == "4" && macInstallSupported():
+			if t.macLoop() {
+				return true, nil
+			}
 		case a == "q":
 			return true, nil
 		}
@@ -308,7 +315,7 @@ func (t *tui) fixLoop() bool {
 		}
 
 		// A card made without the R36S: offer to add it.
-		if !cardHasR36S(dir) {
+		if !cardHasR36S(dir) && !isMacCard(dir) {
 			heading("THIS CARD HAS NO R36S PART")
 			note("It was made for the Raspberry Pi 5 only, so the R36S can't start from it")
 			note("(that's the black screen). Etros Updater can add the R36S: it copies your games,")
@@ -378,6 +385,14 @@ func (t *tui) fixLoop() bool {
 			t.chooseR36SScreen(dir)
 		}
 		closed := closeCard(dir)
+		if isMacCard(dir) {
+			fmt.Printf("\n%s  ETROS ON THE MAC UPDATED%s\n\n", cYellow, cReset)
+			note("1. Hold the Mac's power button until it turns off, then unplug the cable.")
+			note("2. Turn it on holding Option (⌥) and choose EFI Boot to start Etros.")
+			note("3. Your games, saves and settings are all still there.")
+			t.ask("Press Enter to finish")
+			return true
+		}
 		fmt.Printf("\n%s  CARD UPDATED%s\n\n", cYellow, cReset)
 		if closed {
 			note("1. Take the card out and put it back in your Raspberry Pi 5 or R36S.")
