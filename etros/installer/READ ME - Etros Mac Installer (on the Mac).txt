@@ -5,7 +5,7 @@ can't do Target Disk Mode, like the 12-inch MacBook).
 
 1. Open Etros Mac Installer.dmg, then right-click Etros Installer and choose
    Open (macOS asks once whether to open a program from the internet).
-   It opens in Terminal.
+   It opens as a page in Safari.
 2. It lists every drive and partition. Pick where Etros goes:
    - a partition (Boot Camp, or one you made for Etros in Disk Utility):
      everything on it is erased;
@@ -13,10 +13,10 @@ can't do Target Disk Mode, like the 12-inch MacBook).
    - a whole USB drive: everything on it is erased, and it then starts
      Etros on any Intel Mac (plug it in, hold Option at start-up).
    The Mac's start-up files and the macOS you're using are never erased.
-3. Type ERASE. If macOS wants your Mac password to change a drive, type it
-   in the window: that's macOS asking, not Etros.
-4. It downloads Batocera for PCs (about 3 GB) and Arch Linux, and asks for
-   your Wi-Fi password, which Etros needs to make Ollie OS.
+3. Type ERASE and click Put Etros on it. If macOS wants your Mac password to
+   change a drive, it asks in its own window: that's macOS, not Etros.
+4. It downloads Batocera for PCs (about 3 GB) and Arch Linux. Your Wi-Fi
+   password (on the page) is for Etros, to make Ollie OS.
 5. When it says ETROS IS ON ...: restart holding Option and choose EFI Boot.
 6. The first start sets up Etros's storage. Then Etros makes Ollie OS over
    Wi-Fi in the background (30 to 60 minutes) and says when it's ready:

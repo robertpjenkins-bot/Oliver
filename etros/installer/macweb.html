@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Etros Mac Installer</title>
+<style>
+  :root {
+    --bg: #0b0f1e; --panel: #141a33; --line: #2a3360; --text: #e8ecff; --dim: #8b94c4;
+    --orange: #ff9a2e; --cyan: #46e0ff; --red: #ff4d5e; --green: #57e389;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { margin: 0; font-size: 34px; letter-spacing: 6px; color: var(--orange); }
+  .sub { color: var(--dim); margin: 4px 0 24px; }
+  h2 { font-size: 15px; letter-spacing: 2px; text-transform: uppercase; color: var(--cyan); margin: 28px 0 10px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .disk { margin-bottom: 14px; }
+  .disk:last-child { margin-bottom: 0; }
+  .disk-name { font-weight: 600; margin-bottom: 6px; }
+  .disk-name span { color: var(--dim); font-weight: 400; }
+  label.row { display: grid; grid-template-columns: 22px 90px 1fr auto; gap: 10px; align-items: center;
+    padding: 9px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  label.row:hover { background: #1b2347; }
+  label.row.chosen { border-color: var(--orange); background: #241c1a; }
+  label.row.off { cursor: default; color: var(--dim); opacity: .7; }
+  label.row.off:hover { background: none; }
+  .id { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--dim); }
+  .size { font-variant-numeric: tabular-nums; color: var(--dim); }
+  .action { grid-column: 3 / 5; font-size: 14px; color: var(--cyan); }
+  .off .action { color: var(--dim); }
+  .warn { color: var(--orange); }
+  .field { margin: 12px 0; }
+  .field label { display: block; color: var(--dim); font-size: 14px; margin-bottom: 4px; }
+  input[type=text], input[type=password], input[type=number] { width: 100%; max-width: 360px; padding: 10px 12px;
+    border-radius: 8px; border: 1px solid var(--line); background: #0d1229; color: var(--text); font-size: 16px; }
+  button { font-size: 16px; padding: 11px 20px; border-radius: 8px; border: 0; cursor: pointer; font-weight: 600; }
+  button.go { background: var(--red); color: white; }
+  button.go:disabled { background: #5a2a33; color: #c9a; cursor: default; }
+  button.plain { background: #232c55; color: var(--text); }
+  .note { color: var(--dim); font-size: 14px; }
+  .big { font-size: 18px; }
+  .bar { height: 12px; background: #0d1229; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); margin: 10px 0; }
+  .bar div { height: 100%; width: 0; background: linear-gradient(90deg, var(--orange), var(--cyan)); transition: width .3s; }
+  pre { background: #070a16; border: 1px solid var(--line); border-radius: 8px; padding: 10px; height: 220px;
+    overflow: auto; font-size: 12px; color: var(--dim); white-space: pre-wrap; margin: 0; }
+  .done h2 { color: var(--green); }
+  .err h2 { color: var(--red); }
+  ol { padding-left: 22px; } li { margin: 6px 0; }
+  .hidden { display: none; }
+  .buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  @media (max-width: 560px) { label.row { grid-template-columns: 22px 1fr auto; } .id { display: none; } .action { grid-column: 2 / 4; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>ETROS</h1>
+  <div class="sub">Mac Installer · version {{VERSION}} · Etros and Ollie OS on an Intel Mac</div>
+
+  <section id="choose">
+    <h2>1 · Where should Etros go?</h2>
+    <div class="panel" id="drives"><span class="note">Looking at the drives…</span></div>
+    <div class="buttons"><button class="plain" id="refresh">Look again</button></div>
+
+    <div id="options" class="hidden">
+      <h2>2 · Settings</h2>
+      <div class="panel">
+        <div class="field hidden" id="room-field">
+          <label for="gb">How many GB for Etros (your games go here too)?</label>
+          <input type="number" id="gb">
+          <div class="note" id="room-note"></div>
+        </div>
+        <div id="ollie-yes" class="hidden">
+          <p class="big">Ollie OS (Arch Linux with KDE Plasma) is made the first time Etros starts, over Wi-Fi
+            (30 to 60 minutes; Etros works meanwhile).</p>
+          <div class="field"><label for="ssid">Wi-Fi name</label><input type="text" id="ssid" autocomplete="off"></div>
+          <div class="field"><label for="key">Wi-Fi password</label><input type="password" id="key" autocomplete="off"></div>
+        </div>
+        <p id="ollie-no" class="note hidden">There isn't room for Ollie OS too (it needs {{OLLIE_GB}} GB), so it's Etros on its own.</p>
+      </div>
+
+      <h2>3 · Go</h2>
+      <div class="panel">
+        <p class="big warn" id="what-happens"></p>
+        <div class="field"><label for="confirm">Type ERASE to go ahead</label><input type="text" id="confirm" autocomplete="off" autocapitalize="characters"></div>
+        <div class="note">If macOS wants your Mac password to change the drive, it asks in its own window: that's macOS, not Etros.</div>
+        <div class="buttons"><button class="go" id="go" disabled>Put Etros on it</button></div>
+        <div class="note warn" id="go-error"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="working" class="hidden">
+    <h2 id="stage">Starting…</h2>
+    <div class="panel">
+      <div class="bar"><div id="bar"></div></div>
+      <div class="note" id="numbers"></div>
+      <pre id="log"></pre>
+    </div>
+    <div id="result" class="hidden">
+      <div class="panel" id="result-text"></div>
+    </div>
+    <div class="buttons"><button class="plain hidden" id="again">Back to the drives</button><button class="plain" id="quit">Close the installer</button></div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const gb = n => (n / 1e9).toFixed(1) + " GB";
+const MIN_GB = {{MIN_GB}}, OLLIE_GB = {{OLLIE_GB}};
+let targets = [], chosen = null;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+async function loadDrives() {
+  $("drives").innerHTML = '<span class="note">Looking at the drives…</span>';
+  chosen = null; update();
+  let d;
+  try { d = await api("drives"); } catch (e) { $("drives").textContent = "Couldn't read the drives: " + e.message; return; }
+  targets = d.targets;
+  if (d.wifi && !$("ssid").value) $("ssid").value = d.wifi;
+  const box = $("drives"); box.innerHTML = "";
+  let disk = null, div = null;
+  for (const t of targets) {
+    if (t.disk !== disk) {
+      disk = t.disk;
+      div = document.createElement("div"); div.className = "disk";
+      const n = document.createElement("div"); n.className = "disk-name";
+      n.textContent = (t.diskName || "Drive") + " ";
+      const s = document.createElement("span");
+      s.textContent = "(" + t.disk + " · " + (t.internal ? "this Mac's own drive" : "USB / external") + " · " + gb(t.diskSize) + ")";
+      n.appendChild(s); div.appendChild(n); box.appendChild(div);
+    }
+    const row = document.createElement("label");
+    row.className = "row" + (t.why ? " off" : "");
+    const radio = document.createElement("input");
+    radio.type = "radio"; radio.name = "target"; radio.disabled = !!t.why;
+    radio.onchange = () => { chosen = t; update(); };
+    const id = document.createElement("span"); id.className = "id"; id.textContent = t.id;
+    const what = document.createElement("span"); what.textContent = t.what;
+    const size = document.createElement("span"); size.className = "size"; size.textContent = gb(t.size);
+    const act = document.createElement("span"); act.className = "action";
+    act.textContent = t.why || (t.kind === "room" ? t.action + " · " + gb(t.free) + " free" : t.action);
+    row.append(radio, id, what, size, act);
+    div.appendChild(row);
+  }
+  if (!targets.some(t => !t.why)) {
+    const p = document.createElement("p"); p.className = "warn";
+    p.textContent = "There's nowhere Etros can go: make a partition for it in Disk Utility (ExFAT is fine), or plug in a USB drive, then Look again.";
+    box.appendChild(p);
+  }
+}
+
+function etrosGB() {
+  if (!chosen) return 0;
+  if (chosen.kind === "room") return Number($("gb").value) || 0;
+  return chosen.size / 2 ** 30;
+}
+
+function update() {
+  document.querySelectorAll("label.row").forEach(r => r.classList.toggle("chosen", r.querySelector("input").checked));
+  $("options").classList.toggle("hidden", !chosen);
+  if (!chosen) return;
+  const room = chosen.kind === "room";
+  $("room-field").classList.toggle("hidden", !room);
+  if (room) {
+    const max = Math.floor((chosen.free - 20 * 2 ** 30) / 2 ** 30);
+    $("gb").min = MIN_GB; $("gb").max = max;
+    if (!$("gb").value) $("gb").value = Math.min(max, 64);
+    $("room-note").textContent = "Between " + MIN_GB + " and " + max + " GB (macOS keeps at least 20 GB free).";
+  }
+  const ollie = etrosGB() >= OLLIE_GB;
+  $("ollie-yes").classList.toggle("hidden", !ollie);
+  $("ollie-no").classList.toggle("hidden", ollie);
+  const name = chosen.diskName || chosen.disk;
+  $("what-happens").textContent =
+    chosen.kind === "whole" ? "Everything on " + name + " (" + chosen.disk + ") will be erased. Then it starts Etros on any Intel Mac." :
+    chosen.kind === "room" ? etrosGB() + " GB of macOS's free room becomes Etros. macOS and its files stay." :
+    "Everything on " + chosen.id + " (" + chosen.what + ") will be erased.";
+  $("go").disabled = $("confirm").value.trim().toUpperCase() !== "ERASE";
+}
+
+async function go() {
+  $("go-error").textContent = "";
+  try {
+    await api("install", { n: chosen.n, gb: Math.floor(etrosGB()), ssid: $("ssid").value, key: $("key").value, confirm: $("confirm").value });
+  } catch (e) { $("go-error").textContent = e.message; return; }
+  $("choose").classList.add("hidden"); $("working").classList.remove("hidden");
+  $("result").classList.add("hidden"); $("again").classList.add("hidden");
+  $("quit").disabled = true;
+  poll();
+}
+
+async function poll() {
+  let s;
+  try { s = await api("status"); } catch (e) { setTimeout(poll, 2000); return; }
+  $("stage").textContent = s.stage || "Starting…";
+  $("bar").style.width = s.total > 0 ? Math.min(100, 100 * s.done / s.total) + "%" : "0";
+  $("numbers").textContent = s.total > 0 ? gb(s.done) + " of " + gb(s.total) : "";
+  const log = $("log"), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.textContent = (s.lines || []).join("\n");
+  if (atEnd) log.scrollTop = log.scrollHeight;
+  if (!s.finished) { setTimeout(poll, 700); return; }
+  $("quit").disabled = false;
+  const box = $("result-text"), res = $("result");
+  res.classList.remove("hidden");
+  box.innerHTML = "";
+  const h = document.createElement("h2");
+  if (s.error) {
+    res.className = "err";
+    h.textContent = "Etros didn't go on";
+    const p = document.createElement("p"); p.textContent = s.error;
+    const n = document.createElement("p"); n.className = "note"; n.textContent = "It's also in etros-installer-log.txt in Downloads. Send a photo of this page if you need help.";
+    box.append(h, p, n);
+    $("again").classList.remove("hidden");
+    return;
+  }
+  res.className = "done";
+  h.textContent = "Etros is on it";
+  const ol = document.createElement("ol");
+  const steps = [];
+  if (s.kind === "whole") steps.push("Eject the drive in Finder and plug it into the Intel Mac (with an adapter if needed).");
+  steps.push("Restart the Mac holding Option (⌥) as it starts, and choose EFI Boot. Started normally, it's macOS as before.");
+  steps.push("The first start takes a little longer: Etros sets up its storage.");
+  if (s.ollie) steps.push("Then Etros makes Ollie OS over Wi-Fi in the background and says when it's ready (30 to 60 minutes). Then: ETROS → Boot into Ollie OS.");
+  steps.push("In Etros, use a game controller: the 12-inch MacBook's own keyboard and trackpad don't work there. They do in Ollie OS.");
+  for (const t of steps) { const li = document.createElement("li"); li.textContent = t; ol.appendChild(li); }
+  box.append(h, ol);
+}
+
+$("refresh").onclick = loadDrives;
+$("confirm").oninput = update;
+$("gb").oninput = update;
+$("go").onclick = go;
+$("again").onclick = () => { $("working").classList.add("hidden"); $("choose").classList.remove("hidden"); $("confirm").value = ""; loadDrives(); };
+$("quit").onclick = async () => {
+  try { await api("quit", {}); } catch (e) {}
+  document.body.innerHTML = '<main><h1>ETROS</h1><p class="sub">The installer is closed. You can close this tab.</p></main>';
+};
+api("status").then(s => { if (s.running || s.finished) { $("choose").classList.add("hidden"); $("working").classList.remove("hidden"); poll(); } }).catch(() => {});
+loadDrives();
+</script>
+</body>
+</html>

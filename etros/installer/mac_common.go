@@ -51,6 +51,30 @@ func (t *tui) getPCBatocera() (string, error) {
 	return fetch(pcBatoceraURL(), defaultCache(), "batocera-x86_64-boot", rep.Progress, rep.Log)
 }
 
+// fetchPCBatocera finds Batocera for PCs in Downloads or downloads it,
+// saying so through rep (for the Safari installer).
+func fetchPCBatocera(rep Reporter) (string, error) {
+	for _, pat := range []string{"*x86_64*boot*.tar.xz", "*x86_64*.boot.tar.xz"} {
+		if m, _ := filepath.Glob(filepath.Join(downloadsDir(), pat)); len(m) > 0 {
+			rep.Log("using " + filepath.Base(m[0]) + " from Downloads")
+			return m[0], nil
+		}
+	}
+	rep.Stage("Downloading Batocera for PCs (about 3 GB)")
+	return fetch(pcBatoceraURL(), defaultCache(), "batocera-x86_64-boot", rep.Progress, rep.Log)
+}
+
+// fetchArchBootstrap finds Arch Linux's bootstrap in Downloads or
+// downloads it.
+func fetchArchBootstrap(rep Reporter) (string, error) {
+	if m, _ := filepath.Glob(filepath.Join(downloadsDir(), "archlinux-bootstrap*x86_64*.tar.zst")); len(m) > 0 {
+		rep.Log("using " + filepath.Base(m[0]) + " from Downloads")
+		return m[0], nil
+	}
+	rep.Stage("Downloading Arch Linux for Ollie OS (about 150 MB)")
+	return fetch(archBootstrapURL, defaultCache(), "archlinux-bootstrap", rep.Progress, rep.Log)
+}
+
 // getArchBootstrap finds Arch Linux's bootstrap tarball in Downloads, or
 // asks for it, or downloads it.
 func (t *tui) getArchBootstrap() (string, error) {
