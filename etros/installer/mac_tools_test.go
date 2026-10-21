@@ -440,3 +440,41 @@ func TestMacUSBCopy(t *testing.T) {
 		t.Errorf("Arch Linux on the USB drive: found %q", p)
 	}
 }
+
+// Unpacking happens once (a second time uses it again), and a boot.tar.xz
+// that isn't the PC one is said in words.
+func TestUnpackPCBatocera(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
+	pc := filepath.Join(home, "boot.tar.xz")
+	writeFakePCBatocera(t, pc)
+	rep := &logRep{}
+	dir, err := unpackPCBatocera(pc, rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "boot", "batocera.update")); err != nil {
+		t.Error(err)
+	}
+	again := &logRep{}
+	if d2, err := unpackPCBatocera(pc, again); err != nil || d2 != dir || !strings.Contains(strings.Join(again.lines, "\n"), "unpacked earlier") {
+		t.Errorf("second time: %v %q %v", err, d2, again.lines)
+	}
+	pi := filepath.Join(home, "boot (1).tar.xz")
+	f, _ := os.Create(pi)
+	x, _ := xz.NewWriter(f)
+	writeTar(t, tar.NewWriter(x), map[string][]byte{"boot/linux": []byte("k"), "boot/initrd.lz4": []byte("i")})
+	x.Close()
+	f.Close()
+	if _, err := unpackPCBatocera(pi, &logRep{}); err == nil || !strings.Contains(err.Error(), "isn't Batocera for PCs") {
+		t.Errorf("Pi 5 one: %v", err)
+	}
+	// Without the computer's tar, it's unpacked here instead.
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache2"))
+	t.Setenv("PATH", t.TempDir())
+	if dir, err := unpackPCBatocera(pc, &logRep{}); err != nil {
+		t.Errorf("without tar: %v", err)
+	} else if _, err := os.Stat(filepath.Join(dir, "EFI", "BOOT", "BOOTX64.EFI")); err != nil {
+		t.Errorf("without tar: %v", err)
+	}
+}

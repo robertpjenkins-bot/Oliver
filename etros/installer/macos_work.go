@@ -83,8 +83,12 @@ func (darwinMac) install(x macTarget, etros int64, ssid, key string, rep Reporte
 			withOllie = false
 		}
 	}
+	unpacked, err := unpackPCBatocera(batocera, rep)
+	if err != nil {
+		return err
+	}
 	rep.Stage("Checking Batocera for PCs")
-	initrd, err := pcInitrd(batocera)
+	initrd, err := pcInitrd(unpacked)
 	if err != nil {
 		return err
 	}
@@ -100,7 +104,7 @@ func (darwinMac) install(x macTarget, etros int64, ssid, key string, rep Reporte
 	}
 
 	rep.Stage("Copying Batocera and Etros")
-	if err := copyPCBatocera(batocera, initrd, dir, rep); err != nil {
+	if err := copyPCBatocera(unpacked, initrd, dir, rep); err != nil {
 		return fmt.Errorf("copying onto BATOCERA: %w", err)
 	}
 	// SHARE is ExFAT for now: Etros makes it ext4 the first time it starts.

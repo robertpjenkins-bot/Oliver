@@ -6,11 +6,15 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -151,22 +155,136 @@ func (t *tui) getArchBootstrap() (string, error) {
 	}
 }
 
-// pcInitrd is Batocera for PCs' start-up file with Etros's hook added.
-func pcInitrd(bootTarball string) ([]byte, error) {
-	var initrd []byte
-	err := eachTarFile(bootTarball, func(h *tarHeader, r io.Reader) error {
-		if h.Name == "boot/initrd.gz" {
-			b, err := io.ReadAll(r)
-			initrd = b
-			return err
+// unpackPCBatocera unpacks Batocera for PCs' boot.tar.xz once, into the
+// installer's own folder, and returns where. The computer's own tar does it
+// where there is one (much faster than unpacking here, which matters on a
+// 12-inch MacBook), with progress from how much has come out so far. A
+// finished unpacking of the same file is used again.
+func unpackPCBatocera(tarball string, rep Reporter) (string, error) {
+	st, err := os.Stat(tarball)
+	if err != nil {
+		return "", err
+	}
+	key := fmt.Sprintf("%s|%d|%d", tarball, st.Size(), st.ModTime().Unix())
+	sum := md5.Sum([]byte(key))
+	dir := filepath.Join(defaultCache(), "batocera-pc-"+hex.EncodeToString(sum[:4]))
+	if _, err := os.Stat(filepath.Join(dir, ".complete")); err == nil {
+		rep.Log("using Batocera for PCs unpacked earlier")
+		return dir, nil
+	}
+	// Earlier unpackings of other files aren't needed any more.
+	old, _ := filepath.Glob(filepath.Join(defaultCache(), "batocera-pc-*"))
+	for _, o := range old {
+		os.RemoveAll(o)
+	}
+	if free := freeSpace(defaultCache()); free >= 0 && free < st.Size()+st.Size()/10 && os.Getenv("ETROS_TEST_NO_ROOM_CHECK") == "" {
+		return "", fmt.Errorf("unpacking Batocera needs %s free on this Mac, and it has %s: empty the Trash or delete some big files, then try again",
+			gbs(st.Size()+st.Size()/10), gbs(free))
+	}
+	tmp := dir + ".part"
+	os.RemoveAll(tmp)
+	if err := os.MkdirAll(tmp, 0o755); err != nil {
+		return "", err
+	}
+	rep.Stage("Unpacking Batocera for PCs (a few minutes)")
+	if err := systemUntar(tarball, tmp, st.Size(), rep); err != nil {
+		logf("system tar: %v; unpacking it here instead", err)
+		os.RemoveAll(tmp)
+		os.MkdirAll(tmp, 0o755)
+		if err := goUntar(tarball, tmp, st.Size(), rep); err != nil {
+			os.RemoveAll(tmp)
+			return "", fmt.Errorf("couldn't unpack %s: %w (the download may be damaged: delete it and try again)", filepath.Base(tarball), err)
+		}
+	}
+	for _, f := range []string{"boot/initrd.gz", "boot/linux", "EFI/BOOT/BOOTX64.EFI"} {
+		if _, err := os.Stat(filepath.Join(tmp, filepath.FromSlash(f))); err != nil {
+			os.RemoveAll(tmp)
+			return "", fmt.Errorf("%s isn't Batocera for PCs (it has no %s): get the PC (x86_64) version from batocera.org", tarball, f)
+		}
+	}
+	os.WriteFile(filepath.Join(tmp, ".complete"), []byte(key+"\n"), 0o644)
+	os.RemoveAll(dir)
+	if err := os.Rename(tmp, dir); err != nil {
+		return "", err
+	}
+	rep.Progress(st.Size(), st.Size())
+	return dir, nil
+}
+
+// systemUntar unpacks with the computer's own tar, reporting progress by
+// what's come out (Batocera's files are mostly compressed already, so
+// about as big as the tarball).
+func systemUntar(tarball, dir string, size int64, rep Reporter) error {
+	tarPath, err := exec.LookPath("tar")
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(tarPath, "-xf", tarball, "-C", dir)
+	out := &strings.Builder{}
+	cmd.Stderr = out
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case err := <-done:
+			if err != nil {
+				return fmt.Errorf("%v: %s", err, strings.TrimSpace(out.String()))
+			}
+			return nil
+		case <-tick.C:
+			rep.Progress(min(dirSize(dir), size), size)
+		}
+	}
+}
+
+func dirSize(dir string) int64 {
+	var n int64
+	filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			if i, err := d.Info(); err == nil {
+				n += i.Size()
+			}
 		}
 		return nil
 	})
+	return n
+}
+
+// goUntar unpacks here, when the computer has no tar that can.
+func goUntar(tarball, dir string, size int64, rep Reporter) error {
+	var done int64
+	return eachTarFile(tarball, func(h *tarHeader, r io.Reader) error {
+		dest := filepath.Join(dir, filepath.FromSlash(h.Name))
+		if !strings.HasPrefix(dest, filepath.Clean(dir)+string(os.PathSeparator)) {
+			return fmt.Errorf("%s: bad path in the tarball", h.Name)
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return err
+		}
+		f, err := os.Create(dest)
+		if err != nil {
+			return err
+		}
+		n, err := io.Copy(f, &countingReader{r: r, p: func(d, _ int64) { rep.Progress(min(done+d, size), size) }})
+		done += n
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		return err
+	})
+}
+
+// pcInitrd is the unpacked Batocera for PCs' start-up file with Etros's
+// hook added.
+func pcInitrd(dir string) ([]byte, error) {
+	initrd, err := os.ReadFile(filepath.Join(dir, "boot", "initrd.gz"))
 	if err != nil {
-		return nil, err
-	}
-	if initrd == nil {
-		return nil, fmt.Errorf("%s isn't Batocera for PCs (no boot/initrd.gz)", filepath.Base(bootTarball))
+		return nil, fmt.Errorf("Batocera for PCs has no boot/initrd.gz: %w", err)
 	}
 	out, err := PatchInitrd(initrd)
 	if err != nil {
@@ -175,39 +293,49 @@ func pcInitrd(bootTarball string) ([]byte, error) {
 	return out, nil
 }
 
-// copyPCBatocera copies Batocera for PCs' boot files to boot, with Etros.
-func copyPCBatocera(bootTarball string, initrd []byte, boot string, rep Reporter) error {
-	st, err := os.Stat(bootTarball)
-	if err != nil {
-		return err
-	}
+// copyPCBatocera copies the unpacked Batocera for PCs (dir) to the boot
+// partition (boot), with Etros.
+func copyPCBatocera(dir string, initrd []byte, boot string, rep Reporter) error {
+	total := dirSize(dir)
 	var done int64
-	err = eachTarFile(bootTarball, func(h *tarHeader, r io.Reader) error {
-		dest := filepath.Join(boot, filepath.FromSlash(h.Name))
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
 			return err
 		}
-		if h.Name == "boot/initrd.gz" {
+		rel, _ := filepath.Rel(dir, p)
+		if rel == "." || rel == ".complete" {
+			return nil
+		}
+		dest := filepath.Join(boot, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dest, 0o755)
+		}
+		if filepath.ToSlash(rel) == "boot/initrd.gz" {
 			return os.WriteFile(dest, initrd, 0o644)
 		}
+		in, err := os.Open(p)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
 		f, err := os.Create(dest)
 		if err != nil {
 			return err
 		}
-		// Progress by the compressed size, roughly: the tarball is xz.
-		n, err := io.Copy(f, &countingReader{r: r, p: func(d, _ int64) {
-			rep.Progress(min(done+d/3, st.Size()), st.Size())
-		}})
-		done += n / 3
+		n, err := io.Copy(f, &countingReader{r: in, p: func(c, _ int64) { rep.Progress(done+c, total) }})
+		done += n
 		if cerr := f.Close(); err == nil {
 			err = cerr
+		}
+		if err != nil && strings.Contains(err.Error(), "too large") {
+			return fmt.Errorf("%s is too big for the FAT32 boot partition", rel)
 		}
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	rep.Progress(st.Size(), st.Size())
+	rep.Progress(total, total)
 	if err := os.MkdirAll(filepath.Join(boot, "etros"), 0o755); err != nil {
 		return err
 	}

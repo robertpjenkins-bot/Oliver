@@ -3,13 +3,10 @@
 package main
 
 import (
-	"archive/tar"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/ulikunitz/xz"
 )
 
 func TestFindLocal(t *testing.T) {
@@ -46,21 +43,16 @@ func TestFindLocal(t *testing.T) {
 	if p := findLocal(localBatocera); p != desk {
 		t.Errorf("newest: got %q, want %q", p, desk)
 	}
-	// As batocera.org names it, checked by what's inside: a Pi 5 one isn't it.
+	// As batocera.org names it (boot.tar.xz): used when there's nothing surer.
 	os.Remove(usb)
 	os.Remove(desk)
-	t.Setenv("ETROS_TEST_SMALL_FILES", "1")
-	pc := filepath.Join(home, "Volumes/STICK/boot.tar.xz")
-	writeFakePCBatocera(t, pc)
-	pi := filepath.Join(home, "Downloads/boot (1).tar.xz")
-	f, _ := os.Create(pi + ".tmp")
-	x, _ := xz.NewWriter(f)
-	writeTar(t, tar.NewWriter(x), map[string][]byte{"boot/linux": []byte("k"), "boot/initrd.lz4": []byte("i")})
-	x.Close()
-	f.Close()
-	os.Rename(pi+".tmp", pi)
-	if p := findLocal(localBatocera); p != pc {
-		t.Errorf("plain boot.tar.xz: got %q, want %q", p, pc)
+	plain := write("Volumes/STICK/boot.tar.xz", 600<<20, 0)
+	if p := findLocal(localBatocera); p != plain {
+		t.Errorf("plain boot.tar.xz: got %q, want %q", p, plain)
+	}
+	sure := write("Documents/batocera-x86_64-boot.tar.xz", 600<<20, time.Hour)
+	if p := findLocal(localBatocera); p != sure {
+		t.Errorf("an x86_64 one goes before a plain one: got %q", p)
 	}
 	// What Etros downloaded before, in its own cache.
 	arch := write(".cache/etros-installer/archlinux-bootstrap-1a2b3c4d.zst", 160<<20, 0)

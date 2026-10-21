@@ -434,8 +434,12 @@ func (t *tui) putEtrosOnMac(m *macPlan) error {
 	}
 	rep := newTermReporter()
 	defer rep.end()
+	unpacked, err := unpackPCBatocera(batocera, rep)
+	if err != nil {
+		return err
+	}
 	rep.Stage("Checking Batocera for PCs")
-	initrd, err := pcInitrd(batocera)
+	initrd, err := pcInitrd(unpacked)
 	if err != nil {
 		return err
 	}
@@ -447,7 +451,7 @@ func (t *tui) putEtrosOnMac(m *macPlan) error {
 	defer closeAll()
 
 	rep.Stage("Copying Batocera and Etros onto the Mac")
-	if err := copyPCBatocera(batocera, initrd, boot, rep); err != nil {
+	if err := copyPCBatocera(unpacked, initrd, boot, rep); err != nil {
 		return fmt.Errorf("copying onto the boot partition: %w", err)
 	}
 	syncDir(boot)

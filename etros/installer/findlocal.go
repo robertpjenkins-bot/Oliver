@@ -6,8 +6,6 @@ package main
 // drive from another computer included) and, on a Mac, Spotlight.
 
 import (
-	"errors"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -21,8 +19,7 @@ import (
 type localKind struct {
 	what    string
 	match   func(name string) bool
-	maybe   func(name string) bool // a name that could be it, if verify says so
-	verify  func(path string) bool
+	maybe   func(name string) bool // a name that could be it: used if nothing surer is found
 	minSize int64
 	spot    string // Spotlight name pattern
 }
@@ -40,7 +37,6 @@ var (
 			n = strings.ToLower(n)
 			return strings.HasPrefix(n, "boot") && strings.HasSuffix(n, ".tar.xz")
 		},
-		verify:  isPCBatocera,
 		minSize: 500 << 20,
 		spot:    "boot*.tar.xz",
 	}
@@ -93,7 +89,7 @@ func searchPlaces() []struct {
 
 // findLocal is the newest usable file of that kind on this computer, or "".
 func findLocal(k localKind) string {
-	var found []string
+	var found, maybe []string
 	seen := map[string]bool{}
 	consider := func(p string) {
 		name := filepath.Base(p)
@@ -112,8 +108,12 @@ func findLocal(k localKind) string {
 		if os.Getenv("ETROS_TEST_SMALL_FILES") != "" { // for tests' stand-ins
 			min = 0
 		}
-		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Size() >= min && (!check || k.verify(p)) {
-			found = append(found, p)
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Size() >= min {
+			if check {
+				maybe = append(maybe, p)
+			} else {
+				found = append(found, p)
+			}
 		}
 	}
 	for _, pl := range searchPlaces() {
@@ -143,6 +143,10 @@ func findLocal(k localKind) string {
 			}
 		}
 	}
+	// (Unpacking it says, in words, if a plain boot.tar.xz isn't the PC one.)
+	if len(found) == 0 {
+		found = maybe
+	}
 	if len(found) == 0 {
 		return ""
 	}
@@ -154,24 +158,4 @@ func findLocal(k localKind) string {
 	})
 	logf("found %s: %s", k.what, strings.Join(found, ", "))
 	return found[0]
-}
-
-// isPCBatocera tells Batocera for PCs' boot.tar.xz from another board's,
-// by what's in it: the PC one starts from EFI and has boot/initrd.gz.
-func isPCBatocera(path string) bool {
-	efi, initrd := false, false
-	errFound := errors.New("found")
-	err := eachTarFile(path, func(h *tarHeader, r io.Reader) error {
-		switch h.Name {
-		case "EFI/BOOT/BOOTX64.EFI":
-			efi = true
-		case "boot/initrd.gz":
-			initrd = true
-		}
-		if efi && initrd {
-			return errFound
-		}
-		return nil
-	})
-	return errors.Is(err, errFound) || (err == nil && efi && initrd)
 }

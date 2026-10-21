@@ -100,11 +100,15 @@ func TestMacFiles(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("ETROS_TEST_NO_ROOM_CHECK", "1")
 	boot, share := t.TempDir(), t.TempDir()
-	initrd, err := pcInitrd(batocera)
+	unpacked, err := unpackPCBatocera(batocera, nopReporter{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := copyPCBatocera(batocera, initrd, boot, nopReporter{}); err != nil {
+	initrd, err := pcInitrd(unpacked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := copyPCBatocera(unpacked, initrd, boot, nopReporter{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{"boot/linux", "boot/batocera.update", "EFI/BOOT/BOOTX64.EFI", "etros/etros.squashfs", "etros/intel-mac.txt"} {
