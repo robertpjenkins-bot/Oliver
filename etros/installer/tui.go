@@ -62,8 +62,8 @@ type tui struct {
 	in    *bufio.Reader
 	found Found
 	opts  Options
-	// archTarball is Arch Linux ARM, to go on the card's SHARE once it's
-	// written, when Ollie OS is Arch Linux.
+	// archTarball is Arch Linux ARM, made into Ollie OS on the card once
+	// it's written, when Ollie OS is Arch Linux.
 	archTarball string
 }
 
@@ -327,7 +327,7 @@ func (t *tui) writeImageTo(image string, disk Disk) error {
 		rep := newTermReporter()
 		err := filesInstall(image, disk.ID, rep)
 		if err == nil && t.archTarball != "" {
-			err = putArchOnCard(disk.ID, t.archTarball, rep)
+			err = setUpArch(disk.ID, t.archTarball, rep)
 		}
 		rep.end()
 		if err != nil {

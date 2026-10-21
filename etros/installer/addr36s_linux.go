@@ -368,8 +368,9 @@ func cardHasWindows(dir string) bool {
 	return err == nil && strings.Contains(string(out), "WINBOOT")
 }
 
-// Ollie OS as Arch Linux: the Arch Linux ARM tarball goes on SHARE, and
-// the Pi 5 makes Ollie OS from it (etros-setup-arch, in Etros).
+// Ollie OS as Arch Linux: made from the Arch Linux ARM tarball on this
+// computer (buildArchHere) or, when this computer can't, by the Pi 5 itself
+// from the tarball put on SHARE (etros-setup-arch, in Etros).
 const (
 	archURL      = "http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz"
 	archOnShare  = "system/etros/downloads/ArchLinuxARM-aarch64-latest.tar.gz"
@@ -408,32 +409,51 @@ func (t *tui) getArchTarball() (string, error) {
 	}
 }
 
-// putArchOnCard puts the Arch Linux ARM tarball on the card's SHARE and
-// takes Raspberry Pi OS away, so the Pi 5 makes Ollie OS from Arch next
-// time Etros starts.
-func putArchOnCard(disk, tarball string, rep Reporter) error {
+// setUpArch makes the Ollie OS on the card (the whole drive disk) Arch
+// Linux instead of Raspberry Pi OS.
+func setUpArch(disk, tarball string, rep Reporter) error {
 	share, closeShare, err := openShare(disk)
 	if err != nil {
 		return err
 	}
 	defer closeShare()
-	rep.Stage("Putting Arch Linux on the card")
-	if err := copyFile(tarball, filepath.Join(share, archOnShare), rep); err != nil {
-		return err
-	}
-	if err := os.Remove(filepath.Join(share, ollieFileOnShare)); err == nil {
-		rep.Log("removed Raspberry Pi OS")
-	}
+	return setUpArchOn(share, tarball, rep)
+}
+
+// setUpArchOn makes Ollie OS from Arch Linux on this computer and puts it
+// on SHARE (mounted at share); if this computer can't, the tarball goes on
+// SHARE for the Pi 5 to do it.
+func setUpArchOn(share, tarball string, rep Reporter) error {
 	os.MkdirAll(filepath.Join(share, "etros"), 0o755)
 	if err := os.WriteFile(filepath.Join(share, archMarker), []byte("Ollie OS is Arch Linux\n"), 0o644); err != nil {
 		return err
+	}
+	err := buildArchHere(tarball, share, rep)
+	if err == nil {
+		os.Remove(filepath.Join(share, archOnShare)) // the Pi doesn't need it now
+		syncDir(filepath.Join(share, "etros"))
+		rep.Log("Ollie OS (Arch Linux with KDE Plasma) is ready on the card")
+		return nil
+	}
+	rep.Log(cRed + "Couldn't make Ollie OS on this computer: " + err.Error() + cReset)
+	rep.Log("(everything it did is in " + archBuildLog() + ")")
+	rep.Log("The Pi 5 will make it instead the next time Etros starts (30 to 60 minutes, with internet).")
+	rep.Stage("Putting Arch Linux on the card for the Pi 5")
+	dest := filepath.Join(share, archOnShare)
+	if filepath.Clean(tarball) != dest {
+		if err := copyFile(tarball, dest, rep); err != nil {
+			return err
+		}
+	}
+	if err := os.Remove(filepath.Join(share, ollieFileOnShare)); err == nil {
+		rep.Log("removed Raspberry Pi OS")
 	}
 	syncDir(filepath.Join(share, "etros"))
 	return nil
 }
 
 // offerArch offers to make the card's Ollie OS Arch Linux instead of
-// Raspberry Pi OS.
+// Raspberry Pi OS, or to finish it here when the Pi 5 hasn't yet.
 func (t *tui) offerArch(dir string) error {
 	disk, err := cardDisk(dir)
 	if err != nil {
@@ -443,30 +463,47 @@ func (t *tui) offerArch(dir string) error {
 	if err != nil {
 		return nil
 	}
-	_, statErr := os.Stat(filepath.Join(share, archMarker))
-	closeShare()
-	if statErr == nil {
+	defer closeShare()
+	_, markErr := os.Stat(filepath.Join(share, archMarker))
+	_, imgErr := os.Stat(filepath.Join(share, ollieFileOnShare))
+	isArch := markErr == nil
+	if isArch && imgErr == nil {
 		fmt.Printf("  %s✔%s Ollie OS is Arch Linux (KDE Plasma)\n", cCyan, cReset)
 		return nil
 	}
-	heading("OLLIE OS: ARCH LINUX INSTEAD OF RASPBERRY PI OS")
-	note("Ollie OS can be Arch Linux with KDE Plasma, like the PC Ollie OS, instead of")
-	note("Raspberry Pi OS. Raspberry Pi OS is taken off the card; the next time Etros starts")
-	note("on the Pi 5 it builds Arch Linux by itself (30 to 60 minutes, over its internet")
-	note("connection; Etros keeps working meanwhile and says when Ollie OS is ready).")
-	if !t.yes("Make Ollie OS Arch Linux?", true) {
-		return nil
+	if isArch {
+		heading("OLLIE OS: FINISH ARCH LINUX HERE")
+		note("Ollie OS (Arch Linux) isn't made yet: the Pi 5 hasn't finished it. This computer")
+		note("can make it now instead, over its own internet connection (30 to 60 minutes;")
+		note("leave the card in). Then Ollie OS is ready as soon as the card is in the Pi 5.")
+		if !t.yes("Make Ollie OS now?", true) {
+			return nil
+		}
+	} else {
+		heading("OLLIE OS: ARCH LINUX INSTEAD OF RASPBERRY PI OS")
+		note("Ollie OS can be Arch Linux with KDE Plasma, like the PC Ollie OS, instead of")
+		note("Raspberry Pi OS. This computer makes it now, over its internet connection")
+		note("(30 to 60 minutes; leave the card in), and it replaces Raspberry Pi OS on the card.")
+		if !t.yes("Make Ollie OS Arch Linux?", true) {
+			return nil
+		}
 	}
-	tarball, err := t.getArchTarball()
-	if err != nil {
-		return fmt.Errorf("getting Arch Linux ARM: %w", err)
+	tarball := filepath.Join(share, archOnShare)
+	if _, err := os.Stat(tarball); err != nil || !isArch {
+		if tarball, err = t.getArchTarball(); err != nil {
+			return fmt.Errorf("getting Arch Linux ARM: %w", err)
+		}
 	}
 	rep := newTermReporter()
-	err = putArchOnCard(disk, tarball, rep)
+	err = setUpArchOn(share, tarball, rep)
 	rep.end()
 	if err != nil {
 		return err
 	}
-	note(cCyan + "Done: start Etros on the Pi 5 and it sets up Ollie OS as Arch Linux." + cReset)
+	if _, err := os.Stat(filepath.Join(share, ollieFileOnShare)); err == nil {
+		note(cCyan + "Done: Ollie OS is Arch Linux. On the Pi 5 choose ETROS -> Boot into Ollie OS." + cReset)
+	} else {
+		note(cCyan + "Done: start Etros on the Pi 5 (with internet) and it finishes Ollie OS." + cReset)
+	}
 	return nil
 }

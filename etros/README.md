@@ -229,11 +229,21 @@ for the R36S in Downloads when it's made.
 Ollie OS is Arch Linux ARM with KDE Plasma (like the PC Ollie OS), not
 Raspberry Pi OS. Etros Maker (Linux) and Etros Updater take
 ArchLinuxARM-aarch64-latest.tar.gz from Downloads, by drag and drop, or
-from archlinuxarm.org, put it on SHARE (system/etros/downloads) and take
-Raspberry Pi OS off. The next time Etros starts on the Pi 5,
-etros-setup-arch builds Ollie OS from it there (unpack, pacman -Syu,
-Plasma, SDDM, Firefox, NetworkManager...) into etros/ollie-rootfs.img,
-over the Pi's own internet connection, saying how it's going on screen;
-Boot into Ollie OS waits for it. The boot hook takes Ollie OS from SHARE
-first, then partition 3.
+from archlinuxarm.org, and make Ollie OS from it on the computer itself
+(installer/archbuild.sh: unpack, pacman -Syu, Plasma, SDDM, Firefox,
+NetworkManager...), straight into etros/ollie-rootfs.img on SHARE in
+place of Raspberry Pi OS. That needs no password: the script runs as
+"root" of a user namespace of its own, the Pi's programs run through a
+qemu-aarch64 the installer carries (registered with binfmt_misc for that
+namespace only, Linux 6.7 or newer), mkfs.ext4 -d makes the image with
+root owning everything, and debugfs gives the few files packages own
+otherwise their owners, from pacman's mtree records.
+
+If the computer can't (an older kernel, no user namespaces, no internet),
+the tarball goes on SHARE (system/etros/downloads) instead, and the next
+time Etros starts on the Pi 5, etros-setup-arch does the same there, over
+the Pi's own internet connection (waiting for it to connect), saying how
+it's going on screen; Boot into Ollie OS waits for it. Etros Updater also
+offers to finish a card the Pi hasn't finished yet. The boot hook takes
+Ollie OS from SHARE first, then partition 3.
 

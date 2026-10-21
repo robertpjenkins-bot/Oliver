@@ -90,7 +90,7 @@ func runMaker(o Options) error {
 		archOK := filesInstallSupported()
 		if archOK {
 			note("Ollie OS (the desktop for downloading ROMs) is Arch Linux with KDE Plasma.")
-			note("The Pi 5 builds it itself from Arch Linux ARM the first time Etros starts.")
+			note("This computer makes it from Arch Linux ARM after writing the card (30 to 60 minutes).")
 		} else if len(f.Ollie) == 0 {
 			note("Ollie OS (the desktop for downloading ROMs) is made from Raspberry Pi OS.")
 			note("It isn't in Downloads yet, so Etros Maker downloads it (1.3 GB, no password).")

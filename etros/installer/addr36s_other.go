@@ -27,4 +27,4 @@ func (t *tui) offerArch(dir string) error { return nil }
 
 func (t *tui) getArchTarball() (string, error) { return "", errors.New("needs Linux") }
 
-func putArchOnCard(disk, tarball string, rep Reporter) error { return nil }
+func setUpArch(disk, tarball string, rep Reporter) error { return nil }

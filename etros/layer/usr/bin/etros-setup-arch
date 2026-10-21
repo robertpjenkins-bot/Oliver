@@ -84,6 +84,16 @@ in_root pacman-key --init || fail "pacman-key --init failed"
 in_root pacman-key --populate archlinuxarm || fail "pacman-key --populate failed"
 # Ollie OS runs on Batocera's kernel, so Arch's isn't needed.
 in_root pacman -Rdd --noconfirm linux-aarch64 linux-firmware 2>/dev/null
+# Etros starts this before Wi-Fi is up: wait for the internet (up to 15
+# minutes) rather than failing straight away.
+online() { curl -s -o /dev/null --max-time 10 http://mirror.archlinuxarm.org/; }
+if ! online; then
+    say "waiting for the internet (connect the Pi to Wi-Fi or a cable)"
+    for _ in $(seq 90); do
+        sleep 10
+        online && break
+    done
+fi
 say "updating Arch Linux"
 ok=no
 for _ in 1 2 3; do
