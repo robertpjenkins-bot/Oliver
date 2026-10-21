@@ -104,7 +104,7 @@ func TestMacWeb(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	if !st.Finished || st.Error != "" || !st.Ollie || st.Kind != "part" || !strings.Contains(strings.Join(st.Lines, "\n"), "eraseVolume free none disk0s3") {
-		t.Errorf("status: %+v", st)
+		t.Errorf("status: finished=%v error=%q ollie=%v kind=%q lines=%q", st.Finished, st.Error, st.Ollie, st.Kind, st.Lines)
 	}
 	if f.got.part.id != "disk0s3" || f.gotEtros != 70<<30 || f.ssid != "Jenkins Wi-Fi" {
 		t.Errorf("installed %+v %d %q", f.got.part, f.gotEtros, f.ssid)
