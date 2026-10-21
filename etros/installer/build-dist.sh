@@ -76,7 +76,7 @@ dmg() {  # dmg FOLDER-OF-A-DARWIN-PACKAGE DMG-NAME
 <dict>
 	<key>CFBundleName</key><string>Etros Installer</string>
 	<key>CFBundleDisplayName</key><string>Etros Installer</string>
-	<key>CFBundleIdentifier</key><string>com.github.robertpjenkins-bot.etros-installer</string>
+	<key>CFBundleIdentifier</key><string>com.github.robertpjenkins-bot.etros-installer.v${VERSION//[^0-9]/}</string>
 	<key>CFBundleExecutable</key><string>Etros Installer</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleVersion</key><string>$VERSION</string>

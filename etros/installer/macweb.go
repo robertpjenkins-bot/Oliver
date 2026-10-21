@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -241,6 +243,9 @@ func macWebHandler(b macBackend, secret string, quit func()) (h http.Handler, bu
 // macOS only opens it again once it has ended.
 var macIdleQuit = 2 * time.Minute
 
+// macPageFile is where the running installer says where its page is.
+func macPageFile() string { return filepath.Join(defaultCache(), "mac-installer-page.txt") }
+
 // serveMacWeb runs the page until it's closed with its Quit button, and
 // opens it with open (in Safari).
 func serveMacWeb(b macBackend, open func(url string) error) error {
@@ -283,6 +288,12 @@ func serveMacWeb(b macBackend, open func(url string) error) error {
 	}()
 	url := fmt.Sprintf("http://%s/%s/", ln.Addr(), secret)
 	logf("Mac installer page: %s", url)
+	// For the app opened again while this is running (the app's launcher
+	// script opens this page instead of starting a second installer).
+	pageFile := macPageFile()
+	os.MkdirAll(filepath.Dir(pageFile), 0o755)
+	os.WriteFile(pageFile, []byte(fmt.Sprintf("%d %s\n", os.Getpid(), url)), 0o600)
+	defer os.Remove(pageFile)
 	if err := open(url); err != nil {
 		return errors.Join(fmt.Errorf("couldn't open Safari: %w", err), srv.Close())
 	}
