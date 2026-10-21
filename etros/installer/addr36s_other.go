@@ -16,8 +16,8 @@ func shareFillsCard(dir string) bool { return false }
 // Proton goes on SHARE, which only Linux can open without a password.
 func (t *tui) offerProton(dir string) {}
 
-func (t *tui) remakeWithWindows(dir string, windowsBytes int64) error {
-	return errors.New("adding Windows 11 to a card needs Linux")
+func (t *tui) remakeWithoutWindows(dir string) error {
+	return errors.New("removing the Windows 11 partitions needs Linux")
 }
 
 func cardHasWindows(dir string) bool { return false }

@@ -174,16 +174,15 @@ func copyTree(src, dest string, skip func(rel string) bool, rep Reporter) (copie
 }
 
 // remakeWithR36S makes the card at dir again with the R36S added.
-func (t *tui) remakeWithR36S(dir string) error { return t.remakeCard(dir, true, 0) }
+func (t *tui) remakeWithR36S(dir string) error { return t.remakeCard(dir, true) }
 
-// remakeWithWindows makes the card at dir again with room for Windows 11.
-func (t *tui) remakeWithWindows(dir string, windowsBytes int64) error {
-	return t.remakeCard(dir, cardHasR36S(dir), windowsBytes)
-}
+// remakeWithoutWindows makes the card at dir again without the Windows 11
+// partitions an earlier Etros made room for, giving the space to SHARE.
+func (t *tui) remakeWithoutWindows(dir string) error { return t.remakeCard(dir, cardHasR36S(dir)) }
 
-// remakeCard makes the card at dir again (with the R36S, and with room
-// for Windows 11 when windowsBytes > 0), keeping everything on SHARE.
-func (t *tui) remakeCard(dir string, withR36S bool, windowsBytes int64) error {
+// remakeCard makes the card at dir again, with the R36S or without,
+// keeping everything on SHARE.
+func (t *tui) remakeCard(dir string, withR36S bool) error {
 	f := scan()
 	o := t.opts
 	o.NoR36S = !withR36S
@@ -252,7 +251,7 @@ func (t *tui) remakeCard(dir string, withR36S bool, windowsBytes int64) error {
 		}
 		heading("PUTTING ETROS ON THE CARD")
 		rep := newTermReporter()
-		lastErr = filesInstallWith(image, disk, windowsBytes, rep)
+		lastErr = filesInstall(image, disk, rep)
 		rep.end()
 		if lastErr != nil {
 			continue
@@ -352,7 +351,8 @@ func (t *tui) offerProton(dir string) {
 	rep.Log("added " + path.Base(url))
 }
 
-// cardHasWindows tells whether the card has Etros's Windows 11 partitions.
+// cardHasWindows tells whether the card has the Windows 11 partitions an
+// earlier Etros made room for (WINBOOT).
 func cardHasWindows(dir string) bool {
 	disk, err := cardDisk(dir)
 	if err != nil {

@@ -7,12 +7,6 @@
 		<image>/usr/share/emulationstation/themes/etros-metroid/art/ollie.png</image>
 	</game>
 	<game>
-		<path>./Boot into Windows 11.sh</path>
-		<name>Boot into Windows 11</name>
-		<desc>Restart into Windows 11 (Raspberry Pi 5, experimental). It has no internet and is slow. Install it first from Ollie OS (Install Windows 11 on its desktop). To come back, use Back to Etros on Windows's desktop.</desc>
-		<image>/usr/share/emulationstation/themes/etros-metroid/art/ollie.png</image>
-	</game>
-	<game>
 		<path>./Sort downloaded ROMs.sh</path>
 		<name>Sort downloaded ROMs</name>
 		<desc>Move ROMs from /userdata/downloads into the folder for their console. Files whose console can't be told from the name (.bin, .iso, .cue, .chd, arcade .zip) stay in downloads for you to move yourself. This also happens on every boot.</desc>

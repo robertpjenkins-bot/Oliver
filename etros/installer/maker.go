@@ -269,17 +269,31 @@ func (t *tui) fixLoop() bool {
 			t.reportR36S(dir)
 		}
 
-		// A card set to start Windows 11 (autoboot.txt): offer to set it back
-		// to Etros, in case Windows doesn't start.
+		// A card set to start Windows 11 by an earlier Etros: set it back.
 		if b, err := os.ReadFile(filepath.Join(dir, "autoboot.txt")); err == nil && strings.Contains(string(b), "boot_partition=4") {
-			heading("THIS CARD IS SET TO START WINDOWS 11")
-			note("The Pi 5 starts Windows 11 from it until Windows's Back to Etros icon is used.")
-			if t.yes("Set it back to starting Etros?", true) {
-				if err := os.Remove(filepath.Join(dir, "autoboot.txt")); err != nil {
-					note(cRed + "Couldn't: " + err.Error() + cReset)
-				} else {
-					note("Done: the Pi 5 starts Etros from this card again.")
+			if os.Remove(filepath.Join(dir, "autoboot.txt")) == nil {
+				note("This card was set to start Windows 11; it starts Etros again now.")
+			}
+		}
+		// Windows 11 partitions an earlier Etros made room for: give the
+		// space back.
+		if addR36SSupported() && cardHasWindows(dir) {
+			heading("WINDOWS 11 PARTITIONS")
+			note("This card still has the room an earlier Etros made for Windows 11 (about 49 GB).")
+			note("Etros Updater can give it back to your games: the card is made again, and your")
+			note("games, saves and settings are copied off and put back.")
+			if t.yes("Remove the Windows 11 partitions?", true) {
+				if err := t.remakeWithoutWindows(dir); err != nil {
+					logf("ERROR: removing Windows: %v", err)
+					fmt.Printf("\n%s  UPDATE FAILED%s\n\n", cRed, cReset)
+					note("Removing the Windows 11 partitions didn't work: " + err.Error())
+					t.ask("Press Enter to go back")
+					return false
 				}
+				fmt.Printf("\n%s  CARD UPDATED, WITHOUT WINDOWS 11%s\n\n", cYellow, cReset)
+				note("The space is back on the storage partition, with your games, saves and settings.")
+				t.ask("Press Enter to finish")
+				return true
 			}
 		}
 
@@ -345,16 +359,6 @@ func (t *tui) fixLoop() bool {
 		showCardContents(dir)
 		if _, err := os.Stat(filepath.Join(dir, "etros", "pi5")); err == nil {
 			t.offerProton(dir)
-			if done, err := t.offerWindows(dir); err != nil {
-				logf("ERROR: adding Windows 11: %v", err)
-				fmt.Printf("\n%s  ADDING WINDOWS 11 FAILED%s\n\n", cRed, cReset)
-				note(err.Error())
-				t.ask("Press Enter to go back")
-				return false
-			} else if done {
-				t.ask("Press Enter to finish")
-				return true
-			}
 		}
 		if cardHasR36S(dir) {
 			t.chooseR36SScreen(dir)
@@ -486,39 +490,4 @@ func showCardContents(dir string) {
 	line(cardHasR36S(dir), "R36S", "not on this card: Etros Updater can add it")
 	line(has("etros/ollie"), "Ollie OS (Boot into Ollie OS, Internet Archive)", "made without Ollie OS")
 	line(len(wine) > 0, "Wine, for Windows programs on the Pi 5", "couldn't be added: put wine-10.0-amd64-wow64.tar.xz in Downloads")
-}
-
-// windowsSize is the room the card gets for Windows 11.
-const windowsSize = 48 << 30
-
-// offerWindows offers to make room for Windows 11 on the card at dir. It
-// says whether the card was made again for it.
-func (t *tui) offerWindows(dir string) (bool, error) {
-	if cardHasWindows(dir) {
-		fmt.Printf("  %s✔%s Room for Windows 11 (install it from Ollie OS: Install Windows 11)\n", cCyan, cReset)
-		return false, nil
-	}
-	if !addR36SSupported() {
-		return false, nil
-	}
-	heading("WINDOWS 11 (EXPERIMENTAL)")
-	note("Etros can start Windows 11 for ARM on the Pi 5, next to Ollie OS. It needs " + fmt.Sprint(windowsSize>>30) + " GB")
-	note("of the card, so the card is made again (your games, saves and settings are copied")
-	note("off and put back, as when adding the R36S). Windows itself is then installed from")
-	note("Ollie OS: its " + cBold + "Install Windows 11" + cReset + " icon, with Windows 11 Arm64 from Microsoft.")
-	note(cYellow + "Windows 11 on the Pi 5 has no internet (no Wi-Fi or Ethernet driver), no 3D, and" + cReset)
-	note(cYellow + "is slow. The Pi 5 UEFI firmware it needs is no longer maintained." + cReset)
-	if !t.yes("Make room for Windows 11?", false) {
-		return false, nil
-	}
-	if err := t.remakeWithWindows(dir, windowsSize); err != nil {
-		return false, err
-	}
-	fmt.Printf("\n%s  CARD UPDATED, WITH ROOM FOR WINDOWS 11%s\n\n", cYellow, cReset)
-	note("1. In the Pi 5, choose ETROS -> Boot into Ollie OS.")
-	note("2. In Ollie OS's web browser, download Windows 11 Arm64 from microsoft.com")
-	note("   (search for \"Download Windows 11 Arm64\"), into Downloads.")
-	note("3. Double-click Install Windows 11 on Ollie OS's desktop, and follow it.")
-	note("Your games, saves and settings are back on the card.")
-	return true, nil
 }

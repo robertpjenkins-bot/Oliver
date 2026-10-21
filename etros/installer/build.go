@@ -32,9 +32,6 @@ var shareImage []byte
 //go:embed assets/my-roms-README.txt
 var myRomsReadme []byte
 
-//go:embed assets/uefi
-var uefiFiles embed.FS
-
 //go:embed all:assets/ollie
 var ollieFiles embed.FS
 

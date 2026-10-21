@@ -106,8 +106,9 @@ etros_mount_ollie() {
         mount -o rw "${ETROS_OLLIE_ROOT}" /new_root
         return
     fi
-    # Partition 3 is Ollie OS on cards written whole; on cards with Windows
-    # 11 it's Windows, so only take it if it is a Linux system.
+    # Partition 3 is Ollie OS on cards written whole; on a card that had
+    # room made for Windows 11 it's something else, so only take it if it
+    # is a Linux system.
     if mount -o rw "$(etros_ollie_device)" /new_root 2>/dev/null
     then
         if test -e /new_root/sbin/init || test -L /new_root/sbin/init

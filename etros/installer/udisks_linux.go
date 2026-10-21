@@ -77,18 +77,6 @@ func filesInstallSupported() bool {
 
 // filesInstall puts the Etros image at imagePath on the drive id.
 func filesInstall(imagePath, id string, rep Reporter) error {
-	return filesInstallWith(imagePath, id, 0, rep)
-}
-
-// winbootSize is the WINBOOT partition: the Pi 5's UEFI firmware, Windows's
-// boot files and, until Windows is installed, its installer (WinPE).
-const winbootSize = 1 << 30
-
-// filesInstallWith is filesInstall, and with windowsBytes > 0 it also
-// leaves room for Windows 11 at the end of the card: WINDOWS (partition 3,
-// left empty for Ollie OS's "Install Windows 11" to format) and WINBOOT
-// (partition 4, with the UEFI firmware the Pi 5 starts Windows with).
-func filesInstallWith(imagePath, id string, windowsBytes int64, rep Reporter) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return fmt.Errorf("can't reach UDisks: %w", err)
@@ -155,22 +143,9 @@ func filesInstallWith(imagePath, id string, windowsBytes int64, rep Reporter) er
 	u.call(bootPart, "Partition.SetFlags", uint64(0x80), noOpts()) // bootable; not essential
 	rep.Log("made the boot partition (BATOCERA)")
 
-	shareSize := uint64(0) // the rest of the card
-	var winStart int64
-	if windowsBytes > 0 {
-		var size uint64
-		if v, err := u.conn.Object(udisks, disk).GetProperty(udisks + ".Block.Size"); err == nil {
-			v.Store(&size)
-		}
-		winStart = (int64(size) - windowsBytes - winbootSize - 1<<20) &^ (1<<20 - 1)
-		if winStart-(fatStart+fatSize) < 8<<30 {
-			return fmt.Errorf("the card is too small for Windows 11 as well (it needs %d GB more)", (windowsBytes+winbootSize)>>30)
-		}
-		shareSize = uint64(winStart - (fatStart + fatSize))
-	}
 	var sharePart dbus.ObjectPath
 	err = u.call(disk, "PartitionTable.CreatePartitionAndFormat",
-		uint64(fatStart+fatSize), shareSize, "0x83", "", noOpts(),
+		uint64(fatStart+fatSize), uint64(0), "0x83", "", noOpts(),
 		"ext4", map[string]dbus.Variant{
 			"label":          dbus.MakeVariant("SHARE"),
 			"take-ownership": dbus.MakeVariant(true),
@@ -179,22 +154,6 @@ func filesInstallWith(imagePath, id string, windowsBytes int64, rep Reporter) er
 		return explainUDisks("could not make the storage partition", err)
 	}
 	rep.Log("made the storage partition (SHARE)")
-
-	var winbootPart dbus.ObjectPath
-	if windowsBytes > 0 {
-		var winPart dbus.ObjectPath
-		if err := u.call(disk, "PartitionTable.CreatePartition",
-			uint64(winStart), uint64(windowsBytes), "0x07", "", noOpts()).Store(&winPart); err != nil {
-			return explainUDisks("could not make the Windows partition", err)
-		}
-		rep.Log("made the Windows partition (empty until Ollie OS installs Windows 11)")
-		if err := u.call(disk, "PartitionTable.CreatePartitionAndFormat",
-			uint64(winStart+windowsBytes), uint64(0), "0x0c", "", noOpts(),
-			"vfat", map[string]dbus.Variant{"label": dbus.MakeVariant("WINBOOT")}).Store(&winbootPart); err != nil {
-			return explainUDisks("could not make the Windows start-up partition", err)
-		}
-		rep.Log("made the Windows start-up partition (WINBOOT)")
-	}
 
 	mount := func(p dbus.ObjectPath) (string, error) {
 		var dir string
@@ -234,19 +193,6 @@ func filesInstallWith(imagePath, id string, windowsBytes int64, rep Reporter) er
 	unmount(bootPart)
 	if err != nil {
 		return fmt.Errorf("copying onto the boot partition: %w", err)
-	}
-
-	if winbootPart != "" {
-		dir, err := mount(winbootPart)
-		if err != nil {
-			return err
-		}
-		err = writeWinboot(dir)
-		syncDir(dir)
-		unmount(winbootPart)
-		if err != nil {
-			return fmt.Errorf("setting up WINBOOT: %w", err)
-		}
 	}
 
 	if ollieSize > 0 {
