@@ -6,7 +6,6 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -208,8 +207,8 @@ func gzBootstrap(src, dest string, rep Reporter) error {
 	return os.Rename(dest+".new", dest)
 }
 
-// This Mac's drive as diskutil sees it (mac_darwin.go), planned here so
-// it can be checked anywhere.
+// The drives and partitions diskutil sees (mac_darwin.go), and where Etros
+// can go on them, worked out here so it can be checked anywhere.
 
 type dPart struct {
 	id, content, name string
@@ -218,64 +217,119 @@ type dPart struct {
 
 func (p dPart) num() int { return partNum(p.id) }
 
-type dPlan struct {
-	disk     string
+type dDisk struct {
+	id, name string
 	size     int64
+	internal bool
 	parts    []dPart
-	macOS    []dPart
-	bootCamp []dPart
-	store    string // APFS's partition, to make room in when there's no Boot Camp
-	free     int64  // room in APFS
-	isEtros  bool
 }
 
-func isMacOSContent(c string) bool {
-	switch c {
-	case "Apple_APFS", "Apple_HFS", "Apple_CoreStorage", "Apple_Boot", "Apple_APFS_Recovery":
-		return true
-	}
-	return false
+// A macTarget is a place Etros can go.
+type macTarget struct {
+	kind   string // "part": a partition (and extra), erased; "room": free room in macOS's APFS; "whole": a whole drive, erased
+	disk   dDisk
+	part   dPart
+	extra  []dPart // erased along with part (an earlier Etros's SHARE)
+	after  string  // part: the partition before it, which the new ones follow
+	what   string  // what it is, for the list
+	action string  // what happens, for the list
+	why    string  // why it can't be used ("" if it can)
 }
 
-// planThisMac works out the plan from diskutil list -plist.
-func planThisMac(v any) (*dPlan, error) {
-	disks, _ := plistGet(v, "AllDisksAndPartitions").([]any)
-	for i := range disks {
-		pl := &dPlan{disk: plistString(disks[i], "DeviceIdentifier"), size: plistInt(disks[i], "Size")}
-		parts, _ := plistGet(disks[i], "Partitions").([]any)
+// readDisks reads diskutil list -plist physical; info gives diskutil
+// info -plist for a disk.
+func readDisks(v any, info func(id string) any) []dDisk {
+	var disks []dDisk
+	all, _ := plistGet(v, "AllDisksAndPartitions").([]any)
+	for i := range all {
+		d := dDisk{id: plistString(all[i], "DeviceIdentifier"), size: plistInt(all[i], "Size")}
+		if in := info(d.id); in != nil {
+			d.internal, _ = plistGet(in, "Internal").(bool)
+			d.name = strings.TrimSpace(plistString(in, "MediaName"))
+		}
+		parts, _ := plistGet(all[i], "Partitions").([]any)
 		for j := range parts {
-			pl.parts = append(pl.parts, dPart{
+			d.parts = append(d.parts, dPart{
 				id:      plistString(parts[j], "DeviceIdentifier"),
 				content: plistString(parts[j], "Content"),
 				name:    plistString(parts[j], "VolumeName"),
 				size:    plistInt(parts[j], "Size"),
 			})
 		}
-		last := -1
-		for j, p := range pl.parts {
-			if isMacOSContent(p.content) {
-				last = j
-				if p.content == "Apple_APFS" {
-					pl.store = p.id
+		disks = append(disks, d)
+	}
+	return disks
+}
+
+func partWhat(p dPart) string {
+	kind := map[string]string{
+		"EFI": "EFI", "Apple_APFS": "macOS (APFS)", "Apple_HFS": "Mac (HFS+)", "Apple_CoreStorage": "macOS",
+		"Apple_Boot": "macOS Recovery", "Apple_APFS_Recovery": "macOS Recovery", "Apple_APFS_ISC": "Mac start-up",
+		"Microsoft Basic Data": "FAT/ExFAT/NTFS", "Windows_NTFS": "NTFS", "Windows Recovery": "Windows Recovery",
+		"Microsoft Reserved": "Windows (reserved)", "Linux Filesystem": "Linux",
+	}[p.content]
+	if kind == "" {
+		kind = p.content
+	}
+	if p.name != "" {
+		kind += " \"" + p.name + "\""
+	}
+	return kind
+}
+
+// macTargets lists every drive and partition and what Etros can do with
+// it. bootStore is the partition the running macOS is on (its APFS
+// container's), which is never erased: Etros can only take free room
+// from it.
+func macTargets(disks []dDisk, bootStore string) []macTarget {
+	var out []macTarget
+	min := int64(macBootSize + macMinShare)
+	for _, d := range disks {
+		if !d.internal {
+			t := macTarget{kind: "whole", disk: d, what: "the whole drive", action: "erase it all: Etros on this drive"}
+			if d.size < min {
+				t.why = "too small (Etros needs " + gbs(min) + ")"
+			}
+			out = append(out, t)
+		}
+		for i, p := range d.parts {
+			t := macTarget{kind: "part", disk: d, part: p, what: partWhat(p), action: "erase it: Etros goes here"}
+			if i > 0 {
+				t.after = d.parts[i-1].id
+			}
+			switch {
+			case p.content == "EFI" || p.content == "Apple_Boot" || p.content == "Apple_APFS_Recovery" ||
+				p.content == "Apple_APFS_ISC" || p.content == "Microsoft Reserved" || p.content == "Apple_KernelCoreDump":
+				t.why = "the computer's start-up files"
+			case p.id == bootStore || (bootStore == "" && d.internal && (p.content == "Apple_APFS" || p.content == "Apple_HFS" || p.content == "Apple_CoreStorage")):
+				if p.content != "Apple_APFS" {
+					t.why = "the macOS you're using"
+				} else {
+					t.kind, t.action = "room", "use its free room (macOS and its files stay)"
+				}
+			case p.name == "SHARE" && i > 0 && d.parts[i-1].name == "BATOCERA":
+				t.why = "Etros's storage (choose its BATOCERA)"
+			case p.content == "Apple_APFS" || p.content == "Apple_HFS":
+				t.action = "erase it (another Mac system or drive!): Etros goes here"
+			}
+			if p.name == "BATOCERA" {
+				t.action = "Etros already: put it on again (its games and saves are erased)"
+				if i+1 < len(d.parts) && (d.parts[i+1].name == "SHARE" || d.parts[i+1].content == "Linux Filesystem") {
+					t.extra = []dPart{d.parts[i+1]}
 				}
 			}
-		}
-		if last < 0 {
-			continue
-		}
-		pl.macOS = pl.parts[:last+1]
-		for _, p := range pl.parts[last+1:] {
-			switch {
-			case p.name == "BATOCERA" || p.name == "SHARE" || (pl.isEtros && p.content == "Linux Filesystem"):
-				pl.isEtros = true // (SHARE is ext4 once Etros has started)
-			case p.content == "Microsoft Basic Data" || p.content == "Windows_NTFS" || p.content == "Windows Recovery" ||
-				p.content == "Windows_FAT_32" || p.content == "DOS_FAT_32" || p.content == "Microsoft Reserved":
-			default:
-				return nil, fmt.Errorf("%s (%s) comes after macOS and isn't Boot Camp; Etros won't touch it", p.id, p.content)
+			size := p.size
+			for _, e := range t.extra {
+				size += e.size
 			}
-			pl.bootCamp = append(pl.bootCamp, p)
+			if t.why == "" && t.kind == "part" && t.after == "" {
+				t.why = "first on its drive (choose the whole drive)"
+			}
+			if t.why == "" && t.kind == "part" && size < min {
+				t.why = "too small (Etros needs " + gbs(min) + ")"
+			}
+			out = append(out, t)
 		}
-		return pl, nil
 	}
-	return nil, errors.New("couldn't find this Mac's drive with macOS on it")
+	return out
 }

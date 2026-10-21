@@ -75,35 +75,67 @@ func TestParsePlist(t *testing.T) {
 	}
 }
 
-func TestPlanThisMac(t *testing.T) {
-	disk := func(parts ...map[string]any) any {
-		var ps []any
-		for _, p := range parts {
-			ps = append(ps, p)
+func TestMacTargets(t *testing.T) {
+	part := func(id, content, name string, gb int64) map[string]any {
+		return map[string]any{"DeviceIdentifier": id, "Content": content, "VolumeName": name, "Size": gb << 30}
+	}
+	list := map[string]any{"AllDisksAndPartitions": []any{
+		map[string]any{"DeviceIdentifier": "disk0", "Size": int64(251) << 30, "Partitions": []any{
+			part("disk0s1", "EFI", "EFI", 0), part("disk0s2", "Apple_APFS", "", 180), part("disk0s3", "Microsoft Basic Data", "ETROS", 70),
+		}},
+		map[string]any{"DeviceIdentifier": "disk2", "Size": int64(64) << 30, "Partitions": []any{
+			part("disk2s1", "Microsoft Basic Data", "USB", 64),
+		}},
+		map[string]any{"DeviceIdentifier": "disk3", "Size": int64(4) << 30, "Partitions": []any{}},
+	}}
+	info := func(id string) any {
+		return map[string]any{"Internal": id == "disk0", "MediaName": map[string]string{"disk0": "APPLE SSD", "disk2": "SanDisk"}[id]}
+	}
+	disks := readDisks(list, info)
+	if len(disks) != 3 || !disks[0].internal || disks[1].internal || disks[0].name != "APPLE SSD" || len(disks[0].parts) != 3 {
+		t.Fatalf("disks: %+v", disks)
+	}
+	ts := macTargets(disks, "disk0s2")
+	got := map[string]macTarget{}
+	for _, x := range ts {
+		key := x.part.id
+		if x.kind == "whole" {
+			key = x.disk.id
 		}
-		return map[string]any{"AllDisksAndPartitions": []any{map[string]any{"DeviceIdentifier": "disk0", "Size": int64(251e9), "Partitions": ps}}}
+		got[key] = x
 	}
-	part := func(id, content, name string) map[string]any {
-		return map[string]any{"DeviceIdentifier": id, "Content": content, "VolumeName": name, "Size": int64(50e9)}
+	if x := got["disk0s1"]; x.why == "" {
+		t.Error("EFI usable")
 	}
-	efi, apfs := part("disk0s1", "EFI", "EFI"), part("disk0s2", "Apple_APFS", "")
-
-	pl, err := planThisMac(disk(efi, apfs, part("disk0s3", "Microsoft Basic Data", "BOOTCAMP")))
-	if err != nil || len(pl.bootCamp) != 1 || pl.store != "disk0s2" || pl.isEtros {
-		t.Errorf("Boot Camp: %+v %v", pl, err)
+	if x := got["disk0s2"]; x.kind != "room" || x.why != "" {
+		t.Errorf("macOS: %+v", x)
 	}
-	// A partition made by hand in Disk Utility (MS-DOS or ExFAT) is used too.
-	if pl, err := planThisMac(disk(efi, apfs, part("disk0s3", "Microsoft Basic Data", "ETROS"))); err != nil || len(pl.bootCamp) != 1 {
-		t.Errorf("hand-made: %+v %v", pl, err)
+	if x := got["disk0s3"]; x.kind != "part" || x.why != "" || x.after != "disk0s2" {
+		t.Errorf("ExFAT: %+v", x)
 	}
-	// No Boot Camp: room comes from APFS.
-	if pl, err := planThisMac(disk(efi, apfs)); err != nil || len(pl.bootCamp) != 0 || pl.store != "disk0s2" {
-		t.Errorf("no Boot Camp: %+v %v", pl, err)
+	if _, ok := got["disk0"]; ok {
+		t.Error("whole internal drive offered")
 	}
-	if _, err := planThisMac(disk(efi, apfs, part("disk0s3", "Linux Filesystem", ""))); err == nil {
-		t.Error("touched a Linux partition")
+	if x := got["disk2"]; x.kind != "whole" || x.why != "" {
+		t.Errorf("USB drive: %+v", x)
 	}
-	if pl, err := planThisMac(disk(efi, apfs, part("disk0s3", "Microsoft Basic Data", "BATOCERA"), part("disk0s4", "Microsoft Basic Data", "SHARE"))); err != nil || !pl.isEtros {
-		t.Errorf("Etros: %+v %v", pl, err)
+	if x := got["disk2s1"]; x.why == "" {
+		t.Error("first partition of a USB drive usable on its own")
+	}
+	if x := got["disk3"]; x.why == "" {
+		t.Error("4 GB drive usable")
+	}
+	// Etros there already: BATOCERA takes its SHARE with it.
+	disks[0].parts = append(disks[0].parts[:2], dPart{"disk0s3", "Microsoft Basic Data", "BATOCERA", 8 << 30}, dPart{"disk0s4", "Linux Filesystem", "", 60 << 30})
+	for _, x := range macTargets(disks, "disk0s2") {
+		if x.part.id == "disk0s3" && (len(x.extra) != 1 || x.why != "") {
+			t.Errorf("Etros: %+v", x)
+		}
+	}
+	// Not knowing which macOS is running: no APFS is ever erased.
+	for _, x := range macTargets(disks, "") {
+		if x.part.id == "disk0s2" && x.kind != "room" {
+			t.Errorf("APFS without bootStore: %+v", x)
+		}
 	}
 }

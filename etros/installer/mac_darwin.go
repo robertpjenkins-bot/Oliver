@@ -2,13 +2,15 @@
 
 package main
 
-// Etros on this Mac, from macOS itself (for Macs without Target Disk Mode,
-// like the 12-inch MacBook): Boot Camp's partition, or room taken from
-// macOS when there's no Boot Camp, becomes BATOCERA (FAT32, Batocera for
-// PCs with the Etros layer) and SHARE right after it (ExFAT here, as macOS
-// can't make ext4; Etros makes it ext4 the first time it starts, see
-// S11aetros-share). macOS's own diskutil does the partitions; if it wants
-// the Mac's password for that, it's macOS asking, in this window.
+// Etros on an Intel Mac, from macOS itself (for Macs without Target Disk
+// Mode, like the 12-inch MacBook): every drive and partition is listed, and
+// the one chosen becomes BATOCERA (FAT32, Batocera for PCs with the Etros
+// layer) and SHARE right after it (ExFAT here, as macOS can't make ext4;
+// Etros makes it ext4 the first time it starts, see S11aetros-share). It can
+// be a partition (Boot Camp, or one made for Etros), free room in macOS, or
+// a whole USB drive, which then starts Etros on any Intel Mac. macOS's own
+// diskutil does the partitions; if it wants the Mac's password for that,
+// it's macOS asking, in this window.
 //
 // Ollie OS can't be made in macOS: its Arch Linux goes on BATOCERA, with
 // the Wi-Fi this Mac uses, and Etros makes Ollie OS the first time it
@@ -37,21 +39,30 @@ func runMacInstaller(o Options) error {
 	return nil
 }
 
-// internalPlan reads this Mac's own drive.
-func internalPlan() (*dPlan, error) {
-	out, err := exec.Command("diskutil", "list", "-plist", "internal", "physical").Output()
+// allDrives reads every drive and partition, and which partition the
+// running macOS is on.
+func allDrives() ([]dDisk, string, error) {
+	out, err := exec.Command("diskutil", "list", "-plist", "physical").Output()
 	if err != nil {
-		return nil, fmt.Errorf("diskutil list: %w", err)
+		return nil, "", fmt.Errorf("diskutil list: %w", err)
 	}
 	v, err := parsePlist(out)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	pl, err := planThisMac(v)
-	if err == nil && pl.store != "" {
-		pl.free = apfsFree(pl.store)
+	info := func(id string) any {
+		out, err := exec.Command("diskutil", "info", "-plist", id).Output()
+		if err != nil {
+			return nil
+		}
+		v, _ := parsePlist(out)
+		return v
 	}
-	return pl, err
+	boot := ""
+	if v := info("/"); v != nil {
+		boot = plistString(v, "APFSPhysicalStores", 0, "APFSPhysicalStore")
+	}
+	return readDisks(v, info), boot, nil
 }
 
 // apfsFree is the free room in the APFS container on the partition store.
@@ -115,28 +126,68 @@ func (t *tui) macLoop() bool {
 }
 
 func (t *tui) putEtrosOnThisMac() error {
-	pl, err := internalPlan()
+	disks, bootStore, err := allDrives()
 	if err != nil {
 		return err
 	}
-	heading("THIS MAC'S DRIVE")
-	for _, p := range pl.macOS {
-		fmt.Printf("  %s✔%s %-32s %8s  %sstays%s\n", cCyan, cReset, p.content+" "+p.name, gbs(p.size), cCyan, cReset)
-	}
-	for _, p := range pl.bootCamp {
-		fmt.Printf("  %s✘%s %-32s %8s  %sis deleted%s\n", cRed, cReset, "Boot Camp "+p.name, gbs(p.size), cRed, cReset)
-	}
-	var etros int64
-	if len(pl.bootCamp) > 0 {
-		etros = pl.bootCamp[0].size
-		if pl.isEtros {
-			note(cYellow + "This Mac has Etros already: putting it on again deletes its games and saves." + cReset)
-			note("(To just update it, use Etros Updater instead.)")
+	targets := macTargets(disks, bootStore)
+	var usable []macTarget
+	heading("DRIVES AND PARTITIONS")
+	shown := ""
+	for _, x := range targets {
+		if x.disk.id != shown {
+			shown = x.disk.id
+			where := "USB / external"
+			if x.disk.internal {
+				where = "this Mac's own drive"
+			}
+			fmt.Printf("\n  %s%s%s (%s, %s, %s)\n", cBold, orDefault(x.disk.name, "Drive"), cReset, x.disk.id, where, gbs(x.disk.size))
 		}
-	} else {
-		note("There's no Boot Camp on this Mac, so Etros takes room from macOS instead.")
-		note("macOS has " + gbs(pl.free) + " free.")
-		max := pl.free - 20<<30 // leave macOS some room
+		id := x.part.id
+		if x.kind == "whole" {
+			id = x.disk.id
+		}
+		size := x.part.size
+		if x.kind == "whole" {
+			size = x.disk.size
+		}
+		if x.why != "" {
+			fmt.Printf("     %s·  %-9s %-26s %8s  %s%s\n", cDim, id, x.what, gbs(size), x.why, cReset)
+			continue
+		}
+		usable = append(usable, x)
+		fmt.Printf("  %s%3d%s  %-9s %-26s %8s  %s\n", cYellow, len(usable), cReset, id, x.what, gbs(size), x.action)
+	}
+	fmt.Println()
+	if len(usable) == 0 {
+		return errors.New("there's nowhere Etros can go: make a partition for it in Disk Utility, or plug in a USB drive")
+	}
+	var x macTarget
+	for {
+		a := strings.ToLower(t.ask(fmt.Sprintf("Where should Etros go? (1 to %d, q to stop)", len(usable))))
+		if a == "q" || a == "b" {
+			return errors.New("stopped: nothing was changed")
+		}
+		var n int
+		if _, err := fmt.Sscan(a, &n); err == nil && n >= 1 && n <= len(usable) {
+			x = usable[n-1]
+			break
+		}
+	}
+
+	var etros int64
+	switch x.kind {
+	case "whole":
+		etros = x.disk.size
+	case "part":
+		etros = x.part.size
+		for _, e := range x.extra {
+			etros += e.size
+		}
+	case "room":
+		free := apfsFree(x.part.id)
+		note("macOS has " + gbs(free) + " free.")
+		max := free - 20<<30 // leave macOS some room
 		if max < macBootSize+macMinShare {
 			return fmt.Errorf("macOS hasn't enough free room for Etros (it needs %s, and macOS keeps 20 GB)", gbs(macBootSize+macMinShare))
 		}
@@ -154,8 +205,17 @@ func (t *tui) putEtrosOnThisMac() error {
 			}
 		}
 	}
-	fmt.Printf("  %s+%s %-32s %8s\n", cYellow, cReset, "Etros (BATOCERA and SHARE)", gbs(etros))
 	withOllie := etros >= macBootSize+macMinShare+macOllieRoom
+	heading("ETROS GOES ON " + strings.ToUpper(orDefault(x.disk.name, x.disk.id)))
+	switch x.kind {
+	case "whole":
+		note(cBold + "Everything on " + orDefault(x.disk.name, x.disk.id) + " (" + x.disk.id + ") will be deleted." + cReset)
+		note("Then it starts Etros on any Intel Mac: plug it in and hold Option at start-up.")
+	case "part":
+		note(cBold + "Everything on " + x.part.id + " (" + x.what + ") will be deleted." + cReset)
+	case "room":
+		note(gbs(etros) + " of macOS's free room becomes Etros. macOS and its files stay.")
+	}
 	if withOllie {
 		note("Ollie OS (Arch Linux with KDE Plasma) is made the first time Etros starts, over")
 		note("Wi-Fi (30 to 60 minutes; Etros works meanwhile).")
@@ -163,9 +223,6 @@ func (t *tui) putEtrosOnThisMac() error {
 		note("There isn't room for Ollie OS too (it needs " + gbs(macBootSize+macMinShare+macOllieRoom) + "), so it's Etros on its own.")
 	}
 	fmt.Println()
-	if len(pl.bootCamp) > 0 {
-		note(cBold + "Everything in Boot Camp (Windows and its files) will be deleted." + cReset)
-	}
 	if strings.ToLower(t.ask("Type ERASE to go ahead (anything else to stop):")) != "erase" {
 		return errors.New("stopped: nothing was changed")
 	}
@@ -194,34 +251,25 @@ func (t *tui) putEtrosOnThisMac() error {
 	}
 
 	heading("MAKING ROOM FOR ETROS")
-	if len(pl.bootCamp) > 0 {
-		for _, p := range pl.bootCamp[1:] {
-			if err := diskutil("eraseVolume", "free", "none", p.id); err != nil {
-				return err
-			}
-		}
-		err = diskutil("splitPartition", pl.bootCamp[0].id, "MS-DOS FAT32", "BATOCERA", "8G", "ExFAT", "SHARE", "R")
-	} else {
-		err = diskutil("apfs", "resizeContainer", pl.store, strconv.FormatInt(apfsSize(pl.store)-etros, 10),
-			"MS-DOS FAT32", "BATOCERA", "8G", "ExFAT", "SHARE", "0")
-	}
-	if err != nil {
+	if err := makeEtrosPartitions(x, etros); err != nil {
 		return err
 	}
-	after, err := internalPlan()
+	after, _, err := allDrives()
 	if err != nil {
 		return err
 	}
 	var boot, share dPart
-	for _, p := range after.parts {
-		switch p.name {
-		case "BATOCERA":
-			boot = p
-		case "SHARE":
-			share = p
+	for _, d := range after {
+		if d.id != x.disk.id {
+			continue
+		}
+		for i, p := range d.parts {
+			if p.name == "BATOCERA" && i+1 < len(d.parts) && d.parts[i+1].name == "SHARE" {
+				boot, share = p, d.parts[i+1]
+			}
 		}
 	}
-	if boot.id == "" || share.id == "" {
+	if boot.id == "" {
 		return errors.New("macOS didn't make the BATOCERA and SHARE partitions")
 	}
 	if share.num() != boot.num()+1 {
@@ -234,7 +282,7 @@ func (t *tui) putEtrosOnThisMac() error {
 
 	rep = newTermReporter()
 	defer rep.end()
-	rep.Stage("Copying Batocera and Etros onto this Mac")
+	rep.Stage("Copying Batocera and Etros")
 	if err := copyPCBatocera(batocera, initrd, dir, rep); err != nil {
 		return fmt.Errorf("copying onto BATOCERA: %w", err)
 	}
@@ -257,18 +305,63 @@ func (t *tui) putEtrosOnThisMac() error {
 	syncDir(dir)
 	rep.end()
 
-	fmt.Printf("\n%s  ETROS IS ON THIS MAC%s\n\n", cYellow, cReset)
-	note("1. Restart the Mac, holding " + cBold + "Option (⌥)" + cReset + " as it starts, and choose " + cBold + "EFI Boot" + cReset + ".")
-	note("   (Started normally, it's macOS as before.)")
-	note("2. The first start takes a little longer: Etros sets up its storage.")
-	if withOllie {
-		note("3. Then Etros makes Ollie OS over Wi-Fi in the background and says when it's ready")
-		note("   (30 to 60 minutes). Then: ETROS → Boot into Ollie OS.")
+	fmt.Printf("\n%s  ETROS IS ON %s%s\n\n", cYellow, strings.ToUpper(orDefault(x.disk.name, x.disk.id)), cReset)
+	step := 1
+	if x.kind == "whole" {
+		note("1. Eject the drive in Finder and plug it into the Intel Mac (with an adapter if needed).")
+		step++
 	}
-	note("In Etros, use a game controller: the Mac's own keyboard and trackpad don't work in")
-	note("Batocera. They do in Ollie OS.")
+	note(fmt.Sprintf("%d. Restart the Mac holding %sOption (⌥)%s as it starts, and choose %sEFI Boot%s.", step, cBold, cReset, cBold, cReset))
+	note("   (Started normally, it's macOS as before.)")
+	note(fmt.Sprintf("%d. The first start takes a little longer: Etros sets up its storage.", step+1))
+	if withOllie {
+		note(fmt.Sprintf("%d. Then Etros makes Ollie OS over Wi-Fi in the background and says when it's", step+2))
+		note("   ready (30 to 60 minutes). Then: ETROS → Boot into Ollie OS.")
+	}
+	note("In Etros, use a game controller: the 12-inch MacBook's own keyboard and trackpad")
+	note("don't work in Batocera. They do in Ollie OS.")
 	t.ask("Press Enter to finish")
 	return nil
+}
+
+// makeEtrosPartitions makes BATOCERA (8 GB) and SHARE (etros less that, in
+// all) at the target, one after the other.
+func makeEtrosPartitions(x macTarget, etros int64) error {
+	switch x.kind {
+	case "whole":
+		return diskutil("partitionDisk", x.disk.id, "GPT", "MS-DOS FAT32", "BATOCERA", "8G", "ExFAT", "SHARE", "R")
+	case "room":
+		return diskutil("apfs", "resizeContainer", x.part.id, strconv.FormatInt(apfsSize(x.part.id)-etros, 10)+"B",
+			"MS-DOS FAT32", "BATOCERA", "8G", "ExFAT", "SHARE", "0")
+	}
+	for _, p := range append([]dPart{x.part}, x.extra...) {
+		if err := diskutil("eraseVolume", "free", "none", p.id); err != nil {
+			return err
+		}
+	}
+	if err := diskutil("addPartition", x.after, "MS-DOS FAT32", "BATOCERA", "8G"); err != nil {
+		return err
+	}
+	disks, _, err := allDrives()
+	if err != nil {
+		return err
+	}
+	for _, d := range disks {
+		for _, p := range d.parts {
+			if d.id == x.disk.id && p.name == "BATOCERA" {
+				share := (etros - macBootSize - 16<<20) / mib * mib
+				return diskutil("addPartition", p.id, "ExFAT", "SHARE", strconv.FormatInt(share, 10)+"B")
+			}
+		}
+	}
+	return errors.New("macOS didn't make the BATOCERA partition")
+}
+
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }
 
 // askWifi asks for the password of the Wi-Fi this Mac is on, for Etros.

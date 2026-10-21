@@ -53,5 +53,43 @@ package darwin  arm64 "Etros Installer - Mac (Apple chip)"
 package darwin  amd64 "Etros Installer - Mac (Intel)"
 package linux   amd64 "Etros Installer - Linux"
 package linux   arm64 "Etros Installer - Linux (ARM)"
+
+# For the Mac: a disk image with Etros Installer.app in it, which opens the
+# installer in Terminal (it's a text program). Made as an ISO 9660 image
+# with Rock Ridge, which macOS opens as a .dmg and which keeps the
+# programs runnable.
+dmg() {  # dmg FOLDER-OF-A-DARWIN-PACKAGE DMG-NAME
+    local src="dist/stage/$1" root=dist/stage/dmg app
+    rm -rf "$root" && mkdir -p "$root"
+    app="$root/Etros Installer.app/Contents"
+    mkdir -p "$app/MacOS" "$app/Resources"
+    cp "$src/etros-mac-installer" "$app/Resources/etros-mac-installer"
+    cat > "$app/MacOS/Etros Installer" <<'EOF'
+#!/bin/sh
+# Etros Mac Installer is a text program: run it in Terminal.
+here=$(cd "$(dirname "$0")/.." && pwd)
+exec open -a Terminal "$here/Resources/etros-mac-installer"
+EOF
+    cat > "$app/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key><string>Etros Installer</string>
+	<key>CFBundleDisplayName</key><string>Etros Installer</string>
+	<key>CFBundleIdentifier</key><string>com.github.robertpjenkins-bot.etros-installer</string>
+	<key>CFBundleExecutable</key><string>Etros Installer</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleVersion</key><string>$VERSION</string>
+	<key>CFBundleShortVersionString</key><string>$VERSION</string>
+	<key>LSMinimumSystemVersion</key><string>10.13</string>
+</dict>
+</plist>
+EOF
+    chmod 0755 "$app/MacOS/Etros Installer" "$app/Resources/etros-mac-installer"
+    cp "$src/READ ME.txt" "$root/READ ME.txt"
+    genisoimage -quiet -V "Etros Installer" -R -J -joliet-long -o "dist/$2" "$root"
+}
+dmg "Etros Mac Installer - Mac (Intel) - version $VERSION" "Etros Mac Installer.dmg"
 rm -rf dist/stage
 ls -lh dist
