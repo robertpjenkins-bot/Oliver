@@ -40,6 +40,9 @@ func crashGuard(logPath string) {
 		return
 	}
 	logf("CRASH: %v\n%s", r, debug.Stack())
+	if mode == "mac" {
+		showCrash(fmt.Sprintf("Etros Installer crashed: %v (the log is %s)", r, logPath))
+	}
 	fmt.Printf("\n%sTHE INSTALLER CRASHED:%s %v\n", cRed, cReset, r)
 	if logPath != "" {
 		fmt.Println("Please send this file, it says what happened:")

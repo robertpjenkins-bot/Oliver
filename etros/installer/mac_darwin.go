@@ -18,6 +18,7 @@ package main
 // starts (etros-setup-ollie-pc).
 
 import (
+	"fmt"
 	"os/exec"
 	"runtime"
 )
@@ -25,12 +26,27 @@ import (
 func macInstallSupported() bool { return runtime.GOARCH == "amd64" }
 
 func runMacInstaller(o Options) error {
-	return serveMacWeb(darwinMac{}, func(url string) error {
+	// The app has no window of its own: say what's happening, and show
+	// anything that goes wrong in a message, not just in the log.
+	macNotify("Etros Installer is opening in Safari.")
+	err := serveMacWeb(darwinMac{}, func(url string) error {
 		if exec.Command("open", "-a", "Safari", url).Run() == nil {
 			return nil
 		}
 		return exec.Command("open", url).Run()
 	})
+	if err != nil {
+		macAlert("Etros Installer couldn't start: " + err.Error())
+	}
+	return err
+}
+
+func macNotify(msg string) {
+	exec.Command("osascript", "-e", fmt.Sprintf("display notification %q with title %q", msg, "Etros Installer")).Run()
+}
+
+func macAlert(msg string) {
+	exec.Command("osascript", "-e", fmt.Sprintf("display alert %q message %q as critical", "Etros Installer", msg)).Run()
 }
 
 // macLoop (Etros Maker's menu on a Mac) opens the installer in Safari.
@@ -46,3 +62,6 @@ func (t *tui) macLoop() bool {
 	}
 	return true
 }
+
+// showCrash puts a crash in front of the person, as the app has no window.
+func showCrash(msg string) { macAlert(msg) }

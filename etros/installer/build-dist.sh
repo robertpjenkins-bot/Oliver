@@ -89,6 +89,8 @@ EOF
     chmod 0755 "$app/MacOS/Etros Installer"
     cp "$src/READ ME.txt" "$root/READ ME.txt"
     genisoimage -quiet -V "Etros Installer" -R -J -joliet-long -o "dist/$2" "$root"
+    # The same app in a zip, which every Mac opens with a double-click.
+    (cd "$root" && zip -q -r -y "../../${2%.dmg} (app).zip" "Etros Installer.app" "READ ME.txt")
 }
 dmg "Etros Mac Installer - Mac (Intel) - version $VERSION" "Etros Mac Installer.dmg"
 rm -rf dist/stage

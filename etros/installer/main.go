@@ -55,7 +55,15 @@ func main() {
 	flag.StringVar(&s.Channel, "channel", "", "Batocera release channel (default stable)")
 	cache := flag.String("cache", defaultCache(), "where to keep downloads")
 	patchOnly := flag.String("patch-initrd", "", "for testing: add the Etros hook to this initramfs, writing it to -target file:PATH")
-	flag.Parse()
+	// macOS can start an app with a -psn_... argument of its own, which
+	// would stop the flags being read (and the app with them).
+	var args []string
+	for _, a := range os.Args[1:] {
+		if !strings.HasPrefix(a, "-psn_") {
+			args = append(args, a)
+		}
+	}
+	flag.CommandLine.Parse(args)
 
 	if *patchOnly != "" {
 		in, err := os.ReadFile(*patchOnly)

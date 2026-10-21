@@ -466,3 +466,5 @@ func makeMacPartitions(m *macPlan, rep Reporter) (boot, share string, closeAll f
 		}
 	}, nil
 }
+
+func showCrash(msg string) {}

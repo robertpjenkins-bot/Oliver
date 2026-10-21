@@ -15,3 +15,5 @@ func (t *tui) macLoop() bool {
 func runMacInstaller(o Options) error {
 	return errors.New("Etros Mac Installer needs Linux (like a Steam Machine or Steam Deck)")
 }
+
+func showCrash(msg string) {}
