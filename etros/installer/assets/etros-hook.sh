@@ -106,7 +106,16 @@ etros_mount_ollie() {
         mount -o rw "${ETROS_OLLIE_ROOT}" /new_root
         return
     fi
-    mount -o rw "$(etros_ollie_device)" /new_root 2>/dev/null && return 0
+    # Partition 3 is Ollie OS on cards written whole; on cards with Windows
+    # 11 it's Windows, so only take it if it is a Linux system.
+    if mount -o rw "$(etros_ollie_device)" /new_root 2>/dev/null
+    then
+        if test -e /new_root/sbin/init || test -L /new_root/sbin/init
+        then
+            return 0
+        fi
+        umount /new_root
+    fi
     mkdir -p /share_root || return 1
     if ! mount -o rw "${ETROS_SHARE:-$(etros_share_device)}" /share_root
     then

@@ -174,15 +174,26 @@ func copyTree(src, dest string, skip func(rel string) bool, rep Reporter) (copie
 }
 
 // remakeWithR36S makes the card at dir again with the R36S added.
-func (t *tui) remakeWithR36S(dir string) error {
+func (t *tui) remakeWithR36S(dir string) error { return t.remakeCard(dir, true, 0) }
+
+// remakeWithWindows makes the card at dir again with room for Windows 11.
+func (t *tui) remakeWithWindows(dir string, windowsBytes int64) error {
+	return t.remakeCard(dir, cardHasR36S(dir), windowsBytes)
+}
+
+// remakeCard makes the card at dir again (with the R36S, and with room
+// for Windows 11 when windowsBytes > 0), keeping everything on SHARE.
+func (t *tui) remakeCard(dir string, withR36S bool, windowsBytes int64) error {
 	f := scan()
 	o := t.opts
-	o.NoR36S = false
+	o.NoR36S = !withR36S
 	o.Ollie = true
 	if len(f.Pi5) > 0 {
 		o.Sources.Pi5Boot = f.Pi5[0].Path
 	}
-	if len(f.R36S) > 0 {
+	if !withR36S {
+		// nothing to get for the R36S
+	} else if len(f.R36S) > 0 {
 		o.Sources.R36SBoot = f.R36S[0].Path
 		note("Using " + baseName(f.R36S[0].Path) + " for the R36S.")
 	} else if p := t.askForFile("BATOCERA FOR THE R36S",
@@ -229,7 +240,7 @@ func (t *tui) remakeWithR36S(dir string) error {
 	// 2. A new Etros image with both devices.
 	image, err := t.make(o)
 	if err != nil {
-		return fmt.Errorf("making Etros with the R36S: %w (nothing on the card was changed)", err)
+		return fmt.Errorf("making Etros: %w (nothing on the card was changed)", err)
 	}
 
 	// 3. Onto the card, then everything back. Each tried twice.
@@ -239,9 +250,9 @@ func (t *tui) remakeWithR36S(dir string) error {
 			note(cYellow + "That didn't work: " + lastErr.Error() + cReset)
 			note("Trying again...")
 		}
-		heading("PUTTING ETROS WITH THE R36S ON THE CARD")
+		heading("PUTTING ETROS ON THE CARD")
 		rep := newTermReporter()
-		lastErr = filesInstall(image, disk, rep)
+		lastErr = filesInstallWith(image, disk, windowsBytes, rep)
 		rep.end()
 		if lastErr != nil {
 			continue
@@ -339,4 +350,14 @@ func (t *tui) offerProton(dir string) {
 	}
 	syncDir(filepath.Dir(dest))
 	rep.Log("added " + path.Base(url))
+}
+
+// cardHasWindows tells whether the card has Etros's Windows 11 partitions.
+func cardHasWindows(dir string) bool {
+	disk, err := cardDisk(dir)
+	if err != nil {
+		return false
+	}
+	out, err := exec.Command("lsblk", "-n", "-o", "LABEL", disk).Output()
+	return err == nil && strings.Contains(string(out), "WINBOOT")
 }

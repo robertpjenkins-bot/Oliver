@@ -1,0 +1,9 @@
+#!/bin/sh
+# The Install Windows 11 icon: ollie-install-windows in a terminal window,
+# as root (sudoers lets the ollie user run it without a password).
+for t in x-terminal-emulator lxterminal xterm; do
+    if command -v "$t" >/dev/null 2>&1; then
+        exec "$t" -e sudo /usr/local/bin/ollie-install-windows
+    fi
+done
+exit 1

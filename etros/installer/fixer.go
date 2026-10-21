@@ -303,3 +303,23 @@ func noAutoresize(dir string) error {
 	}
 	return os.WriteFile(p, []byte(strings.Join(out, "\n")), 0o644)
 }
+
+// writeWinboot puts the Pi 5's UEFI firmware on the WINBOOT partition at
+// dir, with the marker Ollie OS's Windows installer looks for.
+func writeWinboot(dir string) error {
+	entries, err := fs.ReadDir(uefiFiles, "assets/uefi")
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		b, err := uefiFiles.ReadFile("assets/uefi/" + e.Name())
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dir, e.Name()), b, 0o644); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(filepath.Join(dir, "etros-winboot.txt"),
+		[]byte("This is Etros's Windows 11 start-up partition (WINBOOT).\n"), 0o644)
+}

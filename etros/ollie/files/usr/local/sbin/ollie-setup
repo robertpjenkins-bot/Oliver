@@ -20,7 +20,7 @@ if ! id ollie >/dev/null 2>&1; then
     useradd -m -s /bin/bash -G "${groups#,}" ollie
     passwd -d ollie
 fi
-echo 'ollie ALL=(root) NOPASSWD: /usr/local/bin/ollie-boot-batocera' > /etc/sudoers.d/ollie
+echo 'ollie ALL=(root) NOPASSWD: /usr/local/bin/ollie-boot-batocera, /usr/local/bin/ollie-install-windows' > /etc/sudoers.d/ollie
 chmod 0440 /etc/sudoers.d/ollie
 if test -f /etc/lightdm/lightdm.conf; then
     if grep -qE '^#?autologin-user=' /etc/lightdm/lightdm.conf; then
@@ -103,6 +103,19 @@ for f in /usr/share/ollie/desktop/*.desktop; do
         *) cp "$f" "$H/Desktop/" ;;
     esac
 done
+# Install Windows 11, on cards with room for it (Etros Updater makes it).
+rm -f "$H/Desktop/install-windows.desktop"
+if blkid -L WINBOOT >/dev/null 2>&1; then
+    cat > "$H/Desktop/install-windows.desktop" <<'EOT'
+[Desktop Entry]
+Type=Application
+Name=Install Windows 11
+Comment=Put Windows 11 for ARM on this card, from the Windows 11 Arm64 ISO in Downloads
+Exec=/usr/local/bin/ollie-install-windows-window
+Icon=system-software-install
+Terminal=false
+EOT
+fi
 chmod 0755 "$H"/Desktop/*.desktop
 printf '[config]\nquick_exec=1\n' > "$H/.config/libfm/libfm.conf"
 conf=/etc/xdg/libfm/libfm.conf
