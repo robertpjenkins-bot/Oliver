@@ -224,3 +224,19 @@ the first time the card starts in the Pi 5, Etros writes it into place, so
 cards made without a password start in the R36S too. A card needs Batocera
 for the R36S in Downloads when it's made.
 
+## Windows 11 (Raspberry Pi 5, experimental)
+
+Next to Ollie OS. Etros Updater's "Make room for Windows 11" remakes the
+card with WINDOWS (partition 3) and WINBOOT (partition 4, with the Pi 5
+UEFI firmware from worproject/rpi5-uefi, which is archived). Then, in
+Ollie OS, Install Windows 11 takes Windows 11 Arm64 from the ISO in
+Downloads (Microsoft's download; PC ISOs are refused) and restarts into
+Windows's installer, which installs Windows with a local account "Ollie"
+and a Back to Etros icon. ETROS -> Boot into Windows 11 starts it again
+later. While the card is set to Windows (autoboot.txt on BATOCERA), the
+Pi 5 keeps starting Windows; Etros Updater can set it back.
+
+Windows 11 on the Pi 5 has no internet (no Ethernet or Wi-Fi driver), no
+3D, and is slow. Tested in the ARM VM up to the restart into Windows's
+installer; not yet on a Pi 5.
+
