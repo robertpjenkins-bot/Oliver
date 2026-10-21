@@ -1,0 +1,40 @@
+#!/bin/bash
+# Etros on an Intel Mac, put there from macOS (Etros Mac Installer): macOS
+# can't make ext4, so SHARE (the partition after the boot partition) is
+# ExFAT, empty, and etros/format-share on the boot partition asks for it
+# to be made ext4 here, the first time, before Batocera mounts it
+# (S11share runs right after this).
+
+test "$1" = "start" || exit 0
+test -f /boot/etros/format-share || exit 0
+
+dev=$(batocera-part share_internal) || exit 0
+type=$(blkid -s TYPE -o value "$dev" 2>/dev/null)
+label=$(blkid -s LABEL -o value "$dev" 2>/dev/null)
+log=/tmp/etros-format-share.log
+{
+    echo "$(date) SHARE is $dev ($type, $label)"
+    case "$type" in
+        exfat|vfat)
+            # Only the empty one the installer made: never anything else.
+            if [ "$label" = SHARE ] && mkdir -p /tmp/etros-share && mount -o ro "$dev" /tmp/etros-share; then
+                # (macOS leaves its own hidden folders, like .Trashes.)
+                files=0
+                for f in /tmp/etros-share/*; do
+                    [ -e "$f" ] && [ "${f##*/}" != "System Volume Information" ] && files=$((files + 1))
+                done
+                umount /tmp/etros-share
+                if [ "$files" = 0 ]; then
+                    mkfs.ext4 -q -F -L SHARE "$dev" && echo "made it ext4"
+                else
+                    echo "not empty: left alone"
+                fi
+            fi
+            ;;
+    esac
+    if [ "$(blkid -s TYPE -o value "$dev" 2>/dev/null)" = ext4 ]; then
+        mount -o remount,rw /boot && rm -f /boot/etros/format-share
+        mount -o remount,ro /boot
+    fi
+} >> "$log" 2>&1
+exit 0

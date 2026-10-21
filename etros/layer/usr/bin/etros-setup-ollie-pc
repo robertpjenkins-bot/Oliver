@@ -1,0 +1,78 @@
+#!/bin/bash
+# Make Ollie OS on an Intel Mac whose Etros was put there from macOS (Etros
+# Mac Installer), which can't make Linux file systems: from Arch Linux on
+# the boot partition (etros/archlinux-bootstrap-x86_64.tar.gz), through
+# this Mac's own internet connection, with the same steps as on a Steam
+# Machine (archbuild.sh, here as root). Ollie OS's file system goes to
+# etros/ollie-rootfs.img on SHARE, its kernel to the boot partition, where
+# Boot into Ollie OS (etros-boot-ollie) finds them.
+#
+# Started by S13etros in the background; says how it's going on screen.
+
+tarball=/boot/etros/archlinux-bootstrap-x86_64.tar.gz
+work=/userdata/system/etros/ollie-build
+img=/userdata/etros/ollie-rootfs.img
+log=/userdata/system/logs/etros-ollie-setup.log
+running=/userdata/system/etros/ollie-setup.running
+
+mkdir -p /userdata/system/etros /userdata/system/logs /userdata/etros
+exec >> "$log" 2>&1
+echo "=== $(date) Ollie OS (Arch Linux) setup"
+say() {
+    echo "--- $1"
+    curl -s -o /dev/null -d "Ollie OS: $1" http://localhost:1234/notify 2>/dev/null
+}
+
+[ -f "$tarball" ] || { echo "no $tarball"; exit 0; }
+[ -f "$img" ] && { echo "Ollie OS is there already"; exit 0; }
+if [ -e "$running" ] && kill -0 "$(cat "$running")" 2>/dev/null; then
+    echo "already running"; exit 0
+fi
+echo $$ > "$running"
+trap 'rm -f "$running"' EXIT
+
+# Etros starts this before Wi-Fi is up: wait for the internet (up to 15
+# minutes) rather than failing straight away.
+online() { curl -s -o /dev/null --max-time 10 https://geo.mirror.pkgbuild.com/; }
+if ! online; then
+    say "waiting for the internet (Wi-Fi: MAIN MENU → NETWORK SETTINGS)"
+    for _ in $(seq 90); do
+        sleep 10
+        online && break
+    done
+fi
+say "setting up (30 to 60 minutes; Etros keeps working meanwhile)"
+
+rm -rf "$work/ollie-files"
+mkdir -p "$work"
+cp -r /usr/share/etros/ollie-files "$work/ollie-files"
+why=
+while IFS= read -r line; do
+    echo "$line"
+    case "$line" in
+        "STAGE "*) say "${line#STAGE }" ;;
+        "FAILED "*) why=${line#FAILED } ;;
+    esac
+done < <(ETROS_TARGET=pc ETROS_REAL_ROOT=1 bash /usr/share/etros/archbuild.sh "$tarball" "$work" "$img.new" "" 2>&1)
+if [ ! -f "$img.new" ] || [ ! -f "$work/boot-out/vmlinuz-linux" ]; then
+    rm -f "$img.new"
+    say "setup FAILED: ${why:-see system/logs/etros-ollie-setup.log}. It tries again next time Etros starts."
+    exit 1
+fi
+
+# The kernel and its start-up files go on the boot partition.
+mount -o remount,rw /boot &&
+    cp "$work/boot-out/vmlinuz-linux" "$work/boot-out/initramfs-linux.img" /boot/ &&
+    rm -f "$tarball"
+ok=$?
+sync
+mount -o remount,ro /boot
+if [ "$ok" != 0 ]; then
+    rm -f "$img.new"
+    say "setup FAILED: couldn't put its kernel on the boot partition."
+    exit 1
+fi
+mv -f "$img.new" "$img"
+rm -rf "$work"
+sync
+say "ready. Choose ETROS → Boot into Ollie OS to start it."

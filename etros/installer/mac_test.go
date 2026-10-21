@@ -175,3 +175,26 @@ func TestMacsFromLsblk(t *testing.T) {
 		t.Errorf("%+v", macs)
 	}
 }
+
+// The bootstrap tarball, rewritten for Etros on the Mac (ETROS_PC_BOOTSTRAP;
+// ETROS_GZ_OUT keeps the result for the next test step).
+func TestGzBootstrap(t *testing.T) {
+	src := os.Getenv("ETROS_PC_BOOTSTRAP")
+	if src == "" {
+		t.Skip("set ETROS_PC_BOOTSTRAP")
+	}
+	dest := os.Getenv("ETROS_GZ_OUT")
+	if dest == "" {
+		dest = filepath.Join(t.TempDir(), "b.tar.gz")
+	}
+	if err := gzBootstrap(src, dest, nopReporter{}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("tar", "-tzf", dest).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "root.x86_64") || !strings.Contains(string(out), "usr/bin/pacman") {
+		t.Errorf("entries:\n%s", out)
+	}
+}

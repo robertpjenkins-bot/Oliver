@@ -32,6 +32,16 @@ chmod 0755 "$STAGE/usr/bin/oliver"
 (cd "$(dirname "$ETROS")" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false \
     -ldflags "-s -w" -o "$STAGE/usr/bin/etros-kexec" ./etros/kexec)
 echo "Etros $VERSION" > "$STAGE/usr/share/etros/version"
+# Making Ollie OS on an Intel Mac whose Etros came from macOS
+# (etros-setup-ollie-pc): the build script and Etros's files for Ollie OS.
+install -m 0644 "$ETROS/installer/archbuild.sh" "$STAGE/usr/share/etros/archbuild.sh"
+OF="$STAGE/usr/share/etros/ollie-files"
+mkdir -p "$OF"
+cp -r "$ETROS/ollie/files/." "$OF/"
+install -m 0755 "$ETROS/common/etros-sort-roms" "$OF/usr/local/bin/etros-sort-roms"
+mkdir -p "$OF/usr/share/ollie"
+cp "$ART/ollie/bobby.png" "$OF/usr/share/ollie/bobby.png"
+chmod 0755 "$OF"/usr/local/bin/* "$OF"/usr/local/sbin/* "$OF"/etc/systemd/system-generators/*
 
 THEME="$STAGE/usr/share/emulationstation/themes/etros-metroid"
 mkdir -p "$THEME/art"

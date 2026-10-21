@@ -20,12 +20,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -40,15 +37,7 @@ const (
 	gptMSData      = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"
 	gptWinRE       = "de94bba4-06d1-4d40-a16a-bfd50179d6ac"
 	gptLinux       = "0fc63daf-8483-4772-8e79-3d69d8477de4"
-
-	macBootSize  = 8 << 30  // BATOCERA: Batocera for PCs is about 3.5 GB
-	macMinShare  = 8 << 30  // SHARE without Ollie OS
-	macOllieRoom = 24 << 30 // what Ollie OS takes of SHARE, at most
-
-	archBootstrapURL = "https://geo.mirror.pkgbuild.com/iso/latest/archlinux-bootstrap-x86_64.tar.zst"
 )
-
-func pcBatoceraURL() string { return batoceraBase + "/x86_64/stable/last/boot.tar.xz" }
 
 type macPart struct {
 	Path      string `json:"path"`
@@ -68,15 +57,6 @@ type macDisk struct {
 	Hotplug  bool      `json:"hotplug"`
 	PTType   string    `json:"pttype"`
 	Children []macPart `json:"children"`
-}
-
-func partNum(path string) int {
-	i := len(path)
-	for i > 0 && path[i-1] >= '0' && path[i-1] <= '9' {
-		i--
-	}
-	n, _ := strconv.Atoi(path[i:])
-	return n
 }
 
 func isMacOSPart(p macPart) bool {
@@ -391,117 +371,6 @@ func describePart(p macPart) string {
 		name = "Etros: " + p.Label
 	}
 	return name
-}
-
-// getPCBatocera finds Batocera for PCs (its boot.tar.xz) in Downloads, or
-// downloads it.
-func (t *tui) getPCBatocera() (string, error) {
-	for _, pat := range []string{"*x86_64*boot*.tar.xz", "*x86_64*.boot.tar.xz"} {
-		if m, _ := filepath.Glob(filepath.Join(downloadsDir(), pat)); len(m) > 0 {
-			note("Using " + filepath.Base(m[0]) + " from Downloads.")
-			return m[0], nil
-		}
-	}
-	rep := newTermReporter()
-	defer rep.end()
-	rep.Stage("Downloading Batocera for PCs (about 3 GB)")
-	return fetch(pcBatoceraURL(), defaultCache(), "batocera-x86_64-boot", rep.Progress, rep.Log)
-}
-
-// getArchBootstrap finds Arch Linux's bootstrap tarball in Downloads, or
-// asks for it, or downloads it.
-func (t *tui) getArchBootstrap() (string, error) {
-	if m, _ := filepath.Glob(filepath.Join(downloadsDir(), "archlinux-bootstrap*x86_64*.tar.zst")); len(m) > 0 {
-		note("Using " + filepath.Base(m[0]) + " from Downloads.")
-		return m[0], nil
-	}
-	for {
-		p := t.askForFile("ARCH LINUX FOR OLLIE OS",
-			"Drag archlinux-bootstrap-x86_64.tar.zst (from archlinux.org) onto this window, then press Enter.",
-			"Or just press Enter to let Etros download it (about 150 MB).")
-		if p == "" {
-			rep := newTermReporter()
-			rep.Stage("Getting Arch Linux")
-			got, err := fetch(archBootstrapURL, defaultCache(), "archlinux-bootstrap", rep.Progress, rep.Log)
-			rep.end()
-			return got, err
-		}
-		n := strings.ToLower(filepath.Base(p))
-		if strings.Contains(n, "bootstrap") && strings.Contains(n, "x86_64") {
-			return p, nil
-		}
-		note(cRed + filepath.Base(p) + " isn't Arch Linux's bootstrap (archlinux-bootstrap-x86_64.tar.zst)." + cReset)
-	}
-}
-
-// pcInitrd is Batocera for PCs' start-up file with Etros's hook added.
-func pcInitrd(bootTarball string) ([]byte, error) {
-	var initrd []byte
-	err := eachTarFile(bootTarball, func(h *tarHeader, r io.Reader) error {
-		if h.Name == "boot/initrd.gz" {
-			b, err := io.ReadAll(r)
-			initrd = b
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if initrd == nil {
-		return nil, fmt.Errorf("%s isn't Batocera for PCs (no boot/initrd.gz)", filepath.Base(bootTarball))
-	}
-	out, err := PatchInitrd(initrd)
-	if err != nil {
-		return nil, fmt.Errorf("adding Etros to Batocera's start-up: %w", err)
-	}
-	return out, nil
-}
-
-// copyPCBatocera copies Batocera for PCs' boot files to boot, with Etros.
-func copyPCBatocera(bootTarball string, initrd []byte, boot string, rep Reporter) error {
-	st, err := os.Stat(bootTarball)
-	if err != nil {
-		return err
-	}
-	var done int64
-	err = eachTarFile(bootTarball, func(h *tarHeader, r io.Reader) error {
-		dest := filepath.Join(boot, filepath.FromSlash(h.Name))
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return err
-		}
-		if h.Name == "boot/initrd.gz" {
-			return os.WriteFile(dest, initrd, 0o644)
-		}
-		f, err := os.Create(dest)
-		if err != nil {
-			return err
-		}
-		// Progress by the compressed size, roughly: the tarball is xz.
-		n, err := io.Copy(f, &countingReader{r: r, p: func(d, _ int64) {
-			rep.Progress(min(done+d/3, st.Size()), st.Size())
-		}})
-		done += n / 3
-		if cerr := f.Close(); err == nil {
-			err = cerr
-		}
-		return err
-	})
-	if err != nil {
-		return err
-	}
-	rep.Progress(st.Size(), st.Size())
-	if err := os.MkdirAll(filepath.Join(boot, "etros"), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(boot, "etros", "etros.squashfs"), etrosLayer, 0o644); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(boot, "etros", "intel-mac.txt"), []byte("Etros on an Intel Mac, in place of Boot Camp\n"), 0o644); err != nil {
-		return err
-	}
-	// SHARE is made to fill the rest already.
-	return noAutoresize(boot)
 }
 
 // makeMacPartitions replaces the Boot Camp partitions with BATOCERA and

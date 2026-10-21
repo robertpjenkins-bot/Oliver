@@ -165,6 +165,21 @@ if [ -f /userdata/etros/ollie-is-arch.txt ] && [ ! -f /userdata/etros/ollie-root
     esac
 fi
 
+# Etros on an Intel Mac, put there from macOS: join the Wi-Fi the Mac was
+# on (etros/wifi.txt: its name, then its password; read once, then gone),
+# and make Ollie OS from the Arch Linux it left on the boot partition.
+if [ "$(uname -m)" = x86_64 ] && [ -f /boot/etros/intel-mac.txt ]; then
+    if [ -f /boot/etros/wifi.txt ]; then
+        { read -r ssid; read -r key; } < /boot/etros/wifi.txt
+        mount -o remount,rw /boot && rm -f /boot/etros/wifi.txt
+        mount -o remount,ro /boot
+        [ -n "$ssid" ] && (batocera-wifi enable "$ssid" "$key" "" > /dev/null 2>&1 &)
+    fi
+    if [ -f /boot/etros/archlinux-bootstrap-x86_64.tar.gz ] && [ ! -f /userdata/etros/ollie-rootfs.img ]; then
+        setsid /usr/bin/etros-setup-ollie-pc < /dev/null > /dev/null 2>&1 &
+    fi
+fi
+
 # Anything downloaded in Ollie OS is ready to play by the time the menu shows.
 /usr/bin/etros-sort-roms
 

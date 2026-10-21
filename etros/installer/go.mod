@@ -8,3 +8,5 @@ require (
 	github.com/ulikunitz/xz v0.5.17
 	golang.org/x/sys v0.49.0
 )
+
+require github.com/klauspost/compress v1.18.0

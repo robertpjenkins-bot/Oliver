@@ -13,6 +13,9 @@
 #
 #   archbuild.sh TARBALL WORK IMAGE [QEMU]
 #
+# ETROS_REAL_ROOT=1: run by Etros itself as root (on an Intel Mac, with
+# Batocera's tools), so owners are real and need no fixing afterwards.
+#
 # For PCs, WORK/ollie-files is copied in (Etros's files for Ollie OS, which
 # the Pi's boot copies in each start instead), and the kernel and its
 # start-up files end up in WORK/boot-out, for the boot partition.
@@ -24,6 +27,7 @@ set -u
 tarball=$1 work=$2 img=$3 qemu=${4:-}
 root=$work/root
 target=${ETROS_TARGET:-pi5}
+real_root=${ETROS_REAL_ROOT:-}
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # The same as etros-setup-arch, which does this on the Pi instead.
@@ -47,6 +51,8 @@ say() { echo "STAGE $1"; }
 undo() {
     [ -d "$root" ] || return 0
     in_root gpgconf --homedir /etc/pacman.d/gnupg --kill all >/dev/null 2>&1
+    # One at a time too: Batocera's umount may not have -R.
+    for m in run dev/pts dev/shm dev sys proc; do umount -l "$root/$m" 2>/dev/null; done
     umount -R "$root" 2>/dev/null
     while mountpoint -q "$root" 2>/dev/null; do umount -l "$root" || break; done
 }
@@ -121,7 +127,9 @@ EOT
     rm -rf "${root:?}/boot/"*
 }
 
-for tool in tar mkfs.ext4 debugfs chroot; do
+tools=(tar mkfs.ext4 chroot)
+[ -n "$real_root" ] || tools+=(debugfs)
+for tool in "${tools[@]}"; do
     command -v "$tool" >/dev/null || fail "this computer has no $tool" 3
 done
 
@@ -139,10 +147,14 @@ say "Unpacking Arch Linux"
 undo
 rm -rf "$root"
 mkdir -p "$root"
-strip=()
-[ "$target" = pc ] && strip=(--strip-components=1) # archlinux-bootstrap: all in root.x86_64/
-tar -xpf "$tarball" -C "$root" --numeric-owner --no-same-owner "${strip[@]}" ||
-    fail "couldn't unpack $(basename "$tarball")"
+opts=(-xp)
+case "$tarball" in
+    *.gz) opts+=(-z) ;;
+    *.zst) opts+=(--zstd --strip-components=1) ;; # archlinux-bootstrap: all in root.x86_64/
+esac
+tar --help 2>&1 | grep -q -- --numeric-owner && opts+=(--numeric-owner)
+[ -n "$real_root" ] || opts+=(--no-same-owner)
+tar "${opts[@]}" -f "$tarball" -C "$root" || fail "couldn't unpack $(basename "$tarball")"
 in_root /usr/bin/true || fail "this computer can't run Pi programs" 3
 if [ "$target" = pc ]; then
     # The bootstrap has every mirror commented out.
@@ -226,7 +238,7 @@ done | awk '
         p = substr($1, 2)
         printf "sif \"%s\" uid %d\nsif \"%s\" gid %d\n", p, u, p, g
     }' > "$cmds"
-if [ -s "$cmds" ]; then
+if [ -s "$cmds" ] && [ -z "$real_root" ]; then
     debugfs -w -f "$cmds" "$img" >/dev/null 2>&1 || fail "couldn't give Ollie OS's files their owners"
 fi
 sync "$img" 2>/dev/null || sync
