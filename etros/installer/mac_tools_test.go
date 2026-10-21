@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
@@ -41,14 +42,17 @@ type fakeMacDisk struct {
 }
 
 type fakeMacState struct {
-	Disks          []fakeMacDisk `json:"disks"`
-	BootStore      string        `json:"boot_store"`
-	APFSFree       int64         `json:"apfs_free"`
-	NeedAdmin      bool          `json:"need_admin"`
-	CancelPassword bool          `json:"cancel_password"`
-	Volumes        string        `json:"volumes"`
-	Wifi           string        `json:"wifi"`
-	Busy           []string      `json:"busy"`
+	Disks          []fakeMacDisk       `json:"disks"`
+	BootStore      string              `json:"boot_store"`
+	APFSFree       int64               `json:"apfs_free"`
+	NeedAdmin      bool                `json:"need_admin"`
+	CancelPassword bool                `json:"cancel_password"`
+	Volumes        string              `json:"volumes"`
+	Wifi           string              `json:"wifi"`
+	Busy           []string            `json:"busy"`
+	Stuck          map[string]int      `json:"stuck,omitempty"`
+	Procs          []string            `json:"procs,omitempty"`
+	Open           map[string][]string `json:"open,omitempty"`
 }
 
 // macBook is the 12-inch MacBook: EFI, macOS (APFS) and an ExFAT partition
@@ -238,6 +242,9 @@ func TestMacInstallOnPartition(t *testing.T) {
 	st := readFakeMac(t, state)
 	checkEtrosOn(t, st, "disk0", 3, 4, true)
 	calls, _ := os.ReadFile(state + ".log")
+	if n := strings.Count(string(calls), "osascript"); n != 1 {
+		t.Errorf("asked for the password %d times", n)
+	}
 	for _, want := range []string{"diskutil eraseVolume free none disk0s3", "osascript -e do shell script", "diskutil addPartition disk0s2 MS-DOS FAT32 BATOCERA 8G", "diskutil addPartition disk0s3 ExFAT SHARE"} {
 		if !strings.Contains(string(calls), want) {
 			t.Errorf("no %q in:\n%s", want, calls)
@@ -523,5 +530,66 @@ func TestMacInstallBusyMessage(t *testing.T) {
 	err := diskutilError([]string{"eraseVolume", "free", "none", "disk0s3"}, out)
 	if !strings.Contains(err.Error(), "erase disk0s3") || !strings.Contains(err.Error(), "still using it") {
 		t.Errorf("got %v", err)
+	}
+}
+
+func quickRetries(t *testing.T) {
+	oldT, oldW := eraseTries, eraseWait
+	eraseTries, eraseWait = 4, 10*time.Millisecond
+	t.Cleanup(func() { eraseTries, eraseWait = oldT, oldW })
+}
+
+// macOS is still checking the ExFAT partition for a while: Etros waits and
+// tries again, and gets there, without asking for the password each time.
+func TestMacInstallWaitsForPartition(t *testing.T) {
+	quickRetries(t)
+	st := macBook("")
+	st.Stuck = map[string]int{"disk0s3": 2}
+	state := fakeMacEnv(t, st)
+	rep := &logRep{}
+	if err := (darwinMac{}).install(pickTarget(t, "disk0s3"), 70<<30, "Jenkins Wi-Fi", "hunter2", rep); err != nil {
+		t.Fatalf("%v\n%s", err, strings.Join(rep.lines, "\n"))
+	}
+	checkEtrosOn(t, readFakeMac(t, state), "disk0", 3, 4, true)
+	calls, _ := os.ReadFile(state + ".log")
+	if !strings.Contains(string(calls), "for i in $(seq 4)") || strings.Count(string(calls), "diskutil eraseVolume free none disk0s3") < 3 {
+		t.Errorf("didn't try again:\n%s", calls)
+	}
+	// However many tries and steps: the password once.
+	if n := strings.Count(string(calls), "osascript"); n != 1 {
+		t.Errorf("asked for the password %d times:\n%s", n, calls)
+	}
+}
+
+// It never lets go: the error says what has it.
+func TestMacInstallSaysWhoUsesIt(t *testing.T) {
+	quickRetries(t)
+	st := macBook("")
+	st.Stuck = map[string]int{"disk0s3": 99}
+	st.Procs = []string{"/System/Library/Filesystems/exfat.fs/Contents/Resources/fsck_exfat"}
+	st.Open = map[string][]string{"disk0s3": {"Finder"}}
+	fakeMacEnv(t, st)
+	err := (darwinMac{}).install(pickTarget(t, "disk0s3"), 70<<30, "", "", &logRep{})
+	if err == nil || !strings.Contains(err.Error(), "fsck_exfat") || !strings.Contains(err.Error(), "Finder has it open") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// Etros Installer run from the very partition chosen: said, and nothing
+// erased.
+func TestMacInstallFromTheChosenPartition(t *testing.T) {
+	st := macBook("")
+	state := fakeMacEnv(t, st)
+	exe, _ := os.Executable()
+	cur := readFakeMac(t, state)
+	cur.Disks[0].Parts[2].Mount = filepath.Dir(filepath.Dir(exe))
+	b, _ := json.Marshal(cur)
+	os.WriteFile(state, b, 0o644)
+	err := (darwinMac{}).install(pickTarget(t, "disk0s3"), 70<<30, "", "", &logRep{})
+	if err == nil || !strings.Contains(err.Error(), "move it to the Desktop") {
+		t.Fatalf("got %v", err)
+	}
+	if calls, _ := os.ReadFile(state + ".log"); strings.Contains(string(calls), "eraseVolume") {
+		t.Error("erased anyway")
 	}
 }

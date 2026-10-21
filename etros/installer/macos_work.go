@@ -12,8 +12,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // darwinMac is the Mac installer's work, for its page.
@@ -103,6 +105,16 @@ func (darwinMac) install(x macTarget, etros int64, ssid, key string, rep Reporte
 			logf("Arch Linux: %v", err)
 			rep.Log("Ollie OS left out: " + err.Error())
 			withOllie = false
+		}
+	}
+
+	// The installer itself on the partition to be erased would keep it in
+	// use (and be erased with it).
+	if exe, err := os.Executable(); err == nil {
+		for _, p := range append([]dPart{x.part}, x.extra...) {
+			if mp := mountedAt(p.id); mp != "" && mp != "/" && strings.HasPrefix(exe, mp+"/") {
+				return fmt.Errorf("Etros Installer is on %s (%s), the partition you chose to erase: move it to the Desktop, open it from there, and try again", p.id, mp)
+			}
 		}
 	}
 
@@ -204,18 +216,35 @@ func diskutil(rep Reporter, args ...string) error {
 	if os.Geteuid() == 0 {
 		return diskutilError(args, out)
 	}
-	rep.Log("macOS wants the Mac's password for that (macOS is asking, not Etros)")
-	path, err := exec.LookPath("diskutil")
-	if err != nil {
-		path = "/usr/sbin/diskutil"
+	// Being used isn't about the password: asking for it wouldn't help.
+	if busyOutput(out) {
+		return diskutilError(args, out)
 	}
-	quoted := []string{path}
+	return asAdmin(rep, args, shellQuote(diskutilPath(), args...))
+}
+
+func diskutilPath() string {
+	if p, err := exec.LookPath("diskutil"); err == nil {
+		return p
+	}
+	return "/usr/sbin/diskutil"
+}
+
+func shellQuote(cmd string, args ...string) string {
+	q := []string{"'" + strings.ReplaceAll(cmd, "'", `'\''`) + "'"}
 	for _, a := range args {
-		quoted = append(quoted, "'"+strings.ReplaceAll(a, "'", `'\''`)+"'")
+		q = append(q, "'"+strings.ReplaceAll(a, "'", `'\''`)+"'")
 	}
-	script := fmt.Sprintf("do shell script %q with administrator privileges with prompt %q",
-		strings.Join(quoted, " "), "Etros Installer: macOS needs your password to change the drive.")
-	out, err = exec.Command("osascript", "-e", script).CombinedOutput()
+	return strings.Join(q, " ")
+}
+
+// asAdmin runs a shell script as administrator: macOS asks for the Mac's
+// password, in its own window, once. args say what it's doing, for errors.
+func asAdmin(rep Reporter, args []string, script string) error {
+	rep.Log("macOS wants the Mac's password for that (macOS is asking, not Etros)")
+	apple := fmt.Sprintf("do shell script %q with administrator privileges with prompt %q",
+		script, "Etros Installer: macOS needs your password to change the drive.")
+	out, err := exec.Command("osascript", "-e", apple).CombinedOutput()
 	logLines(rep, out)
 	if err != nil {
 		if strings.Contains(string(out), "-128") || strings.Contains(strings.ToLower(string(out)), "user canceled") {
@@ -225,6 +254,58 @@ func diskutil(rep Reporter, args ...string) error {
 		return diskutilError(args, out)
 	}
 	return nil
+}
+
+// How many times, and how far apart, erasing a partition something is
+// using is tried (macOS's own check of an ExFAT drive, fsck_exfat, can hold
+// it for a minute or two after it's opened).
+var (
+	eraseTries = 8
+	eraseWait  = 15 * time.Second
+)
+
+// busyError is diskutil saying the partition is being used (not that it
+// needs the password).
+type busyError struct{ error }
+
+func isBusy(err error) bool {
+	var b busyError
+	return errors.As(err, &b)
+}
+
+// busyOutput tells from diskutil's own words that something is using it.
+func busyOutput(out []byte) bool {
+	o := strings.ToLower(string(out))
+	return strings.Contains(o, "being used") || strings.Contains(o, "-69877") || strings.Contains(o, "resource busy") ||
+		strings.Contains(o, "in use")
+}
+
+// usersSaying says what's using a partition, as far as can be told: macOS
+// checking it (fsck), or programs with files open on it.
+func usersSaying(id string) string {
+	var who []string
+	if out, err := exec.Command("ps", "-axo", "comm=").Output(); err == nil {
+		for _, l := range strings.Split(string(out), "\n") {
+			name := filepath.Base(strings.TrimSpace(l))
+			if strings.HasPrefix(name, "fsck") {
+				who = append(who, "macOS is still checking a drive ("+name+"), which can take a few minutes")
+				break
+			}
+		}
+	}
+	if out, err := exec.Command("lsof", "-Fc", "/dev/"+id).Output(); id != "" && err == nil {
+		seen := map[string]bool{}
+		for _, l := range strings.Split(string(out), "\n") {
+			if strings.HasPrefix(l, "c") && !seen[l[1:]] {
+				seen[l[1:]] = true
+				who = append(who, l[1:]+" has it open")
+			}
+		}
+	}
+	if len(who) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(who, "; ") + ")"
 }
 
 // forceUnmount closes a partition (or every partition of a drive), even
@@ -256,10 +337,10 @@ func diskutilError(args []string, out []byte) error {
 	switch {
 	case strings.Contains(last, "-69879") || strings.Contains(last, "Couldn't open"):
 		why = "macOS couldn't open the drive: something is using it. Close any Finder windows or programs using it, eject anything on it, and try again"
-	case strings.Contains(strings.ToLower(last), "being used") || strings.Contains(strings.ToLower(last), "in use") || strings.Contains(strings.ToLower(last), "busy"):
-		why = "something on the Mac is still using it. Close any Finder windows showing it and anything opened from it, then try again (restarting the Mac first always works)"
+	case busyOutput(out):
+		return busyError{fmt.Errorf("macOS's Disk Utility couldn't %s: something on the Mac is still using it. Close any Finder windows showing it and anything opened from it, then try again (restarting the Mac first always works)", diskutilWhat(args))}
 	case strings.Contains(last, "-69888") || strings.Contains(last, "unmount"):
-		why = "macOS couldn't unmount the partition: something is using it. Close Finder windows and programs using it, and try again"
+		why = "macOS couldn't close the partition first (" + last + ")"
 	case strings.Contains(last, "-69519") || strings.Contains(strings.ToLower(last), "not enough") || strings.Contains(last, "too small"):
 		why = "there isn't enough room there"
 	case strings.Contains(strings.ToLower(last), "password") || strings.Contains(last, "-60005"):
@@ -314,47 +395,100 @@ func makeEtrosPartitions(x macTarget, etros int64, rep Reporter) (boot, share dP
 		}
 		return dPart{}, false
 	}
+	// The steps, as diskutil arguments; "$B" is the new BATOCERA partition.
+	type step struct {
+		args  []string
+		erase string // a partition being erased: closed first, tried again while in use
+	}
+	var steps []step
 	after := x.after
 	switch x.kind {
 	case "whole":
 		forceUnmount(rep, x.disk.id)
-		if err := diskutil(rep, "partitionDisk", x.disk.id, "GPT", "MS-DOS FAT32", "BATOCERA", "8G", "ExFAT", "SHARE", "R"); err != nil {
-			return boot, share, err
-		}
+		steps = append(steps, step{args: []string{"partitionDisk", x.disk.id, "GPT", "MS-DOS FAT32", "BATOCERA", "8G", "ExFAT", "SHARE", "R"}})
 	case "room":
 		// Make macOS's APFS smaller, then the two new partitions in the room.
 		size := apfsSize(x.part.id)
 		if size == 0 {
 			return boot, share, errors.New("macOS didn't say how big its APFS partition is")
 		}
-		if err := diskutil(rep, "apfs", "resizeContainer", x.part.id, strconv.FormatInt(size-etros, 10)+"B"); err != nil {
-			return boot, share, err
-		}
+		steps = append(steps, step{args: []string{"apfs", "resizeContainer", x.part.id, strconv.FormatInt(size-etros, 10) + "B"}})
 		after = x.part.id
 	case "part":
 		for _, p := range append([]dPart{x.part}, x.extra...) {
-			// Finder, Spotlight or anything else with it open would stop the
-			// erase ("being used"): close it whatever has it open.
-			forceUnmount(rep, p.id)
-			if err := diskutil(rep, "eraseVolume", "free", "none", p.id); err != nil {
-				return boot, share, err
-			}
+			steps = append(steps, step{args: []string{"eraseVolume", "free", "none", p.id}, erase: p.id})
 		}
 	}
 	if x.kind != "whole" {
-		if err := diskutil(rep, "addPartition", after, "MS-DOS FAT32", "BATOCERA", "8G"); err != nil {
-			return boot, share, err
-		}
-		b, ok := made("BATOCERA")
-		if !ok {
-			return boot, share, errors.New("macOS said it made the BATOCERA partition, but it isn't there")
-		}
 		// The rest of the room, less a little: partitions are lined up on
 		// whole megabytes, so it's never quite all of it.
 		left := (etros - macBootSize - 64<<20) / mib * mib
-		if err := diskutil(rep, "addPartition", b.id, "ExFAT", "SHARE", strconv.FormatInt(left, 10)+"B"); err != nil {
+		steps = append(steps,
+			step{args: []string{"addPartition", after, "MS-DOS FAT32", "BATOCERA", "8G"}},
+			step{args: []string{"addPartition", "$B", "ExFAT", "SHARE", strconv.FormatInt(left, 10) + "B"}})
+	}
+
+	// As the person running Etros first. If a step needs the Mac's password,
+	// it and every step after it go together as administrator, so macOS
+	// asks for it once.
+	for i, st := range steps {
+		args := append([]string(nil), st.args...)
+		for j, a := range args {
+			if a == "$B" {
+				b, ok := made("BATOCERA")
+				if !ok {
+					return boot, share, errors.New("macOS said it made the BATOCERA partition, but it isn't there")
+				}
+				args[j] = b.id
+			}
+		}
+		var out []byte
+		var err error
+		for try := 1; ; try++ {
+			if st.erase != "" {
+				forceUnmount(rep, st.erase)
+			}
+			logf("diskutil %s", strings.Join(args, " "))
+			rep.Log("diskutil " + strings.Join(args, " "))
+			out, err = exec.Command("diskutil", args...).CombinedOutput()
+			logLines(rep, out)
+			if err == nil || !busyOutput(out) || st.erase == "" || try >= eraseTries {
+				break
+			}
+			rep.Log(fmt.Sprintf("%s is still in use%s: waiting %v and trying again (%d of %d)",
+				st.erase, usersSaying(st.erase), eraseWait, try+1, eraseTries))
+			time.Sleep(eraseWait)
+		}
+		if err == nil {
+			continue
+		}
+		if busyOutput(out) || os.Geteuid() == 0 {
+			return boot, share, fmt.Errorf("%w%s", diskutilError(args, out), usersSaying(st.erase))
+		}
+		// The password: this step and the rest, in one go.
+		du := diskutilPath()
+		var sh []string
+		for _, rest := range steps[i:] {
+			cmd := shellQuote(du, rest.args...)
+			if slices.Contains(rest.args, "$B") {
+				sh = append(sh, fmt.Sprintf(`B=$(%s | awk '/ BATOCERA / {id=$NF} END {print id}'); [ -n "$B" ] || exit 1`,
+					shellQuote(du, "list", x.disk.id)))
+				cmd = strings.ReplaceAll(cmd, "'$B'", `"$B"`)
+			}
+			if rest.erase != "" {
+				sh = append(sh, fmt.Sprintf(`ok=; for i in $(seq %d); do %s; %s && { ok=1; break; }; sleep %d; done; [ -n "$ok" ] || exit 1`,
+					eraseTries, shellQuote(du, "unmount", "force", rest.erase), cmd, max(int(eraseWait.Seconds()), 1)))
+			} else {
+				sh = append(sh, cmd+" || exit 1")
+			}
+		}
+		if err := asAdmin(rep, args, strings.Join(sh, "; ")); err != nil {
+			if isBusy(err) {
+				return boot, share, fmt.Errorf("%w%s", err, usersSaying(st.erase))
+			}
 			return boot, share, err
 		}
+		break
 	}
 	var ok1, ok2 bool
 	boot, ok1 = made("BATOCERA")
@@ -385,6 +519,19 @@ func apfsSize(store string) int64 {
 		return 0
 	}
 	return plistInt(v, "Size")
+}
+
+// mountedAt is where a partition is open in Finder, or "".
+func mountedAt(id string) string {
+	out, err := exec.Command("diskutil", "info", "-plist", id).Output()
+	if err != nil {
+		return ""
+	}
+	v, err := parsePlist(out)
+	if err != nil {
+		return ""
+	}
+	return plistString(v, "MountPoint")
 }
 
 // mountPoint is where a partition is open in Finder, opening it if needed.

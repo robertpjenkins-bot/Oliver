@@ -10,7 +10,9 @@
 #    "wifi": "Home", "busy": ["disk0s3"]}
 # A "busy" partition (open in Finder, indexed by Spotlight...) can't be
 # erased until it's unmounted with force; erasing one deletes what was in
-# its mount point.
+# its mount point. "stuck": {"disk0s3": N} makes the next N erases of it
+# fail as being used even so (macOS still checking it); "procs" is what ps
+# shows, "open": {"disk0s3": ["Finder"]} what lsof shows has it open.
 # Every call is logged to $FAKEMAC_STATE.log.
 import json, os, plistlib, re, sys
 
@@ -107,6 +109,16 @@ def diskutil(args):
                                                  "Content": "GUID_partition_scheme", "Partitions": parts})
         sys.stdout.buffer.write(plistlib.dumps(out))
         return
+    if args[0] == "list" and len(args) == 2 and args[1] != "-plist":
+        d, p = find(args[1])
+        if d is None or p is not None:
+            die("Could not find disk: " + args[1])
+        print("/dev/%s (%s, physical):" % (d["id"], "internal" if d["internal"] else "external"))
+        print("   #:                       TYPE NAME                    SIZE       IDENTIFIER")
+        print("   0:      GUID_partition_scheme                        *%.1f GB   %s" % (d["size"] / 1e9, d["id"]))
+        for q in sorted(d["parts"], key=lambda q: q["start"]):
+            print("%4d:%27s %-23s %.1f GB    %s" % (q["num"], q["content"][:27], q.get("name", ""), q["size"] / 1e9, pid(d, q)))
+        return
     if args[:2] == ["info", "-plist"]:
         ident = args[2]
         if ident == "/":
@@ -147,6 +159,12 @@ def diskutil(args):
             die("Could not find disk: " + ident)
         if pid(d, p) == st["boot_store"]:
             die("Error: -69888: Couldn't unmount disk (it's the startup disk)")
+        stuck = st.get("stuck") or {}
+        if stuck.get(ident, 0) > 0:
+            stuck[ident] -= 1
+            st["stuck"] = stuck
+            save()
+            die("Error: -69877: The target disk is being used")
         if ident in (st.get("busy") or []):
             die("0:182: execution error: Error: -69877: The target disk is being used")
         if fmt.lower() in ("free", "free space", "%noformat%") and name.lower() == "none":
@@ -242,6 +260,12 @@ elif tool == "networksetup":
         print("\nHardware Port: Wi-Fi\nDevice: en0\nEthernet Address: aa:bb\n")
     elif args[0] == "-getairportnetwork":
         print("Current Wi-Fi Network: " + st.get("wifi", "") if st.get("wifi") else "You are not associated with an AirPort network.")
+elif tool == "ps":
+    print("\n".join(["/sbin/launchd", "/usr/libexec/mds"] + (st.get("procs") or [])))
+elif tool == "lsof":
+    dev = args[-1].replace("/dev/", "")
+    for i, name in enumerate((st.get("open") or {}).get(dev, [])):
+        print("p%d\nc%s" % (100 + i, name))
 elif tool == "sw_vers":
     print("11.7.11")
 elif tool == "sysctl":
