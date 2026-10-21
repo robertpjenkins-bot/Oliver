@@ -57,7 +57,8 @@ func (f *fakeMac) install(x macTarget, etros int64, ssid, key string, rep Report
 func TestMacWeb(t *testing.T) {
 	f := &fakeMac{}
 	quit := make(chan struct{})
-	srv := httptest.NewServer(macWebHandler(f, "s3cr3t", func() { close(quit) }))
+	h, _ := macWebHandler(f, "s3cr3t", func() { close(quit) })
+	srv := httptest.NewServer(h)
 	defer srv.Close()
 	base := srv.URL + "/s3cr3t/"
 
@@ -131,4 +132,26 @@ func TestMacWebDemo(t *testing.T) {
 		os.WriteFile(os.Getenv("ETROS_WEB_DEMO"), []byte(url), 0o644)
 		return nil
 	})
+}
+
+// With its page closed, the installer ends by itself, unless it's busy.
+func TestMacWebEndsWhenPageCloses(t *testing.T) {
+	old := macIdleQuit
+	macIdleQuit = 400 * time.Millisecond
+	defer func() { macIdleQuit = old }()
+	ended := make(chan error)
+	go func() {
+		ended <- serveMacWeb(&fakeMac{}, func(url string) error {
+			_, err := http.Get(url) // the page loads once, then is closed
+			return err
+		})
+	}()
+	select {
+	case err := <-ended:
+		if err != nil {
+			t.Error(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("still running with its page closed")
+	}
 }

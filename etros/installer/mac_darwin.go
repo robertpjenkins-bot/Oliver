@@ -26,9 +26,8 @@ import (
 func macInstallSupported() bool { return runtime.GOARCH == "amd64" }
 
 func runMacInstaller(o Options) error {
-	// The app has no window of its own: say what's happening, and show
-	// anything that goes wrong in a message, not just in the log.
-	macNotify("Etros Installer is opening in Safari.")
+	// The app has no window of its own: anything that goes wrong is shown
+	// in a message, not just in the log.
 	err := serveMacWeb(darwinMac{}, func(url string) error {
 		if exec.Command("open", "-a", "Safari", url).Run() == nil {
 			return nil
@@ -39,10 +38,6 @@ func runMacInstaller(o Options) error {
 		macAlert("Etros Installer couldn't start: " + err.Error())
 	}
 	return err
-}
-
-func macNotify(msg string) {
-	exec.Command("osascript", "-e", fmt.Sprintf("display notification %q with title %q", msg, "Etros Installer")).Run()
 }
 
 func macAlert(msg string) {

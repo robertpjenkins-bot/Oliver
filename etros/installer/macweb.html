@@ -275,6 +275,8 @@ $("quit").onclick = async () => {
 api("status").then(s => { if (s.running || s.finished) { $("choose").classList.add("hidden"); $("working").classList.remove("hidden"); poll(); } }).catch(() => {});
 loadChecks();
 loadDrives();
+// Tells the installer the page is still open (it ends a while after it's closed).
+setInterval(() => fetch("status").catch(() => {}), 10000);
 </script>
 </body>
 </html>

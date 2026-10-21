@@ -90,8 +90,9 @@ const (
 	macOllieGB = (macBootSize + macMinShare + macOllieRoom) >> 30
 )
 
-// macWebHandler serves the page and its API under /SECRET/.
-func macWebHandler(b macBackend, secret string, quit func()) http.Handler {
+// macWebHandler serves the page and its API under /SECRET/; busy tells
+// whether Etros is being put on a drive.
+func macWebHandler(b macBackend, secret string, quit func()) (h http.Handler, busy func() bool) {
 	state := &webState{}
 	var targets []macTarget
 	mux := http.NewServeMux()
@@ -225,8 +226,17 @@ func macWebHandler(b macBackend, secret string, quit func()) http.Handler {
 		reply(w, map[string]bool{"ok": true})
 		go func() { time.Sleep(300 * time.Millisecond); quit() }()
 	})
-	return mux
+	return mux, func() bool {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		return state.Running
+	}
 }
+
+// macIdleQuit is how long the installer waits, with its page closed and
+// nothing being put on a drive, before it ends: the app has no window, and
+// macOS only opens it again once it has ended.
+var macIdleQuit = 2 * time.Minute
 
 // serveMacWeb runs the page until it's closed with its Quit button, and
 // opens it with open (in Safari).
@@ -240,8 +250,34 @@ func serveMacWeb(b macBackend, open func(url string) error) error {
 	secret := hex.EncodeToString(sec)
 	done := make(chan struct{})
 	var once sync.Once
-	srv := &http.Server{Handler: macWebHandler(b, secret, func() { once.Do(func() { close(done) }) })}
+	quit := func() { once.Do(func() { close(done) }) }
+	h, busy := macWebHandler(b, secret, quit)
+	var mu sync.Mutex
+	last := time.Now()
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		last = time.Now()
+		mu.Unlock()
+		h.ServeHTTP(w, r)
+	})}
 	go srv.Serve(ln)
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(macIdleQuit / 8):
+			}
+			mu.Lock()
+			idle := time.Since(last)
+			mu.Unlock()
+			if idle > macIdleQuit && !busy() {
+				logf("the page has been closed for %v: ending", idle.Round(time.Second))
+				quit()
+				return
+			}
+		}
+	}()
 	url := fmt.Sprintf("http://%s/%s/", ln.Addr(), secret)
 	logf("Mac installer page: %s", url)
 	if err := open(url); err != nil {
