@@ -236,7 +236,13 @@ func (t *tui) remakeCard(dir string, withR36S bool) error {
 		note(fmt.Sprintf("%d files couldn't be read and stay behind (they're listed in etros-installer-log.txt).", bad))
 	}
 
-	// 2. A new Etros image with both devices.
+	// Ollie OS stays Arch Linux if it was (the tarball comes back with the
+	// rest of SHARE, and the Pi 5 builds it again).
+	if _, err := os.Stat(filepath.Join(backup, archMarker)); err == nil {
+		o.OllieArch = true
+	}
+
+	// 2. A new Etros image.
 	image, err := t.make(o)
 	if err != nil {
 		return fmt.Errorf("making Etros: %w (nothing on the card was changed)", err)
@@ -360,4 +366,107 @@ func cardHasWindows(dir string) bool {
 	}
 	out, err := exec.Command("lsblk", "-n", "-o", "LABEL", disk).Output()
 	return err == nil && strings.Contains(string(out), "WINBOOT")
+}
+
+// Ollie OS as Arch Linux: the Arch Linux ARM tarball goes on SHARE, and
+// the Pi 5 makes Ollie OS from it (etros-setup-arch, in Etros).
+const (
+	archURL      = "http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz"
+	archOnShare  = "system/etros/downloads/ArchLinuxARM-aarch64-latest.tar.gz"
+	archMarker   = "etros/ollie-is-arch.txt" // on SHARE, once Ollie OS is Arch
+	archTarballN = "ArchLinuxARM-aarch64-latest.tar.gz"
+)
+
+// isArchTarball tells an Arch Linux ARM (aarch64) tarball by its name.
+func isArchTarball(p string) bool {
+	n := strings.ToLower(filepath.Base(p))
+	return strings.Contains(n, "archlinuxarm") && strings.Contains(n, "aarch64") && strings.HasSuffix(n, ".tar.gz")
+}
+
+// getArchTarball finds Arch Linux ARM in Downloads, or asks for it to be
+// dragged onto the window, or downloads it.
+func (t *tui) getArchTarball() (string, error) {
+	if m, _ := filepath.Glob(filepath.Join(downloadsDir(), "ArchLinuxARM*aarch64*.tar.gz")); len(m) > 0 {
+		note("Using " + filepath.Base(m[0]) + " from Downloads.")
+		return m[0], nil
+	}
+	for {
+		p := t.askForFile("ARCH LINUX FOR OLLIE OS",
+			"Drag ArchLinuxARM-aarch64-latest.tar.gz (from archlinuxarm.org) onto this window, then press Enter.",
+			"Or just press Enter to let Etros download it (about 700 MB).")
+		if p == "" {
+			rep := newTermReporter()
+			rep.Stage("Getting Arch Linux ARM")
+			got, err := fetch(archURL, defaultCache(), "archlinuxarm", rep.Progress, rep.Log)
+			rep.end()
+			return got, err
+		}
+		if isArchTarball(p) {
+			return p, nil
+		}
+		note(cRed + filepath.Base(p) + " isn't Arch Linux ARM for the Pi (it should be called ArchLinuxARM-aarch64-....tar.gz)." + cReset)
+	}
+}
+
+// putArchOnCard puts the Arch Linux ARM tarball on the card's SHARE and
+// takes Raspberry Pi OS away, so the Pi 5 makes Ollie OS from Arch next
+// time Etros starts.
+func putArchOnCard(disk, tarball string, rep Reporter) error {
+	share, closeShare, err := openShare(disk)
+	if err != nil {
+		return err
+	}
+	defer closeShare()
+	rep.Stage("Putting Arch Linux on the card")
+	if err := copyFile(tarball, filepath.Join(share, archOnShare), rep); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(share, ollieFileOnShare)); err == nil {
+		rep.Log("removed Raspberry Pi OS")
+	}
+	os.MkdirAll(filepath.Join(share, "etros"), 0o755)
+	if err := os.WriteFile(filepath.Join(share, archMarker), []byte("Ollie OS is Arch Linux\n"), 0o644); err != nil {
+		return err
+	}
+	syncDir(filepath.Join(share, "etros"))
+	return nil
+}
+
+// offerArch offers to make the card's Ollie OS Arch Linux instead of
+// Raspberry Pi OS.
+func (t *tui) offerArch(dir string) error {
+	disk, err := cardDisk(dir)
+	if err != nil {
+		return nil
+	}
+	share, closeShare, err := openShare(disk)
+	if err != nil {
+		return nil
+	}
+	_, statErr := os.Stat(filepath.Join(share, archMarker))
+	closeShare()
+	if statErr == nil {
+		fmt.Printf("  %s✔%s Ollie OS is Arch Linux (KDE Plasma)\n", cCyan, cReset)
+		return nil
+	}
+	heading("OLLIE OS: ARCH LINUX INSTEAD OF RASPBERRY PI OS")
+	note("Ollie OS can be Arch Linux with KDE Plasma, like the PC Ollie OS, instead of")
+	note("Raspberry Pi OS. Raspberry Pi OS is taken off the card; the next time Etros starts")
+	note("on the Pi 5 it builds Arch Linux by itself (30 to 60 minutes, over its internet")
+	note("connection; Etros keeps working meanwhile and says when Ollie OS is ready).")
+	if !t.yes("Make Ollie OS Arch Linux?", true) {
+		return nil
+	}
+	tarball, err := t.getArchTarball()
+	if err != nil {
+		return fmt.Errorf("getting Arch Linux ARM: %w", err)
+	}
+	rep := newTermReporter()
+	err = putArchOnCard(disk, tarball, rep)
+	rep.end()
+	if err != nil {
+		return err
+	}
+	note(cCyan + "Done: start Etros on the Pi 5 and it sets up Ollie OS as Arch Linux." + cReset)
+	return nil
 }

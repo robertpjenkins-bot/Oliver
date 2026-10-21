@@ -29,6 +29,13 @@ if test -f /etc/lightdm/lightdm.conf; then
         sed -i 's/^\[Seat:\*\]$/[Seat:*]\nautologin-user=ollie/' /etc/lightdm/lightdm.conf
     fi
 fi
+# Arch Linux's Ollie OS logs in through SDDM, into KDE Plasma.
+if command -v sddm >/dev/null 2>&1; then
+    mkdir -p /etc/sddm.conf.d
+    session=plasma
+    [ -f /usr/share/wayland-sessions/plasma.desktop ] || session=plasmax11
+    printf '[Autologin]\nUser=ollie\nSession=%s\nRelogin=true\n' "$session" > /etc/sddm.conf.d/20-ollie-autologin.conf
+fi
 rm -f /etc/xdg/autostart/piwiz.desktop
 id rpi-first-boot-wizard >/dev/null 2>&1 && userdel -r rpi-first-boot-wizard 2>/dev/null
 

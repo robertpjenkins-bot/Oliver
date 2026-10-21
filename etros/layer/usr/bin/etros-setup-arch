@@ -1,0 +1,121 @@
+#!/bin/bash
+# Make Ollie OS from Arch Linux ARM, on the Pi 5 itself: Etros Updater puts
+# ArchLinuxARM-aarch64-latest.tar.gz on SHARE (system/etros/downloads); here
+# it's unpacked into a file system of its own and KDE Plasma and the rest
+# of Ollie OS's programs are installed into it with pacman, through the
+# Pi's own internet connection. The result replaces etros/ollie-rootfs.img
+# on SHARE, which "Boot into Ollie OS" starts (see the boot hook).
+#
+# Started by S13etros in the background when the tarball is there and Ollie
+# OS isn't Arch yet; it says how it's going on screen. Run as root.
+
+etros=/userdata/system/etros
+tarball=$etros/downloads/ArchLinuxARM-aarch64-latest.tar.gz
+img=/userdata/etros/ollie-rootfs.img
+new=$img.new
+root=/userdata/system/etros/arch-root
+log=/userdata/system/logs/etros-arch-setup.log
+running=$etros/arch-setup.running
+
+# What Ollie OS has: the same desktop and programs as the PC Ollie OS
+# (KDE Plasma), without what only PCs can run.
+packages=(
+    plasma-desktop plasma-nm plasma-pa kscreen breeze breeze-gtk kde-gtk-config powerdevil
+    sddm sddm-kcm xdg-desktop-portal-kde
+    dolphin konsole kate ark gwenview spectacle kdialog
+    firefox
+    networkmanager bluez bluez-utils pipewire pipewire-pulse wireplumber
+    mesa vulkan-broadcom noto-fonts noto-fonts-emoji ttf-liberation
+    python sudo nano bash-completion dosfstools e2fsprogs exfatprogs ntfs-3g
+)
+
+mkdir -p "$etros" /userdata/system/logs /userdata/etros
+exec >> "$log" 2>&1
+echo "=== $(date) Ollie OS (Arch Linux) setup"
+
+say() {
+    echo "--- $1"
+    curl -s -o /dev/null -d "Ollie OS (Arch Linux): $1" http://localhost:1234/notify 2>/dev/null
+}
+undo() {
+    for m in run dev/pts dev sys proc; do umount -l "$root/$m" 2>/dev/null; done
+    umount -l "$root" 2>/dev/null
+}
+fail() {
+    say "setup FAILED: $1. Details in system/logs/etros-arch-setup.log."
+    undo
+    rm -f "$new" "$running"
+    exit 1
+}
+in_root() { chroot "$root" /usr/bin/env -i HOME=/root TERM=dumb PATH=/usr/local/sbin:/usr/local/bin:/usr/bin LANG=C.UTF-8 "$@"; }
+
+[ -f "$tarball" ] || { echo "no $tarball"; exit 0; }
+if [ -e "$running" ] && kill -0 "$(cat "$running")" 2>/dev/null; then
+    echo "already running"; exit 0
+fi
+echo $$ > "$running"
+trap undo EXIT
+
+say "setting up (about 30 to 60 minutes; Etros keeps working meanwhile)"
+
+# 1. Unpack Arch Linux ARM into a file system of its own (a 24 GB file that
+# only takes the room it uses).
+undo
+rm -f "$new"
+if ! { truncate -s 24G "$new" && mkfs.ext4 -q -F -L ollie "$new"; }; then
+    fail "couldn't make its file system"
+fi
+mkdir -p "$root"
+mount -o loop "$new" "$root" || fail "couldn't open its file system"
+say "unpacking Arch Linux"
+xattrs=()
+tar --help 2>/dev/null | grep -q -- '--xattrs' && xattrs=(--xattrs --xattrs-include='*')
+tar -xpzf "$tarball" -C "$root" --numeric-owner "${xattrs[@]}" || fail "couldn't unpack $(basename "$tarball")"
+
+# 2. Its programs, with pacman, through the Pi's internet connection.
+mount -t proc proc "$root/proc"
+mount --rbind /sys "$root/sys"
+mount --rbind /dev "$root/dev"
+mount -t tmpfs tmpfs "$root/run"
+rm -f "$root/etc/resolv.conf"
+cp -L /etc/resolv.conf "$root/etc/resolv.conf"
+grep -q '^DisableSandbox' "$root/etc/pacman.conf" || sed -i '/^\[options\]/a DisableSandbox' "$root/etc/pacman.conf"
+in_root pacman-key --init || fail "pacman-key --init failed"
+in_root pacman-key --populate archlinuxarm || fail "pacman-key --populate failed"
+# Ollie OS runs on Batocera's kernel, so Arch's isn't needed.
+in_root pacman -Rdd --noconfirm linux-aarch64 linux-firmware 2>/dev/null
+say "updating Arch Linux"
+ok=no
+for _ in 1 2 3; do
+    in_root pacman -Syu --noconfirm && { ok=yes; break; }
+    sleep 30
+done
+[ "$ok" = yes ] || fail "couldn't update (is the Pi connected to the internet?)"
+say "installing KDE Plasma, Firefox and the rest (the longest part)"
+ok=no
+for _ in 1 2 3; do
+    in_root pacman -S --noconfirm --needed "${packages[@]}" && { ok=yes; break; }
+    sleep 30
+done
+[ "$ok" = yes ] || fail "couldn't install its programs (is the Pi connected to the internet?)"
+
+# 3. Make it Ollie OS: language, the login and desktop, no leftover accounts.
+sed -i 's/^#\(en_US.UTF-8 UTF-8\)/\1/' "$root/etc/locale.gen"
+in_root locale-gen
+echo LANG=en_US.UTF-8 > "$root/etc/locale.conf"
+echo ollie-os > "$root/etc/hostname"
+in_root systemctl enable sddm NetworkManager bluetooth
+in_root systemctl set-default graphical.target
+in_root userdel -r alarm 2>/dev/null
+echo "Ollie OS (Arch Linux ARM), set up $(date '+%Y-%m-%d')" > "$root/etc/ollie-os-arch"
+in_root pacman -Scc --noconfirm >/dev/null 2>&1
+rm -f "$root/etc/resolv.conf"
+ln -sf /run/NetworkManager/resolv.conf "$root/etc/resolv.conf"
+sync
+undo
+
+# 4. In place of Raspberry Pi OS.
+mv -f "$new" "$img"
+rm -f "$running"
+sync
+say "ready. Choose ETROS -> Boot into Ollie OS to start it."

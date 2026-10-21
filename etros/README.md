@@ -224,3 +224,16 @@ the first time the card starts in the Pi 5, Etros writes it into place, so
 cards made without a password start in the R36S too. A card needs Batocera
 for the R36S in Downloads when it's made.
 
+## Ollie OS as Arch Linux
+
+Ollie OS is Arch Linux ARM with KDE Plasma (like the PC Ollie OS), not
+Raspberry Pi OS. Etros Maker (Linux) and Etros Updater take
+ArchLinuxARM-aarch64-latest.tar.gz from Downloads, by drag and drop, or
+from archlinuxarm.org, put it on SHARE (system/etros/downloads) and take
+Raspberry Pi OS off. The next time Etros starts on the Pi 5,
+etros-setup-arch builds Ollie OS from it there (unpack, pacman -Syu,
+Plasma, SDDM, Firefox, NetworkManager...) into etros/ollie-rootfs.img,
+over the Pi's own internet connection, saying how it's going on screen;
+Boot into Ollie OS waits for it. The boot hook takes Ollie OS from SHARE
+first, then partition 3.
+

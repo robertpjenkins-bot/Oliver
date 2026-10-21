@@ -8,6 +8,19 @@ if ! test -d /boot/etros/ollie; then
     exit 1
 fi
 
+# Ollie OS as Arch Linux, not built yet: build it, or say it's on its way.
+if [ -f /userdata/etros/ollie-is-arch.txt ] && [ ! -f /userdata/etros/ollie-rootfs.img ]; then
+    msg="Ollie OS (Arch Linux) is still being set up: Etros says when it's ready."
+    running=/userdata/system/etros/arch-setup.running
+    if ! { [ -e "$running" ] && kill -0 "$(cat "$running")" 2>/dev/null; }; then
+        setsid /usr/bin/etros-setup-arch < /dev/null > /dev/null 2>&1 &
+        msg="Setting up Ollie OS (Arch Linux): 30 to 60 minutes. Etros says when it's ready."
+    fi
+    curl -s -o /dev/null -d "$msg" http://localhost:1234/notify 2>/dev/null
+    echo "$msg" >&2
+    exit 1
+fi
+
 mount -o remount,rw /boot || exit 1
 echo ollie > /boot/etros/next-boot
 sync

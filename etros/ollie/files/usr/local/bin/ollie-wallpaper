@@ -1,0 +1,8 @@
+#!/bin/sh
+# Bobby on the desktop: KDE Plasma (Arch Linux's Ollie OS) or PCManFM
+# (Raspberry Pi OS's).
+sleep 3
+if command -v plasma-apply-wallpaperimage >/dev/null 2>&1; then
+    exec plasma-apply-wallpaperimage /usr/share/ollie/bobby.png
+fi
+exec pcmanfm --set-wallpaper=/usr/share/ollie/bobby.png --wallpaper-mode=crop

@@ -47,11 +47,15 @@ const (
 
 // Options for one install.
 type Options struct {
-	Sources  Sources
-	Ollie    bool   // include Ollie OS
-	NoR36S   bool   // the Raspberry Pi 5 only
-	GamesDir string // optional folder of games for my-roms
-	CacheDir string
+	Sources Sources
+	Ollie   bool // include Ollie OS
+	// OllieArch: Ollie OS is Arch Linux, which the Pi 5 builds itself from
+	// the Arch Linux ARM tarball put on SHARE (etros-setup-arch), so no
+	// Raspberry Pi OS goes on the card.
+	OllieArch bool
+	NoR36S    bool   // the Raspberry Pi 5 only
+	GamesDir  string // optional folder of games for my-roms
+	CacheDir  string
 }
 
 // Reporter receives what the install is doing.
@@ -262,7 +266,7 @@ func Plan(o Options, rep Reporter) (*Card, error) {
 		return nil, fmt.Errorf("the R36S image doesn't look like one: its boot partition starts too early")
 	}
 
-	if o.Ollie {
+	if o.Ollie && !o.OllieArch {
 		rep.Stage("Getting Raspberry Pi OS for Ollie OS")
 		if c.rpiOS, err = fetch(s.RPiOS, o.CacheDir, "raspios", rep.Progress, rep.Log); err != nil {
 			return nil, err
@@ -383,7 +387,7 @@ func Plan(o Options, rep Reporter) (*Card, error) {
 	c.fatStart = int64(len(c.loader))
 	vol.SetHiddenSectors(uint32(c.fatStart / sectorSize))
 	end := c.fatStart + roundMiB(vol.Size())
-	if o.Ollie {
+	if o.Ollie && !o.OllieArch {
 		c.ollieStart = end
 		c.ollieSize = roundMiB(c.rootSize + ollieFreeSpace)
 		end += c.ollieSize

@@ -106,9 +106,21 @@ etros_mount_ollie() {
         mount -o rw "${ETROS_OLLIE_ROOT}" /new_root
         return
     fi
-    # Partition 3 is Ollie OS on cards written whole; on a card that had
-    # room made for Windows 11 it's something else, so only take it if it
-    # is a Linux system.
+    # Ollie OS on SHARE (etros/ollie-rootfs.img: cards put together without
+    # a password, and Arch Linux, which the Pi 5 builds there) comes first.
+    mkdir -p /share_root || return 1
+    if mount -o rw "${ETROS_SHARE:-$(etros_share_device)}" /share_root
+    then
+        if test -f /share_root/etros/ollie-rootfs.img &&
+            mount -o loop,rw /share_root/etros/ollie-rootfs.img /new_root
+        then
+            ETROS_SHARE_MOUNTED=1
+            return 0
+        fi
+        umount /share_root
+    fi
+    # Then partition 3, where cards written whole have it (only if it is a
+    # Linux system: an earlier Etros could make it Windows 11's).
     if mount -o rw "$(etros_ollie_device)" /new_root 2>/dev/null
     then
         if test -e /new_root/sbin/init || test -L /new_root/sbin/init
@@ -117,23 +129,7 @@ etros_mount_ollie() {
         fi
         umount /new_root
     fi
-    mkdir -p /share_root || return 1
-    if ! mount -o rw "${ETROS_SHARE:-$(etros_share_device)}" /share_root
-    then
-        ETROS_WHY="no partition 3 for Ollie OS, and the SHARE partition would not mount"
-        return 1
-    fi
-    if ! test -f /share_root/etros/ollie-rootfs.img
-    then
-        ETROS_WHY="Ollie OS is not on this card (no partition 3, no etros/ollie-rootfs.img on SHARE)"
-    elif mount -o loop,rw /share_root/etros/ollie-rootfs.img /new_root
-    then
-        ETROS_SHARE_MOUNTED=1
-        return 0
-    else
-        ETROS_WHY="etros/ollie-rootfs.img on SHARE would not mount (unfinished copy?)"
-    fi
-    umount /share_root
+    ETROS_WHY="Ollie OS is not on this card (no etros/ollie-rootfs.img on SHARE, no partition 3), or isn't ready yet"
     return 1
 }
 

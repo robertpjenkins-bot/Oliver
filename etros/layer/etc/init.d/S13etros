@@ -156,6 +156,15 @@ mkdir -p /userdata/roms/windows /userdata/roms/os
 [ -f /userdata/roms/windows/_READ_ME.txt ] || cp /usr/share/etros/windows-READ-ME.txt /userdata/roms/windows/_READ_ME.txt
 [ -f /userdata/roms/os/_READ_ME.txt ] || cp /usr/share/etros/os-READ-ME.txt /userdata/roms/os/_READ_ME.txt
 
+# Ollie OS as Arch Linux: Etros Updater put Arch Linux ARM on SHARE and took
+# Raspberry Pi OS away; build Ollie OS from it, in the background.
+if [ -f /userdata/etros/ollie-is-arch.txt ] && [ ! -f /userdata/etros/ollie-rootfs.img ] &&
+    [ -f /userdata/system/etros/downloads/ArchLinuxARM-aarch64-latest.tar.gz ]; then
+    case "$(tr -d '\0' < /proc/device-tree/compatible 2>/dev/null)" in
+        *bcm2712*) setsid /usr/bin/etros-setup-arch < /dev/null > /dev/null 2>&1 & ;;
+    esac
+fi
+
 # Anything downloaded in Ollie OS is ready to play by the time the menu shows.
 /usr/bin/etros-sort-roms
 

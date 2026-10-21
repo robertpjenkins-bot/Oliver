@@ -87,11 +87,25 @@ func runMaker(o Options) error {
 			note("The Raspberry Pi 5 and R36S have ARM processors and can't run PC systems, so")
 			note("Etros needs Ollie OS for ARM (ollie-os-arm64.img.xz) instead.")
 		}
-		if len(f.Ollie) == 0 {
+		archOK := filesInstallSupported()
+		if archOK {
+			note("Ollie OS (the desktop for downloading ROMs) is Arch Linux with KDE Plasma.")
+			note("The Pi 5 builds it itself from Arch Linux ARM the first time Etros starts.")
+		} else if len(f.Ollie) == 0 {
 			note("Ollie OS (the desktop for downloading ROMs) is made from Raspberry Pi OS.")
 			note("It isn't in Downloads yet, so Etros Maker downloads it (1.3 GB, no password).")
 		}
 		o.Ollie = t.yes("Include Ollie OS?", true)
+		o.OllieArch = false
+		t.archTarball = ""
+		if o.Ollie && archOK {
+			p, err := t.getArchTarball()
+			if err != nil {
+				note(cRed + "Couldn't get Arch Linux ARM: " + err.Error() + cReset)
+				continue
+			}
+			o.OllieArch, t.archTarball = true, p
+		}
 		o.GamesDir = ""
 		if len(f.Games) > 0 && t.yes("Add your games from "+f.Games[0]+"?", true) {
 			o.GamesDir = f.Games[0]
@@ -359,6 +373,10 @@ func (t *tui) fixLoop() bool {
 		showCardContents(dir)
 		if _, err := os.Stat(filepath.Join(dir, "etros", "pi5")); err == nil {
 			t.offerProton(dir)
+			if err := t.offerArch(dir); err != nil {
+				logf("ERROR: Arch Linux: %v", err)
+				note(cRed + "Couldn't make Ollie OS Arch Linux: " + err.Error() + cReset)
+			}
 		}
 		if cardHasR36S(dir) {
 			t.chooseR36SScreen(dir)
