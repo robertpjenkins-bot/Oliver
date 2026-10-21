@@ -6,12 +6,15 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -51,6 +54,50 @@ func (t *tui) getPCBatocera() (string, error) {
 	return fetch(pcBatoceraURL(), defaultCache(), "batocera-x86_64-boot", rep.Progress, rep.Log)
 }
 
+// Where Batocera for PCs and Arch Linux's bootstrap are downloaded from:
+// the first that works.
+func pcBatoceraURLs() []string {
+	return []string{pcBatoceraURL(), "https://mirrors.o2switch.fr/batocera/x86_64/stable/last/boot.tar.xz"}
+}
+
+var archBootstrapURLs = []string{
+	archBootstrapURL,
+	"https://mirrors.kernel.org/archlinux/iso/latest/archlinux-bootstrap-x86_64.tar.zst",
+	"https://mirrors.mit.edu/archlinux/iso/latest/archlinux-bootstrap-x86_64.tar.zst",
+}
+
+// fetchFirst downloads from the first of urls that works, and says in
+// words why none did.
+func fetchFirst(what, name string, urls []string, rep Reporter) (string, error) {
+	var why []string
+	for _, u := range urls {
+		got, err := fetch(u, defaultCache(), name, rep.Progress, rep.Log)
+		if err == nil {
+			return got, nil
+		}
+		logf("downloading %s: %v", u, err)
+		rep.Log("couldn't download from " + hostOf(u) + ": " + err.Error())
+		why = append(why, hostOf(u)+": "+err.Error())
+	}
+	return "", fmt.Errorf("couldn't download %s (%s). Check this Mac is on the internet and try again", what, strings.Join(why, "; "))
+}
+
+func hostOf(u string) string {
+	u = strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
+	h, _, _ := strings.Cut(u, "/")
+	return h
+}
+
+// roomForDownloads says why there isn't room to download need bytes, or "".
+func roomForDownloads(need int64) string {
+	dir := defaultCache()
+	os.MkdirAll(dir, 0o755)
+	if free := freeSpace(dir); free >= 0 && free < need && os.Getenv("ETROS_TEST_NO_ROOM_CHECK") == "" { // for tests
+		return fmt.Sprintf("this Mac needs %s free for the downloads, and has %s: empty the Trash or delete some big files, then try again", gbs(need), gbs(free))
+	}
+	return ""
+}
+
 // fetchPCBatocera finds Batocera for PCs in Downloads or downloads it,
 // saying so through rep (for the Safari installer).
 func fetchPCBatocera(rep Reporter) (string, error) {
@@ -60,8 +107,11 @@ func fetchPCBatocera(rep Reporter) (string, error) {
 			return m[0], nil
 		}
 	}
+	if why := roomForDownloads(5 << 30); why != "" {
+		return "", errors.New(why)
+	}
 	rep.Stage("Downloading Batocera for PCs (about 3 GB)")
-	return fetch(pcBatoceraURL(), defaultCache(), "batocera-x86_64-boot", rep.Progress, rep.Log)
+	return fetchFirst("Batocera for PCs", "batocera-x86_64-boot", pcBatoceraURLs(), rep)
 }
 
 // fetchArchBootstrap finds Arch Linux's bootstrap in Downloads or
@@ -71,8 +121,11 @@ func fetchArchBootstrap(rep Reporter) (string, error) {
 		rep.Log("using " + filepath.Base(m[0]) + " from Downloads")
 		return m[0], nil
 	}
+	if why := roomForDownloads(1 << 30); why != "" {
+		return "", errors.New(why)
+	}
 	rep.Stage("Downloading Arch Linux for Ollie OS (about 150 MB)")
-	return fetch(archBootstrapURL, defaultCache(), "archlinux-bootstrap", rep.Progress, rep.Log)
+	return fetchFirst("Arch Linux", "archlinux-bootstrap", archBootstrapURLs, rep)
 }
 
 // getArchBootstrap finds Arch Linux's bootstrap tarball in Downloads, or
@@ -356,4 +409,73 @@ func macTargets(disks []dDisk, bootStore string) []macTarget {
 		}
 	}
 	return out
+}
+
+// A macCheck is something looked at before Etros goes on a Mac.
+type macCheck struct {
+	Name     string `json:"name"`
+	OK       bool   `json:"ok"`
+	Why      string `json:"why"`
+	Blocking bool   `json:"blocking"` // Etros can't go on until it's sorted
+}
+
+// reachable tells whether the first byte of a download can be fetched,
+// and if not, why.
+func reachable(urls []string) (bool, string) {
+	c := &http.Client{Timeout: 15 * time.Second}
+	var why []string
+	for _, u := range urls {
+		req, err := http.NewRequest("GET", u, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("Range", "bytes=0-0")
+		resp, err := c.Do(req)
+		if err != nil {
+			why = append(why, hostOf(u)+": "+err.Error())
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode < 400 {
+			return true, ""
+		}
+		why = append(why, hostOf(u)+": "+resp.Status)
+	}
+	return false, strings.Join(why, "; ")
+}
+
+// downloadChecks are the checks for what Etros downloads: Batocera for
+// PCs (needed) and Arch Linux (for Ollie OS), unless they're in Downloads.
+func downloadChecks() []macCheck {
+	inDownloads := func(pats ...string) bool {
+		for _, p := range pats {
+			if m, _ := filepath.Glob(filepath.Join(downloadsDir(), p)); len(m) > 0 {
+				return true
+			}
+		}
+		return false
+	}
+	var out []macCheck
+	bato := macCheck{Name: "Batocera for PCs can be downloaded (about 3 GB)", Blocking: true}
+	if inDownloads("*x86_64*boot*.tar.xz") {
+		bato.Name, bato.OK = "Batocera for PCs is in Downloads", true
+	} else if bato.OK, bato.Why = reachable(pcBatoceraURLs()); !bato.OK {
+		bato.Why = "this Mac can't reach batocera.org (" + bato.Why + "). Is it on the internet?"
+	}
+	arch := macCheck{Name: "Arch Linux can be downloaded, for Ollie OS (about 150 MB)"}
+	if inDownloads("archlinux-bootstrap*x86_64*.tar.zst") {
+		arch.Name, arch.OK = "Arch Linux is in Downloads, for Ollie OS", true
+	} else if arch.OK, arch.Why = reachable(archBootstrapURLs); !arch.OK {
+		arch.Why = "can't reach Arch Linux's download sites (" + arch.Why + "); Etros works without Ollie OS"
+	}
+	room := macCheck{Name: "Room on this Mac for the downloads", Blocking: true}
+	need := int64(5 << 30)
+	if bato.OK && strings.HasSuffix(bato.Name, "Downloads") {
+		need = 1 << 30
+	}
+	if room.Why = roomForDownloads(need); room.Why == "" {
+		room.OK = true
+	}
+	return append(out, bato, arch, room)
 }

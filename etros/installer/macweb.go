@@ -28,6 +28,7 @@ type macBackend interface {
 	targets() ([]macTarget, error)
 	roomFree(part string) int64 // macOS's free room, for a "room" target
 	wifiName() string           // the Wi-Fi this Mac is on
+	checks() []macCheck         // what's looked at before anything is changed
 	install(x macTarget, etros int64, ssid, key string, rep Reporter) error
 }
 
@@ -140,6 +141,9 @@ func macWebHandler(b macBackend, secret string, quit func()) http.Handler {
 			out = append(out, t)
 		}
 		reply(w, map[string]any{"targets": out, "wifi": b.wifiName()})
+	})
+	mux.HandleFunc(base+"checks", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, b.checks())
 	})
 	mux.HandleFunc(base+"install", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

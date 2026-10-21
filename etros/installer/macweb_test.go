@@ -34,6 +34,10 @@ func fakeDisks() []dDisk {
 func (f *fakeMac) targets() ([]macTarget, error) { return macTargets(fakeDisks(), "disk0s2"), nil }
 func (f *fakeMac) roomFree(string) int64         { return 90 << 30 }
 func (f *fakeMac) wifiName() string              { return "Jenkins Wi-Fi" }
+func (f *fakeMac) checks() []macCheck {
+	return []macCheck{{Name: "An Intel Mac", OK: true, Blocking: true}, {Name: "macOS 11.7.11", OK: true},
+		{Name: "Arch Linux can be downloaded", Why: "can't reach it"}}
+}
 func (f *fakeMac) install(x macTarget, etros int64, ssid, key string, rep Reporter) error {
 	f.mu.Lock()
 	f.got, f.gotEtros, f.ssid = x, etros, ssid

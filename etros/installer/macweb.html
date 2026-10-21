@@ -51,6 +51,12 @@
   ol { padding-left: 22px; } li { margin: 6px 0; }
   .hidden { display: none; }
   .buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .check { display: grid; grid-template-columns: 26px 1fr; gap: 6px; padding: 5px 0; }
+  .check .mark { font-weight: 700; }
+  .check.ok .mark { color: var(--green); }
+  .check.bad .mark { color: var(--red); }
+  .check.soft .mark { color: var(--orange); }
+  .check .why { grid-column: 2; font-size: 14px; color: var(--dim); }
   @media (max-width: 560px) { label.row { grid-template-columns: 22px 1fr auto; } .id { display: none; } .action { grid-column: 2 / 4; } }
 </style>
 </head>
@@ -60,6 +66,9 @@
   <div class="sub">Mac Installer · version {{VERSION}} · Etros and Ollie OS on an Intel Mac</div>
 
   <section id="choose">
+    <h2>Checks</h2>
+    <div class="panel" id="checks"><span class="note">Checking this Mac and the internet…</span></div>
+
     <h2>1 · Where should Etros go?</h2>
     <div class="panel" id="drives"><span class="note">Looking at the drives…</span></div>
     <div class="buttons"><button class="plain" id="refresh">Look again</button></div>
@@ -109,7 +118,25 @@
 const $ = id => document.getElementById(id);
 const gb = n => (n / 1e9).toFixed(1) + " GB";
 const MIN_GB = {{MIN_GB}}, OLLIE_GB = {{OLLIE_GB}};
-let targets = [], chosen = null;
+let targets = [], chosen = null, blocked = "Still checking this Mac…";
+
+async function loadChecks() {
+  const box = $("checks");
+  let cs;
+  try { cs = await api("checks"); } catch (e) { box.textContent = "Couldn't check: " + e.message; blocked = ""; update(); return; }
+  box.innerHTML = ""; blocked = "";
+  for (const c of cs) {
+    const d = document.createElement("div");
+    d.className = "check " + (c.ok ? "ok" : c.blocking ? "bad" : "soft");
+    const m = document.createElement("span"); m.className = "mark"; m.textContent = c.ok ? "✓" : c.blocking ? "✗" : "!";
+    const n = document.createElement("span"); n.textContent = c.name;
+    d.append(m, n);
+    if (c.why) { const w = document.createElement("span"); w.className = "why"; w.textContent = c.why; d.appendChild(w); }
+    box.appendChild(d);
+    if (!c.ok && c.blocking && !blocked) blocked = c.name + ": " + c.why;
+  }
+  update();
+}
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
@@ -183,11 +210,13 @@ function update() {
     chosen.kind === "whole" ? "Everything on " + name + " (" + chosen.disk + ") will be erased. Then it starts Etros on any Intel Mac." :
     chosen.kind === "room" ? etrosGB() + " GB of macOS's free room becomes Etros. macOS and its files stay." :
     "Everything on " + chosen.id + " (" + chosen.what + ") will be erased.";
-  $("go").disabled = $("confirm").value.trim().toUpperCase() !== "ERASE";
+  $("go").disabled = !!blocked || $("confirm").value.trim().toUpperCase() !== "ERASE";
+  $("go-error").textContent = blocked ? "Can't go ahead yet: " + blocked : "";
 }
 
 async function go() {
   $("go-error").textContent = "";
+  if (blocked) { $("go-error").textContent = "Can't go ahead yet: " + blocked; return; }
   try {
     await api("install", { n: chosen.n, gb: Math.floor(etrosGB()), ssid: $("ssid").value, key: $("key").value, confirm: $("confirm").value });
   } catch (e) { $("go-error").textContent = e.message; return; }
@@ -234,7 +263,7 @@ async function poll() {
   box.append(h, ol);
 }
 
-$("refresh").onclick = loadDrives;
+$("refresh").onclick = () => { loadChecks(); loadDrives(); };
 $("confirm").oninput = update;
 $("gb").oninput = update;
 $("go").onclick = go;
@@ -244,6 +273,7 @@ $("quit").onclick = async () => {
   document.body.innerHTML = '<main><h1>ETROS</h1><p class="sub">The installer is closed. You can close this tab.</p></main>';
 };
 api("status").then(s => { if (s.running || s.finished) { $("choose").classList.add("hidden"); $("working").classList.remove("hidden"); poll(); } }).catch(() => {});
+loadChecks();
 loadDrives();
 </script>
 </body>

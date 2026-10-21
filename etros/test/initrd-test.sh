@@ -198,6 +198,31 @@ echo "R36S, the boot after Ollie OS"
 out=$(boot "gameconsole,r36s\0rockchip,rk3326")
 expect "$out" root batocera-r36s
 
+# A PC (an Intel Mac, see installer/mac_*.go): Batocera for PCs' own
+# layout, its system in boot/, no device tree, and the Etros layer.
+echo "PC (Intel Mac), first boot"
+FAT=$T/fatpc
+mkdir -p "$FAT/boot" "$FAT/etros"
+squash "$FAT/boot/batocera.update" batocera-pc lib/modules/6.12-pc/marker=pc
+echo x86_64 > "$FAT/boot/batocera.board"
+cp "$LAYER" "$FAT/etros/etros.squashfs"
+echo "Etros on an Intel Mac" > "$FAT/etros/intel-mac.txt"
+out=$(boot "")
+expect "$out" root batocera-pc
+expect "$out" board x86_64
+expect "$out" layer yes
+expect "$out" boot-writable yes
+if test -f "$FAT/boot/batocera"; then
+    echo "  ok   batocera.update installed"
+else
+    echo "  FAIL batocera.update not installed"
+    fails=$((fails + 1))
+fi
+echo "PC (Intel Mac), next boot"
+out=$(boot "")
+expect "$out" root batocera-pc
+expect "$out" layer yes
+
 if [ "$fails" -ne 0 ]; then
     echo "$fails check(s) failed; last init log:"
     cat "$T/log"

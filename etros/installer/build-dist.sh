@@ -81,7 +81,7 @@ dmg() {  # dmg FOLDER-OF-A-DARWIN-PACKAGE DMG-NAME
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleVersion</key><string>$VERSION</string>
 	<key>CFBundleShortVersionString</key><string>$VERSION</string>
-	<key>LSMinimumSystemVersion</key><string>10.13</string>
+	<key>LSMinimumSystemVersion</key><string>11.0</string>
 	<key>LSUIElement</key><true/>
 </dict>
 </plist>
