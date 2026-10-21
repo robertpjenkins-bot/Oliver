@@ -93,6 +93,19 @@ func (darwinMac) install(x macTarget, etros int64, ssid, key string, rep Reporte
 		return err
 	}
 
+	// Arch Linux made ready here first too: after this, nothing is read from
+	// where the downloads were, which may be the very partition erased next.
+	archGz := ""
+	if withOllie {
+		rep.Stage("Getting Arch Linux ready for Ollie OS")
+		archGz = filepath.Join(defaultCache(), "archlinux-bootstrap-x86_64.tar.gz")
+		if err := gzBootstrap(bootstrap, archGz, rep); err != nil {
+			logf("Arch Linux: %v", err)
+			rep.Log("Ollie OS left out: " + err.Error())
+			withOllie = false
+		}
+	}
+
 	rep.Stage("Making room for Etros")
 	boot, share, err := makeEtrosPartitions(x, etros, rep)
 	if err != nil {
@@ -113,9 +126,10 @@ func (darwinMac) install(x macTarget, etros int64, ssid, key string, rep Reporte
 	}
 	if withOllie {
 		rep.Stage("Putting Arch Linux on for Ollie OS")
-		if err := gzBootstrap(bootstrap, filepath.Join(dir, "etros", "archlinux-bootstrap-x86_64.tar.gz"), rep); err != nil {
+		if err := copyFile(archGz, filepath.Join(dir, "etros", "archlinux-bootstrap-x86_64.tar.gz"), rep); err != nil {
 			return err
 		}
+		os.Remove(archGz)
 		if ssid != "" {
 			if err := os.WriteFile(filepath.Join(dir, "etros", "wifi.txt"), []byte(ssid+"\n"+key+"\n"), 0o600); err != nil {
 				return err
@@ -213,6 +227,20 @@ func diskutil(rep Reporter, args ...string) error {
 	return nil
 }
 
+// forceUnmount closes a partition (or every partition of a drive), even
+// with something using it. It needs no password; it's fine if it was closed.
+func forceUnmount(rep Reporter, id string) {
+	verb := "unmount"
+	if !strings.Contains(strings.TrimPrefix(id, "disk"), "s") {
+		verb = "unmountDisk"
+	}
+	out, err := exec.Command("diskutil", verb, "force", id).CombinedOutput()
+	logf("diskutil %s force %s: %v %s", verb, id, err, strings.TrimSpace(string(out)))
+	if err == nil {
+		rep.Log("closed " + id)
+	}
+}
+
 func logLines(rep Reporter, out []byte) {
 	for _, l := range strings.Split(strings.ReplaceAll(strings.TrimSpace(string(out)), "\r", "\n"), "\n") {
 		if l != "" {
@@ -228,6 +256,8 @@ func diskutilError(args []string, out []byte) error {
 	switch {
 	case strings.Contains(last, "-69879") || strings.Contains(last, "Couldn't open"):
 		why = "macOS couldn't open the drive: something is using it. Close any Finder windows or programs using it, eject anything on it, and try again"
+	case strings.Contains(strings.ToLower(last), "being used") || strings.Contains(strings.ToLower(last), "in use") || strings.Contains(strings.ToLower(last), "busy"):
+		why = "something on the Mac is still using it. Close any Finder windows showing it and anything opened from it, then try again (restarting the Mac first always works)"
 	case strings.Contains(last, "-69888") || strings.Contains(last, "unmount"):
 		why = "macOS couldn't unmount the partition: something is using it. Close Finder windows and programs using it, and try again"
 	case strings.Contains(last, "-69519") || strings.Contains(strings.ToLower(last), "not enough") || strings.Contains(last, "too small"):
@@ -287,6 +317,7 @@ func makeEtrosPartitions(x macTarget, etros int64, rep Reporter) (boot, share dP
 	after := x.after
 	switch x.kind {
 	case "whole":
+		forceUnmount(rep, x.disk.id)
 		if err := diskutil(rep, "partitionDisk", x.disk.id, "GPT", "MS-DOS FAT32", "BATOCERA", "8G", "ExFAT", "SHARE", "R"); err != nil {
 			return boot, share, err
 		}
@@ -302,6 +333,9 @@ func makeEtrosPartitions(x macTarget, etros int64, rep Reporter) (boot, share dP
 		after = x.part.id
 	case "part":
 		for _, p := range append([]dPart{x.part}, x.extra...) {
+			// Finder, Spotlight or anything else with it open would stop the
+			// erase ("being used"): close it whatever has it open.
+			forceUnmount(rep, p.id)
 			if err := diskutil(rep, "eraseVolume", "free", "none", p.id); err != nil {
 				return boot, share, err
 			}

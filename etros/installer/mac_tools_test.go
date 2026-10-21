@@ -48,6 +48,7 @@ type fakeMacState struct {
 	CancelPassword bool          `json:"cancel_password"`
 	Volumes        string        `json:"volumes"`
 	Wifi           string        `json:"wifi"`
+	Busy           []string      `json:"busy"`
 }
 
 // macBook is the 12-inch MacBook: EFI, macOS (APFS) and an ExFAT partition
@@ -476,5 +477,51 @@ func TestUnpackPCBatocera(t *testing.T) {
 		t.Errorf("without tar: %v", err)
 	} else if _, err := os.Stat(filepath.Join(dir, "EFI", "BOOT", "BOOTX64.EFI")); err != nil {
 		t.Errorf("without tar: %v", err)
+	}
+}
+
+// The ExFAT partition is open (Finder, Spotlight) and the downloads are on
+// it, as when they were copied there: it's closed with force, and nothing
+// is needed from it once it's erased.
+func TestMacInstallBusyPartitionWithDownloadsOnIt(t *testing.T) {
+	st := macBook("")
+	state := fakeMacEnv(t, st)
+	home := os.Getenv("HOME")
+	vols := filepath.Join(home, "Volumes")
+	etrosVol := filepath.Join(vols, "ETROS")
+	os.MkdirAll(etrosVol, 0o755)
+	for _, f := range []string{"batocera-x86_64-43-20261001-boot.tar.xz", "archlinux-bootstrap-x86_64.tar.zst"} {
+		if err := os.Rename(filepath.Join(home, "Downloads", f), filepath.Join(etrosVol, f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("ETROS_TEST_VOLUMES", vols)
+	cur := readFakeMac(t, state)
+	cur.Volumes = vols
+	cur.Busy = []string{"disk0s3"}
+	cur.Disks[0].Parts[2].Mount = etrosVol
+	b, _ := json.Marshal(cur)
+	os.WriteFile(state, b, 0o644)
+
+	rep := &logRep{}
+	if err := (darwinMac{}).install(pickTarget(t, "disk0s3"), 70<<30, "Jenkins Wi-Fi", "hunter2", rep); err != nil {
+		t.Fatalf("%v\n%s", err, strings.Join(rep.lines, "\n"))
+	}
+	checkEtrosOn(t, readFakeMac(t, state), "disk0", 3, 4, true)
+	if _, err := os.Stat(filepath.Join(etrosVol, "archlinux-bootstrap-x86_64.tar.zst")); err == nil {
+		t.Error("the erased partition's files are still there: the stand-in didn't erase")
+	}
+	calls, _ := os.ReadFile(state + ".log")
+	if !strings.Contains(string(calls), "diskutil unmount force disk0s3") {
+		t.Errorf("not closed with force:\n%s", calls)
+	}
+}
+
+// Still busy after all: said in words.
+func TestMacInstallBusyMessage(t *testing.T) {
+	out := []byte("0:182: execution error: Error: -69877: The target disk is being used")
+	err := diskutilError([]string{"eraseVolume", "free", "none", "disk0s3"}, out)
+	if !strings.Contains(err.Error(), "erase disk0s3") || !strings.Contains(err.Error(), "still using it") {
+		t.Errorf("got %v", err)
 	}
 }

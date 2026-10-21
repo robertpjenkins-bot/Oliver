@@ -7,7 +7,10 @@
 #                          "start": N, "size": N}, ...]}],
 #    "boot_store": "disk0s2", "apfs_free": N, "need_admin": false,
 #    "cancel_password": false, "volumes": "/dir/for/mount/points",
-#    "wifi": "Home"}
+#    "wifi": "Home", "busy": ["disk0s3"]}
+# A "busy" partition (open in Finder, indexed by Spotlight...) can't be
+# erased until it's unmounted with force; erasing one deletes what was in
+# its mount point.
 # Every call is logged to $FAKEMAC_STATE.log.
 import json, os, plistlib, re, sys
 
@@ -123,6 +126,19 @@ def diskutil(args):
         sys.stdout.buffer.write(plistlib.dumps({"Containers": [{"ContainerReference": "disk1",
             "CapacityFree": st["apfs_free"], "PhysicalStores": [{"DeviceIdentifier": st["boot_store"]}]}]}))
         return
+    if args[0] in ("unmount", "unmountDisk"):
+        ids = [args[-1]]
+        d, p = find(args[-1])
+        if d is None:
+            die("Could not find disk: " + args[-1])
+        if p is None:
+            ids = [pid(d, q) for q in d["parts"]]
+        if "force" not in args and any(i in (st.get("busy") or []) for i in ids):
+            die("Unmount of %s failed: at least one volume could not be unmounted" % args[-1])
+        st["busy"] = [b for b in (st.get("busy") or []) if b not in ids]
+        save()
+        print("Volume(s) on %s unmounted" % args[-1])
+        return
     admin_only()
     if args[0] == "eraseVolume" and len(args) == 4:
         fmt, name, ident = args[1:]
@@ -131,7 +147,12 @@ def diskutil(args):
             die("Could not find disk: " + ident)
         if pid(d, p) == st["boot_store"]:
             die("Error: -69888: Couldn't unmount disk (it's the startup disk)")
+        if ident in (st.get("busy") or []):
+            die("0:182: execution error: Error: -69877: The target disk is being used")
         if fmt.lower() in ("free", "free space", "%noformat%") and name.lower() == "none":
+            if p.get("mount"):
+                import shutil
+                shutil.rmtree(p["mount"], ignore_errors=True)
             d["parts"].remove(p)
             print("Finished erase on " + ident)
         else:
@@ -161,6 +182,8 @@ def diskutil(args):
             die("Could not find disk: " + args[1])
         if d["internal"]:
             die("Error: -69888: Couldn't unmount disk (it's the startup disk)")
+        if any(pid(d, q) in (st.get("busy") or []) for q in d["parts"]):
+            die("Error: -69877: The target disk is being used")
         rest = args[3:]
         d["parts"] = [{"num": 1, "content": "EFI", "name": "EFI", "start": 20480 * 512, "size": 200 * MIB}]
         start = 20480 * 512 + 200 * MIB
