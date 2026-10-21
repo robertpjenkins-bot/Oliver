@@ -428,7 +428,8 @@ type dDisk struct {
 
 // A macTarget is a place Etros can go.
 type macTarget struct {
-	kind   string // "part": a partition (and extra), erased; "room": free room in macOS's APFS; "whole": a whole drive, erased
+	kind string // "part": a partition (and extra), erased; "room": free room in macOS's APFS; "whole": a whole drive, erased;
+	//                "ready": BATOCERA and SHARE made already (in Disk Utility, or an earlier Etros): files only
 	disk   dDisk
 	part   dPart
 	extra  []dPart // erased along with part (an earlier Etros's SHARE)
@@ -515,9 +516,23 @@ func macTargets(disks []dDisk, bootStore string) []macTarget {
 				t.action = "erase it (another Mac system or drive!): Etros goes here"
 			}
 			if p.name == "BATOCERA" {
-				t.action = "Etros already: put it on again (its games and saves are erased)"
+				// Made already, with SHARE right after it: only Etros's files
+				// need putting on, so nothing is erased and macOS isn't asked
+				// to change the drive.
 				if i+1 < len(d.parts) && (d.parts[i+1].name == "SHARE" || d.parts[i+1].content == "Linux Filesystem") {
 					t.extra = []dPart{d.parts[i+1]}
+					t.kind = "ready"
+					t.action = "use it as it is: Etros's files go on (nothing is erased)"
+					switch {
+					case p.content != "Microsoft Basic Data" && p.content != "DOS_FAT_32" && p.content != "Windows_FAT_32":
+						t.why = "BATOCERA has to be MS-DOS (FAT) to start from"
+					case d.parts[i+1].num() != p.num()+1:
+						t.why = "SHARE isn't numbered right after BATOCERA, so Batocera wouldn't find it"
+					case p.size < 4<<30:
+						t.why = "BATOCERA is too small (it needs 4 GB)"
+					}
+				} else {
+					t.action = "Etros already: put it on again (its games and saves are erased)"
 				}
 			}
 			size := p.size
@@ -527,7 +542,7 @@ func macTargets(disks []dDisk, bootStore string) []macTarget {
 			if t.why == "" && t.kind == "part" && t.after == "" {
 				t.why = "first on its drive (choose the whole drive)"
 			}
-			if t.why == "" && t.kind == "part" && size < min {
+			if t.why == "" && (t.kind == "part" || t.kind == "ready") && size < min {
 				t.why = "too small (Etros needs " + gbs(min) + ")"
 			}
 			out = append(out, t)

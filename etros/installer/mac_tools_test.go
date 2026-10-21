@@ -373,6 +373,13 @@ func TestMacWebReal(t *testing.T) {
 	}
 	st := macBook("")
 	st.CancelPassword = os.Getenv("FAKEMAC_CANCEL") == "1"
+	if os.Getenv("FAKEMAC_READY") == "1" { // BATOCERA and SHARE made in Disk Utility
+		const g = int64(1) << 30
+		st.Disks[0].Parts = append(st.Disks[0].Parts[:2],
+			fakeMacPart{Num: 3, Content: "Microsoft Basic Data", Name: "BATOCERA", Start: 210<<20 + 180*g, Size: 8 * g},
+			fakeMacPart{Num: 4, Content: "Microsoft Basic Data", Name: "SHARE", Start: 210<<20 + 188*g, Size: 62 * g})
+		st.Stuck = map[string]int{"disk0s3": 99}
+	}
 	state := fakeMacEnv(t, st)
 	if os.Getenv("FAKEMAC_NO_INTERNET") == "1" {
 		os.RemoveAll(filepath.Join(os.Getenv("HOME"), "Downloads"))
@@ -591,5 +598,53 @@ func TestMacInstallFromTheChosenPartition(t *testing.T) {
 	}
 	if calls, _ := os.ReadFile(state + ".log"); strings.Contains(string(calls), "eraseVolume") {
 		t.Error("erased anyway")
+	}
+}
+
+// BATOCERA (FAT) and SHARE (ExFAT) made in Disk Utility, with macOS never
+// letting go of the drive: Etros's files go on BATOCERA and nothing is
+// erased, no password asked.
+func TestMacInstallOnPartitionsMadeInDiskUtility(t *testing.T) {
+	const g = int64(1) << 30
+	st := macBook("")
+	st.Disks[0].Parts = append(st.Disks[0].Parts[:2],
+		fakeMacPart{Num: 3, Content: "Microsoft Basic Data", Name: "BATOCERA", Start: 210<<20 + 180*g, Size: 8 * g},
+		fakeMacPart{Num: 4, Content: "Microsoft Basic Data", Name: "SHARE", Start: 210<<20 + 188*g, Size: 62 * g})
+	st.Stuck = map[string]int{"disk0s3": 99, "disk0s4": 99}
+	state := fakeMacEnv(t, st)
+	x := pickTarget(t, "disk0s3")
+	if x.kind != "ready" || len(x.extra) != 1 {
+		t.Fatalf("offered as %q %+v", x.kind, x.extra)
+	}
+	rep := &logRep{}
+	if err := (darwinMac{}).install(x, 70*g, "Jenkins Wi-Fi", "hunter2", rep); err != nil {
+		t.Fatalf("%v\n%s", err, strings.Join(rep.lines, "\n"))
+	}
+	checkEtrosOn(t, readFakeMac(t, state), "disk0", 3, 4, true)
+	calls, _ := os.ReadFile(state + ".log")
+	for _, no := range []string{"eraseVolume", "addPartition", "osascript", "unmount"} {
+		if strings.Contains(string(calls), no) {
+			t.Errorf("did %s:\n%s", no, calls)
+		}
+	}
+}
+
+func TestMacTargetsReady(t *testing.T) {
+	const g = int64(1) << 30
+	d := dDisk{id: "disk0", internal: true, size: 251 * g, parts: []dPart{
+		{"disk0s1", "EFI", "EFI", 200 << 20}, {"disk0s2", "Apple_APFS", "", 180 * g},
+		{"disk0s3", "Microsoft Basic Data", "BATOCERA", 8 * g}, {"disk0s5", "Microsoft Basic Data", "SHARE", 60 * g},
+	}}
+	for _, x := range macTargets([]dDisk{d}, "disk0s2") {
+		if x.part.id == "disk0s3" && (x.kind != "ready" || !strings.Contains(x.why, "numbered")) {
+			t.Errorf("gap in the numbers: %+v", x)
+		}
+	}
+	d.parts[3].id = "disk0s4"
+	d.parts[2].content = "Apple_HFS"
+	for _, x := range macTargets([]dDisk{d}, "disk0s2") {
+		if x.part.id == "disk0s3" && !strings.Contains(x.why, "MS-DOS") {
+			t.Errorf("not FAT: %+v", x)
+		}
 	}
 }

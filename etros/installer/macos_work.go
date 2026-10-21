@@ -118,14 +118,22 @@ func (darwinMac) install(x macTarget, etros int64, ssid, key string, rep Reporte
 		}
 	}
 
-	rep.Stage("Making room for Etros")
-	boot, share, err := makeEtrosPartitions(x, etros, rep)
-	if err != nil {
-		return err
+	var boot, share dPart
+	if x.kind == "ready" {
+		// BATOCERA and SHARE are there already: files only.
+		boot, share = x.part, x.extra[0]
+	} else {
+		rep.Stage("Making room for Etros")
+		if boot, share, err = makeEtrosPartitions(x, etros, rep); err != nil {
+			return err
+		}
 	}
 	dir := mountPoint(boot.id)
 	if dir == "" {
 		return errors.New("couldn't open the BATOCERA partition")
+	}
+	if free := freeSpace(dir); x.kind == "ready" && free >= 0 && free < 4<<30 && os.Getenv("ETROS_TEST_NO_ROOM_CHECK") == "" {
+		return fmt.Errorf("BATOCERA has %s free and Batocera needs about 4 GB: delete what's on it (it's %s in Finder) and try again", gbs(free), dir)
 	}
 
 	rep.Stage("Copying Batocera and Etros")

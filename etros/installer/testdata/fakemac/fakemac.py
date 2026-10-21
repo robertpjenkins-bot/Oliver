@@ -151,6 +151,12 @@ def diskutil(args):
         save()
         print("Volume(s) on %s unmounted" % args[-1])
         return
+    if args[0] == "mount":  # no password needed for this on a Mac
+        d, p = find(args[1])
+        if p:
+            mount(d, p)
+            save()
+        return
     admin_only()
     if args[0] == "eraseVolume" and len(args) == 4:
         fmt, name, ident = args[1:]
@@ -226,12 +232,6 @@ def diskutil(args):
         p["size"] = new
         print("Finished APFS operation")
         save()
-        return
-    if args[0] == "mount":
-        d, p = find(args[1])
-        if p:
-            mount(d, p)
-            save()
         return
     die("fake diskutil doesn't know: " + " ".join(args))
 

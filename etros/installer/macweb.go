@@ -136,6 +136,9 @@ func macWebHandler(b macBackend, secret string, quit func()) (h http.Handler, bu
 			if x.kind == "whole" {
 				t.ID, t.Size = x.disk.id, x.disk.size
 			}
+			for _, e := range x.extra {
+				t.Size += e.size // BATOCERA with its SHARE
+			}
 			if x.kind == "room" && x.why == "" {
 				t.Free = b.roomFree(x.part.id)
 			}
@@ -181,7 +184,7 @@ func macWebHandler(b macBackend, secret string, quit func()) (h http.Handler, bu
 		switch x.kind {
 		case "whole":
 			etros = x.disk.size
-		case "part":
+		case "part", "ready":
 			etros = x.part.size
 			for _, e := range x.extra {
 				etros += e.size

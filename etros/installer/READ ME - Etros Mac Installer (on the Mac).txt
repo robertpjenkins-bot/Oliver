@@ -38,3 +38,12 @@ Installer finds Batocera and Arch Linux on the drive.
 If macOS says "Checking" or "Verifying" for ages: cancel it, open Terminal,
 type  xattr -cr  and a space, drag Etros Installer into the window, press
 Enter, then open Etros Installer again.
+
+IF MACOS WON'T LET ETROS ERASE THE PARTITION ("in use")
+Make Etros's two partitions yourself in Disk Utility instead: View > Show
+All Devices, click the Mac's drive (the top line), Partition, and turn the
+partition for Etros into two: BATOCERA, MS-DOS (FAT), 8 GB, and right after
+it SHARE, ExFAT, the rest. (If Disk Utility can't either, do it from macOS
+Recovery: hold Command-R at start-up, then Disk Utility.) Then in Etros
+Installer choose BATOCERA: "use it as it is". Nothing is erased, and no
+password is needed.
