@@ -12,3 +12,6 @@ func (t *tui) remakeWithR36S(dir string) error {
 
 // shareFillsCard can only be told on Linux; elsewhere the card is left as is.
 func shareFillsCard(dir string) bool { return false }
+
+// Proton goes on SHARE, which only Linux can open without a password.
+func (t *tui) offerProton(dir string) {}

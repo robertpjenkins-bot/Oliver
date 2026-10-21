@@ -9,8 +9,10 @@
 #
 # The runners are tried in this order, each only if the one before it
 # failed: Wine, Oliver (which picks the best Wine or Proton it can find),
-# Proton, Box86 and Steam. One that doesn't exist on this device is passed
-# over. A runner has failed if it stops with an error within 20 seconds.
+# Steam, Proton, then the Box translators (Box86, and Box64 once more in
+# its careful mode). One that isn't on this device is passed over and
+# named in the message. A runner has failed if it stops with an error
+# within 20 seconds.
 
 prog=$1
 log=/userdata/system/logs/etros-windows.log
@@ -91,31 +93,71 @@ case "${prog,,}" in
     *) args=("$prog") ;;
 esac
 
+skipped=()
+
+# 1. Wine.
 if [ -x "$wine_home/bin/wine" ]; then
     try Wine box64 "$wine_home/bin/wine" "${args[@]}" && exit 0
 else
-    echo "--- Wine isn't on this card"
+    skipped+=("Wine (not on this card yet)")
 fi
+
+# 2. Oliver, which picks the best Wine or Proton it finds.
 if [ -x /usr/bin/oliver ] && [ -x "$wine_home/bin/wine" ]; then
     try Oliver /usr/bin/oliver run "$prog" && exit 0
 fi
-protons=("$etros"/proton/*/proton)
-proton=${protons[0]}
-if [ -x "$proton" ]; then
+
+# 3. Steam. Valve makes Steam for PCs only; on the Pi 5's ARM processor it
+# only exists if someone installed a version that runs here.
+if command -v steam >/dev/null; then
+    try Steam steam -applaunch "$prog" && exit 0
+else
+    skipped+=("Steam (doesn't run on the Pi 5)")
+fi
+
+# 4. Proton (GE-Proton), unpacked from the storage partition on first use;
+# Etros Updater puts it there. Proton is a Python script that starts its
+# own Wine, which Box64 runs.
+if [ ! -x "$etros/proton/current/proton" ]; then
+    tarballs=("$etros"/downloads/GE-Proton*.tar.gz)
+    if [ -f "${tarballs[0]}" ]; then
+        say "Setting up Proton for the first time (a few minutes)..."
+        rm -rf "$etros/proton.new" && mkdir -p "$etros/proton.new"
+        if tar -xzf "${tarballs[0]}" -C "$etros/proton.new" --strip-components=1; then
+            rm -rf "$etros/proton/current" && mkdir -p "$etros/proton" &&
+                mv "$etros/proton.new" "$etros/proton/current"
+        else
+            rm -rf "$etros/proton.new"
+        fi
+    fi
+fi
+if [ -x "$etros/proton/current/proton" ] && command -v python3 >/dev/null; then
     export STEAM_COMPAT_DATA_PATH=$etros/proton-data STEAM_COMPAT_CLIENT_INSTALL_PATH=$etros/proton-data
     mkdir -p "$STEAM_COMPAT_DATA_PATH"
-    try Proton box64 "$proton" run "$prog" && exit 0
+    try Proton python3 "$etros/proton/current/proton" run "$prog" && exit 0
+else
+    skipped+=("Proton (not on this card yet: run Etros Updater)")
 fi
+
+# 5. The Box translators. Box86 (32-bit) doesn't exist on the Pi 5; Box64
+# gets one more go with Wine in its slow, careful mode, which gets many
+# programs past crashes the fast mode causes.
 if command -v box86 >/dev/null; then
     try Box86 box86 "$wine_home/bin/wine" "${args[@]}" && exit 0
 fi
-if command -v steam >/dev/null; then
-    try Steam steam -applaunch "$prog" && exit 0
+if [ -x "$wine_home/bin/wine" ]; then
+    try "Box64 (careful mode)" env BOX64_DYNAREC_SAFEFLAGS=2 BOX64_DYNAREC_STRONGMEM=3 \
+        BOX64_DYNAREC_BIGBLOCK=0 BOX64_DYNAREC_FASTROUND=0 BOX64_DYNAREC_X87DOUBLE=1 \
+        box64 "$wine_home/bin/wine" "${args[@]}" && exit 0
 fi
 
+echo "--- not tried: ${skipped[*]}"
 if [ "${#tried[@]}" -eq 0 ]; then
-    say "This card has no Wine for Windows programs yet: run Etros Updater on a computer (with Wine in its Downloads)."
+    say "This card has no Wine for Windows programs yet: run Etros Updater on a computer."
 else
-    say "$(basename "$prog") didn't start. Tried: ${tried[*]}. The details are in system/logs/etros-windows.log."
+    list() { local IFS=,; local s="$*"; echo "${s//,/, }"; }
+    msg="$(basename "$prog") didn't start. Tried: $(list "${tried[@]}")."
+    [ "${#skipped[@]}" -gt 0 ] && msg="$msg Not available: $(list "${skipped[@]}")."
+    say "$msg Details: system/logs/etros-windows.log"
 fi
 exit 1

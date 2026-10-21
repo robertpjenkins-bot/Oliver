@@ -329,6 +329,9 @@ func (t *tui) fixLoop() bool {
 			note(cCyan + "Already up to date: this card has the newest Etros, nothing needed changing." + cReset)
 		}
 		showCardContents(dir)
+		if _, err := os.Stat(filepath.Join(dir, "etros", "pi5")); err == nil {
+			t.offerProton(dir)
+		}
 		if cardHasR36S(dir) {
 			t.chooseR36SScreen(dir)
 		}

@@ -13,9 +13,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -260,4 +263,80 @@ func (t *tui) remakeWithR36S(dir string) error {
 		}
 	}
 	return fmt.Errorf("%w. Your games, saves and settings are safe in %s", lastErr, backup)
+}
+
+// Proton for the Windows folder: GE-Proton, the community Proton most
+// people use outside Steam. About 500 MB, so it goes on SHARE
+// (system/etros/downloads), where etros-launch-windows unpacks it.
+const protonFallback = "GE-Proton10-34"
+
+func latestProtonURL() string {
+	tag := protonFallback
+	req, err := http.NewRequest("GET", "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest", nil)
+	if err == nil {
+		req.Header.Set("User-Agent", userAgent)
+		if resp, err := client.Do(req); err == nil {
+			var v struct {
+				Tag string `json:"tag_name"`
+			}
+			if resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&v) == nil && strings.HasPrefix(v.Tag, "GE-Proton") {
+				tag = v.Tag
+			}
+			resp.Body.Close()
+		}
+	}
+	return fmt.Sprintf("https://github.com/GloriousEggroll/proton-ge-custom/releases/download/%s/%s.tar.gz", tag, tag)
+}
+
+// cardHasProton tells whether the card's SHARE has Proton (unpacked, or
+// waiting to be).
+func cardHasProton(share string) bool {
+	if _, err := os.Stat(filepath.Join(share, "system", "etros", "proton", "current", "proton")); err == nil {
+		return true
+	}
+	have, _ := filepath.Glob(filepath.Join(share, "system", "etros", "downloads", "GE-Proton*.tar.gz"))
+	return len(have) > 0
+}
+
+// offerProton adds Proton to the card at dir if it hasn't got it, when asked.
+func (t *tui) offerProton(dir string) {
+	disk, err := cardDisk(dir)
+	if err != nil {
+		return
+	}
+	share, closeShare, err := openShare(disk)
+	if err != nil {
+		logf("proton: %v", err)
+		return
+	}
+	defer closeShare()
+	if cardHasProton(share) {
+		fmt.Printf("  %s✔%s Proton, for Windows programs on the Pi 5\n", cCyan, cReset)
+		return
+	}
+	heading("PROTON FOR WINDOWS PROGRAMS")
+	note("Windows programs try Wine, Oliver, Steam, then Proton, then Box64. Proton isn't")
+	note("on this card yet. Etros Updater can download it (about 500 MB) and put it on.")
+	if !t.yes("Add Proton?", true) {
+		return
+	}
+	rep := newTermReporter()
+	defer rep.end()
+	rep.Stage("Getting Proton")
+	url := latestProtonURL()
+	p, err := fetch(url, defaultCache(), "proton", rep.Progress, rep.Log)
+	if err != nil {
+		rep.end()
+		note(cYellow + "Couldn't download Proton: " + err.Error() + cReset)
+		return
+	}
+	dest := filepath.Join(share, "system", "etros", "downloads", path.Base(url))
+	rep.Stage("Putting Proton on the card")
+	if err := copyFile(p, dest, rep); err != nil {
+		rep.end()
+		note(cYellow + "Couldn't put Proton on the card: " + err.Error() + cReset)
+		return
+	}
+	syncDir(filepath.Dir(dest))
+	rep.Log("added " + path.Base(url))
 }
