@@ -23,7 +23,12 @@ package() {  # package GOOS GOARCH ZIPNAME [maker]
     local folder="$3 - version $VERSION"
     local dir="dist/stage/$folder"
     mkdir -p "$dir"
-    CGO_ENABLED=0 GOOS=$1 GOARCH=$2 go build -trimpath \
+    # Go 1.25 and newer make Mac programs that need macOS 12; Go 1.24 still
+    # makes them for macOS 11 (Big Sur), which Intel Macs like the 12-inch
+    # MacBook stay on.
+    local toolchain=${GOTOOLCHAIN:-}
+    [ "$1" = darwin ] && toolchain=go1.24.11
+    GOTOOLCHAIN=$toolchain CGO_ENABLED=0 GOOS=$1 GOARCH=$2 go build -trimpath \
         -ldflags "-s -w -X main.version=$VERSION -X main.mode=$kind" -o "$dir/$exe" .
     sed 's/$/\r/' "$readme" > "$dir/READ ME.txt"
     chmod +x "$dir/$exe"
