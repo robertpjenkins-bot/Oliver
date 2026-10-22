@@ -222,8 +222,8 @@ func runMacInstaller(o Options) error {
 		fmt.Printf("  %s3%s  %sBest for the 12-inch MacBook:%s make an Etros USB drive %s(the Mac starts from it,\n", cYellow, cReset, cBold, cReset, cDim)
 		fmt.Printf("     then copies Etros onto its own drive: macOS doesn't get a say)%s\n", cReset)
 		fmt.Printf("  %sq%s  Quit\n", cYellow, cReset)
-		switch strings.ToLower(t.ask("Type 1, 2, 3 or q:")) {
-		case "3":
+		switch strings.ToLower(t.ask("Type 1, 2, 3 or q (Enter is 3):")) {
+		case "3", "":
 			if t.macUSBEtros() {
 				return nil
 			}
@@ -627,7 +627,7 @@ func (t *tui) macUSBEtros() bool {
 	heading("MAKE AN ETROS USB DRIVE FOR THE MAC")
 	note(fmt.Sprintf("Plug in a USB drive of %d GB or more (everything on it is erased).", macOllieGB))
 	for {
-		disk, ok, err := t.pickCard()
+		disk, ok, err := t.pluggedInDrive()
 		if err != nil {
 			note(cRed + err.Error() + cReset)
 			return false
@@ -665,6 +665,46 @@ func (t *tui) macUSBEtros() bool {
 		t.ask("Press Enter to finish")
 		return true
 	}
+}
+
+// pluggedInDrive waits for a USB drive to be plugged in and takes it, with
+// no list to choose from: the one there already if it's the only one, or
+// else the next one plugged in. ok is false if the person backed out.
+func (t *tui) pluggedInDrive() (disk Disk, ok bool, err error) {
+	ds, err := listDisks()
+	if err != nil {
+		return disk, false, err
+	}
+	switch {
+	case len(ds) == 1:
+		disk = ds[0]
+	case len(ds) > 1:
+		return t.pickCard()
+	default:
+		note(cBold + "Plug the USB drive in now." + cReset + " It's found by itself (Ctrl+C to stop).")
+		before := map[string]bool{}
+		for _, d := range ds {
+			before[d.ID] = true
+		}
+		for disk.ID == "" {
+			time.Sleep(time.Second)
+			ds, _ = listDisks()
+			for _, d := range ds {
+				if !before[d.ID] {
+					disk = d
+					time.Sleep(2 * time.Second) // let the desktop finish opening it
+					break
+				}
+			}
+		}
+	}
+	fmt.Printf("\n  Found: %s%s%s (%s, %s)\n", cBold, disk.Name, cReset, gbs(disk.Size), disk.Path)
+	fmt.Printf("\n  %sEVERYTHING ON %s WILL BE ERASED.%s\n", cRed, strings.ToUpper(disk.Name), cReset)
+	if strings.ToLower(t.ask("Type ERASE to go on (or anything else to stop):")) != "erase" {
+		note("Stopped. Nothing was written.")
+		return disk, false, nil
+	}
+	return disk, true, nil
 }
 
 func makeMacUSB(t *tui, disk Disk, withOllie bool) error {
