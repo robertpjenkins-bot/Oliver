@@ -8,7 +8,7 @@ sync
 # straight from this one (kexec), as its own start-up menu would.
 if [ "$(uname -m)" = x86_64 ] && [ -f /boot/boot/linux ] && command -v kexec >/dev/null 2>&1; then
     kexec -l /boot/boot/linux --initrd=/boot/boot/initrd.gz \
-        --append="label=BATOCERA console=tty3 quiet loglevel=0 vt.global_cursor_default=0" &&
+        --append="label=$(blkid -s LABEL -o value "$(findmnt -no SOURCE /boot)" 2>/dev/null || echo BATOCERA) console=tty3 quiet loglevel=0 vt.global_cursor_default=0" &&
         exec systemctl kexec
 fi
 exec systemctl reboot

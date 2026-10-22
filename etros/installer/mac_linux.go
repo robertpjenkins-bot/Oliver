@@ -17,9 +17,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -217,8 +219,14 @@ func runMacInstaller(o Options) error {
 		heading("WHICH MAC?")
 		fmt.Printf("  %s1%s  A Mac that can do Target Disk Mode %s(plugged in here with a cable)%s\n", cYellow, cReset, cDim, cReset)
 		fmt.Printf("  %s2%s  Any other Intel Mac, like the 12-inch MacBook %s(get its downloads onto a USB drive)%s\n", cYellow, cReset, cDim, cReset)
+		fmt.Printf("  %s3%s  %sBest for the 12-inch MacBook:%s make an Etros USB drive %s(the Mac starts from it,\n", cYellow, cReset, cBold, cReset, cDim)
+		fmt.Printf("     then copies Etros onto its own drive: macOS doesn't get a say)%s\n", cReset)
 		fmt.Printf("  %sq%s  Quit\n", cYellow, cReset)
-		switch strings.ToLower(t.ask("Type 1, 2 or q:")) {
+		switch strings.ToLower(t.ask("Type 1, 2, 3 or q:")) {
+		case "3":
+			if t.macUSBEtros() {
+				return nil
+			}
 		case "1":
 			t.macLoop()
 			return nil
@@ -525,16 +533,27 @@ func makeMacPartitions(m *macPlan, rep Reporter) (boot, share string, closeAll f
 		rep.Log("deleted " + describePart(p))
 	}
 
-	disk := udisksPath(m.disk.Path)
+	boot, share, _, closeAll, err = udisksEtrosPartitions(u, m.disk.Path, (m.start+mib-1)/mib*mib, "BATOCERA", rep)
+	return boot, share, closeAll, err
+}
+
+// udisksEtrosPartitions makes Etros's boot partition (FAT32, labelled
+// bootLabel, from start) and SHARE after it in the rest of the drive's free
+// room, and opens both. bootUUID is the boot partition's own id.
+func udisksEtrosPartitions(u *udisksDrive, dev string, start int64, bootLabel string, rep Reporter) (boot, share, bootUUID string, closeAll func(), err error) {
+	conn := u.conn
+	disk := udisksPath(dev)
 	var bootPart, sharePart dbus.ObjectPath
-	start := (m.start + mib - 1) / mib * mib
 	err = u.call(disk, "PartitionTable.CreatePartitionAndFormat",
-		uint64(start), uint64(macBootSize), gptMSData, "BATOCERA", noOpts(),
-		"vfat", map[string]dbus.Variant{"label": dbus.MakeVariant("BATOCERA")}).Store(&bootPart)
+		uint64(start), uint64(macBootSize), gptMSData, bootLabel, noOpts(),
+		"vfat", map[string]dbus.Variant{"label": dbus.MakeVariant(bootLabel)}).Store(&bootPart)
 	if err != nil {
-		return "", "", nil, explainUDisks("could not make Etros's boot partition", err)
+		return "", "", "", nil, explainUDisks("could not make Etros's boot partition", err)
 	}
-	rep.Log("made Etros's boot partition (BATOCERA)")
+	rep.Log("made Etros's boot partition (" + bootLabel + ")")
+	if v, err := conn.Object(udisks, bootPart).GetProperty(udisks + ".Partition.UUID"); err == nil {
+		v.Store(&bootUUID)
+	}
 	err = u.call(disk, "PartitionTable.CreatePartitionAndFormat",
 		uint64(start+macBootSize), uint64(0), gptLinux, "SHARE", noOpts(),
 		"ext4", map[string]dbus.Variant{
@@ -542,7 +561,7 @@ func makeMacPartitions(m *macPlan, rep Reporter) (boot, share string, closeAll f
 			"take-ownership": dbus.MakeVariant(true),
 		}).Store(&sharePart)
 	if err != nil {
-		return "", "", nil, explainUDisks("could not make Etros's storage partition", err)
+		return "", "", "", nil, explainUDisks("could not make Etros's storage partition", err)
 	}
 	rep.Log("made Etros's storage partition (SHARE)")
 	num := func(p dbus.ObjectPath) uint32 {
@@ -553,7 +572,7 @@ func makeMacPartitions(m *macPlan, rep Reporter) (boot, share string, closeAll f
 		return n
 	}
 	if b, s := num(bootPart), num(sharePart); s != b+1 {
-		return "", "", nil, fmt.Errorf("the new partitions got numbers %d and %d, and Batocera needs its storage right after its boot partition", b, s)
+		return "", "", "", nil, fmt.Errorf("the new partitions got numbers %d and %d, and Batocera needs its storage right after its boot partition", b, s)
 	}
 
 	mount := func(p dbus.ObjectPath) (string, error) {
@@ -578,14 +597,14 @@ func makeMacPartitions(m *macPlan, rep Reporter) (boot, share string, closeAll f
 		}
 	}
 	if boot, err = mount(bootPart); err != nil {
-		return "", "", nil, err
+		return "", "", "", nil, err
 	}
 	if share, err = mount(sharePart); err != nil {
 		unmount(bootPart)
-		return "", "", nil, err
+		return "", "", "", nil, err
 	}
 	closed := false
-	return boot, share, func() {
+	return boot, share, bootUUID, func() {
 		if !closed {
 			closed = true
 			syncDir(boot)
@@ -594,6 +613,160 @@ func makeMacPartitions(m *macPlan, rep Reporter) (boot, share string, closeAll f
 			unmount(bootPart)
 		}
 	}, nil
+}
+
+// macUSBEtros makes a USB drive that starts Etros (with Ollie OS) on any
+// Intel Mac, held Option at start-up. Started from it, Etros's menu has Put
+// Etros on this Mac, which copies it all onto the Mac's own drive with
+// macOS not running, so nothing on the Mac is ever "in use".
+func (t *tui) macUSBEtros() bool {
+	if !macInstallSupported() {
+		note(cRed + "This needs Linux with UDisks (like a Steam Machine or Steam Deck)." + cReset)
+		return false
+	}
+	heading("MAKE AN ETROS USB DRIVE FOR THE MAC")
+	note(fmt.Sprintf("Plug in a USB drive of %d GB or more (everything on it is erased).", macOllieGB))
+	for {
+		disk, ok, err := t.pickCard()
+		if err != nil {
+			note(cRed + err.Error() + cReset)
+			return false
+		}
+		if !ok {
+			return false
+		}
+		if disk.Size < macBootSize+macMinShare {
+			note(cRed + fmt.Sprintf("%s is too small: it needs %d GB.", disk.Name, macMinGB) + cReset)
+			continue
+		}
+		withOllie := disk.Size >= macBootSize+macMinShare+macOllieRoom
+		if !withOllie {
+			note(cYellow + fmt.Sprintf("Ollie OS needs a %d GB drive, so this one gets Etros on its own.", macOllieGB) + cReset)
+		}
+		err = makeMacUSB(t, disk, withOllie)
+		if err != nil {
+			logf("ERROR: Etros USB drive: %v", err)
+			fmt.Printf("\n%s  THAT DIDN'T WORK%s\n\n", cRed, cReset)
+			note(err.Error())
+			note("This is also in etros-installer-log.txt in Downloads.")
+			t.ask("Press Enter to go back")
+			continue
+		}
+		fmt.Printf("\n%s  THE ETROS USB DRIVE IS READY%s\n\n", cYellow, cReset)
+		note("On the Mac:")
+		note("1. In macOS, Disk Utility: make two partitions for Etros, " + cBold + "BATOCERA" + cReset + " (MS-DOS (FAT), 8 GB)")
+		note("   and right after it " + cBold + "SHARE" + cReset + " (any format, 32 GB or more). If you made them already, skip this.")
+		note("2. Turn the Mac off. Plug in the USB drive. Turn it on holding " + cBold + "Option (⌥)" + cReset + ",")
+		note("   and choose the orange " + cBold + "EFI Boot" + cReset + ". Etros starts from the USB drive.")
+		note("3. In Etros: ETROS → " + cBold + "Put Etros on this Mac" + cReset + ". Choose it once, then again to go ahead.")
+		note("4. When it says it's done: turn off, take out the USB drive, turn on holding Option,")
+		note("   choose EFI Boot. That's Etros from the Mac's own drive. (Turned on normally: macOS.)")
+		note("Use a game controller in Etros; the Mac's keyboard and trackpad work in Ollie OS.")
+		t.ask("Press Enter to finish")
+		return true
+	}
+}
+
+func makeMacUSB(t *tui, disk Disk, withOllie bool) error {
+	batocera, err := t.getPCBatocera()
+	if err != nil {
+		return fmt.Errorf("getting Batocera for PCs: %w", err)
+	}
+	bootstrap := ""
+	if withOllie {
+		if bootstrap, err = t.getArchBootstrap(); err != nil {
+			return fmt.Errorf("getting Arch Linux: %w", err)
+		}
+	}
+	rep := newTermReporter()
+	defer rep.end()
+	unpacked, err := unpackPCBatocera(batocera, rep)
+	if err != nil {
+		return err
+	}
+	rep.Stage("Checking Batocera for PCs")
+	initrd, err := pcInitrd(unpacked)
+	if err != nil {
+		return err
+	}
+
+	rep.Stage("Getting the USB drive ready")
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return fmt.Errorf("can't reach UDisks: %w", err)
+	}
+	u := &udisksDrive{conn: conn, dev: disk.ID}
+	devs, _ := lsblk()
+	for _, d := range devs {
+		if d.Path != disk.ID {
+			continue
+		}
+		for _, c := range d.Children {
+			if len(mounts(c)) > 0 {
+				if err := u.call(udisksPath(c.Path), "Filesystem.Unmount", noOpts()).Err; err != nil {
+					return explainUDisks("could not unmount "+c.Path, err)
+				}
+			}
+		}
+	}
+	if err := u.call(udisksPath(disk.ID), "Block.Format", "gpt", noOpts()).Err; err != nil {
+		return explainUDisks("could not clear the drive", err)
+	}
+	rep.Log("made a new partition table")
+	boot, share, uuid, closeAll, err := udisksEtrosPartitions(u, disk.ID, mib, macUSBLabel, rep)
+	if err != nil {
+		return err
+	}
+	defer closeAll()
+
+	rep.Stage("Copying Batocera and Etros onto the USB drive")
+	if err := copyPCBatocera(unpacked, initrd, boot, rep); err != nil {
+		return fmt.Errorf("copying onto the USB drive: %w", err)
+	}
+	if err := usbBootFiles(boot); err != nil {
+		return err
+	}
+	syncDir(boot)
+
+	if withOllie {
+		if uuid != "" {
+			os.Setenv("ETROS_BOOT_FSTAB", "PARTUUID="+uuid)
+		}
+		err := buildArchPC(bootstrap, share, boot, rep)
+		os.Unsetenv("ETROS_BOOT_FSTAB")
+		if err != nil {
+			return fmt.Errorf("making Ollie OS: %w (everything it did is in %s)", err, archBuildLog())
+		}
+	}
+	rep.Stage("Finishing the USB drive")
+	closeAll()
+	return nil
+}
+
+// macUSBLabel is the Etros USB drive's boot partition: not BATOCERA, so
+// Etros started from it doesn't take the Mac's own BATOCERA for its own.
+const macUSBLabel = "ETROSUSB"
+
+// usbBootFiles makes Batocera's start-up look for the USB drive's boot
+// partition, and marks it as the Etros USB drive.
+func usbBootFiles(boot string) error {
+	err := filepath.WalkDir(boot, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(strings.ToLower(p), ".cfg") {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		if n := bytes.ReplaceAll(b, []byte("label=BATOCERA"), []byte("label="+macUSBLabel)); !bytes.Equal(n, b) {
+			return os.WriteFile(p, n, 0o644)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(boot, "etros", "usb.txt"), []byte("The Etros USB drive for Intel Macs: ETROS → Put Etros on this Mac\n"), 0o644)
 }
 
 func showCrash(msg string) {}

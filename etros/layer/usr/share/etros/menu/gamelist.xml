@@ -12,4 +12,10 @@
 		<desc>Move ROMs from /userdata/downloads into the folder for their console. Files whose console can't be told from the name (.bin, .iso, .cue, .chd, arcade .zip) stay in downloads for you to move yourself. This also happens on every boot.</desc>
 		<image>/usr/share/emulationstation/themes/etros-metroid/art/sort.png</image>
 	</game>
+	<game>
+		<path>./Put Etros on this Mac.sh</path>
+		<name>Put Etros on this Mac</name>
+		<desc>On an Intel Mac started from an Etros USB drive: put Etros on the Mac's own drive, onto the BATOCERA (MS-DOS FAT) and SHARE partitions made for it in Disk Utility. Choose it once to see what it will do, then again to do it. SHARE on the Mac is erased. Then take out the USB drive and start the Mac holding Option.</desc>
+		<image>/usr/share/emulationstation/themes/etros-metroid/art/sort.png</image>
+	</game>
 </gameList>

@@ -76,8 +76,10 @@ pc_setup() {
     cat > "$root/etc/fstab" <<'EOT'
 # Ollie OS on Etros (Intel Mac). Its start-up mounts the file system, from
 # etros/ollie-rootfs.img on SHARE, and SHARE itself at /userdata.
-LABEL=BATOCERA  /boot  vfat  rw,noatime,fmask=0022,dmask=0022,nofail  0  2
+BOOT_PARTITION  /boot  vfat  rw,noatime,fmask=0022,dmask=0022,nofail  0  2
 EOT
+    # (an Etros USB drive names its boot partition by its PARTUUID)
+    sed -i "s|^BOOT_PARTITION|${ETROS_BOOT_FSTAB:-LABEL=BATOCERA}|" "$root/etc/fstab"
     mkdir -p "$root/etc/initcpio/install" "$root/etc/initcpio/hooks"
     cat > "$root/etc/initcpio/install/etros" <<'EOT'
 #!/bin/bash

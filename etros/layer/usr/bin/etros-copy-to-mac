@@ -1,0 +1,100 @@
+#!/bin/bash
+# Put Etros on this Mac's own drive, from an Etros USB drive it was started
+# from (Etros Mac Installer on a Steam Machine makes one). macOS isn't
+# running, so nothing keeps the drive "in use": the partitions made for
+# Etros in Disk Utility, BATOCERA (MS-DOS FAT) and SHARE right after it,
+# get Etros's boot files and its storage (with Ollie OS).
+#
+# Run from the ETROS menu: the first time it says what it will do; run
+# again within five minutes, it does it. Says how it's going on screen.
+
+say() {
+    echo "--- $1"
+    curl -s -o /dev/null -d "$1" http://localhost:1234/notify 2>/dev/null
+}
+log=/userdata/system/logs/etros-copy-to-mac.log
+mkdir -p /userdata/system/logs
+exec >> "$log" 2>&1
+echo "=== $(date) Put Etros on this Mac"
+
+upper() { echo "$1" | tr '[:lower:]' '[:upper:]'; }
+disk_of() { lsblk -no PKNAME "$1" 2>/dev/null | head -1; }
+
+usbboot=$(findmnt -no SOURCE /boot)
+if [ ! -f /boot/etros/usb.txt ]; then
+    say "Put Etros on this Mac: this only works from an Etros USB drive (made by Etros Mac Installer)."
+    exit 1
+fi
+
+# BATOCERA on another drive than the USB drive, with SHARE numbered right
+# after it.
+target='' share=''
+for dev in $(blkid -o device); do
+    [ "$(disk_of "$dev")" = "$(disk_of "$usbboot")" ] && continue
+    [ "$(upper "$(blkid -s LABEL -o value "$dev")")" = BATOCERA ] || continue
+    # MS-DOS (FAT), ExFAT or NTFS from Disk Utility: it's made FAT32 here.
+    type=$(blkid -s TYPE -o value "$dev")
+    case "$type" in vfat | exfat | ntfs | "${ETROS_TEST_BOOT_TYPE:-vfat}") ;; *) continue ;; esac # (tests: no FAT in their kernel)
+    num=${dev##*[!0-9]}
+    next=${dev%"$num"}$((num + 1))
+    if [ "$(upper "$(blkid -s LABEL -o value "$next" 2>/dev/null)")" = SHARE ]; then
+        target=$dev share=$next
+        break
+    fi
+done
+if [ -z "$target" ]; then
+    say "Put Etros on this Mac: no BATOCERA partition with SHARE right after it on this Mac. Make them in Disk Utility from macOS (or Recovery) first: BATOCERA 8 GB, then SHARE 32 GB."
+    exit 1
+fi
+
+# Asked twice: SHARE on the Mac is erased.
+confirm=/tmp/etros-copy-to-mac.confirm
+if [ ! -f "$confirm" ] || [ $(( $(date +%s) - $(cat "$confirm") )) -gt 300 ]; then
+    date +%s > "$confirm"
+    say "Put Etros on this Mac: it goes on $target (BATOCERA) and $share (SHARE, which is erased). Choose Put Etros on this Mac again to go ahead."
+    exit 0
+fi
+rm -f "$confirm"
+
+mb=/tmp/etros-mac-boot ms=/tmp/etros-mac-share
+mkdir -p "$mb" "$ms"
+cleanup() { sync; umount "$mb" "$ms" 2>/dev/null; }
+trap cleanup EXIT
+fail() { say "Put Etros on this Mac FAILED: $1 (details in system/logs/etros-copy-to-mac.log)"; exit 1; }
+
+say "Putting Etros on this Mac: boot files first"
+umount "$target" "$share" 2>/dev/null
+type=$(blkid -s TYPE -o value "$target")
+if [ "$type" != vfat ] && [ "$type" != "${ETROS_TEST_BOOT_TYPE:-vfat}" ]; then
+    mkfs.vfat -F 32 -n BATOCERA "$target" || fail "couldn't make $target MS-DOS (FAT)"
+fi
+mount "$target" "$mb" || fail "couldn't open $target"
+rm -rf "${mb:?}"/* # what earlier tries left there
+cp -r /boot/. "$mb/" || fail "couldn't copy the boot files (is BATOCERA big enough? it needs 8 GB)"
+rm -f "$mb/etros/usb.txt"
+label=$(blkid -s LABEL -o value "$target")
+# The Mac's own BATOCERA starts the Mac's own Etros.
+find "$mb" -name '*.cfg' -exec sed -i "s/label=ETROSUSB/label=$label/g" {} +
+sync
+
+say "Putting Etros on this Mac: its storage (games, saves, Ollie OS), a few minutes"
+mkfs.ext4 -q -F -L SHARE "$share" || fail "couldn't set up $share"
+mount "$share" "$ms" || fail "couldn't open $share"
+if cp --help 2>&1 | grep -q -- --sparse; then
+    cp -a --sparse=always /userdata/. "$ms/" || fail "couldn't copy the storage (is SHARE big enough? with Ollie OS it needs 32 GB)"
+else
+    cp -a /userdata/. "$ms/" || fail "couldn't copy the storage"
+fi
+# Ollie OS finds its boot partition by that partition's own id.
+img=$ms/etros/ollie-rootfs.img
+if [ -f "$img" ]; then
+    uuid=$(blkid -s PARTUUID -o value "$target")
+    mkdir -p /tmp/etros-mac-ollie
+    if [ -n "$uuid" ] && mount -o loop "$img" /tmp/etros-mac-ollie; then
+        sed -i "s|^PARTUUID=[^ ]*  /boot |PARTUUID=$uuid  /boot |" /tmp/etros-mac-ollie/etc/fstab
+        umount /tmp/etros-mac-ollie
+    fi
+fi
+sync
+say "Etros is on this Mac. Turn it off, take out the USB drive, and turn it on holding Option: choose EFI Boot."
+exit 0

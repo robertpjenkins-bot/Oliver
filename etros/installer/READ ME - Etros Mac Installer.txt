@@ -20,7 +20,15 @@ work in Batocera. They do in Ollie OS (ETROS -> Boot into Ollie OS).
 Turned on normally, the Mac starts macOS as before.
 
 MACS WITHOUT TARGET DISK MODE (like the 12-inch MacBook)
-Choose 2: Etros Mac Installer downloads Batocera for PCs and Arch Linux onto
-a USB drive (FAT32 or ExFAT). Copy Etros Mac Installer (app).zip onto it
-too, then plug it into the Mac and run Etros Installer there: it finds them
-on the drive and downloads nothing.
+Choose 3: it makes an Etros USB drive (40 GB or more; it's erased), with
+Ollie OS. Then:
+1. On the Mac, in macOS Disk Utility, make two partitions: BATOCERA
+   (MS-DOS (FAT), 8 GB) and right after it SHARE (32 GB or more).
+2. Turn the Mac off, plug in the USB drive, turn it on holding Option and
+   choose EFI Boot. Etros starts from the USB drive.
+3. In Etros: ETROS -> Put Etros on this Mac. Choose it once, then again.
+4. When it says it's done: turn off, take the USB drive out, turn on
+   holding Option, choose EFI Boot. That's Etros from the Mac's own drive.
+
+(Choice 2 is the older way: the downloads on a USB drive, for Etros
+Installer run in macOS.)
