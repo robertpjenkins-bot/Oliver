@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"crypto/md5"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -293,6 +294,12 @@ func pcInitrd(dir string) ([]byte, error) {
 	return out, nil
 }
 
+// macGrub is GRUB for Intel Macs (mac-grub/make.sh), which starts
+// Batocera from its own EFI/BOOT/grub.cfg.
+//
+//go:embed assets/mac-bootx64.efi
+var macGrub []byte
+
 // copyPCBatocera copies the unpacked Batocera for PCs (dir) to the boot
 // partition (boot), with Etros.
 func copyPCBatocera(dir string, initrd []byte, boot string, rep Reporter) error {
@@ -340,6 +347,18 @@ func copyPCBatocera(dir string, initrd []byte, boot string, rep Reporter) error 
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(boot, "etros", "etros.squashfs"), etrosLayer, 0o644); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(boot, "EFI", "BOOT"), 0o755); err != nil {
+		return err
+	}
+	// A Mac starts through GRUB (Batocera's own grub.cfg), not Batocera's
+	// Secure Boot shim, whose fallback leaves a Mac on a black screen.
+	if err := os.WriteFile(filepath.Join(boot, "EFI", "BOOT", "BOOTX64.EFI"), macGrub, 0o644); err != nil {
+		return err
+	}
+	os.Remove(filepath.Join(boot, "EFI", "BOOT", "fbx64.efi"))
+	if err := os.WriteFile(filepath.Join(boot, "etros", "mac-bootx64.efi"), macGrub, 0o644); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(boot, "etros", "intel-mac.txt"), []byte("Etros on an Intel Mac, in place of Boot Camp\n"), 0o644); err != nil {

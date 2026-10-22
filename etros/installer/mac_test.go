@@ -124,6 +124,12 @@ func TestMacFiles(t *testing.T) {
 			t.Error(err)
 		}
 	}
+	if b, _ := os.ReadFile(filepath.Join(boot, "EFI", "BOOT", "BOOTX64.EFI")); !bytes.Equal(b, macGrub) {
+		t.Error("EFI/BOOT/BOOTX64.EFI isn't GRUB for Macs")
+	}
+	if _, err := os.Stat(filepath.Join(boot, "EFI", "BOOT", "fbx64.efi")); err == nil {
+		t.Error("shim's fallback left in")
+	}
 	if b, _ := os.ReadFile(filepath.Join(boot, "boot", "initrd.gz")); !bytes.Equal(b, initrd) {
 		t.Error("initrd.gz isn't Etros's")
 	}

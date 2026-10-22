@@ -169,6 +169,15 @@ fi
 # on (etros/wifi.txt: its name, then its password; read once, then gone),
 # and make Ollie OS from the Arch Linux it left on the boot partition.
 if [ "$(uname -m)" = x86_64 ] && [ -f /boot/etros/intel-mac.txt ]; then
+    # A Mac starts Etros through GRUB, not Batocera's Secure Boot shim (whose
+    # fallback leaves it on a black screen): put it back if an update of
+    # Batocera brought the shim back.
+    efi=/boot/EFI/BOOT/BOOTX64.EFI
+    if [ -f /boot/etros/mac-bootx64.efi ] && ! cmp -s /boot/etros/mac-bootx64.efi "$efi"; then
+        mount -o remount,rw /boot && cp /boot/etros/mac-bootx64.efi "$efi" && rm -f /boot/EFI/BOOT/fbx64.efi
+        sync
+        mount -o remount,ro /boot
+    fi
     if [ -f /boot/etros/wifi.txt ]; then
         { read -r ssid; read -r key; } < /boot/etros/wifi.txt
         mount -o remount,rw /boot && rm -f /boot/etros/wifi.txt
