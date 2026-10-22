@@ -139,3 +139,20 @@ func TestMacTargets(t *testing.T) {
 		}
 	}
 }
+
+// Names typed in Disk Utility in any capitals still count.
+func TestMacTargetsReadyAnyCapitals(t *testing.T) {
+	const g = int64(1) << 30
+	d := dDisk{id: "disk0", internal: true, size: 251 * g, parts: []dPart{
+		{"disk0s1", "EFI", "EFI", 200 << 20}, {"disk0s2", "Apple_APFS", "", 180 * g},
+		{"disk0s3", "Microsoft Basic Data", "Batocera", 8 * g}, {"disk0s4", "Microsoft Basic Data", "share", 60 * g},
+	}}
+	for _, x := range macTargets([]dDisk{d}, "disk0s2") {
+		if x.part.id == "disk0s3" && (x.kind != "ready" || x.why != "" || len(x.extra) != 1) {
+			t.Errorf("Batocera + share: %+v", x)
+		}
+		if x.part.id == "disk0s4" && x.why == "" {
+			t.Errorf("share offered on its own: %+v", x)
+		}
+	}
+}

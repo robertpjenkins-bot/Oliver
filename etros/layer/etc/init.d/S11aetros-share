@@ -17,7 +17,7 @@ log=/tmp/etros-format-share.log
     case "$type" in
         exfat|vfat)
             # Only the empty one the installer made: never anything else.
-            if [ "$label" = SHARE ] && mkdir -p /tmp/etros-share && mount -o ro "$dev" /tmp/etros-share; then
+            if [ "$(echo "$label" | tr "[:lower:]" "[:upper:]")" = SHARE ] && mkdir -p /tmp/etros-share && mount -o ro "$dev" /tmp/etros-share; then
                 # (macOS leaves its own hidden folders, like .Trashes.)
                 files=0
                 for f in /tmp/etros-share/*; do

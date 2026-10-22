@@ -510,16 +510,16 @@ func macTargets(disks []dDisk, bootStore string) []macTarget {
 				} else {
 					t.kind, t.action = "room", "use its free room (macOS and its files stay)"
 				}
-			case p.name == "SHARE" && i > 0 && d.parts[i-1].name == "BATOCERA":
+			case strings.EqualFold(p.name, "SHARE") && i > 0 && strings.EqualFold(d.parts[i-1].name, "BATOCERA"):
 				t.why = "Etros's storage (choose its BATOCERA)"
 			case p.content == "Apple_APFS" || p.content == "Apple_HFS":
 				t.action = "erase it (another Mac system or drive!): Etros goes here"
 			}
-			if p.name == "BATOCERA" {
+			if strings.EqualFold(p.name, "BATOCERA") { // (any capitals: Disk Utility keeps what was typed)
 				// Made already, with SHARE right after it: only Etros's files
 				// need putting on, so nothing is erased and macOS isn't asked
 				// to change the drive.
-				if i+1 < len(d.parts) && (d.parts[i+1].name == "SHARE" || d.parts[i+1].content == "Linux Filesystem") {
+				if i+1 < len(d.parts) && (strings.EqualFold(d.parts[i+1].name, "SHARE") || d.parts[i+1].content == "Linux Filesystem") {
 					t.extra = []dPart{d.parts[i+1]}
 					t.kind = "ready"
 					t.action = "use it as it is: Etros's files go on (nothing is erased)"
