@@ -275,8 +275,8 @@ func runMacInstaller(o Options) error {
 // SHARE (left empty: macOS can't make ext4) and then Ollie OS over Wi-Fi.
 func (t *tui) macFolders() bool {
 	heading("FOLDERS FOR THE MAC")
-	note("Plug in a USB drive formatted FAT32 or ExFAT, with 5 GB free (nothing on it is")
-	note("erased), then press Enter.")
+	note("Plug in a USB drive with 5 GB free. Nothing on it is erased (unless it's a kind")
+	note("a Mac can't read: then it asks first).")
 	dir := t.pickUSBDir()
 	if dir == "" {
 		return false
@@ -393,16 +393,70 @@ func currentWifi() string {
 	return ""
 }
 
-// pickUSBDir asks which open USB drive (FAT32, ExFAT or NTFS) to use; ""
-// if the person backed out.
+// usbVolume is a file system on a USB drive.
+type usbVolume struct {
+	Path, Label, FSType, Model, Mount string
+	Size                              int64
+}
+
+// usbVolumes lists the file systems on USB drives (not this computer's own).
+func usbVolumes() []usbVolume {
+	out, err := exec.Command("lsblk", "-J", "-b", "-l", "-o", "NAME,PKNAME,PATH,TYPE,TRAN,HOTPLUG,RM,MODEL,SIZE,FSTYPE,LABEL,MOUNTPOINTS").Output()
+	if err != nil {
+		return nil
+	}
+	var v struct {
+		Blockdevices []struct {
+			Name, PKName, Path, Type, Tran, Model, FSType, Label string
+			Hotplug, Rm                                          bool
+			Size                                                 int64
+			Mountpoints                                          []string
+		} `json:"blockdevices"`
+	}
+	if json.Unmarshal(out, &v) != nil {
+		return nil
+	}
+	type disk struct {
+		usb   bool
+		model string
+	}
+	disks := map[string]disk{}
+	for _, d := range v.Blockdevices {
+		if d.Type == "disk" || d.Type == "loop" {
+			disks[d.Name] = disk{usb: d.Tran == "usb" || d.Hotplug || d.Rm || d.Path == os.Getenv("ETROS_TEST_USB_DISK"), model: strings.TrimSpace(d.Model)}
+		}
+	}
+	var vols []usbVolume
+	for _, d := range v.Blockdevices {
+		parent := d.PKName
+		if d.Type != "part" {
+			parent = d.Name
+		}
+		dk, ok := disks[parent]
+		if !ok || !dk.usb || d.FSType == "" {
+			continue
+		}
+		mp := ""
+		for _, m := range d.Mountpoints {
+			if m != "" {
+				mp = m
+			}
+		}
+		vols = append(vols, usbVolume{Path: d.Path, Label: d.Label, FSType: d.FSType, Model: dk.model, Mount: mp, Size: d.Size})
+	}
+	return vols
+}
+
+// pickUSBDir asks which USB drive to use and opens it; "" if the person
+// backed out. One a Mac can't read (ext4, say) can be made FAT32 first.
 func (t *tui) pickUSBDir() string {
 	for {
-		drives := usbDrives()
-		for i, d := range drives {
-			fmt.Printf("  %s%d%s  %s %s(%s free)%s\n", cYellow, i+1, cReset, d, cDim, gbs(freeSpace(d)), cReset)
+		vols := usbVolumes()
+		for i, v := range vols {
+			fmt.Printf("  %s%d%s  %s %s %s(%s, %s)%s\n", cYellow, i+1, cReset, orDefault(v.Label, "USB drive"), v.Model, cDim, v.FSType, gbs(v.Size), cReset)
 		}
-		if len(drives) == 0 {
-			note("No FAT32 or ExFAT drive open yet. Plug it in (and open it in Dolphin), then press Enter.")
+		if len(vols) == 0 {
+			note("No USB drive found. Plug it in, wait a few seconds, then press Enter.")
 		}
 		fmt.Printf("  %sr%s  Look again    %sb%s  Back\n", cYellow, cReset, cYellow, cReset)
 		a := strings.ToLower(t.ask("Which drive?"))
@@ -410,9 +464,44 @@ func (t *tui) pickUSBDir() string {
 			return ""
 		}
 		var n int
-		if _, err := fmt.Sscan(a, &n); err == nil && n >= 1 && n <= len(drives) {
-			return drives[n-1]
+		if _, err := fmt.Sscan(a, &n); err != nil || n < 1 || n > len(vols) {
+			continue
 		}
+		v := vols[n-1]
+		conn, err := dbus.SystemBus()
+		if err != nil {
+			note(cRed + "Can't reach UDisks: " + err.Error() + cReset)
+			continue
+		}
+		u := &udisksDrive{conn: conn, dev: v.Path}
+		path := udisksPath(v.Path)
+		switch v.FSType {
+		case "vfat", "exfat", "ntfs":
+		default:
+			note(cYellow + "A Mac can't read " + v.FSType + " drives." + cReset)
+			if strings.ToLower(t.ask("Type FORMAT to make it FAT32, which a Mac reads (everything on it is erased):")) != "format" {
+				continue
+			}
+			if v.Mount != "" {
+				if err := u.call(path, "Filesystem.Unmount", noOpts()).Err; err != nil {
+					note(cRed + explainUDisks("could not close it", err).Error() + cReset)
+					continue
+				}
+			}
+			opts := map[string]dbus.Variant{"label": dbus.MakeVariant("ETROS")}
+			if err := u.call(path, "Block.Format", "vfat", opts).Err; err != nil {
+				note(cRed + explainUDisks("could not format it", err).Error() + cReset)
+				continue
+			}
+			v.Mount = ""
+		}
+		if v.Mount == "" {
+			if err := u.call(path, "Filesystem.Mount", noOpts()).Store(&v.Mount); err != nil {
+				note(cRed + explainUDisks("could not open it", err).Error() + cReset)
+				continue
+			}
+		}
+		return v.Mount
 	}
 }
 
