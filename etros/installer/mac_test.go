@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"os/exec"
@@ -207,5 +208,43 @@ func TestGzBootstrap(t *testing.T) {
 	}
 	if strings.Contains(string(out), "root.x86_64") || !strings.Contains(string(out), "usr/bin/pacman") {
 		t.Errorf("entries:\n%s", out)
+	}
+}
+
+// Choosing BATOCERA and SHARE among the Mac's partitions.
+func TestChooseMacParts(t *testing.T) {
+	efi := macPart{Path: "/dev/sdb1", PartType: "c12a7328-f81f-11d2-ba4b-00a0c93ec93b", Start: 40, Size: 200 << 20}
+	apfs := macPart{Path: "/dev/sdb2", PartType: gptAPFS, Start: 409640, Size: 150 * gb}
+	p3 := macPart{Path: "/dev/sdb3", PartType: gptMSData, Label: "Untitled", FSType: "exfat", Start: apfs.Start + apfs.Size/512, Size: 8 * gb}
+	p4 := macPart{Path: "/dev/sdb4", PartType: gptMSData, Label: "share", FSType: "exfat", Start: p3.Start + p3.Size/512, Size: 90 * gb}
+	m, err := planMac(macTestDisk(efi, apfs, p3, p4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	choose := func(in string) (macChoice, error) {
+		tu := &tui{in: bufio.NewReader(strings.NewReader(in))}
+		return tu.chooseMacParts(m)
+	}
+	// 1 and 2: sdb3 BATOCERA, sdb4 SHARE. (macOS's own can't be picked: 3 isn't there.)
+	if c, err := choose("3\n1\n2\n"); err != nil || c.split || c.boot != "/dev/sdb3" || c.share != "/dev/sdb4" || c.shareSize != 90*gb {
+		t.Errorf("1, 2: %+v %v", c, err)
+	}
+	// SHARE before BATOCERA: asked again.
+	if c, err := choose("2\n1\n1\n2\n"); err != nil || c.boot != "/dev/sdb3" {
+		t.Errorf("2, 1 then 1, 2: %+v %v", c, err)
+	}
+	// The same one twice: split in two.
+	if c, err := choose("2\n2\n"); err != nil || !c.split || c.plan.bootCamp[0].Path != "/dev/sdb4" || c.shareSize < 81*gb || c.shareSize > 82*gb {
+		t.Errorf("2, 2: %+v %v", c, err)
+	}
+	// Too small to split.
+	if _, err := choose("1\n1\nb\n"); err == nil {
+		t.Error("8 GB split: no error")
+	}
+	// Free room after macOS.
+	fm, _ := planMac(macTestDisk(efi, apfs))
+	tu := &tui{in: bufio.NewReader(strings.NewReader("f\nf\n"))}
+	if c, err := tu.chooseMacParts(fm); err != nil || !c.split || len(c.plan.bootCamp) != 0 {
+		t.Errorf("free room: %+v %v", c, err)
 	}
 }

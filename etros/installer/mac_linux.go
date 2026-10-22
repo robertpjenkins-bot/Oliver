@@ -407,10 +407,8 @@ func (t *tui) macLoop() bool {
 			whyNoMac()
 		}
 		for i, m := range macs {
-			what := "Boot Camp → Etros"
-			if m.size < 0 {
-				what = cRed + "no Boot Camp partition to use" + cReset
-			} else if m.isEtros {
+			what := "choose its BATOCERA and SHARE next"
+			if m.isEtros {
 				what = "has Etros already"
 			}
 			fmt.Printf("  %s%d%s  %s %s (%s): %s\n", cYellow, i+1, cReset, m.disk.Model, m.disk.Path, gbs(m.disk.Size), what)
@@ -425,13 +423,6 @@ func (t *tui) macLoop() bool {
 			continue
 		}
 		m := macs[n-1]
-		if m.size < 0 {
-			_, err := planMac(m.disk)
-			note(cRed + "Etros can't go on this Mac: " + err.Error() + cReset)
-			note("It goes where Boot Camp's Windows is: set up Boot Camp on the Mac first (Boot Camp")
-			note("Assistant, in macOS), even without finishing Windows, then try again.")
-			continue
-		}
 		if err := t.putEtrosOnMac(m); err != nil {
 			logf("ERROR: Mac: %v", err)
 			fmt.Printf("\n%s  ETROS DIDN'T GO ON THE MAC%s\n\n", cRed, cReset)
@@ -445,26 +436,17 @@ func (t *tui) macLoop() bool {
 }
 
 func (t *tui) putEtrosOnMac(m *macPlan) error {
-	heading("THIS MAC'S DRIVE")
-	for _, p := range m.macOS {
-		fmt.Printf("  %s✔%s %-40s %s  %sstays%s\n", cCyan, cReset, describePart(p), gbs(p.Size), cCyan, cReset)
+	ch, err := t.chooseMacParts(m)
+	if err != nil {
+		return err
 	}
-	for _, p := range m.bootCamp {
-		fmt.Printf("  %s✘%s %-40s %s  %sis deleted%s\n", cRed, cReset, describePart(p), gbs(p.Size), cRed, cReset)
-	}
-	fmt.Printf("  %s+%s %-40s %s\n", cYellow, cReset, "Etros (BATOCERA) and its storage (SHARE)", gbs(m.size))
-	if m.isEtros {
-		note(cYellow + "This Mac has Etros already: putting it on again deletes its games and saves too." + cReset)
-		note("(To just update it, use Etros Updater instead.)")
-	}
-	withOllie := m.roomForOllie()
+	withOllie := ch.shareSize >= macMinShare+macOllieRoom
 	if withOllie {
 		withOllie = t.yes("Include Ollie OS (Arch Linux with KDE Plasma, made now: 30 to 60 minutes)?", true)
 	} else {
-		note("There isn't room for Ollie OS too (it needs " + gbs(macBootSize+macMinShare+macOllieRoom) + "), so it's Etros on its own.")
+		note(fmt.Sprintf("SHARE is under %d GB, so there's no room for Ollie OS: it's Etros on its own.", (macMinShare+macOllieRoom)>>30))
 	}
 	fmt.Println()
-	note(cBold + "Everything in Boot Camp (Windows and its files) will be deleted." + cReset)
 	if strings.ToLower(t.ask("Type ERASE to go ahead (anything else to go back):")) != "erase" {
 		return errors.New("stopped: nothing was changed")
 	}
@@ -492,7 +474,14 @@ func (t *tui) putEtrosOnMac(m *macPlan) error {
 		return err
 	}
 
-	boot, share, closeAll, err := makeMacPartitions(m, rep)
+	var boot, share string
+	var closeAll func()
+	if ch.split {
+		boot, share, closeAll, err = makeMacPartitions(ch.plan, rep)
+	} else {
+		rep.Stage("Getting BATOCERA and SHARE ready")
+		boot, share, closeAll, err = formatMacParts(m, ch.boot, ch.share, rep)
+	}
 	if err != nil {
 		return err
 	}
@@ -529,11 +518,122 @@ func (t *tui) putEtrosOnMac(m *macPlan) error {
 	return nil
 }
 
+// macChoice is where Etros goes on the Mac: two partitions chosen as
+// BATOCERA and SHARE, or one partition (or free room) split in two.
+type macChoice struct {
+	boot, share string
+	split       bool
+	plan        *macPlan // split: what's deleted, and where the two go
+	shareSize   int64
+}
+
+const macMinBoot = 5 << 30 // Batocera for PCs, Etros and Ollie OS's kernel
+
+// chooseMacParts shows the Mac's partitions and asks which are BATOCERA and
+// SHARE.
+func (t *tui) chooseMacParts(m *macPlan) (macChoice, error) {
+	var usable []macPart
+	heading("THIS MAC'S PARTITIONS")
+	for _, p := range m.disk.Children {
+		if isMacOSPart(p) || strings.EqualFold(p.PartType, "c12a7328-f81f-11d2-ba4b-00a0c93ec93b") {
+			fmt.Printf("     %s%-14s %-40s %9s  macOS's: never touched%s\n", cDim, p.Path, describePart(p), gbs(p.Size), cReset)
+			continue
+		}
+		usable = append(usable, p)
+		fmt.Printf("  %s%2d%s %-14s %-40s %9s\n", cYellow, len(usable), cReset, p.Path, describePart(p), gbs(p.Size))
+	}
+	free := len(m.bootCamp) == 0 && m.size >= macBootSize+macMinShare
+	if free {
+		fmt.Printf("  %s f%s %-14s %-40s %9s\n", cYellow, cReset, "", "free room after macOS", gbs(m.size))
+	}
+	if len(usable) == 0 && !free {
+		return macChoice{}, errors.New("there's no partition for Etros on this Mac: in Disk Utility on the Mac, add one (32 GB or more, any name or format), then try again")
+	}
+	note("BATOCERA gets Etros's start-up files (5 GB or more; 8 GB is plenty).")
+	note("SHARE gets games, saves and Ollie OS (32 GB or more for Ollie OS). It must be the")
+	note("partition numbered right after BATOCERA. Choose the same one twice to split it in two.")
+	note("Both are erased.")
+	pick := func(q string) (macPart, bool, error) {
+		for {
+			a := strings.ToLower(t.ask(q))
+			if a == "b" || a == "q" {
+				return macPart{}, false, errors.New("stopped: nothing was changed")
+			}
+			if a == "f" && free {
+				return macPart{}, true, nil
+			}
+			var n int
+			if _, err := fmt.Sscan(a, &n); err == nil && n >= 1 && n <= len(usable) {
+				return usable[n-1], false, nil
+			}
+		}
+	}
+	hint := fmt.Sprintf("(1 to %d", len(usable))
+	if free {
+		hint += ", f"
+	}
+	if len(usable) == 0 {
+		hint = "(f"
+	}
+	hint += ", b to go back)"
+	for {
+		bp, bfree, err := pick("Which is BATOCERA? " + hint)
+		if err != nil {
+			return macChoice{}, err
+		}
+		sp, sfree, err := pick("Which is SHARE? " + hint)
+		if err != nil {
+			return macChoice{}, err
+		}
+
+		// One partition (or the free room) split in two.
+		if bfree || sfree || bp.Path == sp.Path {
+			if bfree != sfree {
+				note(cRed + "Choose the free room for both, to split it in two." + cReset)
+				continue
+			}
+			pl := *m
+			if !bfree {
+				pl.bootCamp = []macPart{bp}
+				pl.start = (bp.Start*512 + mib - 1) / mib * mib
+				pl.size = bp.Start*512 + bp.Size - pl.start
+			}
+			if pl.size < macBootSize+macMinShare {
+				note(cRed + fmt.Sprintf("That's too small to split: it needs %s.", gbs(macBootSize+macMinShare)) + cReset)
+				continue
+			}
+			where := "the free room after macOS"
+			if !bfree {
+				where = bp.Path + " (" + describePart(bp) + ")"
+			}
+			fmt.Println()
+			note(cBold + where + " becomes BATOCERA (8 GB) and SHARE (" + gbs(pl.size-macBootSize) + ")." + cReset)
+			return macChoice{split: true, plan: &pl, shareSize: pl.size - macBootSize}, nil
+		}
+
+		switch {
+		case partNum(sp.Path) != partNum(bp.Path)+1:
+			note(cRed + fmt.Sprintf("SHARE must be the partition right after BATOCERA (number %d, after %s): Batocera looks for it there.", partNum(bp.Path)+1, bp.Path) + cReset)
+			continue
+		case bp.Size < macMinBoot:
+			note(cRed + fmt.Sprintf("BATOCERA (%s) is too small: it needs %s.", gbs(bp.Size), gbs(macMinBoot)) + cReset)
+			continue
+		case sp.Size < macMinShare:
+			note(cRed + fmt.Sprintf("SHARE (%s) is too small: it needs %s.", gbs(sp.Size), gbs(macMinShare)) + cReset)
+			continue
+		}
+		fmt.Println()
+		note(cBold + bp.Path + " (" + describePart(bp) + ") becomes BATOCERA, and is erased." + cReset)
+		note(cBold + sp.Path + " (" + describePart(sp) + ") becomes SHARE, and is erased." + cReset)
+		return macChoice{boot: bp.Path, share: sp.Path, shareSize: sp.Size}, nil
+	}
+}
+
 func describePart(p macPart) string {
 	name := p.PartLabel
 	switch strings.ToLower(p.PartType) {
 	case gptAPFS, gptHFS, gptCoreStorage:
-		name = "macOS (" + p.PartLabel + ")"
+		name = strings.TrimSuffix("macOS ("+p.PartLabel+")", " ()")
 	case gptAppleBoot:
 		name = "macOS Recovery"
 	case gptMSData:
@@ -620,11 +720,18 @@ func udisksEtrosPartitions(u *udisksDrive, dev string, start int64, bootLabel st
 		return "", "", "", nil, fmt.Errorf("the new partitions got numbers %d and %d, and Batocera needs its storage right after its boot partition", b, s)
 	}
 
+	boot, share, closeAll, err = openEtrosParts(u, bootPart, sharePart)
+	return boot, share, bootUUID, closeAll, err
+}
+
+// openEtrosParts mounts Etros's boot partition and SHARE; closeAll closes
+// them again.
+func openEtrosParts(u *udisksDrive, bootPart, sharePart dbus.ObjectPath) (boot, share string, closeAll func(), err error) {
 	mount := func(p dbus.ObjectPath) (string, error) {
 		var dir string
 		if err := u.call(p, "Filesystem.Mount", noOpts()).Store(&dir); err != nil {
 			var mp [][]byte
-			if v, gerr := conn.Object(udisks, p).GetProperty(udisks + ".Filesystem.MountPoints"); gerr == nil {
+			if v, gerr := u.conn.Object(udisks, p).GetProperty(udisks + ".Filesystem.MountPoints"); gerr == nil {
 				if v.Store(&mp) == nil && len(mp) > 0 {
 					return strings.TrimRight(string(mp[0]), "\x00"), nil
 				}
@@ -642,14 +749,14 @@ func udisksEtrosPartitions(u *udisksDrive, dev string, start int64, bootLabel st
 		}
 	}
 	if boot, err = mount(bootPart); err != nil {
-		return "", "", "", nil, err
+		return "", "", nil, err
 	}
 	if share, err = mount(sharePart); err != nil {
 		unmount(bootPart)
-		return "", "", "", nil, err
+		return "", "", nil, err
 	}
 	closed := false
-	return boot, share, bootUUID, func() {
+	return boot, share, func() {
 		if !closed {
 			closed = true
 			syncDir(boot)
@@ -658,6 +765,38 @@ func udisksEtrosPartitions(u *udisksDrive, dev string, start int64, bootLabel st
 			unmount(bootPart)
 		}
 	}, nil
+}
+
+// formatMacParts makes the two partitions chosen on the Mac BATOCERA
+// (FAT32) and SHARE (ext4), where they are, and opens them.
+func formatMacParts(m *macPlan, bootDev, shareDev string, rep Reporter) (boot, share string, closeAll func(), err error) {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return "", "", nil, fmt.Errorf("can't reach UDisks: %w", err)
+	}
+	u := &udisksDrive{conn: conn, dev: m.disk.Path}
+	for _, x := range []struct{ dev, fs, label, ptype string }{
+		{bootDev, "vfat", "BATOCERA", gptMSData},
+		{shareDev, "ext4", "SHARE", gptLinux},
+	} {
+		path := udisksPath(x.dev)
+		var mp [][]byte
+		if v, err := conn.Object(udisks, path).GetProperty(udisks + ".Filesystem.MountPoints"); err == nil && v.Store(&mp) == nil && len(mp) > 0 {
+			if err := u.call(path, "Filesystem.Unmount", noOpts()).Err; err != nil {
+				return "", "", nil, explainUDisks("could not unmount "+x.dev, err)
+			}
+		}
+		u.call(path, "Partition.SetType", x.ptype, noOpts()) // not essential
+		opts := map[string]dbus.Variant{"label": dbus.MakeVariant(x.label)}
+		if x.fs == "ext4" {
+			opts["take-ownership"] = dbus.MakeVariant(true)
+		}
+		if err := u.call(path, "Block.Format", x.fs, opts).Err; err != nil {
+			return "", "", nil, explainUDisks("could not make "+x.dev+" "+x.label, err)
+		}
+		rep.Log("made " + x.dev + " " + x.label)
+	}
+	return openEtrosParts(u, udisksPath(bootDev), udisksPath(shareDev))
 }
 
 // macUSBEtros makes a USB drive that starts Etros (with Ollie OS) on any
