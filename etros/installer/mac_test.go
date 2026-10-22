@@ -46,14 +46,21 @@ func TestPlanMac(t *testing.T) {
 		t.Errorf("with WinRE: %+v %v", pl, err)
 	}
 
-	// Not Boot Camp after macOS: hands off.
-	linux := bootcamp
-	linux.PartType = gptLinux
-	if _, err := planMac(macTestDisk(efi, apfs, linux)); err == nil || !strings.Contains(err.Error(), "isn't Boot Camp") {
-		t.Errorf("Linux partition: %v", err)
+	// A partition made for Etros in Disk Utility (ExFAT, any name) goes too.
+	exfat := bootcamp
+	exfat.PartLabel, exfat.Label, exfat.FSType = "Untitled", "ETROS", "exfat"
+	if pl, err := planMac(macTestDisk(efi, apfs, exfat)); err != nil || len(pl.bootCamp) != 1 || pl.start != exfat.Start*512 {
+		t.Errorf("ExFAT partition: %+v %v", pl, err)
 	}
-	if _, err := planMac(macTestDisk(efi, apfs)); err == nil {
-		t.Error("no Boot Camp: no error")
+	// Nothing after macOS, but free room: Etros goes there.
+	if pl, err := planMac(macTestDisk(efi, apfs)); err != nil || len(pl.bootCamp) != 0 || pl.start != (apfs.Start*512+apfs.Size+mib-1)/mib*mib {
+		t.Errorf("free room: %+v %v", pl, err)
+	}
+	// macOS takes it all.
+	full := apfs
+	full.Size = 250 * gb
+	if _, err := planMac(macTestDisk(efi, full)); err == nil || !strings.Contains(err.Error(), "Disk Utility") {
+		t.Errorf("no room: %v", err)
 	}
 	if _, err := planMac(macTestDisk(efi, bootcamp)); err == nil {
 		t.Error("no macOS: no error")

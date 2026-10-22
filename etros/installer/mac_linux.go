@@ -97,21 +97,21 @@ func planMac(d macDisk) (*macPlan, error) {
 		return nil, errors.New("no macOS on it")
 	}
 	pl := &macPlan{disk: d, macOS: d.Children[:last+1]}
+	// Everything after macOS goes: Boot Camp, an Etros put there before, or
+	// whatever was made for Etros in Disk Utility (it's all shown, and ERASE
+	// asked for, first). With nothing there, Etros takes the free room.
 	for _, p := range d.Children[last+1:] {
-		t := strings.ToLower(p.PartType)
-		switch {
-		case t == gptMSData || t == gptWinRE:
-		case p.Label == "BATOCERA" || p.Label == "SHARE":
+		if strings.EqualFold(p.Label, "BATOCERA") || strings.EqualFold(p.Label, "SHARE") {
 			pl.isEtros = true
-		default:
-			return nil, fmt.Errorf("%s (%s) comes after macOS and isn't Boot Camp; Etros won't touch it", p.Path, p.PartLabel)
 		}
 		pl.bootCamp = append(pl.bootCamp, p)
 	}
-	if len(pl.bootCamp) == 0 {
-		return nil, errors.New("there's no Boot Camp (Windows) partition on it")
+	if len(pl.bootCamp) > 0 {
+		pl.start = pl.bootCamp[0].Start * 512
+	} else {
+		end := d.Children[last].Start*512 + d.Children[last].Size
+		pl.start = (end + mib - 1) / mib * mib
 	}
-	pl.start = pl.bootCamp[0].Start * 512
 	pl.size = d.Size - pl.start - 1<<20 // the backup partition table is at the very end
 	// Batocera finds its storage as the partition after its boot partition,
 	// so they need numbers one after the other: the first two free ones.
@@ -130,12 +130,51 @@ func planMac(d macDisk) (*macPlan, error) {
 		return nil, fmt.Errorf("the partitions are numbered oddly (%d and %d free), and Batocera wouldn't find its storage", free[0], free[1])
 	}
 	if pl.size < macBootSize+macMinShare {
-		return nil, fmt.Errorf("Boot Camp is too small for Etros (%s; it needs %s)", gbs(pl.size), gbs(macBootSize+macMinShare))
+		if len(pl.bootCamp) == 0 {
+			return nil, fmt.Errorf("macOS takes the whole drive: in Disk Utility on the Mac, add a partition of %s or more for Etros (any name or format), then try again", gbs(macBootSize+macMinShare))
+		}
+		return nil, fmt.Errorf("the room after macOS is too small for Etros (%s; it needs %s)", gbs(pl.size), gbs(macBootSize+macMinShare))
 	}
 	return pl, nil
 }
 
 func (pl *macPlan) roomForOllie() bool { return pl.size >= macBootSize+macMinShare+macOllieRoom }
+
+// whyNoMac says what this computer does see when no Mac's drive is found.
+func whyNoMac() {
+	apple := appleUSB()
+	for _, a := range apple {
+		note(cYellow + "Plugged in: " + a + cReset)
+	}
+	out, _ := exec.Command("lsblk", "-d", "-n", "-o", "PATH,TRAN,SIZE,MODEL").Output()
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if f := strings.Fields(l); len(f) >= 3 && f[1] == "usb" {
+			note("USB drive here: " + l + " (no macOS on it)")
+		}
+	}
+	if len(apple) > 0 {
+		note("The Mac is plugged in, but its drive isn't showing up:")
+		note(" - It must be started holding T until the USB symbol shows (not just switched on).")
+		note(" - The cable must carry data: Apple's white USB-C charging cable doesn't. A USB-C")
+		note("   cable for drives or phones (USB 3), or the adapter with a USB-A cable, does.")
+		note(" - Plug it into the Steam Machine directly, not through a hub.")
+	}
+}
+
+// appleUSB lists the Apple things plugged in by USB, as Linux names them.
+func appleUSB() []string {
+	var out []string
+	ms, _ := filepath.Glob("/sys/bus/usb/devices/*/manufacturer")
+	for _, m := range ms {
+		b, _ := os.ReadFile(m)
+		if !strings.Contains(strings.ToLower(string(b)), "apple") {
+			continue
+		}
+		prod, _ := os.ReadFile(filepath.Join(filepath.Dir(m), "product"))
+		out = append(out, strings.TrimSpace(string(b))+" "+strings.TrimSpace(string(prod)))
+	}
+	return out
+}
 
 // findMacs lists the Macs (in Target Disk Mode) plugged into this computer.
 func findMacs() []*macPlan {
@@ -364,7 +403,8 @@ func (t *tui) macLoop() bool {
 		macs := findMacs()
 		fmt.Println()
 		if len(macs) == 0 {
-			note("No Mac found yet. Do the steps above, wait a few seconds, then press Enter.")
+			note("No Mac's drive found yet. Do the steps above, wait a few seconds, then press Enter.")
+			whyNoMac()
 		}
 		for i, m := range macs {
 			what := "Boot Camp → Etros"
@@ -504,8 +544,13 @@ func describePart(p macPart) string {
 	if strings.EqualFold(p.PartType, "c12a7328-f81f-11d2-ba4b-00a0c93ec93b") {
 		name = "EFI (the Mac's start-up files)"
 	}
-	if p.Label == "BATOCERA" || p.Label == "SHARE" {
+	if strings.EqualFold(p.Label, "BATOCERA") || strings.EqualFold(p.Label, "SHARE") {
 		name = "Etros: " + p.Label
+	} else if name == p.PartLabel && p.Label != "" {
+		name = p.Label
+	}
+	if p.FSType != "" && !strings.Contains(name, "macOS") {
+		name += " (" + p.FSType + ")"
 	}
 	return name
 }

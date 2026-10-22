@@ -52,3 +52,32 @@ func TestMacUSBPartitions(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+// A Mac in Target Disk Mode (a stand-in drive in ETROS_TEST_MAC_DISK, with
+// macOS and a partition made for Etros): found, and BATOCERA and SHARE made
+// in that partition's place through UDisks.
+func TestMacTDMPartitions(t *testing.T) {
+	dev := os.Getenv("ETROS_TEST_MAC_DISK")
+	if dev == "" {
+		t.Skip("set ETROS_TEST_MAC_DISK to a drive UDisks may change")
+	}
+	var m *macPlan
+	for _, x := range findMacs() {
+		if x.disk.Path == dev {
+			m = x
+		}
+	}
+	if m == nil || m.size < 0 {
+		t.Fatalf("%s not found as a Mac: %+v", dev, m)
+	}
+	_, share, closeAll, err := makeMacPartitions(m, nopReporter{})
+	if err != nil && !strings.Contains(err.Error(), "vfat not configured") { // (no FAT in test kernels)
+		t.Fatal(err)
+	}
+	if err == nil {
+		if err := os.WriteFile(filepath.Join(share, "x"), nil, 0o644); err != nil {
+			t.Error(err)
+		}
+		closeAll()
+	}
+}
