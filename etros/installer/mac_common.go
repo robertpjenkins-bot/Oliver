@@ -103,7 +103,7 @@ func roomForDownloads(need int64) string {
 // fetchPCBatocera finds Batocera for PCs in Downloads or downloads it,
 // saying so through rep (for the Safari installer).
 func fetchPCBatocera(rep Reporter) (string, error) {
-	rep.Stage("Looking for Batocera for PCs on this Mac")
+	rep.Stage("Looking for Batocera for PCs on this computer")
 	if p := findLocal(localBatocera); p != "" {
 		rep.Log("using " + p + ": no download needed")
 		return p, nil

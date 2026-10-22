@@ -254,8 +254,166 @@ func runMacInstaller(o Options) error {
 	showTitle("ETROS MAC INSTALLER")
 	note("Puts Etros on an Intel Mac plugged in here, on partitions you choose. macOS and")
 	note("your Mac files stay. " + cBold + "No password needed." + cReset)
-	t.macLoop()
+	fmt.Println()
+	fmt.Printf("  %sEnter%s  Plug the Mac in here (Target Disk Mode)\n", cYellow, cReset)
+	fmt.Printf("  %sf%s      Make a BATOCERA folder on a USB drive, to copy onto the Mac in Finder\n", cYellow, cReset)
+	fmt.Printf("  %su%s      Make an Etros USB stick the Mac starts from\n", cYellow, cReset)
+	switch strings.ToLower(t.ask("Press Enter, or type f or u:")) {
+	case "f":
+		t.macFolders()
+	case "u":
+		t.macUSBEtros()
+	default:
+		t.macLoop()
+	}
 	return nil
+}
+
+// macFolders puts what goes on the Mac's BATOCERA partition in a folder on
+// a USB drive, for a Mac whose drive can't be reached from here: copied
+// onto BATOCERA in Finder, it starts Etros (Option at start-up), which makes
+// SHARE (left empty: macOS can't make ext4) and then Ollie OS over Wi-Fi.
+func (t *tui) macFolders() bool {
+	heading("FOLDERS FOR THE MAC")
+	note("Plug in a USB drive formatted FAT32 or ExFAT, with 5 GB free (nothing on it is")
+	note("erased), then press Enter.")
+	dir := t.pickUSBDir()
+	if dir == "" {
+		return false
+	}
+	ssid := currentWifi()
+	if ssid != "" {
+		if a := t.ask("Wi-Fi for Ollie OS, on the Mac [" + ssid + "]:"); a != "" {
+			ssid = a
+		}
+	} else {
+		ssid = t.ask("Wi-Fi name for Ollie OS, on the Mac (Enter to skip):")
+	}
+	key := ""
+	if ssid != "" {
+		key = t.ask("Wi-Fi password:")
+	}
+	top := filepath.Join(dir, "Etros for Mac")
+	if err := macFolderFiles(top, ssid, key); err != nil {
+		logf("ERROR: folders for the Mac: %v", err)
+		fmt.Printf("\n%s  THAT DIDN'T WORK%s\n\n", cRed, cReset)
+		note(err.Error())
+		t.ask("Press Enter to finish")
+		return false
+	}
+	closed := closeCard(dir)
+	fmt.Printf("\n%s  THE FOLDERS ARE READY%s  (on the USB drive, in Etros for Mac)\n\n", cYellow, cReset)
+	if !closed {
+		note("0. Eject the USB drive first (in Dolphin, right-click it, Safely Remove).")
+	}
+	note("1. On the Mac, in Disk Utility: BATOCERA must be MS-DOS (FAT), 8 GB or more, and")
+	note("   SHARE the partition right after it (32 GB or more, ExFAT, " + cBold + "empty" + cReset + ").")
+	note("2. Plug the USB drive into the Mac. Open " + cBold + "Etros for Mac → BATOCERA" + cReset + ", select")
+	note("   everything inside (⌘A) and drag it onto BATOCERA in Finder.")
+	note("3. Copy " + cBold + "nothing" + cReset + " onto SHARE: Etros sets it up itself the first time.")
+	note("4. Restart the Mac holding " + cBold + "Option (⌥)" + cReset + " and choose " + cBold + "EFI Boot" + cReset + ". Etros sets up SHARE,")
+	note("   then makes Ollie OS over Wi-Fi (30 to 60 minutes) and says when it's ready.")
+	t.ask("Press Enter to finish")
+	return true
+}
+
+// macFolderFiles makes top/BATOCERA (everything for the Mac's BATOCERA)
+// and top/SHARE (empty).
+func macFolderFiles(top, ssid, key string) error {
+	if err := os.MkdirAll(top, 0o755); err != nil {
+		return fmt.Errorf("can't write on the USB drive: %w", err)
+	}
+	if free := freeSpace(top); free >= 0 && free < 5<<30 && os.Getenv("ETROS_TEST_NO_ROOM_CHECK") == "" {
+		return fmt.Errorf("the USB drive needs 5 GB free and has %s", gbs(free))
+	}
+	rep := newTermReporter()
+	defer rep.end()
+	batocera, err := fetchPCBatocera(rep)
+	if err != nil {
+		return fmt.Errorf("getting Batocera for PCs: %w", err)
+	}
+	bootstrap, err := fetchArchBootstrap(rep)
+	if err != nil {
+		return fmt.Errorf("getting Arch Linux: %w", err)
+	}
+	unpacked, err := unpackPCBatocera(batocera, rep)
+	if err != nil {
+		return err
+	}
+	rep.Stage("Checking Batocera for PCs")
+	initrd, err := pcInitrd(unpacked)
+	if err != nil {
+		return err
+	}
+	rep.Stage("Getting Arch Linux ready for Ollie OS")
+	archGz := filepath.Join(defaultCache(), "archlinux-bootstrap-x86_64.tar.gz")
+	if err := gzBootstrap(bootstrap, archGz, rep); err != nil {
+		return fmt.Errorf("getting Arch Linux ready: %w", err)
+	}
+	defer os.Remove(archGz)
+
+	boot := filepath.Join(top, "BATOCERA")
+	os.RemoveAll(boot) // an earlier one
+	if err := os.MkdirAll(filepath.Join(top, "SHARE"), 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(boot, 0o755); err != nil {
+		return err
+	}
+	rep.Stage("Copying Batocera and Etros into the BATOCERA folder")
+	if err := copyPCBatocera(unpacked, initrd, boot, rep); err != nil {
+		return err
+	}
+	// SHARE is ExFAT from Disk Utility: Etros makes it ext4 the first time.
+	if err := os.WriteFile(filepath.Join(boot, "etros", "format-share"), []byte("SHARE\n"), 0o644); err != nil {
+		return err
+	}
+	rep.Stage("Putting Arch Linux in for Ollie OS")
+	if err := copyFile(archGz, filepath.Join(boot, "etros", "archlinux-bootstrap-x86_64.tar.gz"), rep); err != nil {
+		return err
+	}
+	if ssid != "" {
+		if err := os.WriteFile(filepath.Join(boot, "etros", "wifi.txt"), []byte(ssid+"\n"+key+"\n"), 0o600); err != nil {
+			return err
+		}
+	}
+	syncDir(filepath.Join(boot, "etros"))
+	syncDir(boot)
+	return nil
+}
+
+// currentWifi is the Wi-Fi this computer is on.
+func currentWifi() string {
+	out, _ := exec.Command("nmcli", "-t", "-f", "active,ssid", "dev", "wifi").Output()
+	for _, l := range strings.Split(string(out), "\n") {
+		if ssid, ok := strings.CutPrefix(l, "yes:"); ok {
+			return strings.ReplaceAll(ssid, "\\:", ":")
+		}
+	}
+	return ""
+}
+
+// pickUSBDir asks which open USB drive (FAT32, ExFAT or NTFS) to use; ""
+// if the person backed out.
+func (t *tui) pickUSBDir() string {
+	for {
+		drives := usbDrives()
+		for i, d := range drives {
+			fmt.Printf("  %s%d%s  %s %s(%s free)%s\n", cYellow, i+1, cReset, d, cDim, gbs(freeSpace(d)), cReset)
+		}
+		if len(drives) == 0 {
+			note("No FAT32 or ExFAT drive open yet. Plug it in (and open it in Dolphin), then press Enter.")
+		}
+		fmt.Printf("  %sr%s  Look again    %sb%s  Back\n", cYellow, cReset, cYellow, cReset)
+		a := strings.ToLower(t.ask("Which drive?"))
+		if a == "b" || a == "q" {
+			return ""
+		}
+		var n int
+		if _, err := fmt.Sscan(a, &n); err == nil && n >= 1 && n <= len(drives) {
+			return drives[n-1]
+		}
+	}
 }
 
 // usbDrives are the drives open here that a Mac can read (FAT, ExFAT, NTFS).

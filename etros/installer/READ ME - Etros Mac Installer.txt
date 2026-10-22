@@ -31,3 +31,16 @@ more; it's erased) with Ollie OS. Then:
 3. In Etros: ETROS -> Put Etros on this Mac. Choose it once, then again.
 4. When it says it's done: turn off, take the stick out, turn on holding
    Option, choose EFI Boot. That's Etros from the Mac's own drive.
+
+OR: FOLDERS TO COPY IN FINDER (no cable, no starting from a stick)
+Open Etros Mac Installer and type f. It makes "Etros for Mac" on a USB
+drive (FAT32 or ExFAT, 5 GB free) with two folders, BATOCERA and SHARE.
+1. On the Mac, in Disk Utility: BATOCERA is MS-DOS (FAT), 8 GB or more;
+   SHARE is the partition right after it, ExFAT, 32 GB or more.
+2. Open the BATOCERA folder on the USB drive, select everything inside
+   (Command-A) and drag it onto the BATOCERA partition.
+3. SHARE's folder is empty on purpose: copy nothing onto SHARE. Etros sets
+   it up the first time it starts.
+4. Restart holding Option and choose EFI Boot. Etros makes Ollie OS over
+   Wi-Fi (30 to 60 minutes) and says when it's ready.
+

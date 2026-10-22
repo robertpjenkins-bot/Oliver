@@ -248,3 +248,48 @@ func TestChooseMacParts(t *testing.T) {
 		t.Errorf("free room: %+v %v", c, err)
 	}
 }
+
+// The folders for copying onto the Mac in Finder, from stand-ins in
+// ETROS_PC_BATOCERA and ETROS_PC_BOOTSTRAP (found in Downloads).
+func TestMacFolderFiles(t *testing.T) {
+	batocera, bootstrap := os.Getenv("ETROS_PC_BATOCERA"), os.Getenv("ETROS_PC_BOOTSTRAP")
+	if batocera == "" || bootstrap == "" {
+		t.Skip("set ETROS_PC_BATOCERA and ETROS_PC_BOOTSTRAP")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("ETROS_TEST_SMALL_FILES", "1")
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	os.MkdirAll(filepath.Join(home, "Downloads"), 0o755)
+	for _, f := range []string{batocera, bootstrap} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(home, "Downloads", filepath.Base(f)), b, 0o644)
+	}
+	top := filepath.Join(t.TempDir(), "Etros for Mac")
+	if err := macFolderFiles(top, "Home Wi-Fi", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	boot := filepath.Join(top, "BATOCERA")
+	for _, f := range []string{"EFI/BOOT/BOOTX64.EFI", "boot/linux", "boot/initrd.gz", "etros/etros.squashfs", "etros/intel-mac.txt",
+		"etros/format-share", "etros/archlinux-bootstrap-x86_64.tar.gz"} {
+		if _, err := os.Stat(filepath.Join(boot, f)); err != nil {
+			t.Error(err)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(boot, "etros", "wifi.txt")); string(b) != "Home Wi-Fi\nsecret\n" {
+		t.Errorf("wifi.txt: %q", b)
+	}
+	if es, err := os.ReadDir(filepath.Join(top, "SHARE")); err != nil || len(es) != 0 {
+		t.Errorf("SHARE isn't an empty folder: %v %v", es, err)
+	}
+	// Batocera looks for BATOCERA by its label.
+	cfgs, _ := filepath.Glob(filepath.Join(boot, "EFI", "BOOT", "*.cfg"))
+	for _, c := range cfgs {
+		if b, _ := os.ReadFile(c); strings.Contains(string(b), "label=") && !strings.Contains(string(b), "label=BATOCERA") {
+			t.Errorf("%s: %s", c, b)
+		}
+	}
+}
