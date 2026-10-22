@@ -9,6 +9,7 @@ package main
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
@@ -647,5 +648,39 @@ func TestMacTargetsReady(t *testing.T) {
 		if x.part.id == "disk0s3" && !strings.Contains(x.why, "MS-DOS") {
 			t.Errorf("not FAT: %+v", x)
 		}
+	}
+}
+
+// The Terminal version (Start Etros Installer.command), typed into: picks
+// BATOCERA made in Disk Utility, keeps the Wi-Fi name, gives its password.
+func TestMacText(t *testing.T) {
+	const g = int64(1) << 30
+	st := macBook("")
+	st.Disks[0].Parts = append(st.Disks[0].Parts[:2],
+		fakeMacPart{Num: 3, Content: "Microsoft Basic Data", Name: "Batocera", Start: 210<<20 + 180*g, Size: 8 * g},
+		fakeMacPart{Num: 4, Content: "Microsoft Basic Data", Name: "share", Start: 210<<20 + 188*g, Size: 62 * g})
+	st.Stuck = map[string]int{"disk0s3": 99, "disk0s4": 99}
+	state := fakeMacEnv(t, st)
+	// Usable, in order: macOS's room (1), BATOCERA (2), the USB drive (3).
+	in := "2\n\nhunter2\nERASE\n"
+	tu := &tui{in: bufio.NewReader(strings.NewReader(in))}
+	if err := tu.macText(darwinMac{}); err != nil {
+		t.Fatal(err)
+	}
+	after := readFakeMac(t, state)
+	var boot fakeMacPart
+	for _, p := range after.Disks[0].Parts {
+		if p.Name == "Batocera" {
+			boot = p
+		}
+	}
+	if _, err := os.Stat(filepath.Join(boot.Mount, "etros", "etros.squashfs")); err != nil {
+		t.Errorf("Etros not on BATOCERA: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(boot.Mount, "etros", "wifi.txt")); string(b) != "Jenkins Wi-Fi\nhunter2\n" {
+		t.Errorf("wifi.txt: %q", b)
+	}
+	if calls, _ := os.ReadFile(state + ".log"); strings.Contains(string(calls), "eraseVolume") {
+		t.Error("erased something")
 	}
 }

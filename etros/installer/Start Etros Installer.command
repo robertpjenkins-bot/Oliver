@@ -12,9 +12,9 @@ if [ ! -d "$app" ]; then
 fi
 xattr -cr "$app" 2>/dev/null
 chmod +x "$app/Contents/MacOS/Etros Installer"
-echo "Starting Etros Installer. It opens in Safari; leave this window open while you use it."
+echo "Starting Etros Installer here, in this window."
 echo
-"$app/Contents/MacOS/Etros Installer"
+ETROS_TEXT=1 "$app/Contents/MacOS/Etros Installer"
 echo
 echo "Etros Installer has stopped. If something went wrong, take a photo of this window."
 echo "Press Enter to close it."

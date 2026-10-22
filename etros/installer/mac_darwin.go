@@ -18,7 +18,9 @@ package main
 // starts (etros-setup-ollie-pc).
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 )
@@ -26,6 +28,18 @@ import (
 func macInstallSupported() bool { return runtime.GOARCH == "amd64" }
 
 func runMacInstaller(o Options) error {
+	// Start Etros Installer.command: everything in its Terminal window.
+	if os.Getenv("ETROS_TEXT") == "1" {
+		t := &tui{in: bufio.NewReader(os.Stdin), opts: o}
+		err := t.macText(darwinMac{})
+		if err != nil {
+			logf("ERROR: Mac: %v", err)
+			fmt.Printf("\n%s  ETROS DIDN'T GO ON%s\n\n", cRed, cReset)
+			note(err.Error())
+			note("This is also in etros-installer-log.txt in Downloads.")
+		}
+		return err
+	}
 	// The app has no window of its own: anything that goes wrong is shown
 	// in a message, not just in the log.
 	safari := func(url string) error {
