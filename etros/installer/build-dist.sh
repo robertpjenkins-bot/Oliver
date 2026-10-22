@@ -88,9 +88,10 @@ dmg() {  # dmg FOLDER-OF-A-DARWIN-PACKAGE DMG-NAME
 EOF
     chmod 0755 "$app/MacOS/Etros Installer"
     cp "$src/READ ME.txt" "$root/READ ME.txt"
+    cp "Start Etros Installer.command" "$root/" && chmod 0755 "$root/Start Etros Installer.command"
     genisoimage -quiet -V "Etros Installer" -R -J -joliet-long -o "dist/$2" "$root"
     # The same app in a zip, which every Mac opens with a double-click.
-    (cd "$root" && zip -q -r -y "../../${2%.dmg} (app).zip" "Etros Installer.app" "READ ME.txt")
+    (cd "$root" && zip -q -r -y "../../${2%.dmg} (app).zip" "Etros Installer.app" "Start Etros Installer.command" "READ ME.txt")
 }
 dmg "Etros Mac Installer - Mac (Intel) - version $VERSION" "Etros Mac Installer.dmg"
 rm -rf dist/stage

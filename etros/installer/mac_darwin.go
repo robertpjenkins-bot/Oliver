@@ -34,8 +34,15 @@ func runMacInstaller(o Options) error {
 		}
 		return exec.Command("open", url).Run()
 	}
-	err := macLaunch(func() error { return serveMacWeb(darwinMac{}, safari) }, safari)
+	// Started from Terminal (Start Etros Installer.command): say so there.
+	say := func(url string) error {
+		fmt.Println("Etros Installer is open in Safari: " + url)
+		fmt.Println("(If Safari didn't open, paste that address into it.)")
+		return safari(url)
+	}
+	err := macLaunch(func() error { return serveMacWeb(darwinMac{}, say) }, say)
 	if err != nil {
+		fmt.Println("Etros Installer couldn't start: " + err.Error())
 		macAlert("Etros Installer couldn't start: " + err.Error())
 	}
 	return err
