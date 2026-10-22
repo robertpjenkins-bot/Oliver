@@ -388,6 +388,13 @@ func (t *tui) macLoop() bool {
 				if waited == 30 {
 					note("Still no Mac's drive after a minute.")
 					whyNoMac()
+					note("No cable gets it through? An Etros USB stick does the same without one:")
+					note("the Mac starts Etros from the stick, and Etros copies itself onto the Mac.")
+					if strings.ToLower(t.ask("Type u to make the USB stick, or press Enter to keep waiting:")) == "u" {
+						return t.macUSBEtros()
+					}
+					waited = 0
+					note("Waiting for the Mac... (Ctrl+C to stop)")
 				}
 				time.Sleep(2 * time.Second)
 				macs = findMacs()

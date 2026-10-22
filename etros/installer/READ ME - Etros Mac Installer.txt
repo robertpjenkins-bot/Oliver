@@ -20,3 +20,14 @@ files stay. No password is ever needed.
 In Etros, use a game controller: the Mac's own keyboard and trackpad don't
 work in Batocera. They do in Ollie OS (ETROS -> Boot into Ollie OS).
 Turned on normally, the Mac starts macOS as before.
+
+NO CABLE GETS THE MAC THROUGH?
+After a minute with no Mac, type u: it makes an Etros USB stick (40 GB or
+more; it's erased) with Ollie OS. Then:
+1. On the Mac, in macOS Disk Utility, name two partitions BATOCERA (8 GB or
+   more) and, right after it, SHARE (32 GB or more). Any format.
+2. Turn the Mac off, plug in the stick, turn it on holding Option and
+   choose EFI Boot. Etros starts from the stick.
+3. In Etros: ETROS -> Put Etros on this Mac. Choose it once, then again.
+4. When it says it's done: turn off, take the stick out, turn on holding
+   Option, choose EFI Boot. That's Etros from the Mac's own drive.
