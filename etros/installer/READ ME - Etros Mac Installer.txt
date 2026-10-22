@@ -1,14 +1,16 @@
 ETROS MAC INSTALLER
 
-Puts Etros (and Ollie OS) on an Intel Mac in place of Boot Camp's Windows,
+Puts Etros (and Ollie OS) on an Intel Mac, on partitions you choose,
 from a Steam Machine, Steam Deck or other Linux computer. macOS and your Mac
 files stay. No password is ever needed.
 
 1. Turn the Mac off and connect it to this computer with a USB-C cable.
 2. Turn the Mac on holding T until a USB symbol shows (Target Disk Mode).
 3. Double-click Etros Mac Installer, then Run.
-4. Pick the Mac, check what it will do, and type ERASE.
-   Everything in Boot Camp (Windows and its files) is deleted.
+4. Pick the Mac. It lists the Mac's partitions: type which one is BATOCERA
+   and which is SHARE (the one right after it; the same one twice splits
+   it in two). macOS's own can't be picked. Then type ERASE.
+   The USB-C cable must carry data (Apple's charging cable doesn't).
 5. It downloads Batocera for PCs (about 3 GB) and, for Ollie OS, Arch Linux,
    and makes Ollie OS (30 to 60 minutes; this computer needs internet and
    about 10 GB free).
@@ -18,17 +20,3 @@ files stay. No password is ever needed.
 In Etros, use a game controller: the Mac's own keyboard and trackpad don't
 work in Batocera. They do in Ollie OS (ETROS -> Boot into Ollie OS).
 Turned on normally, the Mac starts macOS as before.
-
-MACS WITHOUT TARGET DISK MODE (like the 12-inch MacBook)
-Choose 3: it makes an Etros USB drive (40 GB or more; it's erased), with
-Ollie OS. Then:
-1. On the Mac, in macOS Disk Utility, make two partitions: BATOCERA
-   (MS-DOS (FAT), 8 GB) and right after it SHARE (32 GB or more).
-2. Turn the Mac off, plug in the USB drive, turn it on holding Option and
-   choose EFI Boot. Etros starts from the USB drive.
-3. In Etros: ETROS -> Put Etros on this Mac. Choose it once, then again.
-4. When it says it's done: turn off, take the USB drive out, turn on
-   holding Option, choose EFI Boot. That's Etros from the Mac's own drive.
-
-(Choice 2 is the older way: the downloads on a USB drive, for Etros
-Installer run in macOS.)

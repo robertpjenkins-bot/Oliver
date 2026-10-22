@@ -252,31 +252,10 @@ func macInstallSupported() bool { return filesInstallSupported() }
 func runMacInstaller(o Options) error {
 	t := &tui{in: bufio.NewReader(os.Stdin), opts: o}
 	showTitle("ETROS MAC INSTALLER")
-	note("Puts Etros on an Intel Mac in place of Boot Camp's Windows. macOS and your Mac")
-	note("files stay. " + cBold + "No password needed." + cReset)
-	for {
-		heading("WHICH MAC?")
-		fmt.Printf("  %s1%s  A Mac that can do Target Disk Mode %s(plugged in here with a cable)%s\n", cYellow, cReset, cDim, cReset)
-		fmt.Printf("  %s2%s  Any other Intel Mac, like the 12-inch MacBook %s(get its downloads onto a USB drive)%s\n", cYellow, cReset, cDim, cReset)
-		fmt.Printf("  %s3%s  %sBest for the 12-inch MacBook:%s make an Etros USB drive %s(the Mac starts from it,\n", cYellow, cReset, cBold, cReset, cDim)
-		fmt.Printf("     then copies Etros onto its own drive: macOS doesn't get a say)%s\n", cReset)
-		fmt.Printf("  %sq%s  Quit\n", cYellow, cReset)
-		switch strings.ToLower(t.ask("Type 1, 2, 3 or q (Enter is 3):")) {
-		case "3", "":
-			if t.macUSBEtros() {
-				return nil
-			}
-		case "1":
-			t.macLoop()
-			return nil
-		case "2":
-			if t.macUSB() {
-				return nil
-			}
-		case "q", "b":
-			return nil
-		}
-	}
+	note("Puts Etros on an Intel Mac plugged in here, on partitions you choose. macOS and")
+	note("your Mac files stay. " + cBold + "No password needed." + cReset)
+	t.macLoop()
+	return nil
 }
 
 // usbDrives are the drives open here that a Mac can read (FAT, ExFAT, NTFS).
@@ -403,8 +382,37 @@ func (t *tui) macLoop() bool {
 		macs := findMacs()
 		fmt.Println()
 		if len(macs) == 0 {
-			note("No Mac's drive found yet. Do the steps above, wait a few seconds, then press Enter.")
-			whyNoMac()
+			// Wait for it: it's found by itself when it shows up.
+			note("Waiting for the Mac... (Ctrl+C to stop)")
+			for waited := 0; len(macs) == 0; waited++ {
+				if waited == 30 {
+					note("Still no Mac's drive after a minute.")
+					whyNoMac()
+				}
+				time.Sleep(2 * time.Second)
+				macs = findMacs()
+			}
+		}
+		if len(macs) == 1 {
+			m := macs[0]
+			fmt.Printf("  Found the Mac: %s%s%s %s (%s)\n", cBold, orDefault(m.disk.Model, "Mac"), cReset, m.disk.Path, gbs(m.disk.Size))
+			if err := t.putEtrosOnMac(m); err != nil && strings.HasPrefix(err.Error(), "stopped") {
+				note("Stopped: nothing was changed.")
+				if strings.ToLower(t.ask("Press Enter to start again, or q to quit")) == "q" {
+					return false
+				}
+				continue
+			} else if err != nil {
+				logf("ERROR: Mac: %v", err)
+				fmt.Printf("\n%s  ETROS DIDN'T GO ON THE MAC%s\n\n", cRed, cReset)
+				note(err.Error())
+				note("macOS wasn't touched. This is also in etros-installer-log.txt in Downloads.")
+				if strings.ToLower(t.ask("Press Enter to try again, or q to quit")) == "q" {
+					return false
+				}
+				continue
+			}
+			return true
 		}
 		for i, m := range macs {
 			what := "choose its BATOCERA and SHARE next"
