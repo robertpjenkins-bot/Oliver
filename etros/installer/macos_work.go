@@ -316,6 +316,20 @@ func usersSaying(id string) string {
 	return " (" + strings.Join(who, "; ") + ")"
 }
 
+// ownDriveHelp is what to do when macOS won't change the drive it's
+// running from: make the partitions from macOS Recovery, where it isn't,
+// and have Etros only put its files on them.
+func ownDriveHelp(x macTarget) string {
+	if !x.disk.internal {
+		return ""
+	}
+	return ". macOS may not let its own drive's partitions change while it's running from it. " +
+		"Do it from macOS Recovery instead: turn the Mac on holding Command-R, open Disk Utility, " +
+		"View > Show All Devices, click the Mac's drive, Partition, and make BATOCERA (MS-DOS (FAT), 8 GB) " +
+		"followed by SHARE (ExFAT, the rest) in place of " + x.part.id + ". Restart, open Etros Installer " +
+		"and choose BATOCERA (\"use it as it is\"): nothing is erased then, and it can't be in use"
+}
+
 // forceUnmount closes a partition (or every partition of a drive), even
 // with something using it. It needs no password; it's fine if it was closed.
 func forceUnmount(rep Reporter, id string) {
@@ -471,7 +485,7 @@ func makeEtrosPartitions(x macTarget, etros int64, rep Reporter) (boot, share dP
 			continue
 		}
 		if busyOutput(out) || os.Geteuid() == 0 {
-			return boot, share, fmt.Errorf("%w%s", diskutilError(args, out), usersSaying(st.erase))
+			return boot, share, fmt.Errorf("%w%s%s", diskutilError(args, out), usersSaying(st.erase), ownDriveHelp(x))
 		}
 		// The password: this step and the rest, in one go.
 		du := diskutilPath()
@@ -492,7 +506,7 @@ func makeEtrosPartitions(x macTarget, etros int64, rep Reporter) (boot, share dP
 		}
 		if err := asAdmin(rep, args, strings.Join(sh, "; ")); err != nil {
 			if isBusy(err) {
-				return boot, share, fmt.Errorf("%w%s", err, usersSaying(st.erase))
+				return boot, share, fmt.Errorf("%w%s%s", err, usersSaying(st.erase), ownDriveHelp(x))
 			}
 			return boot, share, err
 		}

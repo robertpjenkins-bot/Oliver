@@ -577,7 +577,8 @@ func TestMacInstallSaysWhoUsesIt(t *testing.T) {
 	st.Open = map[string][]string{"disk0s3": {"Finder"}}
 	fakeMacEnv(t, st)
 	err := (darwinMac{}).install(pickTarget(t, "disk0s3"), 70<<30, "", "", &logRep{})
-	if err == nil || !strings.Contains(err.Error(), "fsck_exfat") || !strings.Contains(err.Error(), "Finder has it open") {
+	if err == nil || !strings.Contains(err.Error(), "fsck_exfat") || !strings.Contains(err.Error(), "Finder has it open") ||
+		!strings.Contains(err.Error(), "macOS Recovery") {
 		t.Fatalf("got %v", err)
 	}
 }
