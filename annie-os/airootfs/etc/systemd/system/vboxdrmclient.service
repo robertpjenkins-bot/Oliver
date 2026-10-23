@@ -1,0 +1,15 @@
+[Unit]
+Description=VirtualBox display resizing (fits the screen to the VirtualBox window)
+ConditionVirtualization=oracle
+ConditionPathExists=/usr/bin/VBoxDRMClient
+After=vboxservice.service
+
+[Service]
+# Stays in the foreground; if VBoxService already started one, this one
+# exits and the other keeps working.
+ExecStart=/usr/bin/VBoxDRMClient
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

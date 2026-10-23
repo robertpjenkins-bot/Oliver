@@ -52,6 +52,12 @@ On Arch Linux you can also build the ISO directly with
    **VMSVGA**, Video Memory to **128 MB**, and tick **Enable 3D Acceleration**.
 5. Start the machine. It boots straight to the Annie OS desktop.
 
+**If the desktop is small** (stuck at 1024×768): in the VirtualBox window's
+menu, tick **View > Auto-resize Guest Display**, and check that the Graphics
+Controller is **VMSVGA** (step 4; change it with the machine shut down).
+The screen then fills the window and follows it when you resize. You can
+also pick a size yourself in **System Settings > Display & Monitor**.
+
 ## Installing
 
 The installer opens by itself when the live desktop starts (or double-click
