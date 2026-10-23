@@ -1,0 +1,265 @@
+#!/bin/bash
+# Annie OS Maker: builds the Annie OS ISO on this computer and saves it in
+# Downloads. For Linux and SteamOS (desktop mode). It never asks for a
+# password.
+#
+# How: it downloads Arch Linux's bootstrap (a small Arch system in a folder)
+# and runs Arch's own ISO builder, mkarchiso, inside it. All of that happens
+# as "root" of a user namespace of its own, which any user may make: really
+# the person running the Maker, so nothing outside ~/.cache/annie-os-maker
+# and the finished ISO is touched.
+#
+# Downloads and builds that fail are tried again, three times each, before
+# it gives up. The whole output of the last run is in
+# ~/.cache/annie-os-maker/last-build.log.
+#
+# Environment, for testing:
+#   ANNIE_MAKER_MIRRORS     space-separated Arch mirrors (each the part before /$repo/os/$arch)
+#   ANNIE_MAKER_BOOTSTRAP   use this bootstrap tarball instead of downloading one
+#   ANNIE_MAKER_OUT         save the ISO here instead of Downloads
+set -u
+
+here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+profile_src=$here/profile
+cache=${XDG_CACHE_HOME:-$HOME/.cache}/annie-os-maker
+builder=$cache/builder
+log=$cache/last-build.log
+read -ra mirrors <<< "${ANNIE_MAKER_MIRRORS:-https://geo.mirror.pkgbuild.com https://fastly.mirror.pkgbuild.com https://mirror.rackspace.com/archlinux https://mirrors.kernel.org/archlinux}"
+tries=3
+
+say() { printf '\n\033[1;35m==> %s\033[0m\n' "$*"; }
+note() { printf '    %s\n' "$*"; }
+
+# --- Inside the namespace ----------------------------------------------------
+#
+# Run as "$0 __inside". Unpacks the bootstrap if needed, enters it, installs
+# archiso and builds the ISO into $builder/build/out.
+
+in_root() {
+	chroot "$builder" /usr/bin/env -i HOME=/root TERM="${TERM:-dumb}" LANG=C.UTF-8 \
+		PATH=/usr/local/sbin:/usr/local/bin:/usr/bin "$@"
+}
+
+retry() {
+	local i
+	for i in $(seq 1 $tries); do
+		"$@" && return 0
+		[ "$i" -lt $tries ] && { note "That didn't work; trying again in 15 seconds ($((i + 1)) of $tries)."; sleep 15; }
+	done
+	return 1
+}
+
+inside() {
+	set -o pipefail
+	local bootstrap=$1
+
+	if [ ! -x "$builder/usr/bin/pacman" ]; then
+		say "Unpacking Arch Linux"
+		rm -rf -- "$builder"
+		mkdir -p -- "$builder"
+		local owner=(--numeric-owner)
+		# With only one user to be, every file has to be that user's.
+		[ -n "${ANNIE_SINGLE_ID:-}" ] && owner=(--no-same-owner)
+		tar -x --zstd --strip-components=1 "${owner[@]}" -f "$bootstrap" -C "$builder" ||
+			{ echo "Couldn't unpack $bootstrap"; return 1; }
+	fi
+
+	# These mounts exist only in this namespace and vanish with it.
+	mount --make-rprivate /
+	mount --bind "$builder" "$builder" &&
+		mount -t proc proc "$builder/proc" &&
+		mount --rbind /sys "$builder/sys" &&
+		mount --rbind /dev "$builder/dev" &&
+		mount -t tmpfs tmpfs "$builder/run" &&
+		mount -t tmpfs -o mode=1777 tmpfs "$builder/tmp" ||
+		{ echo "Couldn't set up Arch Linux's folder"; return 1; }
+	rm -f "$builder/etc/resolv.conf"
+	cp -L /etc/resolv.conf "$builder/etc/resolv.conf" 2>/dev/null || true
+
+	local m
+	for m in "${mirrors[@]}"; do
+		# shellcheck disable=SC2016 # pacman's own $repo and $arch
+		printf 'Server = %s/$repo/os/$arch\n' "$m"
+	done > "$builder/etc/pacman.d/mirrorlist"
+	# Downloading as another user, the sandbox and the free space check
+	# can't work in a user namespace.
+	fix_pacman_conf "$builder/etc/pacman.conf"
+
+	# Both are quick when already done, and mend a keyring left half made.
+	say "Setting up Arch Linux's signing keys"
+	{ in_root pacman-key --init && in_root pacman-key --populate archlinux; } >/dev/null ||
+		{ echo "Couldn't set up the signing keys"; return 1; }
+
+	say "Getting Arch's ISO builder (archiso)"
+	retry in_root pacman -Syu --noconfirm --needed archiso ||
+		{ echo "Couldn't install archiso. Is this computer connected to the internet?"; return 1; }
+
+	# Make Arch's tools work here: we are root, but only of this namespace.
+	# - pacstrap/arch-chroot -N set up a chroot with bind mounts rather
+	#   than the ones only real root may make; mkarchiso picks -N for anyone
+	#   but root, so pick it always.
+	# - Their own namespace needs no new user mapping: this one has it.
+	sed -i 's/if (( EUID != 0 )); then/if true; then/' "$builder/usr/bin/mkarchiso"
+	# shellcheck disable=SC2016 # $pid_unshare is pacstrap's own
+	sed -i 's/^mount_unshare=.*/mount_unshare="$pid_unshare --mount"/' \
+		"$builder/usr/bin/pacstrap" "$builder/usr/bin/arch-chroot"
+	install -Dm 0755 "$here/mksquashfs-owners" "$builder/usr/local/bin/mksquashfs"
+	if [ -n "${ANNIE_SINGLE_ID:-}" ]; then
+		touch "$builder/usr/local/bin/.annie-single-id"
+	else
+		rm -f "$builder/usr/local/bin/.annie-single-id"
+	fi
+
+	say "Copying the Annie OS recipe"
+	rm -rf -- "$builder/build"
+	mkdir -p -- "$builder/build"
+	cp -a -- "$profile_src" "$builder/build/profile"
+	fix_pacman_conf "$builder/build/profile/pacman.conf"
+
+	say "Building Annie OS (downloads about 2 GB; the longest part)"
+	retry build_iso || { echo "Building the ISO failed (see the messages above)"; return 1; }
+	in_root gpgconf --homedir /etc/pacman.d/gnupg --kill all >/dev/null 2>&1
+	return 0
+}
+
+fix_pacman_conf() {
+	sed -i 's/^DownloadUser/#DownloadUser/; s/^CheckSpace/#CheckSpace/' "$1"
+	grep -q '^DisableSandbox' "$1" || sed -i '/^\[options\]/a DisableSandbox' "$1"
+}
+
+build_iso() {
+	rm -rf -- "$builder/build/work" "$builder/build/out"
+	in_root mkarchiso -v -w /build/work -o /build/out /build/profile
+}
+
+# --- Outside -----------------------------------------------------------------
+
+# Show the window people double-clicked into: a terminal, so they can watch.
+open_terminal() {
+	local t
+	for t in konsole gnome-terminal kgx xfce4-terminal xterm; do
+		command -v "$t" >/dev/null || continue
+		case $t in
+		konsole) exec konsole -e "$0" ;;
+		gnome-terminal | kgx) exec "$t" -- "$0" ;;
+		*) exec "$t" -e "$0" ;;
+		esac
+	done
+}
+
+tell() { # tell error|msgbox TEXT: a window too, if there's a way to show one
+	command -v kdialog >/dev/null && kdialog --title "Annie OS Maker" "--$1" "$2" 2>/dev/null &
+	true
+}
+
+stop() {
+	printf '\n\033[1;31m%s\033[0m\n' "$*"
+	tell error "$*"
+	[ -t 0 ] && read -rp "Press Enter to close. " _
+	exit 1
+}
+
+# Remove a folder, including files owned by the namespace's other users.
+remove() { [ -e "$1" ] && unshare "${map[@]}" rm -rf -- "$1"; }
+
+download_bootstrap() {
+	local m dest=$cache/archlinux-bootstrap-x86_64.tar.zst
+	for m in "${mirrors[@]}"; do
+		note "from $m"
+		curl -fsSL --retry 3 -o "$cache/sha256sums.txt" "$m/iso/latest/sha256sums.txt" || continue
+		local want
+		want=$(awk '$2 ~ /archlinux-bootstrap-x86_64\.tar\.zst$/ { print $1; exit }' "$cache/sha256sums.txt")
+		[ -n "$want" ] || continue
+		if [ -f "$dest" ] && echo "$want  $dest" | sha256sum -c --quiet - 2>/dev/null; then
+			bootstrap=$dest
+			return 0
+		fi
+		curl -fL --retry 3 --progress-bar -o "$dest.part" "$m/iso/latest/archlinux-bootstrap-x86_64.tar.zst" || continue
+		if echo "$want  $dest.part" | sha256sum -c --quiet - 2>/dev/null; then
+			mv -f -- "$dest.part" "$dest"
+			bootstrap=$dest
+			return 0
+		fi
+		note "The download was damaged; trying the next mirror."
+	done
+	return 1
+}
+
+main() {
+	if [ ! -t 1 ] && [ -z "${ANNIE_MAKER_NO_TERMINAL:-}" ]; then
+		open_terminal
+	fi
+	mkdir -p -- "$cache" || stop "Couldn't make $cache"
+	exec > >(tee "$log") 2>&1
+
+	printf '\033[1;35mAnnie OS Maker\033[0m\n'
+	echo "Builds the Annie OS ISO for VirtualBox and saves it in your Downloads folder."
+	echo "This takes 20 minutes to an hour, and needs the internet."
+
+	[ "$(uname -m)" = x86_64 ] || stop "Annie OS can only be made on a 64-bit Intel or AMD computer."
+	[ -d "$profile_src" ] || stop "The Annie OS recipe is missing: keep the profile folder next to annie-os-maker."
+	local tool
+	for tool in curl tar zstd unshare chroot sha256sum; do
+		command -v "$tool" >/dev/null || stop "This computer is missing the $tool program."
+	done
+
+	# Be every user of the build (best: files keep their real owners), or,
+	# where this computer allows only one, be that one.
+	if unshare --map-auto --map-root-user true 2>/dev/null; then
+		map=(--map-auto --map-root-user)
+		unset ANNIE_SINGLE_ID
+	elif unshare --map-root-user true 2>/dev/null; then
+		map=(--map-root-user)
+		export ANNIE_SINGLE_ID=1
+	else
+		stop "This computer doesn't let programs make their own user namespace, which the Maker needs to work without a password. (On Ubuntu 24.04 and newer, AppArmor blocks it: run sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0 and try again.)"
+	fi
+
+	local free_kb
+	free_kb=$(df -Pk "$cache" | awk 'NR == 2 { print $4 }')
+	if [ "${free_kb:-0}" -lt $((20 * 1024 * 1024)) ]; then
+		stop "The Maker needs 20 GB free in your home folder; there is $((free_kb / 1024 / 1024)) GB."
+	fi
+
+	say "Downloading Arch Linux's bootstrap"
+	if [ -n "${ANNIE_MAKER_BOOTSTRAP:-}" ]; then
+		bootstrap=$ANNIE_MAKER_BOOTSTRAP
+	else
+		download_bootstrap || stop "Couldn't download Arch Linux. Is this computer connected to the internet?"
+	fi
+
+	local attempt ok=
+	for attempt in $(seq 1 $tries); do
+		[ "$attempt" -gt 1 ] && say "Trying the whole build again ($attempt of $tries)"
+		if unshare "${map[@]}" --mount --pid --fork --kill-child -- "$0" __inside "$bootstrap"; then
+			ok=1
+			break
+		fi
+		# A half-unpacked or broken Arch is the likeliest reason; start clean.
+		[ "$attempt" -eq 1 ] || remove "$builder"
+	done
+	[ -n "$ok" ] || stop "Annie OS couldn't be made. The messages above say why; they're also saved in $log."
+
+	local iso out
+	iso=$(ls -t "$builder"/build/out/*.iso 2>/dev/null | head -n 1)
+	[ -n "$iso" ] || stop "The build finished but left no ISO."
+	out=${ANNIE_MAKER_OUT:-$(xdg-user-dir DOWNLOAD 2>/dev/null || echo "$HOME/Downloads")}
+	mkdir -p -- "$out"
+	cp -- "$iso" "$out/" || stop "Couldn't save the ISO in $out (is it full?)"
+
+	say "Cleaning up"
+	remove "$builder/build"
+	note "(Arch Linux stays in $builder, so the next build is quicker. Delete $cache to free the space.)"
+
+	printf '\n\033[1;32mDone! Annie OS is saved as:\n    %s\033[0m\n' "$out/$(basename "$iso")"
+	echo "In VirtualBox, make a new machine and choose this file as its ISO image."
+	tell msgbox "Annie OS is ready: $out/$(basename "$iso")"
+	[ -t 0 ] && read -rp "Press Enter to close. " _
+	return 0
+}
+
+if [ "${1:-}" = __inside ]; then
+	inside "$2"
+else
+	main
+fi

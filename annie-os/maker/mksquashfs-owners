@@ -1,0 +1,53 @@
+#!/bin/bash
+# Stands in for mksquashfs while Annie OS Maker builds, as
+# /usr/local/bin/mksquashfs inside its Arch Linux.
+#
+# Where the computer lets the Maker be only one user, every file pacman
+# installed belongs to root, even those packages give to other users
+# (polkit's rules belong to polkitd, say). pacman's records (each package's
+# mtree) know the real owners; this hands them to the real mksquashfs as
+# pseudo definitions, so they are right inside the image.
+#
+#   mksquashfs SOURCE DEST [OPTIONS...]   (as mkarchiso calls it)
+set -euo pipefail
+
+real=/usr/bin/mksquashfs
+flag=/usr/local/bin/.annie-single-id
+src=${1:-}
+
+if [ ! -e "$flag" ] || [ ! -d "$src/var/lib/pacman/local" ]; then
+	exec "$real" "$@"
+fi
+
+pseudo=$(mktemp)
+trap 'rm -f "$pseudo"' EXIT
+
+for m in "$src"/var/lib/pacman/local/*/mtree; do
+	[ -f "$m" ] && gzip -dc "$m"
+done | awk '
+	function fields(defaults,   i, kv) {
+		for (i = 2; i <= NF; i++) {
+			split($i, kv, "=")
+			if (kv[1] == "uid") u = kv[2]
+			if (kv[1] == "gid") g = kv[2]
+			if (kv[1] == "mode") m = kv[2]
+		}
+	}
+	/^\/set / { u = du; g = dg; m = dm; fields(); du = u; dg = g; dm = m; next }
+	/^\.\// {
+		u = du; g = dg; m = dm
+		fields()
+		# Escaped names (spaces and the like) are rare and plain root files.
+		if ($1 ~ /\\/) next
+		# Other owners, and setuid/setgid programs (sudo), whose special bit
+		# is dropped when the owner cannot be set.
+		if (u + 0 == 0 && g + 0 == 0 && !(length(m) == 4 && m !~ /^0/)) next
+		print substr($1, 3), m, u, g
+	}' | sort -u | while read -r path mode uid gid; do
+	# Only what is really there; symlinks have no owner of their own here.
+	[ -e "$src/$path" ] && [ ! -L "$src/$path" ] || continue
+	printf '"%s" m %s %s %s\n' "$path" "$mode" "$uid" "$gid"
+done > "$pseudo"
+
+echo "Setting the owners of $(wc -l < "$pseudo") files from pacman's records"
+"$real" "$@" -pf "$pseudo"

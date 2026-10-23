@@ -14,21 +14,30 @@ Annie OS is an Arch Linux system made to run in VirtualBox. It comes with:
 You get it as a bootable ISO. Boot it in a VM and you're in a live desktop;
 double-click **Install Annie OS** to put it on the VM's disk.
 
-## Getting the ISO
+## Getting the ISO: Annie OS Maker
 
-Every push that touches `annie-os/` builds the ISO on GitHub. Open the
-repository's **Actions** tab, pick the latest **Annie OS ISO** run, and
-download `annie-os-iso` from the bottom of the page. Unzip it to get
-`annie-os-YYYY.MM.DD-x86_64.iso`.
+On a Linux or SteamOS (desktop mode) computer:
 
-To build it yourself instead (you need about 20 GB of free disk):
+1. Get `Annie-OS-Maker.tar.gz` and unpack it.
+2. Double-click **Annie OS Maker** in the folder (or run `./annie-os-maker`).
+3. Wait 20 minutes to an hour. It downloads Arch Linux (about 2.5 GB), builds
+   the ISO, and saves it as `Downloads/annie-os-<date>-x86_64.iso`.
+
+It never asks for a password. It works in a user namespace of its own, so
+nothing outside `~/.cache/annie-os-maker` and the finished ISO is touched.
+Failed downloads and builds are tried again by themselves (three times
+each). It needs 20 GB free in your home folder. Everything it prints is
+saved in `~/.cache/annie-os-maker/last-build.log`.
+
+To make `Annie-OS-Maker.tar.gz` from this repository (needs Go):
 
 ```sh
-./annie-os/build-in-docker.sh     # any Linux machine with Docker
-sudo ./annie-os/build.sh          # on Arch Linux, with archiso, go and git installed
+./annie-os/maker/package.sh       # writes annie-os/out/Annie-OS-Maker.tar.gz
 ```
 
-The ISO is written to `annie-os/out/`.
+On Arch Linux you can also build the ISO directly with
+`sudo ./annie-os/build.sh`, or with Docker on any Linux machine with
+`./annie-os/build-in-docker.sh`. Both write it to `annie-os/out/`.
 
 ## Setting up the VirtualBox machine
 
@@ -91,4 +100,6 @@ struggle.
 | `airootfs/usr/local/bin/annie-install-backend` | The installer's disk work (runs as root) |
 | `syslinux/`, `efiboot/`, `grub/` | Boot menus for BIOS and UEFI |
 | `artwork/` | The wallpaper, boot splash and logo. Edit `make-artwork.py`, then run it and `render.sh` to redraw them |
-| `build.sh`, `build-in-docker.sh` | Build the ISO |
+| `maker/` | Annie OS Maker: builds the ISO on a Linux/SteamOS computer without a password |
+| `prepare-profile.sh` | Copies the profile and adds Oliver; used by the Maker and `build.sh` |
+| `build.sh`, `build-in-docker.sh` | Build the ISO as root, or in Docker |
