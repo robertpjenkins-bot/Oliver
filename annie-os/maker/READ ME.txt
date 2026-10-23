@@ -9,6 +9,8 @@ For Linux and SteamOS (in desktop mode), on a 64-bit Intel or AMD computer.
 
 You need:
   - the internet (it downloads about 2.5 GB from Arch Linux)
+  - 20 GB free in your home folder
+  - 20 minutes to an hour
 
 It looks for Arch Linux only where it keeps it, and uses what is there
 instead of downloading it again:
@@ -19,8 +21,6 @@ instead of downloading it again:
     ~/.cache/annie-os-maker.
 Only if none of those is there (or it's damaged) does it download the
 bootstrap, into Downloads.
-  - 20 GB free in your home folder
-  - 20 minutes to an hour
 
 1. Unpack Annie-OS-Maker.tar.gz (right-click it, Extract, or "Extract
    archive here").
