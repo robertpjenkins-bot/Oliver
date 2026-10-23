@@ -1,15 +1,18 @@
 #!/bin/bash
-# Install Ollie OS from the live USB onto a drive.
+# Install Ollie OS from the live USB onto a drive, erasing it, the way
+# Batocera's "Install on a new disk" does: a 512 MB start-up partition and
+# Ollie OS (compressed btrfs) in all the rest. It starts on new computers
+# (UEFI: Dells, Intel Macs, the Steam Machine) and on older ones set to
+# BIOS / Legacy.
 #
-# The installed system takes 25 GB: a 512 MB boot partition and a 24.5 GB
-# compressed btrfs partition. Anything left on a bigger drive (about 4 GB on a
-# "29 GB" / 32 GB stick) stays free and unpartitioned.
-#
-# Run from the "Install Ollie OS" icon, or: sudo ollie-install
+# Run from the "Install Ollie OS" icon (ollie-install-gui, a window), or in a
+# terminal: sudo ollie-install. The window passes its answers in:
+#   OLLIE_INSTALL_DISK=/dev/...  OLLIE_INSTALL_YES=1  (no questions)
+#   OLLIE_INSTALL_HOSTNAME, OLLIE_INSTALL_TIMEZONE
+#   OLLIE_INSTALL_PROGRESS=1     (prints "PROGRESS percent text" lines)
 set -euo pipefail
 
 readonly BOOT_SIZE=512M
-readonly ROOT_SIZE=24.5G
 readonly NEED_BYTES=$((25 * 1024 * 1024 * 1024 + 64 * 1024 * 1024))
 readonly SOURCE=/run/archiso/airootfs
 readonly BOOTMNT=/run/archiso/bootmnt
@@ -17,6 +20,7 @@ readonly TARGET=/mnt/ollie
 
 bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' reset=$'\e[0m'
 say() { printf '%s==>%s %s\n' "$teal$bold" "$reset" "$*"; }
+progress() { [[ -n "${OLLIE_INSTALL_PROGRESS:-}" ]] && echo "PROGRESS $1 $2"; return 0; }
 die() {
     printf '%sError:%s %s\n' "$red$bold" "$reset" "$*" >&2
     exit 1
@@ -29,7 +33,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-[[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
+[[ $EUID -eq 0 ]] || exec sudo --preserve-env=OLLIE_INSTALL_DISK,OLLIE_INSTALL_YES,OLLIE_INSTALL_HOSTNAME,OLLIE_INSTALL_TIMEZONE,OLLIE_INSTALL_PROGRESS "$0" "$@"
 [[ -d "$SOURCE/usr" ]] || die "this only works when started from the Ollie OS live USB."
 
 # The drive the live USB itself is on, so it is never offered as a target.
@@ -45,6 +49,12 @@ fi
 
 echo
 printf '%s  Ollie OS installer%s\n\n' "$bold" "$reset"
+disk="${OLLIE_INSTALL_DISK:-}"
+if [[ -n "$disk" ]]; then
+    [[ -b "$disk" && "$(lsblk -dno TYPE "$disk")" == disk ]] || die "$disk is not a drive."
+    [[ "${disk#/dev/}" != "$live_disk" ]] || die "$disk is the drive Ollie OS is running from."
+    (($(lsblk -bdno SIZE "$disk") >= NEED_BYTES)) || die "$disk is smaller than 25.1 GB."
+else
 say "Drives you can install onto (needs at least 25.1 GB):"
 echo
 
@@ -65,26 +75,31 @@ echo
 read -rp "Install onto which drive? [1-${#disks[@]}] " pick
 [[ "$pick" =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#disks[@]})) || die "no such drive."
 disk="/dev/${disks[pick - 1]}"
+fi
 
 echo
 lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS "$disk"
 echo
 printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$disk" "$reset"
-read -rp "Type ERASE to continue: " answer
-[[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+if [[ -z "${OLLIE_INSTALL_YES:-}" ]]; then
+    read -rp "Type ERASE to continue: " answer
+    [[ "$answer" == ERASE ]] || die "cancelled, nothing was changed."
+fi
 
 # No username or password: the installed system logs in by itself as "ollie",
 # whose account has no password, just like the live USB.
 echo
-read -rp "Computer name [ollie]: " hostname
+hostname="${OLLIE_INSTALL_HOSTNAME:-}" timezone="${OLLIE_INSTALL_TIMEZONE:-}"
+[[ -n "${OLLIE_INSTALL_YES:-}" ]] || read -rp "Computer name [ollie]: " hostname
 hostname="${hostname:-ollie}"
 [[ "$hostname" =~ ^[A-Za-z0-9-]{1,63}$ ]] || die "the computer name may only use letters, digits and -."
-read -rp "Time zone, e.g. America/New_York or Europe/London [UTC]: " timezone
+[[ -n "${OLLIE_INSTALL_YES:-}" ]] || read -rp "Time zone, e.g. America/New_York or Europe/London [UTC]: " timezone
 timezone="${timezone:-UTC}"
 [[ -f "/usr/share/zoneinfo/$timezone" ]] || die "unknown time zone '$timezone'."
 
 echo
 say "Partitioning $disk"
+progress 2 "Preparing the drive"
 for part in $(lsblk -lnpo NAME "$disk" | tail -n +2); do
     umount "$part" 2>/dev/null || true
     swapoff "$part" 2>/dev/null || true
@@ -92,7 +107,7 @@ done
 wipefs -af "$disk" >/dev/null
 sgdisk --zap-all "$disk" >/dev/null
 sgdisk -n "1:0:+$BOOT_SIZE" -t 1:ef00 -c 1:OLLIE_BOOT \
-    -n "2:0:+$ROOT_SIZE" -t 2:8304 -c 2:OLLIE_ROOT "$disk" >/dev/null
+    -n "2:0:0" -t 2:8304 -c 2:OLLIE_ROOT "$disk" >/dev/null
 partprobe "$disk" 2>/dev/null || true
 udevadm settle
 
@@ -117,7 +132,15 @@ mount --mkdir -o "$opts,subvol=@home" "$root_part" "$TARGET/home"
 mount --mkdir "$boot_part" "$TARGET/boot"
 
 say "Copying Ollie OS (this takes a few minutes)"
-rsync -aAXH --info=progress2 --exclude=/boot/ "$SOURCE/" "$TARGET/"
+progress 5 "Copying Ollie OS"
+if [[ -n "${OLLIE_INSTALL_PROGRESS:-}" ]]; then
+    # rsync's overall percentage, as 5 to 75 of the whole install.
+    rsync -aAXH --info=progress2 --no-inc-recursive --exclude=/boot/ "$SOURCE/" "$TARGET/" |
+        stdbuf -o0 tr '\r' '\n' | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) {p = 5 + int($i) * 70 / 100; if (p != last) {print "PROGRESS " p " Copying Ollie OS"; fflush(); last = p}}}'
+    ((PIPESTATUS[0] == 0)) || die "copying Ollie OS failed (is the drive faulty?)."
+else
+    rsync -aAXH --info=progress2 --exclude=/boot/ "$SOURCE/" "$TARGET/"
+fi
 
 # The image keeps its kernel on the USB's boot partition, not inside itself.
 # The linux package keeps a copy next to its modules too, for when the
@@ -140,6 +163,7 @@ for sfs in "$BOOTMNT/arch/x86_64/airootfs.sfs" /run/ollie-bootdir/arch/x86_64/ai
 done
 
 say "Setting up the installed system"
+progress 80 "Setting up Ollie OS on the drive"
 # Undo what makes the image a live USB.
 rm -f "$TARGET/etc/mkinitcpio.conf.d/archiso.conf" \
     "$TARGET/etc/systemd/system/multi-user.target.wants/ollie-live-setup.service" \
@@ -201,6 +225,39 @@ initrd  /initramfs-linux.img
 options root=UUID=$root_uuid rootflags=subvol=@ rw
 EOF
 
+# Older computers (BIOS / Legacy, older Dells): SYSLINUX on the start-up
+# partition, its boot code in the drive's first sector, and the partition
+# marked "legacy BIOS bootable". New computers use systemd-boot as before.
+progress 95 "Making it start on older computers too"
+if [[ -d /usr/lib/syslinux/bios ]] && have_extlinux=$(command -v extlinux); then
+    install -d "$TARGET/boot/syslinux"
+    cp /usr/lib/syslinux/bios/{ldlinux.c32,libcom32.c32,libutil.c32,menu.c32} "$TARGET/boot/syslinux/"
+    cat >"$TARGET/boot/syslinux/syslinux.cfg" <<EOF
+DEFAULT ollie
+PROMPT 0
+TIMEOUT 20
+UI menu.c32
+MENU TITLE Ollie OS
+LABEL ollie
+    MENU LABEL Ollie OS
+    LINUX /vmlinuz-linux
+    INITRD /initramfs-linux.img
+    APPEND root=UUID=$root_uuid rootflags=subvol=@ rw quiet
+LABEL messages
+    MENU LABEL Ollie OS (show start-up messages)
+    LINUX /vmlinuz-linux
+    INITRD /initramfs-linux.img
+    APPEND root=UUID=$root_uuid rootflags=subvol=@ rw
+EOF
+    if "$have_extlinux" --install "$TARGET/boot/syslinux" >/dev/null 2>&1; then
+        dd if=/usr/lib/syslinux/bios/gptmbr.bin of="$disk" bs=440 count=1 conv=notrunc status=none
+        sgdisk --attributes=1:set:2 "$disk" >/dev/null
+    else
+        echo "(Could not add the start-up code for older computers; new computers are not affected.)"
+    fi
+fi
+
 sync
+progress 100 "Done"
 say "Done. Ollie OS is installed on $disk."
 echo "    Remove the live USB and restart. On its first start it asks you to create a username and password."

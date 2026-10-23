@@ -8,8 +8,10 @@
 set -uo pipefail
 say() { echo "OLLIE-INSTALL-TEST: $*" | tee /dev/console /dev/ttyS0 2>/dev/null; }
 
-# Drive 1 (the only one), ERASE, default computer name and time zone.
-if printf '1\nERASE\n\n\n' | /usr/local/bin/ollie-install >/tmp/install.log 2>&1; then
+# The only drive, the way the Install Ollie OS window runs it (no questions,
+# progress lines).
+disk="/dev/$(lsblk -dnro NAME,TYPE | awk '$2 == "disk" && $1 !~ /^(loop|sr|zram)/ {print $1; exit}')"
+if OLLIE_INSTALL_DISK="$disk" OLLIE_INSTALL_YES=1 OLLIE_INSTALL_PROGRESS=1 /usr/local/bin/ollie-install </dev/null >/tmp/install.log 2>&1; then
     say "installer finished"
 else
     say "installer FAILED:"
@@ -26,6 +28,9 @@ if [[ -n "$root" ]]; then
     say "kernel: $(file -b /mnt/check/boot/vmlinuz-linux | grep -o 'version [^ ]*')"
     say "modules: $(ls /mnt/check/usr/lib/modules | tr '\n' ' ')"
     say "btrfs in initramfs: $(lsinitcpio /mnt/check/boot/initramfs-linux.img 2>/dev/null | grep -c btrfs)"
+    say "progress lines: $(grep -c '^PROGRESS' /tmp/install.log), last: $(grep '^PROGRESS' /tmp/install.log | tail -n 1)"
+    say "older computers: $(ls /mnt/check/boot/syslinux 2>/dev/null | tr '\n' ' ')"
+    say "first sector: $(dd if="$disk" bs=440 count=1 status=none | strings | head -n 1)"
     say "fstab: $(grep -v '^#' /mnt/check/etc/fstab | tr -s ' \t' ' ' | tr '\n' '|')"
     umount -R /mnt/check
 fi
