@@ -1,0 +1,26 @@
+# Packages in packages.x86_64 that Annie OS can do without. If Arch Linux
+# stops carrying one of these, Annie OS Maker leaves it out and carries on;
+# any other missing package stops the build.
+bash-completion
+man-db
+zram-generator
+mesa
+lib32-mesa
+kscreen
+powerdevil
+kinfocenter
+breeze-gtk
+kde-gtk-config
+xdg-desktop-portal-kde
+sddm-kcm
+kate
+ark
+gwenview
+spectacle
+pipewire-jack
+noto-fonts-emoji
+xdg-user-dirs
+vulkan-swrast
+lib32-vulkan-swrast
+lib32-pipewire
+lib32-pipewire-jack

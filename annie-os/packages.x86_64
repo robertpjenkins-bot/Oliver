@@ -27,7 +27,6 @@ lib32-mesa
 # --- Desktop: KDE Plasma ---
 xorg-server
 plasma-desktop
-plasma-x11-session
 plasma-nm
 plasma-pa
 kscreen

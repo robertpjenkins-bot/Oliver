@@ -60,6 +60,9 @@ inside() {
 		local owner=(--numeric-owner)
 		# With only one user to be, every file has to be that user's.
 		[ -n "${ANNIE_SINGLE_ID:-}" ] && owner=(--no-same-owner)
+		# (GNU tar can't keep the bootstrap's file capabilities here, and
+		# needn't: only the ISO's own files matter.)
+		tar --help 2>/dev/null | grep -q -- --warning= && owner+=(--warning=no-unknown-keyword)
 		tar -x --zstd --strip-components=1 "${owner[@]}" -f "$bootstrap" -C "$builder" ||
 			{ echo "Couldn't unpack $bootstrap"; return 1; }
 	fi
@@ -116,6 +119,12 @@ inside() {
 	cp -a -- "$profile_src" "$builder/build/profile"
 	fix_pacman_conf "$builder/build/profile/pacman.conf"
 
+	say "Checking that Arch Linux has every package Annie OS uses"
+	local rc
+	check_packages
+	rc=$?
+	[ $rc -eq 0 ] || return $rc
+
 	say "Building Annie OS (downloads about 2 GB; the longest part)"
 	retry build_iso || { echo "Building the ISO failed (see the messages above)"; return 1; }
 	in_root gpgconf --homedir /etc/pacman.d/gnupg --kill all >/dev/null 2>&1
@@ -125,6 +134,39 @@ inside() {
 fix_pacman_conf() {
 	sed -i 's/^DownloadUser/#DownloadUser/; s/^CheckSpace/#CheckSpace/' "$1"
 	grep -q '^DisableSandbox' "$1" || sed -i '/^\[options\]/a DisableSandbox' "$1"
+}
+
+# Find packages Arch no longer carries before downloading anything: leave
+# out the ones Annie OS can do without (optional-packages.txt), and return 2
+# (no point trying again) when one it needs is gone.
+check_packages() {
+	local conf=/build/profile/pacman.conf
+	local list=$builder/build/profile/packages.x86_64
+	local optional=$builder/build/profile/optional-packages.txt
+	local wanted missing required=() p
+	retry in_root pacman --config "$conf" -Sy >/dev/null ||
+		{ echo "Couldn't get Arch Linux's package lists. Is this computer connected to the internet?"; return 1; }
+	mapfile -t wanted < <(sed 's/#.*//; s/[[:blank:]]//g; /^$/d' "$list")
+	mapfile -t missing < <(in_root pacman --config "$conf" -Sp --print-format %n "${wanted[@]}" 2>&1 >/dev/null |
+		sed -n 's/^error: target not found: //p')
+	if [ ${#missing[@]} -eq 0 ]; then
+		note "All ${#wanted[@]} are there."
+		return 0
+	fi
+	for p in "${missing[@]}"; do
+		if grep -qx -- "$p" "$optional" 2>/dev/null; then
+			note "Arch Linux no longer has $p; Annie OS will do without it."
+			sed -i "/^[[:blank:]]*${p//./\\.}[[:blank:]]*\$/d" "$list"
+		else
+			required+=("$p")
+		fi
+	done
+	if [ ${#required[@]} -gt 0 ]; then
+		echo "Arch Linux no longer has these packages Annie OS needs: ${required[*]}"
+		echo "Annie OS's recipe has to be updated for them. Please send this message to whoever made it."
+		return 2
+	fi
+	return 0
 }
 
 build_iso() {
@@ -228,13 +270,17 @@ main() {
 		download_bootstrap || stop "Couldn't download Arch Linux. Is this computer connected to the internet?"
 	fi
 
-	local attempt ok=
+	local attempt ok='' rc
 	for attempt in $(seq 1 $tries); do
 		[ "$attempt" -gt 1 ] && say "Trying the whole build again ($attempt of $tries)"
-		if unshare "${map[@]}" --mount --pid --fork --kill-child -- "$0" __inside "$bootstrap"; then
+		unshare "${map[@]}" --mount --pid --fork --kill-child -- "$0" __inside "$bootstrap"
+		rc=$?
+		if [ $rc -eq 0 ]; then
 			ok=1
 			break
 		fi
+		# Trying again can't fix this one (it said why).
+		[ $rc -eq 2 ] && stop "Annie OS couldn't be made: see the message just above. It's also saved in $log."
 		# A half-unpacked or broken Arch is the likeliest reason; start clean.
 		[ "$attempt" -eq 1 ] || remove "$builder"
 	done

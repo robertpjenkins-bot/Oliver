@@ -155,10 +155,10 @@ arch-chroot "$target" /bin/bash -s -- "$user" "$tz" "$disk" "$uefi" <<-'EOF'
 	fi
 	grub-mkconfig -o /boot/grub/grub.cfg
 
-	# Start the login screen on this user, in the X11 session: VirtualBox's
-	# clipboard sharing and window resizing work best there.
+	# Start the login screen on this user, in Plasma (Wayland: KDE has no
+	# X11 session any more).
 	install -d -o sddm -g sddm /var/lib/sddm
-	printf '[Last]\nUser=%s\nSession=/usr/share/xsessions/plasmax11.desktop\n' "$user" > /var/lib/sddm/state.conf
+	printf '[Last]\nUser=%s\nSession=/usr/share/wayland-sessions/plasma.desktop\n' "$user" > /var/lib/sddm/state.conf
 	chown sddm:sddm /var/lib/sddm/state.conf
 EOF
 printf '%s:%s\n' "$user" "$pass" | arch-chroot "$target" chpasswd

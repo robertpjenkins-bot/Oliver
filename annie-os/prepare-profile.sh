@@ -11,7 +11,7 @@ dest=$1
 
 rm -rf -- "$dest"
 mkdir -p -- "$dest"
-cp -a -- "$here"/{airootfs,efiboot,grub,syslinux,packages.x86_64,pacman.conf,profiledef.sh} "$dest/"
+cp -a -- "$here"/{airootfs,efiboot,grub,syslinux,packages.x86_64,optional-packages.txt,pacman.conf,profiledef.sh} "$dest/"
 
 echo "==> Building Oliver"
 version=$(git -C "$repo" describe --tags --always --dirty 2>/dev/null || echo dev)
