@@ -9,6 +9,16 @@ For Linux and SteamOS (in desktop mode), on a 64-bit Intel or AMD computer.
 
 You need:
   - the internet (it downloads about 2.5 GB from Arch Linux)
+
+It looks for Arch Linux only where it keeps it, and uses what is there
+instead of downloading it again:
+  - Arch Linux it already unpacked on an earlier run
+    (~/.cache/annie-os-maker/builder), or else
+  - an Arch Linux bootstrap file in your Downloads folder
+    (archlinux-bootstrap-....-x86_64.tar.zst), or one an older Maker saved in
+    ~/.cache/annie-os-maker.
+Only if none of those is there (or it's damaged) does it download the
+bootstrap, into Downloads.
   - 20 GB free in your home folder
   - 20 minutes to an hour
 
