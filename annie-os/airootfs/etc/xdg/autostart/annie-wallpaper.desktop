@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Annie OS wallpaper
+Comment=Puts the Annie OS wand on the desktop the first time you log in
+Exec=/usr/local/bin/annie-set-wallpaper
+OnlyShowIn=KDE;
+NoDisplay=true
+X-KDE-autostart-phase=2

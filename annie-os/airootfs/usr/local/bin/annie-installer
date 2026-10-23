@@ -1,0 +1,137 @@
+#!/bin/bash
+# Install Annie OS: asks the questions as the live user, then hands the answers
+# to annie-install-backend, which does the disk work as root in a terminal
+# window so every step is visible.
+#
+# Answers file, one value per line: disk, username, hostname, timezone, password.
+set -u
+
+title="Install Annie OS"
+k() { kdialog --title "$title" --icon annie-os "$@"; }
+
+k --yesno "Welcome to Annie OS!
+
+This puts Annie OS on this virtual machine's hard disk, with Steam, Firefox and Oliver ready to go. It takes about 5 to 15 minutes.
+
+Install now?" --yes-label "Install" --no-label "Just try it first" || exit 0
+
+# --- Disk -------------------------------------------------------------------
+
+# Never offer the disk the live system booted from (a USB stick, say).
+boot_part=$(findmnt -no SOURCE /run/archiso/bootmnt 2>/dev/null || true)
+boot_disk=
+[ -n "$boot_part" ] && boot_disk=$(lsblk -no PKNAME "$boot_part" 2>/dev/null || true)
+
+disks=()
+state=on
+while read -r name type size model; do
+	[ "$type" = disk ] || continue
+	case $name in /dev/zram* | /dev/loop*) continue ;; esac
+	[ -n "$boot_disk" ] && [ "${name##*/}" = "$boot_disk" ] && continue
+	disks+=("$name" "$name   $size   ${model:-virtual disk}" "$state")
+	state=off
+done < <(lsblk -dnpo NAME,TYPE,SIZE,MODEL)
+
+if [ ${#disks[@]} -eq 0 ]; then
+	k --error "No hard disk was found.
+
+In VirtualBox, shut this machine down, open Settings > Storage, add a virtual hard disk of at least 30 GB, and start it again."
+	exit 1
+fi
+
+disk=$(k --radiolist "Which disk should Annie OS be installed on?
+Everything on it will be erased." "${disks[@]}") || exit 0
+[ -n "$disk" ] || exit 0
+
+if [ "$(lsblk -dbno SIZE "$disk")" -lt $((20 * 1024 ** 3)) ]; then
+	k --error "$disk is too small. Annie OS needs at least 20 GB (30 GB or more if you will install games)."
+	exit 1
+fi
+
+# --- You --------------------------------------------------------------------
+
+user=annie
+while :; do
+	user=$(k --inputbox "Choose a username.
+Use lowercase letters, numbers, - and _." "$user") || exit 0
+	if [[ $user =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && ! getent passwd "$user" >/dev/null; then
+		break
+	fi
+	k --sorry "\"$user\" can't be used as a username.
+Start with a lowercase letter and use only a-z, 0-9, - and _."
+done
+
+while :; do
+	pass=$(k --password "Choose a password for $user.
+You'll type it at the login screen and when changing system settings.") || exit 0
+	if [ -z "$pass" ]; then
+		k --sorry "The password can't be empty."
+		continue
+	fi
+	pass2=$(k --password "Type the password again to check it.") || exit 0
+	[ "$pass" = "$pass2" ] && break
+	k --sorry "The two passwords didn't match. Try again."
+done
+
+host=annie-os
+while :; do
+	host=$(k --inputbox "Name this computer (its hostname)." "$host") || exit 0
+	[[ $host =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]] && break
+	k --sorry "\"$host\" can't be used. Use letters, numbers and - only, and don't start or end with -."
+done
+
+# --- Timezone ---------------------------------------------------------------
+
+mapfile -t zones < <(timedatectl list-timezones)
+regions=()
+for r in $(printf '%s\n' "${zones[@]}" | grep / | cut -d/ -f1 | sort -u); do
+	regions+=("$r" "${r//_/ }")
+done
+regions+=(UTC UTC)
+
+region=$(k --default America --menu "Where are you? (for the clock)" "${regions[@]}") || exit 0
+if [ "$region" = UTC ]; then
+	tz=UTC
+else
+	cities=()
+	for z in "${zones[@]}"; do
+		[[ $z == "$region"/* ]] || continue
+		city=${z#"$region"/}
+		cities+=("$z" "${city//_/ }")
+	done
+	tz=$(k --menu "Pick the city nearest you, or one in your timezone." "${cities[@]}") || exit 0
+fi
+
+# --- Go ---------------------------------------------------------------------
+
+size=$(lsblk -dno SIZE "$disk" | tr -d ' ')
+k --warningcontinuecancel "Ready to install.
+
+    Disk:      $disk ($size) - EVERYTHING ON IT WILL BE ERASED
+    User:      $user
+    Computer:  $host
+    Timezone:  $tz" --continue-label "Erase disk and install" || exit 0
+
+answers=$(mktemp)
+status=$(mktemp)
+printf '%s\n' "$disk" "$user" "$host" "$tz" "$pass" > "$answers"
+unset pass pass2
+
+konsole --separate --hide-menubar -p tabtitle="Installing Annie OS" \
+	-e sudo /usr/local/bin/annie-install-backend "$answers" "$status"
+rm -f -- "$answers"
+
+if [ "$(cat "$status" 2>/dev/null)" = ok ]; then
+	rm -f -- "$status"
+	if k --yesno "Annie OS is installed!
+
+1. Click \"Shut down\".
+2. In VirtualBox, open this machine's Settings > Storage and remove the Annie OS ISO from the optical drive.
+3. Start the machine and log in as $user." --yes-label "Shut down" --no-label "Stay here"; then
+		systemctl poweroff
+	fi
+else
+	rm -f -- "$status"
+	k --error "The installation didn't finish. The terminal window showed what went wrong; you can run \"Install Annie OS\" again to retry."
+	exit 1
+fi

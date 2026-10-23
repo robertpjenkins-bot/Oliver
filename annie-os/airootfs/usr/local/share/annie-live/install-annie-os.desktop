@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Install Annie OS
+Comment=Install Annie OS onto this virtual machine's disk
+Exec=/usr/local/bin/annie-installer
+Icon=annie-os
+Terminal=false
+Categories=System;

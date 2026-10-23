@@ -1,0 +1,12 @@
+[Unit]
+Description=Create the Annie OS live session user
+Before=display-manager.service systemd-user-sessions.service
+ConditionPathExists=!/home/live
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/annie-live-setup
+
+[Install]
+WantedBy=multi-user.target

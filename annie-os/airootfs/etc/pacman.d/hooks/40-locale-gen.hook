@@ -1,0 +1,14 @@
+# remove from airootfs!
+# Generate the locales listed in /etc/locale.gen once glibc is in place.
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = glibc
+
+[Action]
+Description = Generating locales for Annie OS...
+When = PostTransaction
+Depends = glibc
+Exec = /usr/bin/locale-gen

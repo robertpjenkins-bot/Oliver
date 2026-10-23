@@ -2,3 +2,5 @@
 *.AppImage
 *.AppDir/
 coverage.out
+/annie-os/out/
+/annie-os/work/

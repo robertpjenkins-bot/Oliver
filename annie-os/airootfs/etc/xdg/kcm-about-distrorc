@@ -1,0 +1,5 @@
+[General]
+Name=Annie OS
+LogoPath=/usr/share/icons/hicolor/256x256/apps/annie-os.png
+Website=https://github.com/robertpjenkins-bot/oliver/tree/main/annie-os
+Variant=Arch Linux for VirtualBox

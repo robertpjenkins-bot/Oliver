@@ -272,3 +272,9 @@ them without rebuilding its environment.
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+## Annie OS
+
+[`annie-os/`](annie-os/) builds Annie OS, an Arch Linux ISO for VirtualBox
+with KDE Plasma, Steam, Firefox and Oliver preinstalled. See its
+[README](annie-os/README.md).

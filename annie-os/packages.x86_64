@@ -1,0 +1,69 @@
+# --- Base system and live ISO plumbing ---
+base
+linux
+mkinitcpio
+mkinitcpio-archiso
+syslinux
+sudo
+nano
+bash-completion
+man-db
+zram-generator
+
+# --- Installer ---
+arch-install-scripts
+grub
+efibootmgr
+dosfstools
+e2fsprogs
+rsync
+kdialog
+
+# --- VirtualBox guest support (resizing, clipboard, shared folders) ---
+virtualbox-guest-utils
+mesa
+lib32-mesa
+
+# --- Desktop: KDE Plasma ---
+xorg-server
+plasma-desktop
+plasma-x11-session
+plasma-nm
+plasma-pa
+kscreen
+powerdevil
+kinfocenter
+systemsettings
+breeze-gtk
+kde-gtk-config
+xdg-desktop-portal-kde
+sddm
+sddm-kcm
+konsole
+dolphin
+kate
+ark
+gwenview
+spectacle
+networkmanager
+pipewire
+pipewire-alsa
+pipewire-pulse
+pipewire-jack
+wireplumber
+noto-fonts
+noto-fonts-emoji
+ttf-liberation
+xdg-user-dirs
+
+# --- Steam (needs the 32-bit multilib repository) ---
+steam
+# VirtualBox has no Vulkan GPU; lavapipe renders Vulkan on the CPU so
+# Proton games can still start.
+vulkan-swrast
+lib32-vulkan-swrast
+lib32-pipewire
+lib32-pipewire-jack
+
+# --- Web ---
+firefox

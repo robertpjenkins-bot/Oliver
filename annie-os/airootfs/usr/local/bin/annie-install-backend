@@ -1,0 +1,173 @@
+#!/bin/bash
+# Install Annie OS onto a disk. Run as root by annie-installer, which collects
+# the answers; see that script for the answers file format.
+#
+# Usage: annie-install-backend ANSWERS_FILE [STATUS_FILE]
+#
+# Rather than downloading packages, this copies the live system's own read-only
+# root (exactly what was built into the ISO) to the disk, removes the parts
+# that only make sense on the live ISO, and installs a boot loader. That makes
+# installing work offline and gives the same system you just tried.
+set -Eeuo pipefail
+
+answers=$1
+status=${2:-/dev/null}
+target=/mnt/annie
+source_root=/run/archiso/airootfs
+
+step() { printf '\n\033[1;35m==> %s\033[0m\n' "$*"; }
+fail() {
+	trap - ERR
+	echo failed > "$status" || true
+	umount -R "$target" 2>/dev/null || true
+	printf '\n\033[1;31mThe installation failed: %s\033[0m\n' "$*"
+	read -rp "Press Enter to close this window. " _ || true
+	exit 1
+}
+trap 'fail "a command failed on line $LINENO (see the messages above)."' ERR
+
+{
+	read -r disk
+	read -r user
+	read -r host
+	read -r tz
+	IFS= read -r pass
+} < "$answers"
+rm -f -- "$answers"
+
+[ "$(id -u)" = 0 ] || fail "this must run as root."
+[ -b "$disk" ] || fail "$disk is not a disk."
+[ -d "$source_root/usr" ] || fail "the live system was not found at $source_root."
+[[ $user =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || fail "\"$user\" is not a valid username."
+[[ $host =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]] || fail "\"$host\" is not a valid hostname."
+[ -f "/usr/share/zoneinfo/$tz" ] || fail "unknown timezone \"$tz\"."
+[ -n "$pass" ] || fail "the password is empty."
+[ "$(blockdev --getsize64 "$disk")" -ge $((20 * 1024 ** 3)) ] || fail "$disk is smaller than 20 GB."
+
+if [ -d /sys/firmware/efi ]; then uefi=1; else uefi=0; fi
+
+# --- Disk -------------------------------------------------------------------
+
+step "Erasing $disk"
+umount -R "$target" 2>/dev/null || true
+for part in $(lsblk -lnpo NAME "$disk" | tail -n +2); do
+	umount "$part" 2>/dev/null || true
+	swapoff "$part" 2>/dev/null || true
+done
+wipefs -af "$disk"
+
+if [ $uefi = 1 ]; then
+	echo "This machine uses UEFI: making an EFI partition and a root partition."
+	sfdisk --wipe always --wipe-partitions always "$disk" <<-EOF
+		label: gpt
+		size=512MiB, type=uefi, name=EFI
+		type=linux, name=annie-root
+	EOF
+else
+	echo "This machine uses BIOS: making a single root partition."
+	sfdisk --wipe always --wipe-partitions always "$disk" <<-EOF
+		label: dos
+		type=83, bootable
+	EOF
+fi
+udevadm settle
+mapfile -t parts < <(lsblk -lnpo NAME,TYPE "$disk" | awk '$2 == "part" { print $1 }')
+
+step "Formatting"
+if [ $uefi = 1 ]; then
+	esp=${parts[0]}
+	root=${parts[1]}
+else
+	root=${parts[0]}
+fi
+mkfs.ext4 -F -L annie-root "$root"
+mount --mkdir "$root" "$target"
+if [ $uefi = 1 ]; then
+	mkfs.fat -F 32 -n EFI "$esp"
+	mount --mkdir "$esp" "$target/boot/efi"
+fi
+
+# --- System -----------------------------------------------------------------
+
+step "Copying Annie OS to the disk (the slow part)"
+rsync -aHAX --info=progress2 "$source_root/" "$target/"
+
+step "Turning the live system into an installed one"
+# Everything here exists only so the ISO can boot and log in by itself.
+rm -f -- \
+	"$target/etc/sddm.conf.d/90-live-autologin.conf" \
+	"$target/etc/mkinitcpio.conf.d/archiso.conf" \
+	"$target/etc/systemd/system/annie-live-user.service" \
+	"$target/etc/systemd/system/multi-user.target.wants/annie-live-user.service" \
+	"$target/etc/systemd/system/pacman-init.service" \
+	"$target/etc/systemd/system/multi-user.target.wants/pacman-init.service" \
+	"$target/etc/systemd/system/etc-pacman.d-gnupg.mount" \
+	"$target/usr/local/bin/annie-live-setup" \
+	"$target/usr/local/bin/annie-installer" \
+	"$target/usr/local/bin/annie-install-backend"
+rm -rf -- "$target/usr/local/share/annie-live"
+
+echo "$host" > "$target/etc/hostname"
+genfstab -U "$target" >> "$target/etc/fstab"
+
+# The ISO keeps its kernel outside the root filesystem; put it back in /boot.
+kernels=("$target"/usr/lib/modules/*/vmlinuz)
+[ ${#kernels[@]} = 1 ] && [ -f "${kernels[0]}" ] || fail "expected exactly one kernel in /usr/lib/modules."
+install -m 0644 "${kernels[0]}" "$target/boot/vmlinuz-linux"
+if [ ! -f "$target/etc/mkinitcpio.d/linux.preset" ]; then
+	install -Dm 0644 /dev/stdin "$target/etc/mkinitcpio.d/linux.preset" <<-'EOF'
+		ALL_kver="/boot/vmlinuz-linux"
+		PRESETS=('default' 'fallback')
+		default_image="/boot/initramfs-linux.img"
+		fallback_image="/boot/initramfs-linux-fallback.img"
+		fallback_options="-S autodetect"
+	EOF
+fi
+
+step "Setting up $user, the clock and the boot loader"
+arch-chroot "$target" /bin/bash -s -- "$user" "$tz" "$disk" "$uefi" <<-'EOF'
+	set -euo pipefail
+	user=$1 tz=$2 disk=$3 uefi=$4
+
+	ln -sf "/usr/share/zoneinfo/$tz" /etc/localtime
+	mkinitcpio -P
+
+	useradd -m -G wheel -s /bin/bash "$user"
+	passwd -l root
+
+	# The live ISO kept its package signing keys in memory; make real ones.
+	pacman-key --init
+	pacman-key --populate archlinux
+
+	sed -i \
+		-e 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="Annie OS"/' \
+		-e 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=3/' \
+		-e 's|^#\?GRUB_BACKGROUND=.*|GRUB_BACKGROUND="/usr/share/wallpapers/AnnieWand/contents/images/1920x1080.png"|' \
+		/etc/default/grub
+	if [ "$uefi" = 1 ]; then
+		# VirtualBox does not always keep EFI boot entries, so also install to
+		# the fallback path every UEFI firmware looks at.
+		grub-install --target=x86_64-efi --efi-directory=/boot/efi --removable
+		grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=annie-os ||
+			echo "(Could not add an EFI boot entry; the fallback path will be used.)"
+	else
+		grub-install --target=i386-pc "$disk"
+	fi
+	grub-mkconfig -o /boot/grub/grub.cfg
+
+	# Start the login screen on this user, in the X11 session: VirtualBox's
+	# clipboard sharing and window resizing work best there.
+	install -d -o sddm -g sddm /var/lib/sddm
+	printf '[Last]\nUser=%s\nSession=/usr/share/xsessions/plasmax11.desktop\n' "$user" > /var/lib/sddm/state.conf
+	chown sddm:sddm /var/lib/sddm/state.conf
+EOF
+printf '%s:%s\n' "$user" "$pass" | arch-chroot "$target" chpasswd
+unset pass
+
+step "Finishing up"
+sync
+umount -R "$target"
+trap - ERR
+echo ok > "$status"
+printf '\n\033[1;32mAnnie OS is installed!\033[0m\n'
+sleep 3

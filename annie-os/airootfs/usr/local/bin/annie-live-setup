@@ -1,0 +1,22 @@
+#!/bin/sh
+# Create the passwordless "live" user the live ISO logs into. Runs at boot of
+# the live ISO only; the installed system never has this user.
+set -eu
+
+useradd -m -G wheel -s /bin/bash -c "Annie OS Live" live
+passwd -d live >/dev/null
+echo 'live ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/90-live
+chmod 0440 /etc/sudoers.d/90-live
+
+home=/home/live
+install -D -m 0755 /usr/local/share/annie-live/install-annie-os.desktop "$home/Desktop/install-annie-os.desktop"
+install -D -m 0644 /usr/local/share/annie-live/install-annie-os.desktop "$home/.config/autostart/install-annie-os.desktop"
+
+# There is no password to unlock with, so never lock the live session.
+cat > "$home/.config/kscreenlockerrc" <<'CONF'
+[Daemon]
+Autolock=false
+LockOnResume=false
+CONF
+
+chown -R live:live "$home"

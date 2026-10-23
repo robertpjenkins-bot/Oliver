@@ -1,0 +1,17 @@
+#!/bin/sh
+# Put the Annie OS wand on the desktop, once per user. After that the choice is
+# theirs: changing the wallpaper in Plasma is not undone on the next login.
+marker="${XDG_CONFIG_HOME:-$HOME/.config}/annie-os/wallpaper-applied"
+[ -e "$marker" ] && exit 0
+
+# plasmashell may still be starting; retry until it answers.
+i=0
+while [ $i -lt 60 ]; do
+	if plasma-apply-wallpaperimage /usr/share/wallpapers/AnnieWand >/dev/null 2>&1; then
+		mkdir -p "${marker%/*}" && touch "$marker"
+		exit 0
+	fi
+	i=$((i + 1))
+	sleep 1
+done
+exit 1

@@ -1,0 +1,2 @@
+# Annie OS: only US English is generated; add more lines and run locale-gen.
+en_US.UTF-8 UTF-8
