@@ -119,9 +119,11 @@ if ((${#changed[@]} == 0)); then
 fi
 echo
 echo "  Newer in this Updater (${#changed[@]} file(s)), including:"
-printf '%s\n' "${changed[@]}" | grep -q ollie-install &&
-    echo "    - the installer: an installed Ollie OS now starts on any computer (the Dell fix)"
-printf '%s\n' "${changed[@]}" | sed -n 's|^usr/local/bin/|    - |p' | grep -v ollie-install | head -n 8
+printf '%s\n' "${changed[@]}" | grep -qx usr/local/bin/ollie-install &&
+    echo "    - the installer: an installed Ollie OS starts on any computer, Dells and Macs too"
+printf '%s\n' "${changed[@]}" | grep -qx usr/local/bin/ollie-install-gui &&
+    echo "    - Install Ollie OS as a window, like Batocera's \"Install on a new disk\""
+printf '%s\n' "${changed[@]}" | sed -n 's|^usr/local/bin/|    - |p' | grep -vx -e '    - ollie-install' -e '    - ollie-install-gui' -e '    - ollie-selftest-.*' | head -n 8
 echo
 # OLLIE_UPDATE_YES=1: started by Get ISO / Installer, which carry on afterwards.
 auto="${OLLIE_UPDATE_YES:-}"
