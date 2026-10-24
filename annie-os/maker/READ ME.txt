@@ -57,6 +57,9 @@ download the bootstrap, into Downloads.
    archive here").
 
 2. Open the "Annie OS Maker" folder and double-click "Annie OS Maker".
+   (The folder has two things to open: "Annie OS Maker", which makes
+   Annie OS, and "Annie OS USB Writer", which puts it on a USB stick. The
+   "files" folder holds their parts; nothing in it needs opening.)
    If it asks, choose "Execute" or "Continue"; on some desktops you
    right-click it and choose "Allow Launching" first.
    Or, in a terminal:  cd "Annie OS Maker" && ./annie-os-maker

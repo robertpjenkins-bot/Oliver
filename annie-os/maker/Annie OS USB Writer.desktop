@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Annie OS USB Writer
+Comment=Put Annie OS on a USB stick or SD card, for a Steam Machine
+Exec=sh -c "cd \\"\\$(dirname \\"\\$1\\")\\" && chmod +x annie-os-usb && exec ./annie-os-usb" sh %k
+Terminal=true
+Icon=drive-removable-media-usb
+Categories=System;

@@ -26,7 +26,9 @@
 set -u
 
 here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
-profile_src=$here/profile
+# Its parts nobody opens (the recipe, the helpers) are kept out of sight in files/.
+files=$here/files
+profile_src=$files/profile
 downloads=$(xdg-user-dir DOWNLOAD 2>/dev/null || echo "$HOME/Downloads")
 [ "$downloads" = "$HOME" ] && downloads=$HOME/Downloads
 # Where it is installed: Downloads holds "Annie OS Maker" and the ISOs it
@@ -128,8 +130,8 @@ inside() {
 	# shellcheck disable=SC2016 # $pid_unshare is pacstrap's own
 	sed -i 's/^mount_unshare=.*/mount_unshare="$pid_unshare --mount"/' \
 		"$builder/usr/bin/pacstrap" "$builder/usr/bin/arch-chroot"
-	install -Dm 0755 "$here/mksquashfs-owners" "$builder/usr/local/bin/mksquashfs"
-	install -Dm 0755 "$here/annie-make-disk" "$builder/usr/local/bin/annie-make-disk"
+	install -Dm 0755 "$files/mksquashfs-owners" "$builder/usr/local/bin/mksquashfs"
+	install -Dm 0755 "$files/annie-make-disk" "$builder/usr/local/bin/annie-make-disk"
 	if [ -n "${ANNIE_SINGLE_ID:-}" ]; then
 		touch "$builder/usr/local/bin/.annie-single-id"
 	else
@@ -230,6 +232,10 @@ stop() {
 # The first time: copy the Maker into Downloads/Annie OS Maker, add it to
 # the apps menu, and carry on from there.
 install_self() {
+	# Older Makers kept their parts loose in the folder; tidy them away.
+	if [ -d "$files" ]; then
+		rm -rf -- "$here/profile" "$here/mksquashfs-owners" "$here/annie-make-disk"
+	fi
 	[ -e "$here/.installed" ] && return 0
 	[ -n "${ANNIE_MAKER_NO_INSTALL:-}" ] && return 0
 
@@ -241,9 +247,9 @@ install_self() {
 	# to copy.
 	if [ "$(cd "$install_dir" && pwd -P)" != "$(cd "$here" && pwd -P)" ]; then
 		printf '\033[1;35mInstalling Annie OS Maker into %s\033[0m\n' "$install_dir"
-		rm -rf -- "$install_dir/profile"
+		rm -rf -- "$install_dir/files"
 		local f
-		for f in annie-os-maker annie-os-usb mksquashfs-owners annie-make-disk profile "READ ME.txt" "Annie OS Maker.desktop"; do
+		for f in annie-os-maker annie-os-usb files "READ ME.txt" "Annie OS Maker.desktop" "Annie OS USB Writer.desktop"; do
 			[ -e "$here/$f" ] || continue
 			cp -a -- "$here/$f" "$install_dir/" || stop "Couldn't copy $f into $install_dir"
 		done
@@ -341,7 +347,7 @@ main() {
 	echo "This takes 20 minutes to an hour, and needs the internet."
 
 	[ "$(uname -m)" = x86_64 ] || stop "Annie OS can only be made on a 64-bit Intel or AMD computer."
-	[ -d "$profile_src" ] || stop "The Annie OS recipe is missing: keep the profile folder next to annie-os-maker."
+	[ -d "$profile_src" ] || stop "The Annie OS recipe is missing: keep the files folder next to annie-os-maker."
 	local tool
 	for tool in curl tar zstd unshare chroot sha256sum; do
 		command -v "$tool" >/dev/null || stop "This computer is missing the $tool program."

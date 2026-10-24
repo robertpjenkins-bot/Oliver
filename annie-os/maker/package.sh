@@ -11,10 +11,11 @@ trap 'rm -rf "$stage"' EXIT
 dir="$stage/Annie OS Maker"
 
 mkdir -p -- "$dir" "$out"
-install -m 0755 "$here/annie-os-maker" "$here/annie-os-usb" "$here/mksquashfs-owners" "$here/annie-make-disk" "$dir/"
-install -m 0755 "$here/Annie OS Maker.desktop" "$dir/"
+# What people open, and files/ with the parts they don't.
+install -m 0755 "$here/annie-os-maker" "$here/annie-os-usb" "$here/Annie OS Maker.desktop" "$here/Annie OS USB Writer.desktop" "$dir/"
 install -m 0644 "$here/READ ME.txt" "$dir/"
-"$here/../prepare-profile.sh" "$dir/profile"
+install -Dm 0755 "$here/mksquashfs-owners" "$here/annie-make-disk" -t "$dir/files/"
+"$here/../prepare-profile.sh" "$dir/files/profile"
 
 tar -C "$stage" -czf "$out/Annie-OS-Maker.tar.gz" "Annie OS Maker"
 ls -lh "$out/Annie-OS-Maker.tar.gz"
