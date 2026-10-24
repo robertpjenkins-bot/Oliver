@@ -98,8 +98,9 @@ n=0
 for cfg in "$boot_dir"/loader/entries/*.conf "$boot_dir"/boot/syslinux/*.cfg; do
     [ -f "$cfg" ] || continue
     if grep -qE 'archisosearchuuid=|archisolabel=|archisodevice=' "$cfg"; then
-        sed -i '' -E -e 's/ cow_label=[^ ]*//g' \
-            -e 's/(archisosearchuuid|archisolabel|archisodevice)=[^ ]*/archisolabel=OLLIE_BOOT/' "$cfg"
+        # Room for changes while it runs: half the memory (not 256 MB).
+        sed -i '' -E -e 's/ cow_label=[^ ]*//g' -e 's/ cow_spacesize=[^ ]*//g' \
+            -e 's/(archisosearchuuid|archisolabel|archisodevice)=[^ ]*/archisolabel=OLLIE_BOOT cow_spacesize=50%/' "$cfg"
         n=$((n + 1))
     fi
 done
