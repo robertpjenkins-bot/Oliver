@@ -1,0 +1,18 @@
+#!/bin/bash
+# Annie OS on a USB stick or SD card (made by Annie OS USB Writer): the
+# whole system is the file annie-os/rootfs.img on the stick's ext4
+# partition. See hooks/annie-usb.
+
+build() {
+    add_module loop
+    add_module ext4
+    add_runscript
+}
+
+help() {
+    cat <<HELPEOF
+Starts Annie OS from a file on a USB stick or SD card: with annie_loop=FILE
+on the kernel command line, root= is the stick's partition and FILE (on it)
+is mounted as the root file system. Without annie_loop it does nothing.
+HELPEOF
+}

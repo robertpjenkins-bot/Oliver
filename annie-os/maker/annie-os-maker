@@ -243,7 +243,7 @@ install_self() {
 		printf '\033[1;35mInstalling Annie OS Maker into %s\033[0m\n' "$install_dir"
 		rm -rf -- "$install_dir/profile"
 		local f
-		for f in annie-os-maker mksquashfs-owners annie-make-disk profile "READ ME.txt" "Annie OS Maker.desktop"; do
+		for f in annie-os-maker annie-os-usb mksquashfs-owners annie-make-disk profile "READ ME.txt" "Annie OS Maker.desktop"; do
 			[ -e "$here/$f" ] || continue
 			cp -a -- "$here/$f" "$install_dir/" || stop "Couldn't copy $f into $install_dir"
 		done
@@ -255,6 +255,10 @@ install_self() {
 		"Comment=Build the Annie OS ISO and save it in $place" \
 		"Exec=\"$install_dir/annie-os-maker\"" 'Terminal=true' 'Icon=media-optical' 'Categories=System;' \
 		> "$apps/annie-os-maker.desktop"
+	printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Annie OS USB Writer' \
+		'Comment=Put Annie OS on a USB stick or SD card, for a Steam Machine' \
+		"Exec=\"$install_dir/annie-os-usb\"" 'Terminal=true' 'Icon=drive-removable-media-usb' 'Categories=System;' \
+		> "$apps/annie-os-usb.desktop"
 	echo "From now on, start it from there or from your apps menu (Annie OS Maker)."
 	exec "$install_dir/annie-os-maker"
 }
@@ -397,6 +401,10 @@ main() {
 	mkdir -p -- "$out"
 	cp -- "$disk" "$out/" || stop "Couldn't save Annie OS in $out (is it full?)"
 	cp -- "$iso" "$out/" || stop "Couldn't save the ISO in $out (is it full?)"
+	# What Annie OS USB Writer puts on a stick, kept for as many sticks as wanted.
+	mkdir -p -- "$install_dir/usb"
+	mv -f -- "$builder"/build/out/annie-os-rootfs.img "$builder"/build/out/annie-os-usb-BOOTX64.EFI "$install_dir/usb/" ||
+		stop "Couldn't keep the USB stick version in $install_dir/usb (is it full?)"
 
 	say "Cleaning up"
 	remove "$builder/build"
@@ -408,9 +416,21 @@ main() {
 	echo
 	echo "In GNOME Boxes: click +, choose \"Install from File\", and pick $(basename "$disk")."
 	echo "It starts straight into Annie OS and asks for a password the first time."
-	tell msgbox "Annie OS is ready in $out: $(basename "$disk")
+	echo "To put it on a USB stick or SD card for a Steam Machine: Annie OS USB Writer"
+	echo "(in your apps menu, or annie-os-usb in $install_dir)."
 
-In GNOME Boxes: click +, choose Install from File, and pick that file."
+	# Offer the stick straight away.
+	local yes=''
+	if command -v kdialog >/dev/null && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+		kdialog --title "Annie OS Maker" --yes-label "Put it on a USB stick" --no-label "Not now" --yesno \
+			"Annie OS is ready in $out: $(basename "$disk") (open it in GNOME Boxes).
+
+Put Annie OS on a USB stick or SD card too, to start a Steam Machine from?" 2>/dev/null && yes=1
+	elif [ -t 0 ]; then
+		read -rp "Put Annie OS on a USB stick or SD card now, for a Steam Machine? [y/N] " a
+		[[ $a == [yY]* ]] && yes=1
+	fi
+	[ -n "$yes" ] && exec "$install_dir/annie-os-usb" "$install_dir/usb"
 	[ -t 0 ] && read -rp "Press Enter to close. " _
 	return 0
 }

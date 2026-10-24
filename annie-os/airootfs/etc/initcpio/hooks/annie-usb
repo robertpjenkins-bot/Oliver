@@ -1,0 +1,28 @@
+#!/usr/bin/ash
+# Annie OS on a USB stick or SD card: root= is the stick's partition, and the
+# system itself is the file annie_loop= on it. Without annie_loop= (a normal
+# disk), nothing changes.
+
+run_hook() {
+    [ -n "$annie_loop" ] || return 0
+    modprobe -q loop
+    mount_handler=annie_usb_mount
+}
+
+annie_usb_mount() {
+    mkdir -p /annie-usb
+    if ! mount -t ext4 -o rw,noatime "$root" /annie-usb; then
+        err "Annie OS: couldn't mount the USB stick's partition ($root)"
+        launch_interactive_shell
+        return 1
+    fi
+    if ! mount -t ext4 -o loop,rw,noatime "/annie-usb$annie_loop" "$1"; then
+        err "Annie OS: couldn't open $annie_loop on the USB stick"
+        launch_interactive_shell
+        return 1
+    fi
+    # Keep the stick's partition reachable (and mounted while the system
+    # runs from it) at /mnt/annie-usb.
+    mkdir -p "$1/mnt/annie-usb"
+    mount --move /annie-usb "$1/mnt/annie-usb"
+}

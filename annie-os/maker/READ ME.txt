@@ -16,6 +16,21 @@ The first time Annie OS starts it logs in by itself and asks you for a
 password (your user name is "annie") and where you are, for the clock.
 After that, you log in with that password.
 
+ON A USB STICK OR SD CARD, FOR A STEAM MACHINE
+When it's done, the Maker offers to put Annie OS on a USB stick or SD card
+too (or start "Annie OS USB Writer" from your apps menu any time). 32 GB is
+plenty: Annie OS takes about 9 GB and the rest is room for games.
+  1. Plug in the stick, start Annie OS USB Writer, pick the stick, and type
+     ERASE. Everything on the stick is erased; nothing else is touched. No
+     password: it makes the stick's partitions and copies the files, as the
+     file manager would.
+  2. Plug the stick into the Steam Machine, turn it on, open its boot menu
+     and choose the stick. (If it won't start, turn Secure Boot off in its
+     firmware settings.)
+  3. Annie OS starts and asks for a password the first time. SteamOS on the
+     Steam Machine's own drive isn't touched: start without the stick to get
+     it back.
+
 For Linux and SteamOS (in desktop mode), on a 64-bit Intel or AMD computer.
 
 You need:

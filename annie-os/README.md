@@ -73,6 +73,25 @@ window by itself (through `spice-vdagent`).
 `maker/annie-make-disk` makes the file, without root: ext4 made from a
 folder (`mkfs.ext4 -d`), and GRUB for BIOS and UEFI put in place by hand.
 
+## On a USB stick or SD card (Steam Machine)
+
+After building, Annie OS Maker offers to put Annie OS on a USB stick or SD
+card (also **Annie OS USB Writer** in the apps menu, `maker/annie-os-usb`).
+32 GB is plenty: Annie OS takes about 9 GB. Plug the stick into the Steam
+Machine, choose it in the boot menu (Secure Boot off), and Annie OS starts;
+SteamOS on the internal drive isn't touched. The image includes AMD
+graphics (`vulkan-radeon`), firmware, microcode, sound and Bluetooth for
+real hardware.
+
+No password is needed, because the writer only does what Linux lets the
+person at the computer do to a removable drive through UDisks: make
+partitions, format and copy files. The stick gets a FAT `ANNIE-EFI`
+partition holding GRUB, and an ext4 `annie-usb` partition holding Annie OS
+as one file, `annie-os/rootfs.img`, grown to fill the stick. GRUB opens
+that file (`loopback`) and starts Linux with
+`root=PARTLABEL=annie-usb annie_loop=/annie-os/rootfs.img`; the `annie-usb`
+start-up hook (`airootfs/etc/initcpio`) then mounts it as the system.
+
 ## Installing
 
 The installer opens by itself when the live desktop starts (or double-click
@@ -121,6 +140,6 @@ struggle.
 | `airootfs/usr/local/bin/annie-install-backend` | The installer's disk work (runs as root) |
 | `syslinux/`, `efiboot/`, `grub/` | Boot menus for BIOS and UEFI |
 | `artwork/` | The wallpaper, boot splash and logo. Edit `make-artwork.py`, then run it and `render.sh` to redraw them |
-| `maker/` | Annie OS Maker: builds the ISO and the ready-to-use `.qcow2` on a Linux/SteamOS computer without a password |
+| `maker/` | Annie OS Maker (builds the ISO, the ready-to-use `.qcow2` and the USB stick version without a password) and Annie OS USB Writer |
 | `prepare-profile.sh` | Copies the profile and adds Oliver; used by the Maker and `build.sh` |
 | `build.sh`, `build-in-docker.sh` | Build the ISO as root, or in Docker |

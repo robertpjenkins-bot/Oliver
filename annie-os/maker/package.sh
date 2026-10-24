@@ -11,7 +11,7 @@ trap 'rm -rf "$stage"' EXIT
 dir="$stage/Annie OS Maker"
 
 mkdir -p -- "$dir" "$out"
-install -m 0755 "$here/annie-os-maker" "$here/mksquashfs-owners" "$here/annie-make-disk" "$dir/"
+install -m 0755 "$here/annie-os-maker" "$here/annie-os-usb" "$here/mksquashfs-owners" "$here/annie-make-disk" "$dir/"
 install -m 0755 "$here/Annie OS Maker.desktop" "$dir/"
 install -m 0644 "$here/READ ME.txt" "$dir/"
 "$here/../prepare-profile.sh" "$dir/profile"

@@ -1,8 +1,13 @@
 #!/bin/bash
 # Turn the Annie OS live system mkarchiso just built into an installed Annie
-# OS on a disk file, /build/out/annie-os-<version>.qcow2: ready to open in
-# GNOME Boxes (or VirtualBox), no installer and no disk to erase. On its first
-# start it logs in by itself and asks for a password and the timezone.
+# OS, in two forms in /build/out:
+#   annie-os-<version>-x86_64.qcow2   a disk file, ready to open in GNOME
+#                                     Boxes (or VirtualBox)
+#   annie-os-rootfs.img and           the same system as one file, and the
+#   annie-os-usb-BOOTX64.EFI          GRUB that starts it, for Annie OS USB
+#                                     Writer to put on a USB stick or SD card
+# No installer, no disk to erase. On its first start Annie OS logs in by
+# itself and asks for a password and the timezone.
 #
 # Runs inside Annie OS Maker's Arch Linux, as root of its user namespace,
 # after mkarchiso, so it needs no real root: the file systems are made from
@@ -90,9 +95,17 @@ rm -rf -- "$root/boot/grub/i386-pc" "$root/boot/grub/x86_64-efi"
 cp -r -- /usr/lib/grub/i386-pc /usr/lib/grub/x86_64-efi "$root/boot/grub/"
 cp -- /usr/share/grub/unicode.pf2 "$root/boot/grub/fonts/"
 cat > "$root/boot/grub/grub.cfg" <<EOF
-# Annie OS (made by Annie OS Maker). Both GRUBs find the root by its label.
+# Annie OS (made by Annie OS Maker). On a disk, GRUB finds the root by its
+# label; on a USB stick, the USB GRUB has already opened annie-os/rootfs.img
+# on the stick's partition (annie_usb is set) and Linux is told to do the
+# same (the annie-usb start-up hook).
 set timeout=3
-search --no-floppy --label $label --set=root
+if [ -n "\$annie_usb" ]; then
+	set annie_root="root=PARTLABEL=annie-usb annie_loop=/annie-os/rootfs.img"
+else
+	search --no-floppy --label $label --set=root
+	set annie_root="root=LABEL=$label"
+fi
 insmod all_video
 insmod gfxterm
 insmod png
@@ -103,12 +116,12 @@ if loadfont /boot/grub/fonts/unicode.pf2; then
 fi
 
 menuentry "Annie OS" {
-	linux /boot/vmlinuz-linux root=LABEL=$label rw quiet
+	linux /boot/vmlinuz-linux \$annie_root rw quiet
 	initrd /boot/initramfs-linux.img
 }
 
 menuentry "Annie OS (fallback start-up files)" {
-	linux /boot/vmlinuz-linux root=LABEL=$label rw
+	linux /boot/vmlinuz-linux \$annie_root rw
 	initrd /boot/initramfs-linux-fallback.img
 }
 EOF
@@ -123,6 +136,13 @@ grub-mkimage -O i386-pc -o /build/core.img -c "$early" -p /boot/grub \
 	biosdisk part_gpt ext2 search search_label
 grub-mkimage -O x86_64-efi -o /build/BOOTX64.EFI -c "$early" -p /boot/grub \
 	part_gpt ext2 search search_label
+# For a USB stick: find the stick's annie-os/rootfs.img and open it.
+# shellcheck disable=SC2016 # GRUB's own variables
+printf '%s\n' 'search --no-floppy --file --set=host /annie-os/rootfs.img' \
+	'loopback annie ($host)/annie-os/rootfs.img' 'set root=(annie)' \
+	'set prefix=(annie)/boot/grub' 'set annie_usb=1' 'export annie_usb' > "$early"
+grub-mkimage -O x86_64-efi -o "$out/annie-os-usb-BOOTX64.EFI" -c "$early" -p /boot/grub \
+	part_gpt fat ext2 search search_fs_file loopback
 rm -f -- "$early"
 
 step "Making the disk file ($size_gb GB, filled as it's used)"
@@ -155,9 +175,10 @@ mkfs.ext4 -q -F -L "$label" -d "$root" -E offset=$((root_start * 512)) "$img" $(
 
 # Where the computer let the Maker be only one user, every file is root's;
 # give them their real owners (pacman's records; annie's home) and setuid
-# bits back, as mksquashfs-owners does for the ISO.
+# bits back, as mksquashfs-owners does for the ISO. fix_owners FS, where FS
+# is debugfs's "file?offset=BYTES".
+owners=/build/owners.debugfs
 if [ -e "$single_id" ]; then
-	cmds=$(mktemp)
 	for m in "$root"/var/lib/pacman/local/*/mtree; do
 		[ -f "$m" ] && gzip -dc "$m"
 	done | awk '
@@ -181,14 +202,17 @@ if [ -e "$single_id" ]; then
 		type=$(( 0x$(stat -c %f "$root/$path") & ~07777 ))
 		printf 'sif "/%s" uid %s\nsif "/%s" gid %s\nsif "/%s" mode 0%o\n' \
 			"$path" "$u" "$path" "$g" "$path" $(( type | 0$mode ))
-	done > "$cmds"
+	done > "$owners"
 	(cd "$root" && find home/annie) | while IFS= read -r path; do
 		printf 'sif "/%s" uid %s\nsif "/%s" gid %s\n' "$path" "$uid" "$path" "$gid"
-	done >> "$cmds"
-	echo "Setting the owners of $(($(wc -l < "$cmds") / 2)) files"
-	debugfs -w -f "$cmds" "$img?offset=$((root_start * 512))" >/dev/null
-	rm -f -- "$cmds"
+	done >> "$owners"
 fi
+fix_owners() {
+	[ -s "$owners" ] || return 0
+	echo "Setting the owners of $(($(grep -c ' uid ' "$owners"))) files"
+	debugfs -w -f "$owners" "$1" >/dev/null
+}
+fix_owners "$img?offset=$((root_start * 512))"
 
 step "Putting GRUB for BIOS in place"
 # What grub-install would do: core.img in the BIOS boot partition, its first
@@ -221,3 +245,12 @@ step "Packing it into a .qcow2 file"
 qemu-img convert -c -O qcow2 "$img" "$out/annie-os-$version-x86_64.qcow2"
 rm -f -- "$img" /build/core.img /build/BOOTX64.EFI
 ls -lh "$out/annie-os-$version-x86_64.qcow2"
+
+step "Making the USB stick version (one file, grown to fill the stick when written)"
+used_kb=$(du -sk "$root" | cut -f1)
+rootfs=$out/annie-os-rootfs.img
+rm -f -- "$rootfs"
+mkfs.ext4 -q -F -L "$label" -d "$root" "$rootfs" $((used_kb * 11 / 10 + 2 * 1024 * 1024))k
+fix_owners "$rootfs"
+rm -f -- "$owners"
+ls -lhs "$rootfs" "$out/annie-os-usb-BOOTX64.EFI"

@@ -26,3 +26,8 @@ lib32-pipewire
 lib32-pipewire-jack
 spice-vdagent
 qemu-guest-agent
+amd-ucode
+sof-firmware
+lib32-vulkan-radeon
+bluez
+bluez-utils
