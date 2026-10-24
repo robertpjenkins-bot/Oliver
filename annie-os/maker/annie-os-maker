@@ -230,15 +230,19 @@ install_self() {
 	# Always Downloads, without asking (or the folder given for testing).
 	place_at "${ANNIE_MAKER_INSTALL_TO:-$downloads}"
 
-	printf '\033[1;35mInstalling Annie OS Maker into %s\033[0m\n' "$install_dir"
 	mkdir -p -- "$install_dir" || stop "Couldn't make $install_dir"
-	rm -rf -- "$install_dir/profile"
-	local f
-	for f in annie-os-maker mksquashfs-owners profile "READ ME.txt" "Annie OS Maker.desktop"; do
-		[ -e "$here/$f" ] || continue
-		cp -a -- "$here/$f" "$install_dir/" || stop "Couldn't copy the Maker into $install_dir"
-	done
-	touch "$install_dir/.installed"
+	# Unpacked right there already (in Downloads): it's in place, nothing
+	# to copy.
+	if [ "$(cd "$install_dir" && pwd -P)" != "$(cd "$here" && pwd -P)" ]; then
+		printf '\033[1;35mInstalling Annie OS Maker into %s\033[0m\n' "$install_dir"
+		rm -rf -- "$install_dir/profile"
+		local f
+		for f in annie-os-maker mksquashfs-owners profile "READ ME.txt" "Annie OS Maker.desktop"; do
+			[ -e "$here/$f" ] || continue
+			cp -a -- "$here/$f" "$install_dir/" || stop "Couldn't copy $f into $install_dir"
+		done
+	fi
+	touch "$install_dir/.installed" || stop "Couldn't write in $install_dir"
 	local apps=${XDG_DATA_HOME:-$HOME/.local/share}/applications
 	mkdir -p -- "$apps"
 	printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Annie OS Maker' \
