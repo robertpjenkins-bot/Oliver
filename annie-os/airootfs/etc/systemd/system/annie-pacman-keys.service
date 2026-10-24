@@ -1,0 +1,12 @@
+[Unit]
+Description=Make the package signing keys for updates (first start of a ready-made Annie OS)
+ConditionPathExists=!/etc/pacman.d/gnupg/trustdb.gpg
+After=time-sync.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/pacman-key --init
+ExecStart=/usr/bin/pacman-key --populate archlinux
+
+[Install]
+WantedBy=multi-user.target

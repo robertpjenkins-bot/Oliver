@@ -1,15 +1,26 @@
 ANNIE OS MAKER
 ==============
 
-Makes the Annie OS ISO (Arch Linux with KDE Plasma, Steam, Firefox and
-Oliver, for VirtualBox) on this computer and saves it in your Downloads
-folder. It never asks for a password.
+Makes Annie OS (Arch Linux with KDE Plasma, Steam, Firefox and Oliver) on
+this computer and saves it in your Downloads folder, ready to use: no
+installer, no disk to erase. It never asks for a password.
+
+It saves two files in Downloads:
+  annie-os-<date>-x86_64.qcow2   Annie OS itself, ready to use. Open it in
+                                 GNOME Boxes: click +, "Install from File",
+                                 pick this file.
+  annie-os-<date>-x86_64.iso     the installer ISO, if you'd rather install
+                                 Annie OS onto a virtual disk.
+
+The first time Annie OS starts it logs in by itself and asks you for a
+password (your user name is "annie") and where you are, for the clock.
+After that, you log in with that password.
 
 For Linux and SteamOS (in desktop mode), on a 64-bit Intel or AMD computer.
 
 You need:
   - the internet (it downloads about 2.5 GB from Arch Linux)
-  - 20 GB free in your home folder
+  - 30 GB free in your home folder
   - 20 minutes to an hour
 
 The first time you start it, it installs itself into your Downloads folder
@@ -36,12 +47,11 @@ download the bootstrap, into Downloads.
    Or, in a terminal:  cd "Annie OS Maker" && ./annie-os-maker
 
 3. A terminal window shows what it is doing. If a download fails it tries
-   again by itself (three times). When it finishes it says where the ISO
-   is: Downloads/annie-os-<date>-x86_64.iso
+   again by itself (three times). When it finishes, Annie OS is in
+   Downloads: annie-os-<date>-x86_64.qcow2
 
-4. In VirtualBox, make a new machine and pick that file as its ISO image.
-   See "Setting up the VirtualBox machine" in the Annie OS README for the
-   settings to use.
+4. In GNOME Boxes: click +, choose "Install from File", and pick
+   annie-os-<date>-x86_64.qcow2. Give it 4 GB of memory or more.
 
 IF IT DOESN'T WORK
 Everything it printed is saved in Annie OS Maker/work/last-build.log.

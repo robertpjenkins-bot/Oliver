@@ -60,11 +60,18 @@ Controller is **VMSVGA** (step 4; change it with the machine shut down).
 The screen then fills the window and follows it when you resize. You can
 also pick a size yourself in **System Settings > Display & Monitor**.
 
-## Using GNOME Boxes instead (Steam Deck)
+## Using GNOME Boxes (Steam Deck): no installing
 
-Annie OS also runs in GNOME Boxes. Click **+**, **Install from File**, and
-pick the Annie OS ISO. Give it at least 4 GB of memory and a 30 GB disk.
-The screen follows the Boxes window by itself (through `spice-vdagent`).
+Annie OS Maker also saves `annie-os-<date>-x86_64.qcow2` in Downloads: Annie
+OS already installed, on a disk file. In GNOME Boxes click **+**, **Install
+from File**, and pick it; give it at least 4 GB of memory. There is no
+installer and no disk to erase. The first time it starts it logs in by
+itself (user `annie`) and asks for a password and the timezone; after that
+the login screen asks for the password. The screen follows the Boxes
+window by itself (through `spice-vdagent`).
+
+`maker/annie-make-disk` makes the file, without root: ext4 made from a
+folder (`mkfs.ext4 -d`), and GRUB for BIOS and UEFI put in place by hand.
 
 ## Installing
 
@@ -114,6 +121,6 @@ struggle.
 | `airootfs/usr/local/bin/annie-install-backend` | The installer's disk work (runs as root) |
 | `syslinux/`, `efiboot/`, `grub/` | Boot menus for BIOS and UEFI |
 | `artwork/` | The wallpaper, boot splash and logo. Edit `make-artwork.py`, then run it and `render.sh` to redraw them |
-| `maker/` | Annie OS Maker: builds the ISO on a Linux/SteamOS computer without a password |
+| `maker/` | Annie OS Maker: builds the ISO and the ready-to-use `.qcow2` on a Linux/SteamOS computer without a password |
 | `prepare-profile.sh` | Copies the profile and adds Oliver; used by the Maker and `build.sh` |
 | `build.sh`, `build-in-docker.sh` | Build the ISO as root, or in Docker |

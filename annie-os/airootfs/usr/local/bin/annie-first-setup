@@ -1,0 +1,48 @@
+#!/bin/bash
+# First start of a ready-made Annie OS (the disk file Annie OS Maker makes):
+# pick a password for annie, and the timezone. Until that's done Annie OS
+# logs in by itself; after it, the login screen asks for the password.
+# Cancelling leaves it for the next start.
+set -u
+k() { kdialog --title "Welcome to Annie OS" --icon annie-os "$@"; }
+
+k --msgbox "Welcome to Annie OS!
+
+Two quick things before you start: a password for you (your user name is \"annie\"), and where you are, for the clock." || exit 0
+
+while :; do
+	pass=$(k --password "Choose a password.
+You'll type it at the login screen and when changing system settings.") || exit 0
+	if [ -z "$pass" ]; then
+		k --sorry "The password can't be empty."
+		continue
+	fi
+	pass2=$(k --password "Type the password again to check it.") || exit 0
+	[ "$pass" = "$pass2" ] && break
+	k --sorry "The two passwords didn't match. Try again."
+done
+
+mapfile -t zones < <(timedatectl list-timezones)
+regions=()
+for r in $(printf '%s\n' "${zones[@]}" | grep / | cut -d/ -f1 | sort -u); do
+	regions+=("$r" "${r//_/ }")
+done
+regions+=(UTC UTC)
+region=$(k --default America --menu "Where are you? (for the clock)" "${regions[@]}") || exit 0
+if [ "$region" = UTC ]; then
+	tz=UTC
+else
+	cities=()
+	for z in "${zones[@]}"; do
+		[[ $z == "$region"/* ]] || continue
+		city=${z#"$region"/}
+		cities+=("$z" "${city//_/ }")
+	done
+	tz=$(k --menu "Pick the city nearest you, or one in your timezone." "${cities[@]}") || exit 0
+fi
+
+if printf '%s\n%s\n' "$tz" "$pass" | sudo -n /usr/local/bin/annie-first-setup-apply; then
+	k --msgbox "All set! From now on, log in as \"annie\" with your password."
+else
+	k --error "That didn't work. It will ask again next time Annie OS starts."
+fi

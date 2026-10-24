@@ -1,0 +1,223 @@
+#!/bin/bash
+# Turn the Annie OS live system mkarchiso just built into an installed Annie
+# OS on a disk file, /build/out/annie-os-<version>.qcow2: ready to open in
+# GNOME Boxes (or VirtualBox), no installer and no disk to erase. On its first
+# start it logs in by itself and asks for a password and the timezone.
+#
+# Runs inside Annie OS Maker's Arch Linux, as root of its user namespace,
+# after mkarchiso, so it needs no real root: the file systems are made from
+# folders (mkfs.ext4 -d, mtools) and GRUB is put in place by hand rather
+# than by grub-install, which wants real disks.
+#
+# Disk layout (GPT): 1 MiB BIOS boot partition (GRUB for BIOS), 300 MiB EFI
+# system partition (GRUB for UEFI), and the rest ext4 labelled annie-root,
+# which both GRUBs find by its label. ANNIE_DISK_GB sets the size (64 GB by
+# default; the file only holds what is used).
+set -euo pipefail
+
+root=/build/work/x86_64/airootfs
+out=/build/out
+img=/build/disk.raw
+label=annie-root
+size_gb=${ANNIE_DISK_GB:-64}
+single_id=/usr/local/bin/.annie-single-id
+
+step() { printf '==> %s\n' "$*"; }
+in_target() { arch-chroot -N "$root" "$@"; }
+
+[ -d "$root/usr" ] || { echo "No Annie OS system at $root"; exit 1; }
+version=$(cat /build/work/iso/arch/version 2>/dev/null || date +%Y.%m.%d)
+
+step "Turning the live system into an installed one"
+rm -f -- \
+	"$root/etc/sddm.conf.d/90-live-autologin.conf" \
+	"$root/etc/mkinitcpio.conf.d/archiso.conf" \
+	"$root/etc/systemd/system/annie-live-user.service" \
+	"$root/etc/systemd/system/multi-user.target.wants/annie-live-user.service" \
+	"$root/etc/systemd/system/pacman-init.service" \
+	"$root/etc/systemd/system/multi-user.target.wants/pacman-init.service" \
+	"$root/etc/systemd/system/etc-pacman.d-gnupg.mount" \
+	"$root/usr/local/bin/annie-live-setup" \
+	"$root/usr/local/bin/annie-installer" \
+	"$root/usr/local/bin/annie-install-backend" \
+	"$root/version"
+rm -rf -- "$root/usr/local/share/annie-live"
+echo annie-os > "$root/etc/hostname"
+printf 'LABEL=%s  /  ext4  rw,relatime  0 1\n' "$label" >> "$root/etc/fstab"
+# Signing keys for updates, made on the first start.
+ln -sf /etc/systemd/system/annie-pacman-keys.service \
+	"$root/etc/systemd/system/multi-user.target.wants/annie-pacman-keys.service"
+
+step "Making its start-up files"
+kernels=("$root"/usr/lib/modules/*/vmlinuz)
+[ ${#kernels[@]} = 1 ] && [ -f "${kernels[0]}" ] || { echo "Expected exactly one kernel"; exit 1; }
+kver=$(basename "$(dirname "${kernels[0]}")")
+install -m 0644 "${kernels[0]}" "$root/boot/vmlinuz-linux"
+install -Dm 0644 /dev/stdin "$root/etc/mkinitcpio.d/linux.preset" <<'EOF'
+ALL_kver="/boot/vmlinuz-linux"
+PRESETS=('default' 'fallback')
+default_image="/boot/initramfs-linux.img"
+fallback_image="/boot/initramfs-linux-fallback.img"
+fallback_options="-S autodetect"
+EOF
+# Without autodetect: it would pick this computer's drivers, not the VM's.
+# (Updates made inside Annie OS later autodetect the VM's, as they should.)
+in_target mkinitcpio -k "$kver" -g /boot/initramfs-linux.img -S autodetect
+
+step "Adding the user annie"
+in_target useradd -M -G wheel -s /bin/bash -c Annie annie
+in_target passwd -l annie >/dev/null
+home=$root/home/annie
+mkdir -p -- "$home"
+cp -a -- "$root/etc/skel/." "$home/"
+install -Dm 0644 "$root/usr/local/share/annie-first-setup/annie-first-setup.desktop" \
+	"$home/.config/autostart/annie-first-setup.desktop"
+# No password yet, so nothing to unlock with: don't lock until there is.
+printf '[Daemon]\nAutolock=false\nLockOnResume=false\n' > "$home/.config/kscreenlockerrc"
+chmod 0700 "$home"
+uid=$(awk -F: '$1 == "annie" { print $3 }' "$root/etc/passwd")
+gid=$(awk -F: '$1 == "annie" { print $4 }' "$root/etc/passwd")
+[ -e "$single_id" ] || chown -R "$uid:$gid" "$home"
+# Log in by itself until the first-start setup has a password.
+printf '[Autologin]\nUser=annie\nSession=plasma\n' > "$root/etc/sddm.conf.d/90-first-login.conf"
+printf 'annie ALL=(root) NOPASSWD: /usr/local/bin/annie-first-setup-apply\n' \
+	> "$root/etc/sudoers.d/50-annie-first-setup"
+chmod 0440 "$root/etc/sudoers.d/50-annie-first-setup"
+
+step "Adding GRUB, for BIOS and UEFI"
+mkdir -p -- "$root/boot/grub/fonts"
+rm -rf -- "$root/boot/grub/i386-pc" "$root/boot/grub/x86_64-efi"
+cp -r -- /usr/lib/grub/i386-pc /usr/lib/grub/x86_64-efi "$root/boot/grub/"
+cp -- /usr/share/grub/unicode.pf2 "$root/boot/grub/fonts/"
+cat > "$root/boot/grub/grub.cfg" <<EOF
+# Annie OS (made by Annie OS Maker). Both GRUBs find the root by its label.
+set timeout=3
+search --no-floppy --label $label --set=root
+insmod all_video
+insmod gfxterm
+insmod png
+if loadfont /boot/grub/fonts/unicode.pf2; then
+	set gfxmode=auto
+	terminal_output gfxterm
+	background_image /usr/share/wallpapers/AnnieWand/contents/images/1920x1080.png
+fi
+
+menuentry "Annie OS" {
+	linux /boot/vmlinuz-linux root=LABEL=$label rw quiet
+	initrd /boot/initramfs-linux.img
+}
+
+menuentry "Annie OS (fallback start-up files)" {
+	linux /boot/vmlinuz-linux root=LABEL=$label rw
+	initrd /boot/initramfs-linux-fallback.img
+}
+EOF
+# The fallback image is made by the first kernel update; until then, use
+# the main one for it too.
+cp -- "$root/boot/initramfs-linux.img" "$root/boot/initramfs-linux-fallback.img"
+
+early=$(mktemp)
+# shellcheck disable=SC2016 # GRUB's own $root
+printf 'search --no-floppy --label %s --set=root\nset prefix=($root)/boot/grub\n' "$label" > "$early"
+grub-mkimage -O i386-pc -o /build/core.img -c "$early" -p /boot/grub \
+	biosdisk part_gpt ext2 search search_label
+grub-mkimage -O x86_64-efi -o /build/BOOTX64.EFI -c "$early" -p /boot/grub \
+	part_gpt ext2 search search_label
+rm -f -- "$early"
+
+step "Making the disk file ($size_gb GB, filled as it's used)"
+rm -f -- "$img"
+truncate -s "${size_gb}G" "$img"
+sfdisk -q "$img" <<'EOF'
+label: gpt
+start=2048, size=2048, type=21686148-6449-6E6F-744E-656564454649, name=bios
+size=300MiB, type=uefi, name=EFI
+type=linux, name=annie-root
+EOF
+# start and size (in 512-byte sectors) of partition N
+part() { sfdisk -d "$img" | sed -n "s|^$img$1 : start= *\([0-9]*\), size= *\([0-9]*\),.*|\1 \2|p"; }
+read -r bios_start bios_size < <(part 1)
+read -r esp_start esp_size < <(part 2)
+read -r root_start root_size < <(part 3)
+
+# Made on its own and then copied in: made in place, mkfs.fat sizes its
+# clusters for the whole disk, too few for FAT32, and UEFI won't read it.
+esp=/build/esp.img
+rm -f -- "$esp"
+mkfs.fat -F 32 -n EFI -C "$esp" $((esp_size / 2)) >/dev/null
+mmd -i "$esp" ::/EFI ::/EFI/BOOT
+mcopy -i "$esp" /build/BOOTX64.EFI ::/EFI/BOOT/BOOTX64.EFI
+dd if="$esp" of="$img" bs=512 seek="$esp_start" conv=notrunc status=none
+rm -f -- "$esp"
+
+step "Copying Annie OS onto it (a few minutes)"
+mkfs.ext4 -q -F -L "$label" -d "$root" -E offset=$((root_start * 512)) "$img" $((root_size / 2))k
+
+# Where the computer let the Maker be only one user, every file is root's;
+# give them their real owners (pacman's records; annie's home) and setuid
+# bits back, as mksquashfs-owners does for the ISO.
+if [ -e "$single_id" ]; then
+	cmds=$(mktemp)
+	for m in "$root"/var/lib/pacman/local/*/mtree; do
+		[ -f "$m" ] && gzip -dc "$m"
+	done | awk '
+		function fields(   i, kv) {
+			for (i = 2; i <= NF; i++) {
+				split($i, kv, "=")
+				if (kv[1] == "uid") u = kv[2]
+				if (kv[1] == "gid") g = kv[2]
+				if (kv[1] == "mode") m = kv[2]
+			}
+		}
+		/^\/set / { u = du; g = dg; m = dm; fields(); du = u; dg = g; dm = m; next }
+		/^\.\// {
+			u = du; g = dg; m = dm
+			fields()
+			if ($1 ~ /\\/) next
+			if (u + 0 == 0 && g + 0 == 0 && !(length(m) == 4 && m !~ /^0/)) next
+			print substr($1, 3), m, u, g
+		}' | sort -u | while read -r path mode u g; do
+		[ -e "$root/$path" ] && [ ! -L "$root/$path" ] || continue
+		type=$(( 0x$(stat -c %f "$root/$path") & ~07777 ))
+		printf 'sif "/%s" uid %s\nsif "/%s" gid %s\nsif "/%s" mode 0%o\n' \
+			"$path" "$u" "$path" "$g" "$path" $(( type | 0$mode ))
+	done > "$cmds"
+	(cd "$root" && find home/annie) | while IFS= read -r path; do
+		printf 'sif "/%s" uid %s\nsif "/%s" gid %s\n' "$path" "$uid" "$path" "$gid"
+	done >> "$cmds"
+	echo "Setting the owners of $(($(wc -l < "$cmds") / 2)) files"
+	debugfs -w -f "$cmds" "$img?offset=$((root_start * 512))" >/dev/null
+	rm -f -- "$cmds"
+fi
+
+step "Putting GRUB for BIOS in place"
+# What grub-install would do: core.img in the BIOS boot partition, its first
+# sector told where the rest is, and the MBR's boot code told where it is.
+sectors=$(( ($(stat -c %s /build/core.img) + 511) / 512 ))
+[ "$sectors" -le "$bios_size" ] || { echo "GRUB is too big for its partition"; exit 1; }
+# le VALUE BYTES: VALUE as BYTES little-endian bytes
+le() {
+	local v=$1 i
+	for ((i = 0; i < $2; i++)); do
+		printf '%b' "\\x$(printf %02x $((v & 255)))"
+		v=$((v >> 8))
+	done
+}
+poke() { dd of="$img" bs=1 seek="$1" conv=notrunc status=none; } # poke OFFSET < bytes
+dd if=/build/core.img of="$img" bs=512 seek="$bios_start" conv=notrunc status=none
+# diskboot's block list, at the end of core.img's first sector: the rest of
+# core.img follows straight on.
+le $((bios_start + 1)) 8 | poke $((bios_start * 512 + 0x1f4))
+le $((sectors - 1)) 2 | poke $((bios_start * 512 + 0x1fc))
+# The MBR's boot code (the partition table after it stays), told where
+# core.img starts, to boot from the drive the BIOS says, and to trust it
+# (a hard disk, not a floppy).
+dd if=/usr/lib/grub/i386-pc/boot.img of="$img" bs=440 count=1 conv=notrunc status=none
+le "$bios_start" 8 | poke $((0x5c))
+printf '\xff' | poke $((0x64))
+printf '\x90\x90' | poke $((0x66))
+
+step "Packing it into a .qcow2 file"
+qemu-img convert -c -O qcow2 "$img" "$out/annie-os-$version-x86_64.qcow2"
+rm -f -- "$img" /build/core.img /build/BOOTX64.EFI
+ls -lh "$out/annie-os-$version-x86_64.qcow2"

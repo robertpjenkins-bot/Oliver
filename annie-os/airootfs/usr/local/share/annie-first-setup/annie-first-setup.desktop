@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Welcome to Annie OS
+Comment=Choose a password and timezone
+Exec=/usr/local/bin/annie-first-setup
+Icon=annie-os
+NoDisplay=true
+X-KDE-autostart-phase=2

@@ -1,0 +1,15 @@
+#!/bin/bash
+# Root's half of annie-first-setup: reads the timezone and the password (one
+# line each), sets them, and switches off logging in by itself and this
+# one-time permission.
+set -euo pipefail
+IFS= read -r tz
+IFS= read -r pass
+[ -n "$pass" ] || exit 1
+[ -f "/usr/share/zoneinfo/$tz" ] || tz=UTC
+printf 'annie:%s\n' "$pass" | chpasswd
+ln -sf "/usr/share/zoneinfo/$tz" /etc/localtime
+rm -f /etc/sddm.conf.d/90-first-login.conf \
+	/home/annie/.config/autostart/annie-first-setup.desktop \
+	/home/annie/.config/kscreenlockerrc \
+	/etc/sudoers.d/50-annie-first-setup
