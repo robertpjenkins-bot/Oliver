@@ -246,12 +246,35 @@ stop() {
 
 # The first time: copy the Maker into Downloads/Annie OS Maker, add it to
 # the apps menu, and carry on from there.
+# Annie OS Maker and Annie OS USB Writer in the apps menu, pointing at this
+# copy. Done on every run, so they're always there and up to date: the apps
+# menu is the one place every desktop starts them from (a double-click on a
+# launcher in a folder may be refused).
+add_to_apps_menu() {
+	local apps=${XDG_DATA_HOME:-$HOME/.local/share}/applications
+	mkdir -p -- "$apps" || return 0
+	# They open their own window (konsole --hold), so it stays open.
+	printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Annie OS Maker' \
+		"Comment=Make Annie OS and save it in $place" \
+		"Exec=\"$install_dir/annie-os-maker\"" 'Terminal=false' 'Icon=media-optical' 'Categories=System;' \
+		> "$apps/annie-os-maker.desktop"
+	printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Annie OS USB Writer' \
+		'Comment=Put Annie OS on a USB stick or SD card, for a Steam Machine' \
+		"Exec=\"$install_dir/annie-os-usb\"" 'Terminal=false' 'Icon=drive-removable-media-usb' 'Categories=System;' \
+		> "$apps/annie-os-usb.desktop"
+	command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 &
+	return 0
+}
+
 install_self() {
 	# Older Makers kept their parts loose in the folder; tidy them away.
 	if [ -d "$files" ]; then
 		rm -rf -- "$here/profile" "$here/mksquashfs-owners" "$here/annie-make-disk"
 	fi
-	[ -e "$here/.installed" ] && return 0
+	if [ -e "$here/.installed" ]; then
+		add_to_apps_menu
+		return 0
+	fi
 	[ -n "${ANNIE_MAKER_NO_INSTALL:-}" ] && return 0
 
 	# Always Downloads, without asking (or the folder given for testing).
@@ -270,16 +293,7 @@ install_self() {
 		done
 	fi
 	touch "$install_dir/.installed" || stop "Couldn't write in $install_dir"
-	local apps=${XDG_DATA_HOME:-$HOME/.local/share}/applications
-	mkdir -p -- "$apps"
-	printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Annie OS Maker' \
-		"Comment=Build the Annie OS ISO and save it in $place" \
-		"Exec=\"$install_dir/annie-os-maker\"" 'Terminal=true' 'Icon=media-optical' 'Categories=System;' \
-		> "$apps/annie-os-maker.desktop"
-	printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Annie OS USB Writer' \
-		'Comment=Put Annie OS on a USB stick or SD card, for a Steam Machine' \
-		"Exec=\"$install_dir/annie-os-usb\"" 'Terminal=true' 'Icon=drive-removable-media-usb' 'Categories=System;' \
-		> "$apps/annie-os-usb.desktop"
+	add_to_apps_menu
 	echo "From now on, start it from there or from your apps menu (Annie OS Maker)."
 	exec "$install_dir/annie-os-maker"
 }

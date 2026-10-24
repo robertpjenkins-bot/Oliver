@@ -57,6 +57,9 @@ download the bootstrap, into Downloads.
    archive here").
 
 2. Open the "Annie OS Maker" folder and double-click "Annie OS Maker".
+   After the first time, start it from your apps menu (bottom-left: System >
+   Annie OS Maker). If double-clicking does nothing, open Konsole and paste:
+     "$HOME/Downloads/Annie OS Maker/annie-os-maker"
    (The folder has two things to open: "Annie OS Maker", which makes
    Annie OS, and "Annie OS USB Writer", which puts it on a USB stick. The
    "files" folder holds their parts; nothing in it needs opening.)
