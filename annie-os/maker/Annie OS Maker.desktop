@@ -3,6 +3,6 @@ Type=Application
 Name=Annie OS Maker
 Comment=Build the Annie OS ISO and save it in Downloads
 Exec=sh -c "cd \\"\\$(dirname \\"\\$1\\")\\" && chmod +x annie-os-maker mksquashfs-owners && exec ./annie-os-maker" sh %k
-Terminal=true
+Terminal=false
 Icon=media-optical
 Categories=System;

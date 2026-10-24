@@ -25,7 +25,13 @@
 #   ANNIE_MAKER_NEED_GB     free space to insist on (30 GB)
 set -u
 
-here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+# Its own full path: a terminal window it opens for itself may start in
+# another folder, where "./annie-os-maker" means nothing.
+# Started from the desktop, some systems leave /usr/sbin (chroot, resize2fs...)
+# out of PATH.
+export PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"
+self=$(readlink -f "$0")
+here=$(cd "$(dirname "$self")" && pwd)
 # Its parts nobody opens (the recipe, the helpers) are kept out of sight in files/.
 files=$here/files
 profile_src=$files/profile
@@ -212,12 +218,15 @@ build_iso() {
 # Show the window people double-clicked into: a terminal, so they can watch.
 open_terminal() {
 	local t
+	# Only once: inside the window it opened, carry on there.
+	[ -n "${ANNIE_IN_TERMINAL:-}" ] && return
+	export ANNIE_IN_TERMINAL=1
 	for t in konsole gnome-terminal kgx xfce4-terminal xterm; do
 		command -v "$t" >/dev/null || continue
 		case $t in
-		konsole) exec konsole -e "$0" ;;
-		gnome-terminal | kgx) exec "$t" -- "$0" ;;
-		*) exec "$t" -e "$0" ;;
+		konsole) exec konsole --hold --workdir "$(dirname "$self")" -e "$self" ;;
+		gnome-terminal | kgx) exec "$t" -- "$self" ;;
+		*) exec "$t" -e "$self" ;;
 		esac
 	done
 }
