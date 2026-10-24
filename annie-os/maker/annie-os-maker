@@ -228,6 +228,7 @@ tell() { # tell error|msgbox TEXT: a window too, if there's a way to show one
 }
 
 stop() {
+	finished=1
 	printf '\n\033[1;31m%s\033[0m\n' "$*"
 	tell error "$*"
 	[ -t 0 ] && read -rp "Press Enter to close. " _
@@ -339,10 +340,32 @@ need_bootstrap() {
 	fi
 }
 
+# However it ends, never just vanish: an unexpected stop says so, in a
+# window too, and waits for Enter.
+finished=''
+on_exit() {
+	local rc=$1
+	[ -n "$finished" ] && return
+	printf '\n\033[1;31mAnnie OS Maker stopped unexpectedly (code %s).\033[0m\n' "$rc"
+	echo "Everything it printed is in $early_log; please send that file."
+	tell error "Annie OS Maker stopped unexpectedly. What it printed is in $early_log."
+	[ -t 0 ] && read -rp "Press Enter to close. " _
+}
+
 main() {
 	if [ ! -t 1 ] && [ -z "${ANNIE_MAKER_NO_TERMINAL:-}" ]; then
 		open_terminal
 	fi
+	# Everything, from the very first line, also goes to a file in Downloads
+	# that's easy to find and send (the first run starts it; the copy
+	# installed in Downloads carries on writing to it).
+	early_log=$downloads/annie-os-maker-log.txt
+	mkdir -p -- "$downloads"
+	if [ -z "${ANNIE_MAKER_LOGGING:-}" ]; then
+		export ANNIE_MAKER_LOGGING=1
+		exec > >(tee "$early_log") 2>&1
+	fi
+	trap 'on_exit $?' EXIT
 	install_self
 	mkdir -p -- "$cache" || stop "Couldn't make $cache"
 	# One Maker at a time: two would trip over each other's Arch Linux.
@@ -447,6 +470,7 @@ Put Annie OS on a USB stick or SD card too, to start a Steam Machine from?" 2>/d
 		read -rp "Put Annie OS on a USB stick or SD card now, for a Steam Machine? [y/N] " a
 		[[ $a == [yY]* ]] && yes=1
 	fi
+	finished=1
 	[ -n "$yes" ] && exec "$install_dir/annie-os-usb" "$install_dir/usb"
 	[ -t 0 ] && read -rp "Press Enter to close. " _
 	return 0

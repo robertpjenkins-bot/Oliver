@@ -72,6 +72,8 @@ download the bootstrap, into Downloads.
    annie-os-<date>-x86_64.qcow2. Give it 4 GB of memory or more.
 
 IF IT DOESN'T WORK
-Everything it printed is saved in Annie OS Maker/work/last-build.log.
+Everything it printed is saved in Downloads/annie-os-maker-log.txt (and the
+building part also in Annie OS Maker/work/last-build.log). If its window
+closes before you can read it, open that file, or send it.
 Run it again: it carries on from what it already downloaded.
 To free the space it used, delete Annie OS Maker/work.
