@@ -24,3 +24,5 @@ vulkan-swrast
 lib32-vulkan-swrast
 lib32-pipewire
 lib32-pipewire-jack
+spice-vdagent
+qemu-guest-agent

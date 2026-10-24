@@ -22,6 +22,9 @@ python
 
 # --- VirtualBox guest support (resizing, clipboard, shared folders) ---
 virtualbox-guest-utils
+# GNOME Boxes / QEMU: fits the screen to the window, shares the clipboard
+spice-vdagent
+qemu-guest-agent
 mesa
 lib32-mesa
 

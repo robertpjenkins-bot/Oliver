@@ -60,6 +60,12 @@ Controller is **VMSVGA** (step 4; change it with the machine shut down).
 The screen then fills the window and follows it when you resize. You can
 also pick a size yourself in **System Settings > Display & Monitor**.
 
+## Using GNOME Boxes instead (Steam Deck)
+
+Annie OS also runs in GNOME Boxes. Click **+**, **Install from File**, and
+pick the Annie OS ISO. Give it at least 4 GB of memory and a 30 GB disk.
+The screen follows the Boxes window by itself (through `spice-vdagent`).
+
 ## Installing
 
 The installer opens by itself when the live desktop starts (or double-click
