@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Fit the Annie OS screen to the VirtualBox window.
+
+VirtualBox tells the guest's graphics driver (vmwgfx, with the VMSVGA
+controller) the size of its window by changing the screen's preferred mode,
+listed first in /sys/class/drm/card*-<output>/modes. Plasma on Wayland does
+not always switch to it, so this does, with kscreen-doctor, whenever it
+changes.
+
+If VirtualBox never says (the driver stays at its 1024x768 default), the
+screen is made bigger once, the first time someone logs in, so it is not
+stuck tiny. Changing the size in System Settings afterwards is respected.
+
+Runs for the whole session, started by /etc/xdg/autostart. What it did is in
+~/.cache/annie-fit-screen.log.
+"""
+
+import glob
+import json
+import os
+import re
+import subprocess
+import time
+
+HOME = os.path.expanduser("~")
+LOG = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.join(HOME, ".cache")), "annie-fit-screen.log")
+MARKER = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.join(HOME, ".config")), "annie-os", "screen-enlarged")
+DRIVER_DEFAULT = (1024, 768)
+# The bigger size to use when VirtualBox gives none: the largest the screen
+# offers up to this, which fits on most monitors with room for VirtualBox's
+# own window frame.
+FALLBACK_MAX = (1600, 900)
+
+
+def log(msg):
+    try:
+        os.makedirs(os.path.dirname(LOG), exist_ok=True)
+        with open(LOG, "a") as f:
+            f.write(time.strftime("%H:%M:%S ") + msg + "\n")
+    except OSError:
+        pass
+
+
+def size_of(mode):
+    size = mode.get("size") or {}
+    if "width" in size and "height" in size:
+        return int(size["width"]), int(size["height"])
+    m = re.match(r"(\d+)x(\d+)", str(mode.get("name", "")))
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def outputs():
+    try:
+        out = subprocess.run(["kscreen-doctor", "-j"], capture_output=True, text=True, timeout=10).stdout
+        data = json.loads(out[out.index("{"):])
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+    return [o for o in data.get("outputs", []) if o.get("connected") and o.get("enabled")]
+
+
+def preferred(name):
+    """The size the graphics driver (so VirtualBox) prefers for this output."""
+    for path in glob.glob("/sys/class/drm/card*-%s/modes" % name):
+        try:
+            with open(path) as f:
+                first = f.readline().strip()
+        except OSError:
+            continue
+        m = re.match(r"(\d+)x(\d+)", first)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    return None
+
+
+def set_size(output, want):
+    modes = [m for m in output.get("modes", []) if size_of(m) == want]
+    if not modes:
+        return False
+    best = max(modes, key=lambda m: float(m.get("refreshRate") or 0))
+    cmd = ["kscreen-doctor", "output.%s.mode.%s" % (output["name"], best["id"])]
+    ok = subprocess.run(cmd, capture_output=True, timeout=20).returncode == 0
+    log("%s %s -> %dx%d" % ("set" if ok else "FAILED to set", output["name"], *want))
+    return ok
+
+
+def current(output):
+    for m in output.get("modes", []):
+        if str(m.get("id")) == str(output.get("currentModeId")):
+            return size_of(m)
+    return None
+
+
+def enlarge_once(output):
+    if os.path.exists(MARKER):
+        return
+    sizes = {size_of(m) for m in output.get("modes", [])} - {None}
+    fitting = [s for s in sizes if s[0] <= FALLBACK_MAX[0] and s[1] <= FALLBACK_MAX[1]]
+    if fitting and set_size(output, max(fitting, key=lambda s: s[0] * s[1])):
+        os.makedirs(os.path.dirname(MARKER), exist_ok=True)
+        open(MARKER, "w").close()
+
+
+def main():
+    log("started")
+    last = {}
+    started = time.time()
+    while True:
+        for o in outputs():
+            name = o.get("name", "")
+            want = preferred(name)
+            if not want:
+                continue
+            if want != last.get(name):
+                last[name] = want
+                if want == DRIVER_DEFAULT:
+                    # VirtualBox hasn't said a size (yet); give it a little
+                    # while at login before enlarging.
+                    pass
+                elif want != current(o):
+                    set_size(o, want)
+            if want == DRIVER_DEFAULT and time.time() - started > 8:
+                enlarge_once(o)
+        time.sleep(2)
+
+
+if __name__ == "__main__":
+    main()

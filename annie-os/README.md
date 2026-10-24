@@ -24,10 +24,12 @@ On a Linux or SteamOS (desktop mode) computer:
    the ISO, and saves it as `Downloads/annie-os-<date>-x86_64.iso`.
 
 It never asks for a password. It works in a user namespace of its own, so
-nothing outside `~/.cache/annie-os-maker` and the finished ISO is touched.
+nothing outside its own folder is touched. The first time it runs it installs
+itself into `Downloads/Annie OS Maker` (and the apps menu), and keeps the
+Arch Linux it builds with there, in `work/`.
 Failed downloads and builds are tried again by themselves (three times
 each). It needs 20 GB free in your home folder. Everything it prints is
-saved in `~/.cache/annie-os-maker/last-build.log`.
+saved in `Downloads/Annie OS Maker/work/last-build.log`.
 
 To make `Annie-OS-Maker.tar.gz` from this repository (needs Go):
 

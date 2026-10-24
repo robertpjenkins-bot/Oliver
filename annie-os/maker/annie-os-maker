@@ -7,12 +7,15 @@
 # already unpacked from an earlier run, already in Downloads, or downloaded
 # there) and runs Arch's own ISO builder, mkarchiso, inside it. All of that happens
 # as "root" of a user namespace of its own, which any user may make: really
-# the person running the Maker, so nothing outside ~/.cache/annie-os-maker
-# and the finished ISO is touched.
+# the person running the Maker, so nothing outside its own folder is touched.
+#
+# The first time it runs it installs itself into Downloads/Annie OS Maker
+# (with an entry in the apps menu) and keeps everything there: the Arch
+# Linux it builds with (in work/) and the log. The ISO goes in Downloads.
 #
 # Downloads and builds that fail are tried again, three times each, before
 # it gives up. The whole output of the last run is in
-# ~/.cache/annie-os-maker/last-build.log.
+# Downloads/Annie OS Maker/work/last-build.log.
 #
 # Environment, for testing:
 #   ANNIE_MAKER_MIRRORS     space-separated Arch mirrors (each the part before /$repo/os/$arch)
@@ -22,9 +25,12 @@ set -u
 
 here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 profile_src=$here/profile
-cache=${XDG_CACHE_HOME:-$HOME/.cache}/annie-os-maker
 downloads=$(xdg-user-dir DOWNLOAD 2>/dev/null || echo "$HOME/Downloads")
 [ "$downloads" = "$HOME" ] && downloads=$HOME/Downloads
+install_dir="$downloads/Annie OS Maker"
+cache=$install_dir/work
+# Where Makers before the Downloads one kept their work.
+old_cache=${XDG_CACHE_HOME:-$HOME/.cache}/annie-os-maker
 builder=$cache/builder
 log=$cache/last-build.log
 read -ra mirrors <<< "${ANNIE_MAKER_MIRRORS:-https://geo.mirror.pkgbuild.com https://fastly.mirror.pkgbuild.com https://mirror.rackspace.com/archlinux https://mirrors.kernel.org/archlinux}"
@@ -204,6 +210,29 @@ stop() {
 	exit 1
 }
 
+# The first time: copy the Maker into Downloads/Annie OS Maker, add it to
+# the apps menu, and carry on from there.
+install_self() {
+	[ "$here" = "$install_dir" ] && return 0
+	[ -n "${ANNIE_MAKER_NO_INSTALL:-}" ] && return 0
+	printf '\033[1;35mInstalling Annie OS Maker into %s\033[0m\n' "$install_dir"
+	mkdir -p -- "$install_dir" || stop "Couldn't make $install_dir"
+	rm -rf -- "$install_dir/profile"
+	local f
+	for f in annie-os-maker mksquashfs-owners profile "READ ME.txt" "Annie OS Maker.desktop"; do
+		[ -e "$here/$f" ] || continue
+		cp -a -- "$here/$f" "$install_dir/" || stop "Couldn't copy the Maker into $install_dir"
+	done
+	local apps=${XDG_DATA_HOME:-$HOME/.local/share}/applications
+	mkdir -p -- "$apps"
+	printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Annie OS Maker' \
+		'Comment=Build the Annie OS ISO and save it in Downloads' \
+		"Exec=\"$install_dir/annie-os-maker\"" 'Terminal=true' 'Icon=media-optical' 'Categories=System;' \
+		> "$apps/annie-os-maker.desktop"
+	echo "From now on, start it from there or from your apps menu (Annie OS Maker)."
+	exec "$install_dir/annie-os-maker"
+}
+
 # Remove a folder, including files owned by the namespace's other users.
 remove() { [ -e "$1" ] && unshare "${map[@]}" rm -rf -- "$1"; }
 
@@ -232,7 +261,7 @@ find_bootstrap() {
 		note "Using the Arch Linux already in $f"
 		bootstrap=$f
 		return 0
-	done < <(ls -t -- "$downloads"/archlinux-bootstrap-*x86_64.tar.zst "$cache"/archlinux-bootstrap-*x86_64.tar.zst 2>/dev/null)
+	done < <(ls -t -- "$downloads"/archlinux-bootstrap-*x86_64.tar.zst "$cache"/archlinux-bootstrap-*x86_64.tar.zst "$old_cache"/archlinux-bootstrap-*x86_64.tar.zst 2>/dev/null)
 
 	[ -f "$sums" ] || return 1
 	want=$(awk '$2 == "archlinux-bootstrap-x86_64.tar.zst" { print $1; exit }' "$sums")
@@ -273,6 +302,7 @@ main() {
 	if [ ! -t 1 ] && [ -z "${ANNIE_MAKER_NO_TERMINAL:-}" ]; then
 		open_terminal
 	fi
+	install_self
 	mkdir -p -- "$cache" || stop "Couldn't make $cache"
 	exec > >(tee "$log") 2>&1
 
@@ -297,6 +327,13 @@ main() {
 		export ANNIE_SINGLE_ID=1
 	else
 		stop "This computer doesn't let programs make their own user namespace, which the Maker needs to work without a password. (On Ubuntu 24.04 and newer, AppArmor blocks it: run sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0 and try again.)"
+	fi
+
+	# Bring along the Arch Linux an older Maker unpacked, instead of
+	# getting it again.
+	if [ -d "$old_cache/builder" ] && [ ! -e "$builder" ]; then
+		say "Moving the Arch Linux from $old_cache into $cache"
+		unshare "${map[@]}" mv -- "$old_cache/builder" "$builder" || note "Couldn't; it will be got again."
 	fi
 
 	local free_kb

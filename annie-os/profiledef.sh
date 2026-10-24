@@ -24,5 +24,6 @@ file_permissions=(
   ["/usr/local/bin/annie-install-backend"]="0:0:755"
   ["/usr/local/bin/annie-live-setup"]="0:0:755"
   ["/usr/local/bin/annie-set-wallpaper"]="0:0:755"
+  ["/usr/local/bin/annie-fit-screen"]="0:0:755"
   ["/usr/local/bin/oliver"]="0:0:755"
 )

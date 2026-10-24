@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Annie OS screen fitter
+Comment=Fits the screen to the VirtualBox window
+Exec=/usr/local/bin/annie-fit-screen
+OnlyShowIn=KDE;
+NoDisplay=true
+X-KDE-autostart-phase=1

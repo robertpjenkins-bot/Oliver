@@ -12,15 +12,18 @@ You need:
   - 20 GB free in your home folder
   - 20 minutes to an hour
 
-It looks for Arch Linux only where it keeps it, and uses what is there
-instead of downloading it again:
-  - Arch Linux it already unpacked on an earlier run
-    (~/.cache/annie-os-maker/builder), or else
-  - an Arch Linux bootstrap file in your Downloads folder
-    (archlinux-bootstrap-....-x86_64.tar.zst), or one an older Maker saved in
-    ~/.cache/annie-os-maker.
-Only if none of those is there (or it's damaged) does it download the
-bootstrap, into Downloads.
+The first time you start it, it installs itself into your Downloads folder
+(Downloads/Annie OS Maker) and adds "Annie OS Maker" to your apps menu.
+After that, start it from there; you can delete the folder you unpacked.
+Everything it uses stays in Downloads/Annie OS Maker: the Arch Linux it
+builds with (in work/, about 5 GB) and work/last-build.log. To free the
+space, delete Downloads/Annie OS Maker/work.
+
+It uses the Arch Linux it already has instead of downloading it again: the
+one in work/ (or one an older Maker left in ~/.cache/annie-os-maker, which
+it moves over), else an Arch Linux bootstrap file in Downloads
+(archlinux-bootstrap-....-x86_64.tar.zst). Only if there's none does it
+download the bootstrap, into Downloads.
 
 1. Unpack Annie-OS-Maker.tar.gz (right-click it, Extract, or "Extract
    archive here").
@@ -39,6 +42,6 @@ bootstrap, into Downloads.
    settings to use.
 
 IF IT DOESN'T WORK
-Everything it printed is saved in ~/.cache/annie-os-maker/last-build.log.
+Everything it printed is saved in Downloads/Annie OS Maker/work/last-build.log.
 Run it again: it carries on from what it already downloaded.
-To free the space it used, delete the folder ~/.cache/annie-os-maker.
+To free the space it used, delete Downloads/Annie OS Maker/work.

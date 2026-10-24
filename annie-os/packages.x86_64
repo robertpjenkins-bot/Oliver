@@ -18,6 +18,7 @@ dosfstools
 e2fsprogs
 rsync
 kdialog
+python
 
 # --- VirtualBox guest support (resizing, clipboard, shared folders) ---
 virtualbox-guest-utils
