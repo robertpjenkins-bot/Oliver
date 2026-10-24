@@ -24,9 +24,8 @@ On a Linux or SteamOS (desktop mode) computer:
    the ISO, and saves it as `Downloads/annie-os-<date>-x86_64.iso`.
 
 It never asks for a password. It works in a user namespace of its own, so
-nothing outside its own folder is touched. The first time it runs it asks where
-to install itself, with Downloads already chosen, and installs into
-`Annie OS Maker` there (and the apps menu), and keeps the
+nothing outside its own folder is touched. The first time it runs it installs
+itself into `Downloads/Annie OS Maker` without asking (and the apps menu), and keeps the
 Arch Linux it builds with there, in `work/`.
 Failed downloads and builds are tried again by themselves (three times
 each). It needs 20 GB free in your home folder. Everything it prints is

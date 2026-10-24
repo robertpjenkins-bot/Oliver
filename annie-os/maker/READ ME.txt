@@ -12,12 +12,11 @@ You need:
   - 20 GB free in your home folder
   - 20 minutes to an hour
 
-The first time you start it, it asks where to install it, with your
-Downloads folder already chosen: just click OK (or press Enter), or pick
-another folder. It installs itself there in a folder called
-"Annie OS Maker", adds "Annie OS Maker" to your apps menu, and saves the
-Annie OS ISOs it makes in the folder you chose. After that, start it from
-there or the apps menu; you can delete the folder you unpacked.
+The first time you start it, it installs itself into your Downloads folder
+(Downloads/Annie OS Maker) by itself, without asking, adds "Annie OS Maker"
+to your apps menu, and saves the Annie OS ISOs it makes in Downloads.
+After that, start it from there or the apps menu; you can delete the folder
+you unpacked.
 Everything it uses stays in "Annie OS Maker": the Arch Linux it builds with
 (in work/, about 5 GB) and work/last-build.log. To free the space, delete
 "Annie OS Maker"/work.
