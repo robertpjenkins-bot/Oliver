@@ -112,6 +112,11 @@ inside() {
 	fix_pacman_conf "$builder/etc/pacman.conf"
 
 	# Both are quick when already done, and mend a keyring left half made.
+	# A run stopped part way (its window closed) leaves pacman's lock behind,
+	# and every later run would say "unable to lock database". Only one
+	# Maker runs at a time (main makes sure), so a lock here is a leftover.
+	rm -f -- "$builder/var/lib/pacman/db.lck"
+
 	say "Setting up Arch Linux's signing keys"
 	{ in_root pacman-key --init && in_root pacman-key --populate archlinux; } >/dev/null ||
 		{ echo "Couldn't set up the signing keys"; return 1; }
@@ -340,10 +345,16 @@ main() {
 	fi
 	install_self
 	mkdir -p -- "$cache" || stop "Couldn't make $cache"
+	# One Maker at a time: two would trip over each other's Arch Linux.
+	exec 9>"$cache/maker.lock"
+	if command -v flock >/dev/null && ! flock -n 9; then
+		stop "Annie OS Maker is already running in another window. Let that one finish (or close it), then try again."
+	fi
 	exec > >(tee "$log") 2>&1
 
 	printf '\033[1;35mAnnie OS Maker\033[0m\n'
-	echo "Builds the Annie OS ISO for VirtualBox and saves it in your Downloads folder."
+	echo "Makes Annie OS and saves it in your Downloads folder: ready to use in GNOME Boxes,"
+	echo "as an installer ISO, and ready for Annie OS USB Writer to put on a USB stick."
 	echo "This takes 20 minutes to an hour, and needs the internet."
 
 	[ "$(uname -m)" = x86_64 ] || stop "Annie OS can only be made on a 64-bit Intel or AMD computer."
