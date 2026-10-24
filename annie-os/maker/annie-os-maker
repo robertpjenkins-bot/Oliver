@@ -20,19 +20,30 @@
 # Environment, for testing:
 #   ANNIE_MAKER_MIRRORS     space-separated Arch mirrors (each the part before /$repo/os/$arch)
 #   ANNIE_MAKER_BOOTSTRAP   use this bootstrap tarball instead of downloading one
-#   ANNIE_MAKER_OUT         save the ISO here instead of Downloads
+#   ANNIE_MAKER_OUT         save the ISO here instead of where the Maker is installed
+#   ANNIE_MAKER_INSTALL_TO  install into this folder without asking
 set -u
 
 here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 profile_src=$here/profile
 downloads=$(xdg-user-dir DOWNLOAD 2>/dev/null || echo "$HOME/Downloads")
 [ "$downloads" = "$HOME" ] && downloads=$HOME/Downloads
-install_dir="$downloads/Annie OS Maker"
-cache=$install_dir/work
-# Where Makers before the Downloads one kept their work.
+# Where it is installed: the folder it asked for the first time (Downloads,
+# unless chosen otherwise) holds "Annie OS Maker" and the ISOs it makes.
+place_at() {
+	place=$1
+	install_dir="$place/Annie OS Maker"
+	cache=$install_dir/work
+	builder=$cache/builder
+	log=$cache/last-build.log
+}
+if [ -e "$here/.installed" ]; then
+	place_at "$(dirname "$here")"
+else
+	place_at "$downloads"
+fi
+# Where Makers before this one kept their work.
 old_cache=${XDG_CACHE_HOME:-$HOME/.cache}/annie-os-maker
-builder=$cache/builder
-log=$cache/last-build.log
 read -ra mirrors <<< "${ANNIE_MAKER_MIRRORS:-https://geo.mirror.pkgbuild.com https://fastly.mirror.pkgbuild.com https://mirror.rackspace.com/archlinux https://mirrors.kernel.org/archlinux}"
 tries=3
 
@@ -213,8 +224,26 @@ stop() {
 # The first time: copy the Maker into Downloads/Annie OS Maker, add it to
 # the apps menu, and carry on from there.
 install_self() {
-	[ "$here" = "$install_dir" ] && return 0
+	[ -e "$here/.installed" ] && return 0
 	[ -n "${ANNIE_MAKER_NO_INSTALL:-}" ] && return 0
+
+	# Ask where, with Downloads already filled in.
+	local choice=${ANNIE_MAKER_INSTALL_TO:-}
+	if [ -z "$choice" ] && command -v kdialog >/dev/null && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+		kdialog --title "Annie OS Maker" --msgbox "Annie OS Maker will now be installed.
+
+Next, choose the folder to install it in: Downloads is already chosen, so just click OK. It goes in a folder called \"Annie OS Maker\" there, and the Annie OS ISOs it makes are saved there too." 2>/dev/null
+		choice=$(kdialog --title "Install Annie OS Maker in..." --getexistingdirectory "$downloads" 2>/dev/null) ||
+			{ echo "Not installed: nothing was chosen."; exit 0; }
+	elif [ -z "$choice" ] && [ -t 0 ]; then
+		echo "Where should Annie OS Maker be installed?"
+		read -rp "Press Enter for $downloads, or type another folder: " choice
+	fi
+	choice=${choice:-$downloads}
+	choice=${choice/#\~/$HOME}
+	choice=${choice%/}
+	place_at "$choice"
+
 	printf '\033[1;35mInstalling Annie OS Maker into %s\033[0m\n' "$install_dir"
 	mkdir -p -- "$install_dir" || stop "Couldn't make $install_dir"
 	rm -rf -- "$install_dir/profile"
@@ -223,10 +252,11 @@ install_self() {
 		[ -e "$here/$f" ] || continue
 		cp -a -- "$here/$f" "$install_dir/" || stop "Couldn't copy the Maker into $install_dir"
 	done
+	touch "$install_dir/.installed"
 	local apps=${XDG_DATA_HOME:-$HOME/.local/share}/applications
 	mkdir -p -- "$apps"
 	printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Annie OS Maker' \
-		'Comment=Build the Annie OS ISO and save it in Downloads' \
+		"Comment=Build the Annie OS ISO and save it in $place" \
 		"Exec=\"$install_dir/annie-os-maker\"" 'Terminal=true' 'Icon=media-optical' 'Categories=System;' \
 		> "$apps/annie-os-maker.desktop"
 	echo "From now on, start it from there or from your apps menu (Annie OS Maker)."
@@ -248,7 +278,7 @@ find_bootstrap() {
 		rm -f -- "$sums"
 	done
 
-	note "Looking for Arch Linux in $downloads and $cache"
+	note "Looking for Arch Linux in $downloads, $place and $cache"
 	while IFS= read -r f; do
 		name=${f##*/}
 		want=$( [ -f "$sums" ] && awk -v n="$name" '$2 == n { print $1; exit }' "$sums")
@@ -261,7 +291,7 @@ find_bootstrap() {
 		note "Using the Arch Linux already in $f"
 		bootstrap=$f
 		return 0
-	done < <(ls -t -- "$downloads"/archlinux-bootstrap-*x86_64.tar.zst "$cache"/archlinux-bootstrap-*x86_64.tar.zst "$old_cache"/archlinux-bootstrap-*x86_64.tar.zst 2>/dev/null)
+	done < <(ls -t -- "$downloads"/archlinux-bootstrap-*x86_64.tar.zst "$place"/archlinux-bootstrap-*x86_64.tar.zst "$cache"/archlinux-bootstrap-*x86_64.tar.zst "$old_cache"/archlinux-bootstrap-*x86_64.tar.zst 2>/dev/null)
 
 	[ -f "$sums" ] || return 1
 	want=$(awk '$2 == "archlinux-bootstrap-x86_64.tar.zst" { print $1; exit }' "$sums")
@@ -331,10 +361,12 @@ main() {
 
 	# Bring along the Arch Linux an older Maker unpacked, instead of
 	# getting it again.
-	if [ -d "$old_cache/builder" ] && [ ! -e "$builder" ]; then
-		say "Moving the Arch Linux from $old_cache into $cache"
-		unshare "${map[@]}" mv -- "$old_cache/builder" "$builder" || note "Couldn't; it will be got again."
-	fi
+	local old
+	for old in "$old_cache" "$downloads/Annie OS Maker/work"; do
+		[ -d "$old/builder" ] && [ ! -e "$builder" ] && [ "$old" != "$cache" ] || continue
+		say "Moving the Arch Linux from $old into $cache"
+		unshare "${map[@]}" mv -- "$old/builder" "$builder" || note "Couldn't; it will be got again."
+	done
 
 	local free_kb
 	free_kb=$(df -Pk "$cache" | awk 'NR == 2 { print $4 }')
@@ -363,7 +395,7 @@ main() {
 	local iso out
 	iso=$(ls -t "$builder"/build/out/*.iso 2>/dev/null | head -n 1)
 	[ -n "$iso" ] || stop "The build finished but left no ISO."
-	out=${ANNIE_MAKER_OUT:-$downloads}
+	out=${ANNIE_MAKER_OUT:-$place}
 	mkdir -p -- "$out"
 	cp -- "$iso" "$out/" || stop "Couldn't save the ISO in $out (is it full?)"
 
