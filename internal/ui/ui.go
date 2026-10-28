@@ -20,6 +20,8 @@ type UI struct {
 	// errors are shown as desktop notifications instead of vanishing.
 	Interactive bool
 	Quiet       bool
+	// ErrorTitle heads the desktop dialog Error raises.
+	ErrorTitle string
 }
 
 // New builds a UI for the current process.
@@ -84,7 +86,11 @@ func (u *UI) Warn(format string, args ...any) {
 func (u *UI) Error(err error) {
 	fmt.Fprintf(u.Err, "%s %v\n", u.Red("error:"), err)
 	if !u.Interactive {
-		notify("Oliver could not run this program", err.Error())
+		title := u.ErrorTitle
+		if title == "" {
+			title = "Oliver could not run this program"
+		}
+		notify(title, err.Error())
 	}
 }
 

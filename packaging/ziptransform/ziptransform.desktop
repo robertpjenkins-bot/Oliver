@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Zip Transform
+GenericName=MCreator ZIP to mod jar
+Comment=Turn an MCreator project ZIP into a Minecraft mod .jar
+Exec=ziptransform %f
+TryExec=ziptransform
+Icon=ziptransform
+Terminal=false
+Categories=Development;Game;
+MimeType=application/zip;application/x-zip-compressed;
+Keywords=mcreator;minecraft;mod;jar;zip;forge;neoforge;fabric;

@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zip Transform</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #f3f5f1;
+    --panel: #ffffff;
+    --text: #1d2420;
+    --muted: #5c6a60;
+    --line: #d6ddd5;
+    --accent: #3d8b33;
+    --accent-strong: #2f6f2a;
+    --accent-soft: #e3f1df;
+    --on-accent: #ffffff;
+    --warn-bg: #fff6dd;
+    --warn-line: #e8c96a;
+    --error-bg: #fdecea;
+    --error-line: #e7a39c;
+    --error-text: #8c2a20;
+    --code-bg: #f6f7f5;
+    --radius: 12px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161a17;
+      --panel: #1f2520;
+      --text: #e6ece6;
+      --muted: #9aa79c;
+      --line: #334036;
+      --accent: #5fb34a;
+      --accent-strong: #79c964;
+      --accent-soft: #24331f;
+      --on-accent: #0f1a0d;
+      --warn-bg: #352c13;
+      --warn-line: #6e5a1f;
+      --error-bg: #3a1d1a;
+      --error-line: #7a3a33;
+      --error-text: #f2b8b0;
+      --code-bg: #141815;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
+    min-height: 100vh;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 28px 16px 40px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  header img { width: 40px; height: 40px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  h2 { font-size: 17px; margin: 0 0 6px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 14px;
+  }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .path { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; word-break: break-all; }
+  [hidden] { display: none !important; }
+
+  #drop {
+    border: 2px dashed var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    padding: 44px 20px;
+    text-align: center;
+    transition: border-color .15s, background .15s;
+  }
+  body.dragging #drop { border-color: var(--accent); background: var(--accent-soft); }
+  #drop svg { width: 56px; height: 56px; color: var(--accent); }
+  #drop h2 { font-size: 19px; margin: 10px 0 4px; }
+  #drop .hint { max-width: 440px; margin: 14px auto 0; font-size: 13px; color: var(--muted); }
+
+  button {
+    font: inherit;
+    border-radius: 9px;
+    padding: 9px 18px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+  button.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { font-size: 12.5px; padding: 2px 9px; border-radius: 99px; background: var(--accent-soft); color: var(--text); }
+  .chip.plain { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+
+  .question { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .options { display: grid; gap: 8px; margin-top: 10px; }
+  .option {
+    display: flex; gap: 12px; align-items: flex-start;
+    border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; cursor: pointer;
+  }
+  .option:hover { border-color: var(--accent); }
+  .option:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .option input { margin: 4px 0 0; accent-color: var(--accent); }
+  .option b { display: block; }
+
+  .note { border-radius: 10px; padding: 11px 14px; font-size: 14px; }
+  .note.warn { background: var(--warn-bg); border: 1px solid var(--warn-line); }
+  .note.error { background: var(--error-bg); border: 1px solid var(--error-line); color: var(--error-text); }
+  .note + .note { margin-top: 8px; }
+
+  .setup-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .setup-form input {
+    flex: 1 1 260px; min-width: 0; font: inherit; padding: 8px 11px;
+    border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+
+  .status-row { display: flex; align-items: center; gap: 12px; }
+  .spinner {
+    width: 22px; height: 22px; flex: none; border-radius: 50%;
+    border: 3px solid var(--accent-soft); border-top-color: var(--accent);
+    animation: spin .9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+  #status-line { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 8px; }
+  details { margin-top: 14px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  pre.log {
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 9px;
+    padding: 10px 12px; margin: 8px 0 0; max-height: 280px; overflow: auto;
+    font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+  }
+  .done-mark { width: 30px; height: 30px; flex: none; color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="/icon.svg" alt="">
+    <div>
+      <h1>Zip Transform</h1>
+      <p>Turn an MCreator project ZIP into a mod .jar</p>
+    </div>
+  </header>
+
+  <section id="setup" class="panel" hidden>
+    <div id="setup-ok" class="small muted" hidden></div>
+    <div id="setup-missing" hidden>
+      <h2>Where is MCreator?</h2>
+      <p class="muted small" style="margin:0">Zip Transform builds with the MCreator on this computer — its build files, its Java and the Minecraft files it already downloaded — and could not find it. Enter the folder you unpacked it to.</p>
+      <form class="setup-form" id="setup-form">
+        <input id="setup-dir" placeholder="/home/you/MCreator20263" autocomplete="off" spellcheck="false" aria-label="MCreator folder">
+        <button type="submit">Use this folder</button>
+      </form>
+      <div id="setup-error" class="note error" style="margin-top:10px" hidden></div>
+    </div>
+    <div id="setup-java" class="note warn" style="margin-top:10px" hidden></div>
+  </section>
+
+  <div id="startup-error" class="note error" style="margin-bottom:14px" hidden></div>
+
+  <section id="drop">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11v6"/><path d="m9 14 3 3 3-3"/>
+    </svg>
+    <h2 id="drop-title">Drop your MCreator project ZIP here</h2>
+    <p class="muted" style="margin:0 0 14px">or</p>
+    <button type="button" class="primary" id="choose">Choose a ZIP…</button>
+    <input type="file" id="file" accept=".zip,application/zip" hidden>
+    <p class="hint">Make it in MCreator from the <b>File</b> menu: <b>Export workspace to a shareable ZIP…</b> — or <b>Export to a shareable ZIP (with run dir)…</b> to bring your worlds along.</p>
+  </section>
+
+  <section id="reading" class="panel" hidden>
+    <div class="status-row"><div class="spinner"></div><div>Reading <b id="reading-name"></b>…</div></div>
+  </section>
+
+  <section id="project" class="panel" hidden>
+    <h2 id="p-name"></h2>
+    <div class="chips">
+      <span class="chip" id="p-label"></span>
+      <span class="chip plain" id="p-version"></span>
+      <span class="chip plain" id="p-file"></span>
+    </div>
+
+    <div id="p-problem" class="note error" style="margin-top:16px" hidden></div>
+
+    <div id="world-question" class="question" hidden>
+      <h2>Include your world?</h2>
+      <p class="muted small" style="margin:0" id="world-lead">The world goes inside the jar. Anyone who starts Minecraft with the mod installed finds it in their world list.</p>
+      <div class="options" id="world-options" role="radiogroup" aria-label="Include a world"></div>
+      <div id="world-none" class="note warn" style="margin-top:10px" hidden>
+        This ZIP has no worlds in it. To bring one along, export again in MCreator with
+        <b>File → Export to a shareable ZIP (with run dir)…</b> and drop that ZIP here.
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="primary" id="make" disabled>Make the .jar</button>
+      <button type="button" id="another">Choose another ZIP</button>
+    </div>
+  </section>
+
+  <section id="building" class="panel" hidden>
+    <div class="status-row">
+      <div class="spinner"></div>
+      <div><b>Building <span id="b-jar"></span></b><div class="small muted">The first build of a mod downloads Minecraft and can take several minutes.</div></div>
+    </div>
+    <div id="status-line">Starting…</div>
+    <details id="b-details"><summary>Build log</summary><pre class="log" id="b-log"></pre></details>
+    <div class="actions"><button type="button" id="stop">Stop</button></div>
+  </section>
+
+  <section id="done" class="panel" hidden>
+    <div class="status-row">
+      <svg class="done-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m7.5 12.5 3 3 6-6.5"/></svg>
+      <div><h2 style="margin:0">Your mod is ready</h2><div class="small muted"><span id="d-jar" class="path"></span> · <span id="d-size"></span></div></div>
+    </div>
+    <p id="d-world" class="small" style="margin:14px 0 0" hidden></p>
+    <p class="small muted" style="margin:10px 0 0">Your browser has saved it, normally to your Downloads folder. Put it in the <b>mods</b> folder of a Minecraft instance with the same loader and version to play it.</p>
+    <div class="actions">
+      <button type="button" class="primary" id="download">Download again</button>
+      <button type="button" id="again">Transform another ZIP</button>
+    </div>
+  </section>
+
+  <section id="failed" class="panel" hidden>
+    <h2>The jar could not be made</h2>
+    <div id="f-error" class="note error"></div>
+    <div id="f-hint" class="note warn" hidden></div>
+    <details id="f-details"><summary>Build log</summary><pre class="log" id="f-log"></pre></details>
+    <div class="actions">
+      <button type="button" class="primary" id="retry">Try again</button>
+      <button type="button" id="failed-another">Choose another ZIP</button>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+const token = new URLSearchParams(location.search).get("t") || "";
+const $ = (id) => document.getElementById(id);
+
+async function api(path, options = {}) {
+  const headers = Object.assign({ "X-Token": token }, options.headers || {});
+  const res = await fetch(path, Object.assign({}, options, { headers }));
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return body;
+}
+const post = (path, data) => api(path, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(data),
+});
+
+// Keep the program running while the window is open, and let it exit soon
+// after the window closes.
+setInterval(() => api("/api/ping", { method: "POST" }).catch(() => {}), 20000);
+addEventListener("pagehide", () => navigator.sendBeacon("/api/bye?t=" + encodeURIComponent(token)));
+
+const screens = ["drop", "reading", "project", "building", "done", "failed"];
+function show(name) {
+  for (const s of screens) $(s).hidden = s !== name;
+}
+
+let project = null;
+let chosenWorld = null;
+let logText = "";
+
+// ---- Setup ----
+
+function renderSetup(info) {
+  $("setup").hidden = false;
+  const inst = info.installs[0];
+  $("setup-ok").hidden = !inst;
+  $("setup-missing").hidden = !!inst;
+  if (inst) {
+    const name = "MCreator" + (inst.version ? " " + inst.version : "");
+    $("setup-ok").innerHTML = "";
+    $("setup-ok").append("Building with " + name + " · ");
+    const p = document.createElement("span");
+    p.className = "path";
+    p.textContent = inst.dir;
+    $("setup-ok").append(p);
+  }
+  $("setup-java").hidden = !info.javaError || !inst;
+  $("setup-java").textContent = info.javaError || "";
+}
+
+async function loadSetup() {
+  try {
+    const info = await api("/api/setup");
+    renderSetup(info);
+    if (info.error) {
+      $("startup-error").hidden = false;
+      $("startup-error").textContent = info.error;
+    }
+    if (info.project) showProject(info.project);
+  } catch (e) {
+    $("startup-error").hidden = false;
+    $("startup-error").textContent = "Zip Transform has stopped. Start it again to continue.";
+  }
+}
+
+$("setup-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  $("setup-error").hidden = true;
+  try {
+    renderSetup(await post("/api/mcreator", { dir: $("setup-dir").value }));
+    if (project) showProject(await refreshProject());
+  } catch (e) {
+    $("setup-error").hidden = false;
+    $("setup-error").textContent = e.message;
+  }
+});
+
+// ---- Choosing a ZIP ----
+
+let dragDepth = 0;
+addEventListener("dragenter", (ev) => { ev.preventDefault(); dragDepth++; document.body.classList.add("dragging"); });
+addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dragging"); } });
+addEventListener("dragover", (ev) => ev.preventDefault());
+addEventListener("drop", (ev) => {
+  ev.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove("dragging");
+  if ($("building").hidden === false) return;
+  const file = ev.dataTransfer && ev.dataTransfer.files[0];
+  if (file) openFile(file);
+});
+$("choose").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", () => { if ($("file").files[0]) openFile($("file").files[0]); $("file").value = ""; });
+
+async function openFile(file) {
+  $("startup-error").hidden = true;
+  $("reading-name").textContent = file.name;
+  show("reading");
+  try {
+    const info = await api("/api/open", {
+      method: "POST",
+      headers: { "X-File-Name": encodeURIComponent(file.name), "Content-Type": "application/zip" },
+      body: file,
+    });
+    showProject(info);
+  } catch (e) {
+    show("drop");
+    $("startup-error").hidden = false;
+    $("startup-error").textContent = e.message;
+  }
+}
+
+// The build checks depend on the MCreator folder; re-run them after it changes.
+const refreshProject = () => api("/api/project?id=" + encodeURIComponent(project.id));
+
+// ---- The project and the world question ----
+
+function showProject(info) {
+  project = info;
+  chosenWorld = null;
+  $("p-name").textContent = info.name;
+  $("p-label").textContent = info.label;
+  $("p-version").textContent = "version " + info.version;
+  $("p-file").textContent = info.file;
+  $("p-problem").hidden = !info.problem;
+  $("p-problem").textContent = info.problem || "";
+
+  const ask = info.makesJar && info.canBundleWorld && !info.problem;
+  $("world-question").hidden = !ask;
+  const options = $("world-options");
+  options.innerHTML = "";
+  $("world-none").hidden = info.worlds.length > 0;
+  $("world-lead").hidden = info.worlds.length === 0;
+  options.hidden = info.worlds.length === 0;
+
+  if (info.worlds.length > 0) {
+    for (const w of info.worlds) {
+      options.append(option(w.name, w.name, w.sizeText + " · saved to the folder “" + w.installsAs + "”"));
+    }
+    options.append(option("", "No, just the mod", "The jar holds the mod and nothing else"));
+  }
+  updateMake();
+  show("project");
+}
+
+function option(value, title, detail) {
+  const label = document.createElement("label");
+  label.className = "option";
+  const input = document.createElement("input");
+  input.type = "radio";
+  input.name = "world";
+  input.value = value;
+  input.addEventListener("change", () => { chosenWorld = value; updateMake(); });
+  const text = document.createElement("span");
+  const b = document.createElement("b");
+  b.textContent = title;
+  const small = document.createElement("span");
+  small.className = "small muted";
+  small.textContent = detail;
+  text.append(b, small);
+  label.append(input, text);
+  return label;
+}
+
+function updateMake() {
+  const make = $("make");
+  const needsAnswer = project.canBundleWorld && project.worlds.length > 0;
+  make.disabled = !!project.problem || !project.makesJar || (needsAnswer && chosenWorld === null);
+  make.textContent = needsAnswer && chosenWorld ? "Make the .jar with this world" :
+    (project.canBundleWorld && project.worlds.length === 0 ? "Make the .jar without a world" : "Make the .jar");
+}
+
+$("another").addEventListener("click", () => $("file").click());
+$("failed-another").addEventListener("click", () => $("file").click());
+$("again").addEventListener("click", () => { project = null; show("drop"); });
+
+// ---- Building ----
+
+$("make").addEventListener("click", startBuild);
+$("retry").addEventListener("click", startBuild);
+
+async function startBuild() {
+  logText = "";
+  $("b-log").textContent = "";
+  $("b-jar").textContent = project.jarName;
+  $("status-line").textContent = "Starting…";
+  show("building");
+  try {
+    await post("/api/build", { id: project.id, world: chosenWorld || "" });
+    poll(0);
+  } catch (e) {
+    failed({ error: e.message });
+  }
+}
+
+async function poll(from) {
+  let status;
+  try {
+    status = await api("/api/status?id=" + encodeURIComponent(project.id) + "&from=" + from);
+  } catch (e) {
+    failed({ error: e.message });
+    return;
+  }
+  if (status.lines.length) {
+    logText += status.lines.join("\n") + "\n";
+    const log = $("b-log");
+    const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+    log.textContent = logText;
+    if (atBottom) log.scrollTop = log.scrollHeight;
+    const last = status.lines.filter((l) => l.trim() !== "").pop();
+    if (last) $("status-line").textContent = last.replace(/^» /, "");
+  }
+  if (!status.done) {
+    setTimeout(() => poll(status.next), 500);
+    return;
+  }
+  if (status.error) failed(status);
+  else finished(status);
+}
+
+$("stop").addEventListener("click", () => post("/api/cancel", { id: project.id }).catch(() => {}));
+
+function downloadURL() {
+  return "/api/download?id=" + encodeURIComponent(project.id) + "&t=" + encodeURIComponent(token);
+}
+function download() {
+  const a = document.createElement("a");
+  a.href = downloadURL();
+  a.download = "";
+  document.body.append(a);
+  a.click();
+  a.remove();
+}
+$("download").addEventListener("click", download);
+
+function finished(status) {
+  $("d-jar").textContent = status.jar;
+  $("d-size").textContent = status.size || "";
+  $("d-world").hidden = !status.world;
+  $("d-world").textContent = status.world ?
+    "Your world is inside. When someone starts Minecraft with this mod, it is added to their world list, in the folder “" + status.world + "”." : "";
+  show("done");
+  download();
+}
+
+function failed(status) {
+  $("f-error").textContent = status.error;
+  $("f-hint").hidden = !status.hint;
+  $("f-hint").textContent = status.hint || "";
+  $("f-log").textContent = logText;
+  $("f-details").hidden = logText === "";
+  $("f-details").open = logText !== "";
+  show("failed");
+  const log = $("f-log");
+  log.scrollTop = log.scrollHeight;
+}
+
+loadSetup();
+</script>
+</body>
+</html>

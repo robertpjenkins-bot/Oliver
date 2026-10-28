@@ -1,0 +1,10 @@
+#!/bin/sh
+# AppRun is the AppImage entry point.
+#
+# Dropping a project ZIP onto the AppImage, or opening one with it, passes the
+# file here. ziptransform itself decides what that means: the window when
+# there is no terminal to talk to, a terminal build when there is.
+set -eu
+
+HERE="$(dirname "$(readlink -f "${0}")")"
+exec "${HERE}/usr/bin/ziptransform" "$@"

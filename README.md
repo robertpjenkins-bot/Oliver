@@ -269,6 +269,56 @@ them without rebuilding its environment.
 
 [umu-launcher]: https://github.com/Open-Wine-Components/umu-launcher
 
+## Zip Transform
+
+This repository also builds **Zip Transform**, a separate small app that
+turns an [MCreator] project into a Minecraft mod `.jar` — optionally with one
+of your worlds inside it.
+
+1. In MCreator, open the **File** menu and choose **Export workspace to a
+   shareable ZIP…**, or **Export to a shareable ZIP (with run dir)…** to bring
+   the worlds you played while testing along.
+2. Open Zip Transform and drop that ZIP onto its window (or onto the
+   AppImage itself).
+3. It asks **Include your world?** — pick one of the worlds in the ZIP, or
+   just the mod.
+4. It builds and saves `<modid>-<version>-<generator>.jar`, the same file
+   MCreator's *Export the mod for distribution* makes.
+
+A bundled world is copied into the player's `saves` folder the first time
+Minecraft starts with the mod installed, so it shows up in their world list
+(in a folder named like *New World (yourmod)*, so it cannot clash with a world
+of their own). It never replaces a world already there, so progress is kept
+across restarts and updates, and dedicated servers are left alone.
+
+A shareable ZIP deliberately leaves out `build.gradle`, the Gradle wrapper and
+everything Gradle produced. Zip Transform restores them from the MCreator
+installed on your computer and builds with MCreator's own Java and its
+download cache, so there is nothing else to install — but it does need
+MCreator, and an internet connection the first time a mod for a given
+Minecraft version is built. Only the ZIP's `src` folder is used in the build;
+build scripts inside a ZIP from someone else are never run.
+
+```console
+$ ziptransform                              # open the window
+$ ziptransform build "Ruby Tools.zip"       # build from a terminal, asking about worlds
+$ ziptransform build "Ruby Tools.zip" -world "New World" -o ~/mods/ruby.jar
+$ ziptransform info "Ruby Tools.zip"        # the mod and the worlds inside
+$ ziptransform setup                        # which MCreator and Java it will use
+$ ziptransform desktop install              # add it to the menu and "Open With"
+```
+
+MCreator is found through the launcher it puts on your desktop, `MCREATOR_HOME`,
+or the usual unpack locations. If it lives somewhere else, the window asks for
+the folder once (or pass `-mcreator DIR`) and remembers it.
+
+```console
+$ make ziptransform            # ./dist/ziptransform
+$ make ziptransform-appimage   # ./dist/ZipTransform-<version>-x86_64.AppImage
+```
+
+[MCreator]: https://mcreator.net/
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).

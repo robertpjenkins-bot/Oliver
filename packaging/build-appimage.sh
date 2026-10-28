@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds oliver as an AppImage.
+# Builds oliver, or with APP=ziptransform Zip Transform, as an AppImage.
 #
 # The result is a single self-contained file that runs on any x86-64 Linux with
 # a 2.6+ kernel: the binary is statically linked with no libc dependency, so
@@ -9,11 +9,18 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${here}/.." && pwd)"
 
+APP="${APP:-oliver}"
+case "${APP}" in
+	oliver)       title=Oliver;       assets="${here}" ;;
+	ziptransform) title=ZipTransform; assets="${here}/ziptransform" ;;
+	*) echo "unknown application: ${APP}" >&2; exit 1 ;;
+esac
+
 ARCH="${ARCH:-x86_64}"
 VERSION="${VERSION:-$(git -C "${root}" describe --tags --always --dirty 2>/dev/null || echo dev)}"
 OUTDIR="${OUTDIR:-${root}/dist}"
-APPDIR="${OUTDIR}/Oliver.AppDir"
-OUTPUT="${OUTDIR}/Oliver-${VERSION}-${ARCH}.AppImage"
+APPDIR="${OUTDIR}/${title}.AppDir"
+OUTPUT="${OUTDIR}/${title}-${VERSION}-${ARCH}.AppImage"
 
 # Map the AppImage architecture name onto Go's.
 case "${ARCH}" in
@@ -26,7 +33,7 @@ esac
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 
-say "building oliver ${VERSION} for ${ARCH}"
+say "building ${APP} ${VERSION} for ${ARCH}"
 rm -rf "${APPDIR}"
 mkdir -p "${APPDIR}/usr/bin" \
          "${APPDIR}/usr/share/applications" \
@@ -38,16 +45,16 @@ mkdir -p "${APPDIR}/usr/bin" \
 CGO_ENABLED=0 GOOS=linux GOARCH="${goarch}" \
 	go build -trimpath \
 		-ldflags "-s -w -X main.version=${VERSION}" \
-		-o "${APPDIR}/usr/bin/oliver" \
-		"${root}/cmd/oliver"
+		-o "${APPDIR}/usr/bin/${APP}" \
+		"${root}/cmd/${APP}"
 
-install -m 0755 "${here}/AppRun"          "${APPDIR}/AppRun"
-install -m 0644 "${here}/oliver.desktop"  "${APPDIR}/oliver.desktop"
-install -m 0644 "${here}/oliver.svg"      "${APPDIR}/oliver.svg"
-install -m 0644 "${here}/oliver.desktop"  "${APPDIR}/usr/share/applications/oliver.desktop"
-install -m 0644 "${here}/oliver.svg"      "${APPDIR}/usr/share/icons/hicolor/scalable/apps/oliver.svg"
-if [ -f "${here}/oliver.appdata.xml" ]; then
-	install -m 0644 "${here}/oliver.appdata.xml" "${APPDIR}/usr/share/metainfo/oliver.appdata.xml"
+install -m 0755 "${assets}/AppRun"          "${APPDIR}/AppRun"
+install -m 0644 "${assets}/${APP}.desktop"  "${APPDIR}/${APP}.desktop"
+install -m 0644 "${assets}/${APP}.svg"      "${APPDIR}/${APP}.svg"
+install -m 0644 "${assets}/${APP}.desktop"  "${APPDIR}/usr/share/applications/${APP}.desktop"
+install -m 0644 "${assets}/${APP}.svg"      "${APPDIR}/usr/share/icons/hicolor/scalable/apps/${APP}.svg"
+if [ -f "${assets}/${APP}.appdata.xml" ]; then
+	install -m 0644 "${assets}/${APP}.appdata.xml" "${APPDIR}/usr/share/metainfo/${APP}.appdata.xml"
 fi
 
 say "AppDir ready at ${APPDIR}"

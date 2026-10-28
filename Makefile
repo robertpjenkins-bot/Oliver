@@ -1,4 +1,5 @@
 # Oliver - run Windows programs with the best runtime installed.
+# Zip Transform - turn an MCreator project ZIP into a mod jar.
 
 BIN     := oliver
 PKG     := ./cmd/oliver
@@ -17,6 +18,11 @@ all: build
 build: ## Build the binary for this machine
 	$(GOBUILD) -o $(DIST)/$(BIN) $(PKG)
 	@echo "built $(DIST)/$(BIN) ($(VERSION))"
+
+.PHONY: ziptransform
+ziptransform: ## Build Zip Transform for this machine
+	$(GOBUILD) -o $(DIST)/ziptransform ./cmd/ziptransform
+	@echo "built $(DIST)/ziptransform ($(VERSION))"
 
 .PHONY: install
 install: ## Install into GOPATH/bin
@@ -45,15 +51,21 @@ check: ## Format check, vet and test
 appimage: ## Build the AppImage
 	./packaging/build-appimage.sh
 
+.PHONY: ziptransform-appimage
+ziptransform-appimage: ## Build the Zip Transform AppImage
+	APP=ziptransform ./packaging/build-appimage.sh
+
 .PHONY: appdir
 appdir: ## Build the AppDir only, without packaging it
 	APPDIR_ONLY=1 ./packaging/build-appimage.sh
 
 .PHONY: release
 release: ## Build AppImages for every supported architecture
-	@for arch in x86_64 aarch64; do \
-		echo "--- $$arch ---"; \
-		ARCH=$$arch ./packaging/build-appimage.sh || exit 1; \
+	@for app in oliver ziptransform; do \
+		for arch in x86_64 aarch64; do \
+			echo "--- $$app $$arch ---"; \
+			APP=$$app ARCH=$$arch ./packaging/build-appimage.sh || exit 1; \
+		done; \
 	done
 
 .PHONY: clean

@@ -34,7 +34,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libfuse2
       - name: Build AppImage
         run: make appimage
+      - name: Build Zip Transform AppImage
+        run: make ziptransform-appimage
       - uses: actions/upload-artifact@v4
         with:
           name: oliver-appimage
-          path: dist/*.AppImage
+          path: dist/Oliver-*.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ziptransform-appimage
+          path: dist/ZipTransform-*.AppImage
