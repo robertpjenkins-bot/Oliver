@@ -392,3 +392,21 @@ func itoa(n int) string {
 	b, _ := json.Marshal(n)
 	return string(b)
 }
+
+// The window polls a build from the moment it starts, often before the build
+// has written anything. An empty log must still be a list: the page once read
+// null and stopped polling, stuck on "Starting…".
+func TestWindowStatusBeforeAnyOutput(t *testing.T) {
+	m := newMachine(t)
+	w := openTestWindow(t)
+	sess, err := w.s.openPath(m.zip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess.build = &buildState{cancel: func() {}}
+
+	code, body := w.do("GET", "/api/status?id="+sess.id+"&from=0", nil, nil)
+	if code != 200 || !bytes.Contains(body, []byte(`"lines":[]`)) {
+		t.Errorf("status = %d %s", code, body)
+	}
+}

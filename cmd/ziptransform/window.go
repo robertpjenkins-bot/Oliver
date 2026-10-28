@@ -577,7 +577,9 @@ func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		from = len(b.lines)
 	}
 	status := map[string]any{
-		"lines": b.lines[from:],
+		// Never null, even before the build has written anything: the page
+		// reads it as a list.
+		"lines": append([]string{}, b.lines[from:]...),
 		"next":  len(b.lines),
 		"done":  b.done,
 	}

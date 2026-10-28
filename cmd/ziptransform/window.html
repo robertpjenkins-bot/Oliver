@@ -444,29 +444,30 @@ async function startBuild() {
   }
 }
 
+// Any failure here must reach the screen: a poll that dies quietly leaves
+// the window saying "Starting…" while the build carries on unseen.
 async function poll(from) {
-  let status;
   try {
-    status = await api("/api/status?id=" + encodeURIComponent(project.id) + "&from=" + from);
+    const status = await api("/api/status?id=" + encodeURIComponent(project.id) + "&from=" + from);
+    const lines = status.lines || [];
+    if (lines.length) {
+      logText += lines.join("\n") + "\n";
+      const log = $("b-log");
+      const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+      log.textContent = logText;
+      if (atBottom) log.scrollTop = log.scrollHeight;
+      const last = lines.filter((l) => l.trim() !== "").pop();
+      if (last) $("status-line").textContent = last.replace(/^» /, "");
+    }
+    if (!status.done) {
+      setTimeout(() => poll(status.next), 500);
+      return;
+    }
+    if (status.error) failed(status);
+    else finished(status);
   } catch (e) {
     failed({ error: e.message });
-    return;
   }
-  if (status.lines.length) {
-    logText += status.lines.join("\n") + "\n";
-    const log = $("b-log");
-    const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
-    log.textContent = logText;
-    if (atBottom) log.scrollTop = log.scrollHeight;
-    const last = status.lines.filter((l) => l.trim() !== "").pop();
-    if (last) $("status-line").textContent = last.replace(/^» /, "");
-  }
-  if (!status.done) {
-    setTimeout(() => poll(status.next), 500);
-    return;
-  }
-  if (status.error) failed(status);
-  else finished(status);
 }
 
 $("stop").addEventListener("click", () => post("/api/cancel", { id: project.id }).catch(() => {}));
