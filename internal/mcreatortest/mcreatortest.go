@@ -109,8 +109,8 @@ func ShareableZip(t testing.TB, dir string, extra map[string]string) string {
 
 // FakeGradlew stands in for Gradle. It writes its arguments to $CAPTURE/args,
 // the relevant environment to $CAPTURE/env and a copy of the workspace to
-// $CAPTURE/work, then "builds" the jar — or fails as a download would when
-// $FAIL_BUILD is set.
+// $CAPTURE/work, then "builds" the jar — a copy of $PREBUILT_JAR when that
+// is set — or fails as a download would when $FAIL_BUILD is set.
 const FakeGradlew = `#!/bin/sh
 printf '%s\n' "$@" > "$CAPTURE/args"
 printf 'JAVA_HOME=%s\nJAVA_TOOL_OPTIONS=%s\nCI=%s\n' "$JAVA_HOME" "$JAVA_TOOL_OPTIONS" "$CI" > "$CAPTURE/env"
@@ -121,7 +121,7 @@ if [ -n "$FAIL_BUILD" ]; then
 	exit 1
 fi
 mkdir -p build/libs
-echo "the jar" > build/libs/modid-1.0.jar
+if [ -n "$PREBUILT_JAR" ]; then cp "$PREBUILT_JAR" build/libs/modid-1.0.jar; else echo "the jar" > build/libs/modid-1.0.jar; fi
 echo "the sources" > build/libs/modid-1.0-sources.jar
 echo "BUILD SUCCESSFUL"
 `
@@ -184,4 +184,80 @@ func Isolate(t *testing.T) string {
 	t.Setenv("JAVA_HOME", "")
 	t.Setenv("PATH", "/usr/bin:/bin") // the fake Gradle needs a shell and cp
 	return home
+}
+
+// NeoForgeModsTOML is the metadata MCreator writes into a NeoForge mod.
+func NeoForgeModsTOML(modid, name, version, minecraft string) string {
+	return `modLoader="javafml"
+loaderVersion="[4,)"
+license="Not specified"
+
+[[mods]]
+modId="` + modid + `"
+version="` + version + `"
+displayName="` + name + `"
+description="""
+A mod made in MCreator.
+It has two lines.
+"""
+
+# Start of user code block mod configuration
+# End of user code block mod configuration
+
+[[dependencies.` + modid + `]]
+    modId="neoforge"
+    type="required"
+    versionRange="[21.1.265,)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.` + modid + `]]
+    modId="minecraft"
+    type="required"
+    versionRange="[` + minecraft + `]"
+    ordering="AFTER"
+    side="BOTH"
+`
+}
+
+// FabricModJSON is the metadata MCreator writes into a Fabric mod.
+func FabricModJSON(modid, name, version, minecraft string) string {
+	return `{
+  "schemaVersion": 1,
+  "id": "` + modid + `",
+  "version": "` + version + `",
+  "name": "` + name + `",
+  "environment": "*",
+  "depends": {
+	"fabricloader": ">=0.19.3",
+	"minecraft": "~` + minecraft + `",
+	"java": ">=25",
+	"fabric-api": "*"
+  }
+}`
+}
+
+// PrismInstance creates a Prism Launcher instance as the Flatpak keeps them,
+// which is how Prism is usually installed on a Steam Deck, and returns its
+// mods folder. loader is a component UID such as "net.neoforged", or empty.
+func PrismInstance(t testing.TB, home, name, minecraft, loaderUID, loaderVersion string) string {
+	t.Helper()
+	dir := filepath.Join(home, ".var", "app", "org.prismlauncher.PrismLauncher", "data", "PrismLauncher", "instances", name)
+	components := `{"uid": "net.minecraft", "version": "` + minecraft + `", "important": true}`
+	if loaderUID != "" {
+		components += `, {"uid": "` + loaderUID + `", "version": "` + loaderVersion + `"}`
+	}
+	for file, content := range map[string]string{
+		"instance.cfg":  "[General]\nConfigVersion=1.2\nInstanceType=OneSix\nname=" + name + "\n",
+		"mmc-pack.json": `{"components": [` + components + `], "formatVersion": 1}`,
+	} {
+		p := filepath.Join(dir, file)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return filepath.Join(dir, "minecraft", "mods")
 }

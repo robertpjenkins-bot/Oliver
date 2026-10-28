@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/robertpjenkins-bot/oliver/internal/mcreator"
+	"github.com/robertpjenkins-bot/oliver/internal/minecraft"
 	"github.com/robertpjenkins-bot/oliver/internal/ui"
 )
 
@@ -30,6 +31,8 @@ USAGE
   ziptransform build <project.zip>    build from the terminal
   ziptransform info <project.zip>     show what is in the ZIP
   ziptransform setup                  show the MCreator and Java builds will use
+  ziptransform install <mod.jar>      put a mod into Minecraft, switched on
+  ziptransform instances              list the Minecraft instances mods can go into
   ziptransform desktop install        add Zip Transform to the applications menu
 
 Make the ZIP in MCreator, from the File menu:
@@ -39,7 +42,9 @@ Make the ZIP in MCreator, from the File menu:
 
 Zip Transform builds with the MCreator installed on this computer: it borrows
 MCreator's build files, its Java and its download cache, so the jar is the one
-MCreator's own "Export the mod for distribution" makes.
+MCreator's own "Export the mod for distribution" makes. Drop a .jar on the
+window instead and it goes into the mods folder of the Minecraft you pick, in
+Prism Launcher, the Minecraft Launcher and others.
 
 Run "ziptransform build -h" for the build options.
 `
@@ -81,6 +86,10 @@ func run(u *ui.UI, args []string) error {
 		return cmdInfo(u, args[1:])
 	case "setup":
 		return cmdSetup(u, args[1:])
+	case "install":
+		return cmdInstall(u, args[1:])
+	case "instances":
+		return cmdInstances(u, args[1:])
 	case "desktop":
 		return cmdDesktop(u, args[1:])
 	}
@@ -100,6 +109,9 @@ func run(u *ui.UI, args []string) error {
 	}
 	if !u.Interactive {
 		return cmdWindow(u, args)
+	}
+	if isModPath(args[0]) {
+		return cmdInstall(u, args)
 	}
 	return cmdBuild(u, args)
 }
@@ -145,6 +157,7 @@ func cmdBuild(u *ui.UI, args []string) error {
 	world := fs.String("world", "", "bundle the world with this `name` into the jar")
 	noWorld := fs.Bool("no-world", false, "build the mod without a world, without asking")
 	out := fs.String("o", "", "write the jar to this `file` (default: beside the ZIP)")
+	install := fs.String("install", "", "then add the mod to the Minecraft instance with this `name` (\"auto\" for the one that fits)")
 	if err := parseFlagsAnywhere(fs, args); err != nil {
 		return err
 	}
@@ -190,7 +203,17 @@ func cmdBuild(u *ui.UI, args []string) error {
 	if res.World != "" {
 		u.Info("  %q is added to the world list of anyone who plays with this mod, in the folder %q.", choice, res.World)
 	}
-	return nil
+	if *install == "" {
+		return nil
+	}
+	m, err := minecraft.ReadMod(res.Jar)
+	if err != nil {
+		return err
+	}
+	if *install == "auto" {
+		*install = ""
+	}
+	return installMod(u, res.Jar, m, *install)
 }
 
 // askWorld asks which world to bundle. Without a terminal there is nobody to

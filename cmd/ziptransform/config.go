@@ -6,10 +6,11 @@ import (
 	"path/filepath"
 )
 
-// config is what Zip Transform remembers between runs: only the MCreator
-// folder, when it had to be told where that is.
+// config is what Zip Transform remembers between runs: the MCreator folder
+// and mods folders, when it had to be told where those are.
 type config struct {
-	MCreator string `json:"mcreator,omitempty"`
+	MCreator    string   `json:"mcreator,omitempty"`
+	ModsFolders []string `json:"modsFolders,omitempty"`
 }
 
 func configPath() string {

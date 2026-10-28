@@ -71,7 +71,7 @@
   .path { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; word-break: break-all; }
   [hidden] { display: none !important; }
 
-  #drop {
+  .dropzone {
     border: 2px dashed var(--line);
     border-radius: var(--radius);
     background: var(--panel);
@@ -79,10 +79,45 @@
     text-align: center;
     transition: border-color .15s, background .15s;
   }
-  body.dragging #drop { border-color: var(--accent); background: var(--accent-soft); }
-  #drop svg { width: 56px; height: 56px; color: var(--accent); }
-  #drop h2 { font-size: 19px; margin: 10px 0 4px; }
-  #drop .hint { max-width: 440px; margin: 14px auto 0; font-size: 13px; color: var(--muted); }
+  body.dragging .dropzone { border-color: var(--accent); background: var(--accent-soft); }
+  .dropzone svg { width: 56px; height: 56px; color: var(--accent); }
+  .dropzone h2 { font-size: 19px; margin: 10px 0 4px; }
+  .dropzone .hint { max-width: 440px; margin: 14px auto 0; font-size: 13px; color: var(--muted); }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--line); }
+  .tab {
+    border: none; border-bottom: 3px solid transparent; border-radius: 0; background: none;
+    padding: 8px 14px; color: var(--muted); font-weight: 600; margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--text); border-color: transparent; }
+  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  .section-title { margin: 22px 0 10px; }
+
+  .option.off { opacity: .6; cursor: not-allowed; }
+  .option.off:hover { border-color: var(--line); }
+  .option .why { display: block; margin-top: 2px; }
+  .note.ok { background: var(--accent-soft); border: 1px solid var(--accent); }
+
+  details.instance { padding: 0; }
+  details.instance > summary { list-style: none; padding: 14px 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  details.instance > summary::-webkit-details-marker { display: none; }
+  details.instance > summary::before { content: "▸"; color: var(--muted); }
+  details.instance[open] > summary::before { content: "▾"; }
+  .inst-name { font-weight: 600; color: var(--text); }
+  .inst-body { padding: 0 18px 14px; }
+  .mod-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .mod-row.is-off .mod-name { color: var(--muted); }
+  .switch {
+    appearance: none; -webkit-appearance: none; position: relative; flex: none; margin: 0;
+    width: 40px; height: 22px; border-radius: 99px; background: var(--line); cursor: pointer; transition: background .15s;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+    border-radius: 50%; background: #fff; transition: transform .15s;
+  }
+  .switch:checked { background: var(--accent); }
+  .switch:checked::after { transform: translateX(18px); }
+  details.panel > summary { cursor: pointer; }
 
   button {
     font: inherit;
@@ -155,6 +190,12 @@
     </div>
   </header>
 
+  <nav class="tabs" role="tablist" aria-label="What to do">
+    <button type="button" class="tab" id="tab-build-btn" role="tab" aria-selected="true" aria-controls="tab-build">Make a mod</button>
+    <button type="button" class="tab" id="tab-mods-btn" role="tab" aria-selected="false" aria-controls="tab-mods">Add to Minecraft</button>
+  </nav>
+
+  <div id="tab-build" role="tabpanel">
   <section id="setup" class="panel" hidden>
     <div id="setup-ok" class="small muted" hidden></div>
     <div id="setup-missing" hidden>
@@ -171,7 +212,7 @@
 
   <div id="startup-error" class="note error" style="margin-bottom:14px" hidden></div>
 
-  <section id="drop">
+  <section id="drop" class="dropzone">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11v6"/><path d="m9 14 3 3 3-3"/>
     </svg>
@@ -228,9 +269,10 @@
       <div><h2 style="margin:0">Your mod is ready</h2><div class="small muted"><span id="d-jar" class="path"></span> · <span id="d-size"></span></div></div>
     </div>
     <p id="d-world" class="small" style="margin:14px 0 0" hidden></p>
-    <p class="small muted" style="margin:10px 0 0">Your browser has saved it, normally to your Downloads folder. Put it in the <b>mods</b> folder of a Minecraft instance with the same loader and version to play it.</p>
+    <p class="small muted" style="margin:10px 0 0">Your browser has saved a copy, normally to your Downloads folder. To play it, add it to Minecraft.</p>
     <div class="actions">
-      <button type="button" class="primary" id="download">Download again</button>
+      <button type="button" class="primary" id="to-minecraft">Add to Minecraft</button>
+      <button type="button" id="download">Download again</button>
       <button type="button" id="again">Transform another ZIP</button>
     </div>
   </section>
@@ -245,6 +287,55 @@
       <button type="button" id="failed-another">Choose another ZIP</button>
     </div>
   </section>
+  </div>
+
+  <div id="tab-mods" role="tabpanel" hidden>
+    <div id="mod-error" class="note error" style="margin-bottom:14px" hidden></div>
+
+    <section id="mod-drop" class="dropzone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M7 3h10v4a5 5 0 0 1-2 4v8a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-8a5 5 0 0 1-2-4z"/><path d="M7 7h10"/><path d="M12 13v4"/>
+      </svg>
+      <h2>Drop a mod .jar here</h2>
+      <p class="muted" style="margin:0 0 14px">or</p>
+      <button type="button" class="primary" id="mod-choose">Choose a .jar…</button>
+      <input type="file" id="mod-file" accept=".jar,.disabled" hidden>
+      <p class="hint">It goes into the <b>mods</b> folder of the Minecraft you pick, switched on.</p>
+    </section>
+
+    <section id="mod-card" class="panel" hidden>
+      <h2 id="m-name"></h2>
+      <div class="chips">
+        <span class="chip" id="m-needs"></span>
+        <span class="chip plain" id="m-version"></span>
+        <span class="chip plain" id="m-file"></span>
+      </div>
+      <div class="question">
+        <h2>Which Minecraft should it go into?</h2>
+        <div class="options" id="m-options" role="radiogroup" aria-label="Minecraft instance"></div>
+        <div id="m-none" class="note warn" style="margin-top:10px" hidden></div>
+      </div>
+      <div id="m-done" class="note ok" style="margin-top:14px" hidden></div>
+      <div class="actions">
+        <button type="button" class="primary" id="m-install" disabled>Add and switch on</button>
+        <button type="button" id="m-another">Choose another .jar</button>
+      </div>
+    </section>
+
+    <h2 class="section-title">Your Minecraft</h2>
+    <div id="instances"></div>
+    <section id="no-instances" class="panel" hidden>
+      <p style="margin:0">No Minecraft was found. Zip Transform looks for <b>Prism Launcher</b>, the <b>Minecraft Launcher</b>, ATLauncher, Modrinth App and CurseForge. Make an instance there with the mod loader your mod needs, and it shows up here.</p>
+    </section>
+    <details class="panel" id="folder-panel">
+      <summary class="muted">Use another mods folder</summary>
+      <form class="setup-form" id="folder-form">
+        <input id="folder-dir" placeholder="/home/you/.minecraft/mods" autocomplete="off" spellcheck="false" aria-label="Mods folder">
+        <button type="submit">Add folder</button>
+      </form>
+      <div id="folder-error" class="note error" style="margin-top:10px" hidden></div>
+    </details>
+  </div>
 </main>
 
 <script>
@@ -308,6 +399,10 @@ async function loadSetup() {
       $("startup-error").textContent = info.error;
     }
     if (info.project) showProject(info.project);
+    if (info.mod) {
+      showTab("mods");
+      showMod(info.mod);
+    }
   } catch (e) {
     $("startup-error").hidden = false;
     $("startup-error").textContent = "Zip Transform has stopped. Start it again to continue.";
@@ -336,9 +431,16 @@ addEventListener("drop", (ev) => {
   ev.preventDefault();
   dragDepth = 0;
   document.body.classList.remove("dragging");
-  if ($("building").hidden === false) return;
   const file = ev.dataTransfer && ev.dataTransfer.files[0];
-  if (file) openFile(file);
+  if (!file) return;
+  if (/\.jar(\.disabled)?$/i.test(file.name)) {
+    showTab("mods");
+    openMod(file);
+    return;
+  }
+  if ($("building").hidden === false) return;
+  showTab("build");
+  openFile(file);
 });
 $("choose").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", () => { if ($("file").files[0]) openFile($("file").files[0]); $("file").value = ""; });
@@ -424,6 +526,16 @@ function updateMake() {
 $("another").addEventListener("click", () => $("file").click());
 $("failed-another").addEventListener("click", () => $("file").click());
 $("again").addEventListener("click", () => { project = null; show("drop"); });
+$("to-minecraft").addEventListener("click", async () => {
+  try {
+    const info = await post("/api/mod/from-build", { id: project.id });
+    showTab("mods");
+    showMod(info);
+  } catch (e) {
+    showTab("mods");
+    modError(e.message);
+  }
+});
 
 // ---- Building ----
 
@@ -506,6 +618,251 @@ function failed(status) {
   const log = $("f-log");
   log.scrollTop = log.scrollHeight;
 }
+
+// ---- Tabs ----
+
+function showTab(name) {
+  for (const t of ["build", "mods"]) {
+    $("tab-" + t).hidden = t !== name;
+    $("tab-" + t + "-btn").setAttribute("aria-selected", String(t === name));
+  }
+  if (name === "mods") refreshInstances();
+}
+$("tab-build-btn").addEventListener("click", () => showTab("build"));
+$("tab-mods-btn").addEventListener("click", () => showTab("mods"));
+
+// ---- Adding a mod to Minecraft ----
+
+let mod = null;          // the mod jar being added
+let chosenInstance = null;
+let justAdded = null;    // the instance a mod was just added to, kept open
+let lastInstances = "";
+
+function modError(message) {
+  $("mod-error").hidden = !message;
+  $("mod-error").textContent = message || "";
+}
+
+$("mod-choose").addEventListener("click", () => $("mod-file").click());
+$("m-another").addEventListener("click", () => $("mod-file").click());
+$("mod-file").addEventListener("change", () => {
+  if ($("mod-file").files[0]) openMod($("mod-file").files[0]);
+  $("mod-file").value = "";
+});
+
+async function openMod(file) {
+  modError("");
+  try {
+    const info = await api("/api/mod/open", {
+      method: "POST",
+      headers: { "X-File-Name": encodeURIComponent(file.name), "Content-Type": "application/java-archive" },
+      body: file,
+    });
+    showMod(info);
+  } catch (e) {
+    modError(e.message);
+  }
+}
+
+function showMod(info) {
+  mod = info;
+  chosenInstance = null;
+  $("m-name").textContent = info.name;
+  $("m-needs").textContent = info.needs;
+  $("m-version").textContent = "version " + info.version;
+  $("m-file").textContent = info.file;
+  $("m-done").hidden = true;
+  $("mod-drop").hidden = true;
+  $("mod-card").hidden = false;
+  lastInstances = "";
+  refreshInstances();
+}
+
+async function refreshInstances() {
+  let data;
+  try {
+    data = await api("/api/instances" + (mod ? "?mod=" + encodeURIComponent(mod.id) : ""));
+  } catch (e) {
+    modError(e.message);
+    return;
+  }
+  // Rebuilding the list while someone is using it loses their place, so only
+  // do it when something changed.
+  const key = JSON.stringify(data.instances);
+  if (key === lastInstances) return;
+  lastInstances = key;
+  if (mod) renderModOptions(data.instances);
+  renderInstances(data.instances);
+}
+
+// Mods dropped into a mods folder some other way show up without a reload.
+setInterval(() => {
+  if (!$("tab-mods").hidden && document.visibilityState === "visible") refreshInstances();
+}, 4000);
+
+function renderModOptions(list) {
+  const options = $("m-options");
+  options.innerHTML = "";
+  const fitting = list.filter((i) => i.fit && i.fit.ok);
+  if (chosenInstance && !fitting.some((i) => i.id === chosenInstance)) chosenInstance = null;
+  const sure = fitting.filter((i) => !i.fit.unsure);
+  if (!chosenInstance && sure.length === 1) chosenInstance = sure[0].id;
+
+  for (const inst of list) {
+    const label = document.createElement("label");
+    label.className = "option" + (inst.fit.ok ? "" : " off");
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "instance";
+    input.value = inst.id;
+    input.disabled = !inst.fit.ok;
+    input.checked = inst.id === chosenInstance;
+    input.addEventListener("change", () => { chosenInstance = inst.id; updateInstall(); });
+    const text = document.createElement("span");
+    const b = document.createElement("b");
+    b.textContent = inst.name;
+    const detail = document.createElement("span");
+    detail.className = "small muted";
+    detail.textContent = inst.launcher + " · " + inst.label;
+    text.append(b, detail);
+    let why = inst.fit.reason || "";
+    if (inst.missingNames && inst.missingNames.length) {
+      why = (why ? why + " " : "") + "It also needs " + inst.missingNames.join(", ") + ", which this instance does not have.";
+    }
+    if (why) {
+      const w = document.createElement("span");
+      w.className = "small why";
+      w.textContent = why;
+      text.append(w);
+    }
+    label.append(input, text);
+    options.append(label);
+  }
+
+  $("m-none").hidden = fitting.length > 0;
+  $("m-none").textContent = list.length === 0 ?
+    "No Minecraft was found on this computer." :
+    "None of your Minecraft can run this mod. It needs " + mod.needs +
+    ". In Prism Launcher, choose Add Instance, pick that Minecraft version, and pick " +
+    mod.needs.split(",")[0] + " as the mod loader. It shows up here straight away.";
+  updateInstall();
+}
+
+function updateInstall() {
+  $("m-install").disabled = !chosenInstance;
+}
+
+$("m-install").addEventListener("click", async () => {
+  $("m-install").disabled = true;
+  try {
+    const res = await post("/api/mod/install", { mod: mod.id, instance: chosenInstance });
+    let text = "✓ Added to “" + res.instance + "” (" + res.launcher + ") and switched on. Start that instance to play; if Minecraft is already open, close it and start it again.";
+    if (res.turnedOff && res.turnedOff.length) text += " The older " + res.turnedOff.join(", ") + " was switched off.";
+    $("m-done").textContent = text;
+    $("m-done").hidden = false;
+    justAdded = chosenInstance;
+    lastInstances = "";
+    refreshInstances();
+  } catch (e) {
+    modError(e.message);
+  } finally {
+    updateInstall();
+  }
+});
+
+function renderInstances(list) {
+  const container = $("instances");
+  const open = new Set([...container.querySelectorAll("details[open]")].map((d) => d.dataset.id));
+  container.innerHTML = "";
+  $("no-instances").hidden = list.length > 0;
+
+  for (const inst of list) {
+    const d = document.createElement("details");
+    d.className = "panel instance";
+    d.dataset.id = inst.id;
+    d.open = open.has(inst.id) || inst.id === justAdded;
+
+    const summary = document.createElement("summary");
+    const name = document.createElement("span");
+    name.className = "inst-name";
+    name.textContent = inst.name;
+    const chip = document.createElement("span");
+    chip.className = "chip plain";
+    chip.textContent = inst.launcher;
+    const on = inst.mods.filter((m) => m.enabled).length;
+    const meta = document.createElement("span");
+    meta.className = "small muted";
+    meta.textContent = inst.label + " · " + on + (on === 1 ? " mod on" : " mods on");
+    summary.append(name, chip, meta);
+
+    const body = document.createElement("div");
+    body.className = "inst-body";
+    if (inst.mods.length === 0) {
+      const p = document.createElement("p");
+      p.className = "small muted";
+      p.style.margin = "0 0 6px";
+      p.textContent = "No mods yet.";
+      body.append(p);
+    }
+    for (const m of inst.mods) body.append(modRow(inst, m));
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.style.marginTop = "10px";
+    const show = document.createElement("button");
+    show.type = "button";
+    show.textContent = "Open mods folder";
+    show.addEventListener("click", () => post("/api/mod/show", { instance: inst.id }).catch((e) => modError(e.message)));
+    actions.append(show);
+    body.append(actions);
+
+    d.append(summary, body);
+    container.append(d);
+  }
+}
+
+function modRow(inst, m) {
+  const row = document.createElement("div");
+  row.className = "mod-row" + (m.enabled ? "" : " is-off");
+  const text = document.createElement("div");
+  const name = document.createElement("div");
+  name.className = "mod-name";
+  name.textContent = m.name;
+  const file = document.createElement("div");
+  file.className = "small muted path";
+  file.textContent = m.file;
+  text.append(name, file);
+  const sw = document.createElement("input");
+  sw.type = "checkbox";
+  sw.className = "switch";
+  sw.checked = m.enabled;
+  sw.setAttribute("aria-label", (m.enabled ? "Switch off " : "Switch on ") + m.name);
+  sw.addEventListener("change", async () => {
+    try {
+      await post("/api/mod/toggle", { instance: inst.id, file: m.file, on: sw.checked });
+    } catch (e) {
+      modError(e.message);
+    }
+    lastInstances = "";
+    refreshInstances();
+  });
+  row.append(text, sw);
+  return row;
+}
+
+$("folder-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  $("folder-error").hidden = true;
+  try {
+    await post("/api/mod/folder", { dir: $("folder-dir").value });
+    $("folder-dir").value = "";
+    $("folder-panel").open = false;
+    lastInstances = "";
+    refreshInstances();
+  } catch (e) {
+    $("folder-error").hidden = false;
+    $("folder-error").textContent = e.message;
+  }
+});
 
 loadSetup();
 </script>

@@ -285,6 +285,16 @@ of your worlds inside it.
 4. It builds and saves `<modid>-<version>-<generator>.jar`, the same file
    MCreator's *Export the mod for distribution* makes.
 
+To play it, open the **Add to Minecraft** tab, or drop any mod `.jar` onto
+the window. Zip Transform finds your Minecraft instances — Prism Launcher
+(including the Flatpak on a Steam Deck), the official Minecraft Launcher,
+ATLauncher, Modrinth App and CurseForge — and marks the ones whose mod loader
+and Minecraft version can run the mod. Pick one and the jar goes into its
+`mods` folder, switched on; an older copy of the same mod is switched off
+rather than deleted. Every instance's mods are listed with on/off switches
+(off renames a mod to `.jar.disabled`, as Prism Launcher does), and a mod
+copied into a mods folder some other way shows up within seconds.
+
 A bundled world is copied into the player's `saves` folder the first time
 Minecraft starts with the mod installed, so it shows up in their world list
 (in a folder named like *New World (yourmod)*, so it cannot clash with a world
@@ -305,6 +315,9 @@ $ ziptransform build "Ruby Tools.zip"       # build from a terminal, asking abou
 $ ziptransform build "Ruby Tools.zip" -world "New World" -o ~/mods/ruby.jar
 $ ziptransform info "Ruby Tools.zip"        # the mod and the worlds inside
 $ ziptransform setup                        # which MCreator and Java it will use
+$ ziptransform install ruby_tools-1.2-neoforge-26.1.2.jar   # into the instance that fits
+$ ziptransform instances                    # your Minecraft instances and their mods
+$ ziptransform build "Ruby Tools.zip" -install auto         # build, then add it
 $ ziptransform desktop install              # add it to the menu and "Open With"
 ```
 

@@ -13,7 +13,8 @@ import (
 const desktopSynopsis = `ziptransform desktop [install|uninstall]
 
 Adds Zip Transform to the applications menu, and to the "Open With" menu for
-ZIP files, so a project ZIP can be opened with it from the file manager.`
+ZIP and jar files, so a project ZIP or a mod can be opened with it from the
+file manager.`
 
 func cmdDesktop(u *ui.UI, args []string) error {
 	fs := newFlagSet(u, "desktop", desktopSynopsis)
@@ -57,7 +58,7 @@ TryExec=%s
 Icon=ziptransform
 Terminal=false
 Categories=Development;Game;
-MimeType=application/zip;application/x-zip-compressed;
+MimeType=application/zip;application/x-zip-compressed;application/java-archive;application/x-java-archive;
 Keywords=mcreator;minecraft;mod;jar;zip;forge;neoforge;fabric;
 `, launcher, launcher)
 	path := filepath.Join(apps, "ziptransform.desktop")

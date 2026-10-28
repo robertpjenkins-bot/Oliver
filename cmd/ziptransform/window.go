@@ -66,7 +66,11 @@ func cmdWindow(u *ui.UI, args []string) error {
 		return err
 	}
 	defer s.cleanup()
-	if fs.NArg() > 0 {
+	if fs.NArg() > 0 && isModPath(fs.Arg(0)) {
+		if _, err := s.openModPath(fs.Arg(0)); err != nil {
+			s.startupError = err.Error()
+		}
+	} else if fs.NArg() > 0 {
 		if _, err := s.openPath(fs.Arg(0)); err != nil {
 			// Still open the window: it can show the problem, and take
 			// another file.
@@ -112,7 +116,9 @@ type server struct {
 	mu           sync.Mutex
 	sessions     map[string]*session
 	preloaded    string // the session for the file given on the command line
+	preloadedMod string // the mod jar given on the command line
 	startupError string
+	modFiles     map[string]*modFile
 	lastSeen     time.Time
 }
 
@@ -157,6 +163,7 @@ func newServer() (*server, error) {
 		token:    hex.EncodeToString(token),
 		tmp:      tmp,
 		sessions: map[string]*session{},
+		modFiles: map[string]*modFile{},
 		lastSeen: time.Now(),
 	}, nil
 }
@@ -263,6 +270,20 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleOpen(w, r)
 	case "/api/project":
 		s.handleProject(w, r)
+	case "/api/instances":
+		s.handleInstances(w, r)
+	case "/api/mod/open":
+		s.handleModOpen(w, r)
+	case "/api/mod/from-build":
+		s.handleModFromBuild(w, r)
+	case "/api/mod/install":
+		s.handleModInstall(w, r)
+	case "/api/mod/toggle":
+		s.handleModToggle(w, r)
+	case "/api/mod/folder":
+		s.handleModFolder(w, r)
+	case "/api/mod/show":
+		s.handleModShow(w, r)
 	case "/api/build":
 		s.handleBuild(w, r)
 	case "/api/status":
@@ -283,6 +304,7 @@ type setupInfo struct {
 	JavaError  string             `json:"javaError,omitempty"`
 	Generators []string           `json:"generators"`
 	Project    *projectInfo       `json:"project,omitempty"`
+	Mod        *modInfo           `json:"mod,omitempty"`
 	Error      string             `json:"error,omitempty"`
 }
 
@@ -302,7 +324,12 @@ func (s *server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	info.Error, s.startupError = s.startupError, ""
 	sess := s.sessions[s.preloaded]
+	mf := s.modFiles[s.preloadedMod]
 	s.mu.Unlock()
+	if mf != nil {
+		mi := describeMod(mf)
+		info.Mod = &mi
+	}
 	if sess != nil {
 		pi := describeProject(sess, t)
 		info.Project = &pi
@@ -428,26 +455,45 @@ func (s *server) addSession(p *mcreator.Project) *session {
 
 // handleOpen receives a ZIP dropped onto the window.
 func (s *server) handleOpen(w http.ResponseWriter, r *http.Request) {
+	dest, ok := s.receiveUpload(w, r, "project.zip")
+	if !ok {
+		return
+	}
+	p, err := mcreator.Open(dest)
+	if err != nil {
+		os.RemoveAll(filepath.Dir(dest))
+		writeError(w, http.StatusUnprocessableEntity, err)
+		return
+	}
+	sess := s.addSession(p)
+	t := mcreator.FindToolkit(loadConfig().MCreator)
+	defer t.Close()
+	writeJSON(w, describeProject(sess, t))
+}
+
+// receiveUpload saves a file dropped onto the window under its own name, and
+// reports failures itself.
+func (s *server) receiveUpload(w http.ResponseWriter, r *http.Request, fallback string) (string, bool) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
-		return
+		return "", false
 	}
 	name, _ := url.QueryUnescape(r.Header.Get("X-File-Name"))
 	name = filepath.Base(filepath.Clean("/" + name))
 	if name == "/" || name == "." {
-		name = "project.zip"
+		name = fallback
 	}
 
 	dir, err := os.MkdirTemp(s.tmp, "upload-")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
-		return
+		return "", false
 	}
 	dest := filepath.Join(dir, name)
 	f, err := os.Create(dest)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
-		return
+		return "", false
 	}
 	_, err = io.Copy(f, http.MaxBytesReader(w, r.Body, 8<<30))
 	if cerr := f.Close(); err == nil {
@@ -456,19 +502,9 @@ func (s *server) handleOpen(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		os.RemoveAll(dir)
 		writeError(w, http.StatusBadRequest, fmt.Errorf("receiving the file: %w", err))
-		return
+		return "", false
 	}
-
-	p, err := mcreator.Open(dest)
-	if err != nil {
-		os.RemoveAll(dir)
-		writeError(w, http.StatusUnprocessableEntity, err)
-		return
-	}
-	sess := s.addSession(p)
-	t := mcreator.FindToolkit(loadConfig().MCreator)
-	defer t.Close()
-	writeJSON(w, describeProject(sess, t))
+	return dest, true
 }
 
 // handleProject describes an open project again, for when the MCreator
