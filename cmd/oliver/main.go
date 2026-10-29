@@ -33,6 +33,7 @@ const usage = `oliver - run Windows programs with the best runtime you have inst
 USAGE
   oliver [command] [flags] [arguments]
   oliver <program.exe> [arguments]     shorthand for "oliver run"
+  oliver <image.iso>                   shorthand for "oliver write"
 
 COMMANDS
   run          run a Windows program, choosing a runtime automatically
@@ -45,6 +46,7 @@ COMMANDS
   log          show the output of the last program that ran
   report       write everything needed to diagnose a problem to one file
   pack         wrap a Windows program into an AppImage
+  write        write an ISO or disk image to a drive or a partition
   which        find an installed program inside a Windows environment
   desktop      register Oliver so .exe files open with a double-click
   config       show or create the configuration file
@@ -89,8 +91,12 @@ func run(args []string) error {
 	cmd := args[0]
 	rest := args[1:]
 
-	// Being handed a file directly is the file-manager case: treat it as a run.
-	if looksLikeProgram(cmd) {
+	// Being handed a file directly is the file-manager case: run a program,
+	// write an image.
+	switch {
+	case looksLikeDiskImage(cmd):
+		cmd, rest = "write", args
+	case looksLikeProgram(cmd):
 		cmd, rest = "run", args
 	}
 
@@ -101,6 +107,10 @@ func run(args []string) error {
 	case "-V", "--version", "version":
 		fmt.Printf("oliver %s\n", version)
 		return nil
+	case "write-helper":
+		// The privileged half of `oliver write`, running as root. It needs no
+		// configuration, and must not read root's.
+		return a.cmdWriteHelper(rest)
 	}
 
 	cfg, err := config.Load(os.Getenv("OLIVER_CONFIG"))
@@ -131,6 +141,8 @@ func run(args []string) error {
 		return a.cmdReport(rest)
 	case "pack":
 		return a.cmdPack(rest)
+	case "write", "flash":
+		return a.cmdWrite(rest)
 	case "which":
 		return a.cmdWhich(rest)
 	case "desktop":

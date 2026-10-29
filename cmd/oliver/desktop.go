@@ -20,10 +20,23 @@ var exeMimeTypes = []string{
 	"application/x-msi",
 }
 
+// writerMimeTypes are the MIME types desktops give disk images. The shared MIME
+// database has renamed them over the years, so old and new names are claimed.
+var writerMimeTypes = []string{
+	"application/x-cd-image",
+	"application/x-iso9660-image",
+	"application/vnd.efi.iso",
+	"application/x-raw-disk-image",
+	"application/vnd.efi.img",
+}
+
 const desktopSynopsis = `oliver desktop [install|uninstall|status]
 
 Registers Oliver with your desktop so .exe and .msi files can be opened by
 double-clicking them, and so Oliver appears in the "Open With" menu.
+
+It also adds a Disk Image Writer to the application menu: drop an .iso or
+.img onto it, or open one with it, to write it to a drive or partition.
 
 An AppImage is a single file that nothing knows about until you say so; this
 is the step that connects it to your file manager.`
@@ -54,6 +67,9 @@ func (a *app) cmdDesktop(args []string) error {
 			return nil
 		}
 		a.ui.Printf("Registered at %s", path)
+		if _, err := os.Stat(writerFilePath()); err == nil {
+			a.ui.Printf("Disk Image Writer at %s", writerFilePath())
+		}
 		a.ui.Printf("%s", a.ui.Dim("launcher: "+selfPath()))
 		return nil
 	default:
@@ -84,6 +100,7 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 	choices := []menuChoice{
 		{ID: "run", Label: "Run a Windows program", Note: "choose an .exe or .msi to launch"},
 		{ID: "pack", Label: "Package a program as an AppImage", Note: "make it launchable like any other app"},
+		{ID: "write", Label: "Write a disk image to a drive", Note: "put an .iso or .img onto a USB stick or a partition"},
 		{ID: "doctor", Label: "Check this system", Note: "what is installed and what is missing"},
 		{ID: "log", Label: "Show the last run", Note: "why something failed to start"},
 		{ID: "clean", Label: "Fix broken menu entries", Note: "remove launcher icons that no longer work"},
@@ -111,6 +128,8 @@ func (a *app) cmdDesktopWelcome(args []string) error {
 		return a.guiRun(kit)
 	case "pack":
 		return a.guiPack(kit)
+	case "write":
+		return a.guiWrite(kit, "", true)
 	case "doctor":
 		kit.showText("Oliver - system check", a.captureText(func() { _ = a.cmdDoctor(nil) }))
 	case "clean":
@@ -155,7 +174,19 @@ func (a *app) guiRun(kit dialogKit) error {
 			if c.Workaround != "" {
 				body += "\n\n" + c.Workaround
 			}
-			if !kit.confirm("This program cannot do its job here", body+"\n\nTry it anyway?") {
+			// A disk writer is a job Oliver does itself, so offer that first.
+			if c.BuiltIn == "write" {
+				choice, ok := kit.menu("This program cannot do its job here", body, []menuChoice{
+					{ID: "write", Label: "Write the image with Oliver instead", Note: "choose the ISO, then the drive or partition"},
+					{ID: "run", Label: "Run it anyway", Note: "it will open, but find no drives"},
+				})
+				switch {
+				case !ok || choice == "":
+					return nil
+				case choice == "write":
+					return a.guiWrite(kit, "", true)
+				}
+			} else if !kit.confirm("This program cannot do its job here", body+"\n\nTry it anyway?") {
 				return nil
 			}
 		}
@@ -426,7 +457,8 @@ func inspectEntry(path string) (brokenEntry, bool) {
 	// Oliver stamps what it writes, so its own entries can be told apart from
 	// everything else in the menu.
 	b.Ours = strings.Contains(text, "packaged with Oliver") ||
-		strings.Contains(text, "Comment=Run Windows programs with the best runtime")
+		strings.Contains(text, "Comment=Run Windows programs with the best runtime") ||
+		strings.Contains(text, "\nX-Oliver=")
 
 	for _, line := range strings.Split(text, "\n") {
 		switch {
@@ -577,6 +609,15 @@ func desktopFilePath() string {
 	return filepath.Join(d, "applications", "oliver.desktop")
 }
 
+// writerFilePath is the menu entry for the disk image writer.
+func writerFilePath() string {
+	d := dataHome()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "applications", "oliver-write.desktop")
+}
+
 func iconPath() string {
 	d := dataHome()
 	if d == "" {
@@ -621,6 +662,29 @@ NoDisplay=false
 	}
 	a.ui.Info("installed %s", path)
 
+	// The writer gets an entry of its own: "Open With" lists it for disk
+	// images, and an image dropped onto it in a dock or on the desktop is
+	// handed to it. It is not made the default, since double-clicking an ISO
+	// usually means looking inside it.
+	writer := fmt.Sprintf(`[Desktop Entry]
+Type=Application
+Name=Disk Image Writer
+GenericName=USB Image Writer
+Comment=Write an ISO or disk image to a drive or a partition
+Exec=%s write --gui %%f
+TryExec=%s
+Icon=drive-removable-media
+Terminal=false
+Categories=System;Utility;
+MimeType=%s;
+Keywords=iso;img;usb;flash;burn;partition;dd;
+X-Oliver=writer
+`, quoteExec(launcher), quoteExec(launcher), strings.Join(writerMimeTypes, ";"))
+	if err := os.WriteFile(writerFilePath(), []byte(writer), 0o644); err != nil {
+		return err
+	}
+	a.ui.Info("installed %s", writerFilePath())
+
 	// Refresh the desktop's MIME cache; harmless when the tool is absent.
 	if _, err := exec.LookPath("update-desktop-database"); err == nil {
 		_ = exec.Command("update-desktop-database", filepath.Dir(path)).Run()
@@ -645,7 +709,7 @@ NoDisplay=false
 
 func (a *app) desktopUninstall() error {
 	var removed int
-	for _, p := range []string{desktopFilePath(), iconPath()} {
+	for _, p := range []string{desktopFilePath(), writerFilePath(), iconPath()} {
 		if p == "" {
 			continue
 		}

@@ -34,6 +34,21 @@ type Device struct {
 	// whatever else is configured.
 	Readable bool `json:"readable"`
 	Writable bool `json:"writable"`
+
+	// USB reports a drive attached over USB. Many USB sticks and most USB
+	// SSDs describe themselves as fixed rather than removable, so this is the
+	// better sign of a drive the user plugged in.
+	USB      bool `json:"usb,omitempty"`
+	ReadOnly bool `json:"read_only,omitempty"`
+	// Label and FSType describe a filesystem written straight onto the drive
+	// with no partition table, as on a stick holding a written ISO.
+	Label  string `json:"label,omitempty"`
+	FSType string `json:"fs_type,omitempty"`
+	// Holders are kernel devices built on top of this one, such as an opened
+	// encrypted volume or an LVM volume group.
+	Holders    []string     `json:"holders,omitempty"`
+	Swap       bool         `json:"swap,omitempty"`
+	Partitions []*Partition `json:"partitions,omitempty"`
 }
 
 // Scanner reads block devices. Its roots are fields so tests can describe a
@@ -42,6 +57,11 @@ type Scanner struct {
 	SysBlock string // /sys/block
 	Dev      string // /dev
 	Mounts   string // /proc/mounts
+	// Udev holds udev's record of each device, where filesystem labels and
+	// the bus a drive is attached by can be read without opening the device.
+	// Empty means the information is not available.
+	Udev  string // /run/udev/data
+	Swaps string // /proc/swaps
 	// Access reports the caller's permission on a device node.
 	Access func(path string) (readable, writable bool)
 }
@@ -52,6 +72,8 @@ func NewScanner() *Scanner {
 		SysBlock: "/sys/block",
 		Dev:      "/dev",
 		Mounts:   "/proc/mounts",
+		Udev:     "/run/udev/data",
+		Swaps:    "/proc/swaps",
 		Access:   accessOf,
 	}
 }
@@ -125,6 +147,7 @@ func (s *Scanner) List() ([]*Device, error) {
 		return nil, fmt.Errorf("reading %s: %w", s.SysBlock, err)
 	}
 	mounts := s.readMounts()
+	swaps := s.readSwaps()
 
 	var out []*Device
 	for _, e := range entries {
@@ -132,7 +155,7 @@ func (s *Scanner) List() ([]*Device, error) {
 		if skipDevice(name) {
 			continue
 		}
-		d := s.describe(name, mounts)
+		d := s.describe(name, mounts, swaps)
 		out = append(out, d)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -145,10 +168,15 @@ func skipDevice(name string) bool {
 			return true
 		}
 	}
+	// eMMC exposes its firmware boot areas as extra devices; they are not
+	// storage anyone means to write to.
+	if strings.HasPrefix(name, "mmcblk") && (strings.Contains(name, "boot") || strings.Contains(name, "rpmb")) {
+		return true
+	}
 	return false
 }
 
-func (s *Scanner) describe(name string, mounts []Mount) *Device {
+func (s *Scanner) describe(name string, mounts []Mount, swaps map[string]bool) *Device {
 	d := &Device{
 		Path: filepath.Join(s.Dev, name),
 		Name: name,
@@ -179,6 +207,17 @@ func (s *Scanner) describe(name string, mounts []Mount) *Device {
 	if s.Access != nil {
 		d.Readable, d.Writable = s.Access(d.Path)
 	}
+
+	d.ReadOnly = readTrimmed(filepath.Join(base, "ro")) == "1"
+	d.Holders = listDir(filepath.Join(base, "holders"))
+	d.Swap = swaps[d.Path]
+	udev := s.udevProperties(base)
+	d.Label, d.FSType = udev["ID_FS_LABEL"], udev["ID_FS_TYPE"]
+	d.USB = udev["ID_BUS"] == "usb"
+	if real, err := filepath.EvalSymlinks(base); err == nil && strings.Contains(real, "/usb") {
+		d.USB = true
+	}
+	d.Partitions = s.partitions(d, base, mounts, swaps)
 	return d
 }
 

@@ -43,6 +43,10 @@ func (a *app) printCaveats(caveats []compat.Caveat) {
 				u.Printf("  %s", u.Cyan(line))
 			}
 		}
+		if c.BuiltIn == "write" {
+			u.Printf("")
+			u.Printf("  %s %s", u.Green("Oliver does this itself:"), u.Bold("oliver write <image.iso>"))
+		}
 		a.printAlternatives(c.Alternatives)
 	}
 }

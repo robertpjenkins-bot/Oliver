@@ -3,7 +3,8 @@
 #
 # It exists to make one behaviour work: dragging a .exe onto the AppImage, or
 # double-clicking a .exe once Oliver is registered as its handler, must run
-# that program rather than print a usage message.
+# that program rather than print a usage message. Dropping an .iso or .img
+# onto it likewise starts writing that image to a drive.
 set -eu
 
 HERE="$(dirname "$(readlink -f "${0}")")"
@@ -29,6 +30,9 @@ if [ -e "$1" ] && [ ! -d "$1" ]; then
 	case "$1" in
 		*.exe|*.EXE|*.msi|*.MSI|*.bat|*.BAT|*.cmd|*.CMD)
 			exec "${BIN}" run "$@"
+			;;
+		*.iso|*.ISO|*.img|*.IMG|*.raw|*.RAW)
+			exec "${BIN}" write "$@"
 			;;
 	esac
 fi

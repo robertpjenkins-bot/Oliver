@@ -92,6 +92,9 @@ type Caveat struct {
 	// Alternatives are native tools that do the same job, with those present
 	// on this system marked.
 	Alternatives []Alternative `json:"alternatives,omitempty"`
+	// BuiltIn names the Oliver command that does the program's job natively,
+	// such as "write" for a disk image writer.
+	BuiltIn string `json:"built_in,omitempty"`
 }
 
 // need describes what a known program requires that a compatibility layer
@@ -107,6 +110,7 @@ type need struct {
 	detail       string
 	instead      string
 	alternatives []Alternative
+	builtin      string
 }
 
 // versioned builds a pattern matching a program name on its own or followed by
@@ -135,8 +139,10 @@ var knownPrograms = []need{
 			"enumeration nor the Windows storage ioctls, so no device is ever found.",
 		instead: "Mapping the drive into the prefix with a dosdevices symlink does not help " +
 			"here: that exposes a drive letter, not the device enumeration Rufus uses. Use a " +
-			"native writer instead — Ventoy, GNOME Disks, KDE ISO Image Writer, Fedora Media " +
-			"Writer, or `dd`. Running Rufus under Wine is unsupported upstream.",
+			"native writer instead — `oliver write` does the job itself, as do Ventoy, GNOME " +
+			"Disks, KDE ISO Image Writer, Fedora Media Writer and `dd`. Running Rufus under " +
+			"Wine is unsupported upstream.",
+		builtin: "write",
 		alternatives: []Alternative{
 			{Name: "Ventoy", Note: "copy ISOs onto the stick and pick one at boot; handles Windows ISOs"},
 			{Name: "GNOME Disks", Command: "gnome-disks", Note: "Restore Disk Image from the menu"},
@@ -149,7 +155,8 @@ var knownPrograms = []need{
 	{
 		match: versioned("win32diskimager"), program: "Win32 Disk Imager", severity: Blocking,
 		detail:  "It reads and writes raw disk images to physical devices, which requires block-device access.",
-		instead: "Use GNOME Disks, or `dd` with the device path.",
+		instead: "Use `oliver write`, GNOME Disks, or `dd` with the device path.",
+		builtin: "write",
 		alternatives: []Alternative{
 			{Name: "Ventoy", Note: "copy ISOs onto the stick and pick one at boot; handles Windows ISOs"},
 			{Name: "GNOME Disks", Command: "gnome-disks", Note: "Restore Disk Image from the menu"},
@@ -162,7 +169,8 @@ var knownPrograms = []need{
 	{
 		match: versioned("balenaetcher"), program: "balenaEtcher", severity: Blocking,
 		detail:  "It writes images directly to removable devices.",
-		instead: "balenaEtcher ships a native Linux build; use that.",
+		instead: "balenaEtcher ships a native Linux build; use that, or `oliver write`.",
+		builtin: "write",
 		alternatives: []Alternative{
 			{Name: "Ventoy", Note: "copy ISOs onto the stick and pick one at boot; handles Windows ISOs"},
 			{Name: "GNOME Disks", Command: "gnome-disks", Note: "Restore Disk Image from the menu"},
@@ -249,6 +257,7 @@ func Check(info *pe.Info) []Caveat {
 			Detail:       matched.detail,
 			Workaround:   matched.instead,
 			Alternatives: resolve(matched.alternatives),
+			BuiltIn:      matched.builtin,
 		})
 	}
 

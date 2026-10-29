@@ -78,12 +78,63 @@ WILL NOT WORK: Rufus needs hardware access that no compatibility layer provides
   physical drives and the Windows storage ioctls, neither of which a
   translated Windows process gets, so the device list stays empty and most
   controls stay disabled.
-  Use a native writer instead: Ventoy, GNOME Disks, KDE ISO Image Writer,
-  Fedora Media Writer, or `dd`.
+  Use a native writer instead — `oliver write` does the job itself, as do
+  Ventoy, GNOME Disks, KDE ISO Image Writer, Fedora Media Writer and `dd`.
+
+  Oliver does this itself: oliver write <image.iso>
 ```
 
 It still launches the program if you ask it to — the warning is information,
 not a refusal.
+
+**It writes disk images to drives and partitions itself.** Since Rufus cannot
+work here, Oliver does its job natively. Drop an `.iso` or `.img` onto Oliver,
+or onto the Disk Image Writer it adds to your application menu, and it asks
+which drive or partition to use, asks you to confirm, then writes the image
+and reads it all back to check the drive really holds it. From a terminal:
+
+```console
+$ oliver write ~/Downloads/Fedora-Workstation-Live-x86_64-40.iso
+Where should Fedora-Workstation-Live-x86_64-40.iso go?
+
+#  TARGET        SIZE      WHAT IS THERE
+1  /dev/sdb      28.6 GB   SanDisk Ultra, USB drive, 1 partition
+2    /dev/sdb1   28.6 GB   partition 1 of SanDisk Ultra, USB drive, exfat "Ventoy"
+   /dev/nvme0n1  476.9 GB  SSD 980: not offered, it holds the running system (/, /boot/efi)
+
+Choose 1-2, or q to cancel: 1
+...
+  writing  100%  [========================]  2.1 GB of 2.1 GB  38.2 MB/s
+  checking 100%  [========================]  2.1 GB of 2.1 GB  91.0 MB/s
+✓ wrote Fedora-Workstation-Live-x86_64-40.iso to /dev/sdb and checked it
+```
+
+Pick a whole drive to make a bootable USB stick, or a single partition to put
+an image into just that partition and leave the rest of the drive alone.
+`oliver write image.img -to /dev/sdb2` skips the question, and `-list` shows
+every drive and partition with the reason any of them is not offered.
+
+It is careful about what it will overwrite:
+
+- The disk the running system lives on is never offered, nor is a partition
+  used as swap or by an opened encrypted or LVM volume, nor the drive the
+  image file itself is stored on.
+- Filesystems mounted from the target are unmounted first, and the device is
+  then opened exclusively, so the kernel refuses the write if anything still
+  has it in use.
+- An ISO with no partition table — Windows installation media, usually — is
+  flagged, since written byte for byte it will not boot from USB. So is a
+  bootable image going into a partition, which no PC will start from.
+- Compressed images (`.xz`, `.gz`, `.zst` and the like) are refused with the
+  command that unpacks them, rather than written as compressed data.
+- The check reads the drive around the page cache, so it tests the drive and
+  not the copy still in memory. That is what catches a counterfeit stick that
+  claims more space than it has.
+
+When your user cannot write to the drive, you are asked for your password
+through pkexec on the desktop or sudo in a terminal. Only the writing itself
+runs with those rights, and the image is passed to it over a pipe, so root
+never opens a file in your home directory.
 
 **You can hand a program one real disk, deliberately.** Windows disk utilities
 expect to open drives directly, and a prefix has access to none by default —
@@ -169,7 +220,9 @@ $ ./Oliver-x86_64.AppImage desktop install --default
 ```
 
 That last step is what lets you double-click an `.exe` in your file manager, or
-reach Oliver from "Open With". Undo it with `desktop uninstall`.
+reach Oliver from "Open With". It also adds the Disk Image Writer to your
+menu, which takes an `.iso` or `.img` dropped onto it or opened with it. Undo
+it with `desktop uninstall`.
 
 The AppImage is a single statically linked file with no dependencies — no
 glibc version to match, nothing to install.
@@ -193,6 +246,7 @@ oliver why <program.exe>                  how every runtime scored, and why
 oliver backends                           what is installed on this machine
 oliver prefix list                        the Windows environments Oliver made
 oliver doctor                             what is missing, and how to fix it
+oliver write <image.iso>                  write it to a USB drive or a partition
 oliver desktop install                    open .exe files by double-clicking
 ```
 

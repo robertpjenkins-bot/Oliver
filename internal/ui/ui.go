@@ -13,8 +13,10 @@ import (
 
 // UI writes program output.
 type UI struct {
-	Out   io.Writer
-	Err   io.Writer
+	Out io.Writer
+	Err io.Writer
+	// In is where answers to prompts are read from; nil means standard input.
+	In    io.Reader
 	Color bool
 	// Interactive reports whether a terminal is attached. When it is not,
 	// errors are shown as desktop notifications instead of vanishing.
@@ -216,15 +218,52 @@ func (u *UI) Confirm(question string, def bool) bool {
 		hint = "[Y/n]"
 	}
 	fmt.Fprintf(u.Err, "%s %s ", question, hint)
-	var answer string
-	if _, err := fmt.Fscanln(os.Stdin, &answer); err != nil {
+	answer, ok := u.readLine()
+	if !ok {
 		return def
 	}
-	switch strings.ToLower(strings.TrimSpace(answer)) {
+	switch strings.ToLower(answer) {
 	case "y", "yes":
 		return true
 	case "n", "no":
 		return false
 	}
 	return def
+}
+
+// Ask prints a prompt and returns the line typed in reply. It reports false
+// when there is no terminal to ask, or the input ended.
+func (u *UI) Ask(prompt string) (string, bool) {
+	if !u.Interactive {
+		return "", false
+	}
+	fmt.Fprintf(u.Err, "%s ", prompt)
+	return u.readLine()
+}
+
+// readLine reads one line a byte at a time. Buffering would swallow input
+// meant for the next prompt, or for a program started afterwards.
+func (u *UI) readLine() (string, bool) {
+	in := u.In
+	if in == nil {
+		in = os.Stdin
+	}
+	var line []byte
+	b := make([]byte, 1)
+	for {
+		n, err := in.Read(b)
+		if n == 1 {
+			if b[0] == '\n' {
+				break
+			}
+			line = append(line, b[0])
+		}
+		if err != nil {
+			if len(line) == 0 {
+				return "", false
+			}
+			break
+		}
+	}
+	return strings.TrimSpace(string(line)), true
 }
