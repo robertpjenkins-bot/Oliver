@@ -3,10 +3,12 @@
 #
 # No GitHub sign-in and no download of the ISO: the whole Ollie OS recipe
 # (its build script, settings and the Oliver source) is inside this app, and
-# everything else comes from the Arch Linux servers, Docker Hub and the public
-# download pages of a few packages. The build runs in an Arch Linux container,
-# exactly as the project's own builds do:
-#   - SteamOS / Linux: Podman (SteamOS has it), as this user: no password;
+# everything else comes from the Arch Linux servers (and Docker Hub) and the
+# public download pages of a few packages. The build runs in an Arch Linux
+# container, exactly as the project's own builds do. None asks for a password:
+#   - Ollie OS: systemd-nspawn, which every Ollie OS has, in an Arch Linux
+#     straight from the Arch servers (Ollie OS's admin rights need none);
+#   - SteamOS / Linux: Podman (SteamOS has it), as this user;
 #   - macOS (Intel): Docker Desktop (or OrbStack / Colima), installed once.
 # It takes 1 to 2 hours and about 20 GB of free space. The ISO goes to
 # Downloads; then USB Maker (or Mac Setup) can put it on a drive.
@@ -22,8 +24,9 @@ die() {
 }
 have() { command -v "$1" >/dev/null 2>&1; }
 # The build's own files belong to the container's users. With rootless Podman
-# this user reaches them through "podman unshare", which needs no password.
-as_builder() { if [ -n "$rootless" ]; then podman unshare "$@"; else sudo "$@"; fi; }
+# this user reaches them through "podman unshare"; otherwise through sudo, and
+# only where it needs no password (sudo -n never asks for one).
+as_builder() { if [ -n "$rootless" ]; then podman unshare "$@"; else sudo -n "$@"; fi; }
 
 here="$(cd "$(dirname "$0")" && pwd)"
 mac=false
@@ -55,7 +58,7 @@ done
 
 # --- 2. The container engine ----------------------------------------------------------
 work="${OLLIE_BUILD_DIR:-$HOME/Ollie-OS-Builder}"
-engine=() rootless=""
+engine=() kind=docker rootless=""
 if $mac; then
     [ "$(uname -m)" = x86_64 ] || echo "  (This Mac is not an Intel Mac: the build runs emulated and takes much longer.)"
     have docker || die "Docker is not installed. Install Docker Desktop from docker.com (or OrbStack), open it once so it is running, then run this again."
@@ -67,20 +70,63 @@ elif have podman; then
     # As this user, no password ("rootless"); its storage is in the home
     # folder. os/build.sh adapts the build to that (OLLIE_ROOTLESS=1).
     engine=(podman)
-    rootless=1
-elif have docker; then
+    kind=podman rootless=1
+elif have systemd-nspawn && sudo -n true 2>/dev/null; then
+    # Ollie OS: admin rights without a password, and systemd's own containers.
+    kind=nspawn
+elif have docker && { docker info >/dev/null 2>&1 || sudo -n docker info >/dev/null 2>&1; }; then
     engine=(docker)
-    docker info >/dev/null 2>&1 || engine=(sudo docker)
+    docker info >/dev/null 2>&1 || engine=(sudo -n docker)
+elif have systemd-nspawn && [ -x /usr/local/bin/ollie-first-setup ]; then
+    die "this Ollie OS asks for a password for admin tasks, and the Builder never asks for one. Bring it up to date with the Ollie OS Updater (an up-to-date Ollie OS asks for none), or run the Builder on SteamOS."
 else
-    die "neither Podman nor Docker is on this computer. SteamOS 3.5 and newer have Podman: update SteamOS, or install Podman, then run this again."
+    die "neither Podman nor Docker (usable without a password) is on this computer. SteamOS 3.5 and newer have Podman: update SteamOS, or install Podman, then run this again. (On Ollie OS the Builder needs neither.)"
 fi
 
 # --- 3. Room ----------------------------------------------------------------------------
 mkdir -p "$work" || die "could not make $work."
 free_kb="$(df -Pk "$work" | awk 'NR == 2 {print $4}')"
 if [ "${free_kb:-0}" -lt $((20 * 1024 * 1024)) ]; then
-    die "not enough free space: building needs about 20 GB, $work has $((free_kb / 1024 / 1024)) GB free."
+    hint=""
+    [ -d /run/archiso ] && hint=" Ollie OS is running from its USB drive, which keeps little room for new files: run the Builder on Ollie OS installed on a drive (Install Ollie OS), or on SteamOS."
+    die "not enough free space: building needs about 20 GB, $work has $((free_kb / 1024 / 1024)) GB free.$hint"
 fi
+
+# --- The Arch Linux to build in, for systemd-nspawn -------------------------------------
+# A fresh one each time, from the Arch servers' monthly "bootstrap" download,
+# checked against their checksums. The package downloads are kept until the
+# build succeeds, so running it again after a failure is quicker.
+bootstrap=archlinux-bootstrap-x86_64.tar.zst
+root="$work/arch-root" build_tmp="$work/build-tmp" pkg_cache="$work/pkg-cache"
+fetch_bootstrap() {
+    local base sum part="$work/$bootstrap.part"
+    # A half download from another day may be last month's: start that over.
+    find "$work" -maxdepth 1 -name "$bootstrap.part" -mtime +0 -exec rm -f {} + 2>/dev/null
+    for base in ${OLLIE_BUILD_ARCH_MIRRORS:-https://geo.mirror.pkgbuild.com https://fastly.mirror.pkgbuild.com https://mirror.rackspace.com/archlinux https://mirror.leaseweb.net/archlinux}; do
+        sum="$(curl -fsSL --retry 3 "$base/iso/latest/sha256sums.txt" 2>/dev/null | awk -v f="$bootstrap" '$2 == f {print $1}')"
+        [ -n "$sum" ] || continue
+        if [ -f "$work/$bootstrap" ] && [ "$(sha256sum "$work/$bootstrap" | cut -d ' ' -f 1)" = "$sum" ]; then
+            return 0
+        fi
+        rm -f "$work/$bootstrap"
+        if curl -fL --retry 5 -C - -o "$part" "$base/iso/latest/$bootstrap"; then
+            [ "$(sha256sum "$part" | cut -d ' ' -f 1)" = "$sum" ] && mv -f "$part" "$work/$bootstrap" && return 0
+            rm -f "$part" # damaged: start over from the next server
+        fi
+    done
+    return 1
+}
+prepare_root() {
+    sudo -n rm -rf --one-file-system "${root:?}" "${build_tmp:?}" "$work/root.x86_64" &&
+        sudo -n tar --zstd -xpf "$work/$bootstrap" -C "$work" --numeric-owner &&
+        sudo -n mv "$work/root.x86_64" "$root" &&
+        sudo -n install -d -m 1777 "$build_tmp" &&
+        sudo -n install -d -m 0755 "$pkg_cache" || return 1
+    # The Arch servers for everywhere (the same as in the Arch Linux container).
+    sudo -n sed -i '/^## Worldwide/,/^$/ s/^#Server/Server/' "$root/etc/pacman.d/mirrorlist"
+    grep -q '^Server' "$root/etc/pacman.d/mirrorlist" ||
+        echo 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch' | sudo -n tee -a "$root/etc/pacman.d/mirrorlist" >/dev/null
+}
 
 # --- 4. Build ---------------------------------------------------------------------------
 say "Unpacking the Ollie OS recipe"
@@ -88,15 +134,31 @@ src="$work/src"
 if [ -d "$src" ]; then rm -rf "$src" 2>/dev/null || as_builder rm -rf "$src"; fi
 mkdir -p "$src" && tar -xzf "$source_tar" -C "$src" || die "could not unpack the recipe (is the disk full?)."
 
-say "Building Ollie OS (1 to 2 hours; it is fine to leave it running)"
-echo "  Downloading Arch Linux and building. The steps show below; the whole log is in $work/build.log"
 start=$(date +%s)
-"${engine[@]}" run --rm --privileged ${rootless:+-e OLLIE_ROOTLESS=1} -v "$src:/src" -w /src \
-    docker.io/library/archlinux:latest bash os/build.sh >"$work/build.log" 2>&1 &
+if [ "$kind" = nspawn ]; then
+    say "Downloading Arch Linux to build in (about 150 MB)"
+    fetch_bootstrap || die "could not download Arch Linux from the Arch servers. Is the internet connected? Run this again to retry."
+    prepare_root || die "could not set up Arch Linux in $work (is the disk full?)."
+fi
+
+say "Building Ollie OS (1 to 2 hours; it is fine to leave it running)"
+echo "  Downloading Arch Linux's packages and building. The steps show below; the whole log is in $work/build.log"
+if [ "$kind" = nspawn ]; then
+    nspawn=(sudo -n systemd-nspawn -q --register=no --as-pid2 --console=pipe -D "$root"
+        --bind="$src:/src" --bind="$build_tmp:/tmp" --bind="$pkg_cache:/var/cache/pacman/pkg" --chdir=/src)
+    # Without systemd running the computer (not on Ollie OS), stay in this unit.
+    [ -d /run/systemd/system ] || nspawn+=(--keep-unit)
+    "${nspawn[@]}" bash -c 'pacman-key --init && pacman-key --populate archlinux && exec bash os/build.sh' \
+        </dev/null >"$work/build.log" 2>&1 &
+else
+    "${engine[@]}" run --rm --privileged ${rootless:+-e OLLIE_ROOTLESS=1} -v "$src:/src" -w /src \
+        docker.io/library/archlinux:latest bash os/build.sh >"$work/build.log" 2>&1 &
+fi
 pid=$!
-# Show the build's steps as they come, not every line.
+# Show the build's steps as they come, not every line. (ps, not kill -0: with
+# sudo the build runs as root, which this user may not signal.)
 last=""
-while kill -0 "$pid" 2>/dev/null; do
+while ps -p "$pid" >/dev/null 2>&1; do
     sleep 5
     now="$(sed 's/\x1b\[[0-9;]*m//g' "$work/build.log" 2>/dev/null | grep -E '^==> |^\[mkarchiso\] INFO' | tail -n 1)"
     if [ -n "$now" ] && [ "$now" != "$last" ]; then
@@ -119,10 +181,13 @@ dest="$HOME/Downloads"
 mkdir -p "$dest"
 name="$(basename "$iso")"
 cp -f "$iso" "$dest/$name" 2>/dev/null || as_builder cp -f "$iso" "$dest/$name" || die "could not copy the ISO to Downloads (is it full?)."
-[ -w "$dest/$name" ] || [ -n "$rootless" ] || sudo chown "$(id -u):$(id -g)" "$dest/$name"
+[ -w "$dest/$name" ] || [ -n "$rootless" ] || as_builder chown "$(id -u):$(id -g)" "$dest/$name"
 (cd "$dest" && shasum -a 256 "$name" 2>/dev/null >"$name.sha256" || sha256sum "$name" >"$name.sha256")
 # The build's own copy and the container storage are big; free the space.
 rm -rf "$src" 2>/dev/null || as_builder rm -rf "$src"
+if [ "$kind" = nspawn ]; then
+    sudo -n rm -rf --one-file-system "$root" "$build_tmp" "$pkg_cache" "$work/$bootstrap"
+fi
 printf '\n  %sDone in %d minutes:%s %s\n' "$green$bold" $((($(date +%s) - start) / 60)) "$reset" "$dest/$name"
 echo "  It is the newest Ollie OS, built on this computer."
 
