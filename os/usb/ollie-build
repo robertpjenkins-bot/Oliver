@@ -3,12 +3,14 @@
 #
 # No GitHub sign-in and no download of the ISO: the whole Ollie OS recipe
 # (its build script, settings and the Oliver source) is inside this app, and
-# everything else comes from the Arch Linux servers (and Docker Hub) and the
-# public download pages of a few packages. The build runs in an Arch Linux
-# container, exactly as the project's own builds do. None asks for a password:
-#   - Ollie OS: systemd-nspawn, which every Ollie OS has, in an Arch Linux
-#     straight from the Arch servers (Ollie OS's admin rights need none);
-#   - SteamOS / Linux: Podman (SteamOS has it), as this user;
+# everything else comes from the Arch Linux servers and the public download
+# pages of a few packages. It never asks for a password:
+#   - Ollie OS, SteamOS, Linux: the way Annie OS Maker builds Annie OS. Arch
+#     Linux's own "bootstrap" (a small Arch Linux in a folder) comes from the
+#     Arch servers, and the build runs inside it as "root" of a user
+#     namespace of its own, which any user may make: really this user, so
+#     nothing outside its folder is touched. (Where that is not allowed:
+#     Podman as this user, or sudo where it needs no password.)
 #   - macOS (Intel): Docker Desktop (or OrbStack / Colima), installed once.
 # It takes 1 to 2 hours and about 20 GB of free space. The ISO goes to
 # Downloads; then USB Maker (or Mac Setup) can put it on a drive.
@@ -23,14 +25,22 @@ die() {
     exit 1
 }
 have() { command -v "$1" >/dev/null 2>&1; }
-# The build's own files belong to the container's users. With rootless Podman
-# this user reaches them through "podman unshare"; otherwise through sudo, and
-# only where it needs no password (sudo -n never asks for one).
-as_builder() { if [ -n "$rootless" ]; then podman unshare "$@"; else sudo -n "$@"; fi; }
+# The build's own files belong to its other users (pacman's, the package
+# builder's): reach them the way the build was run. sudo only as "sudo -n",
+# which never asks for a password.
+as_builder() {
+    case "$kind" in
+    userns) unshare --map-auto --map-root-user "$@" ;;
+    podman) podman unshare "$@" ;;
+    *) sudo -n "$@" ;;
+    esac
+}
 
 here="$(cd "$(dirname "$0")" && pwd)"
 mac=false
 [ "$(uname -s)" = Darwin ] && mac=true
+# Started from the desktop, some systems leave chroot's folder out of PATH.
+$mac || PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"
 
 # --- A terminal to talk in (Linux; on a Mac the .command opens Terminal) -----------
 if ! $mac && [ ! -t 0 ] && [ -z "${OLLIE_BUILD_IN_TERMINAL:-}" ]; then
@@ -56,9 +66,11 @@ for f in "${OLLIE_BUILD_SOURCE:-}" "$here/../share/ollie-build/ollie-os-source.t
 done
 [ -n "$source_tar" ] || die "this copy of the Builder has no Ollie OS recipe inside (ollie-os-source.tar.gz is missing next to it)."
 
-# --- 2. The container engine ----------------------------------------------------------
+# --- 2. How to build ---------------------------------------------------------------------
 work="${OLLIE_BUILD_DIR:-$HOME/Ollie-OS-Builder}"
 engine=() kind=docker rootless=""
+chroot_tools=true
+for tool in curl tar zstd unshare chroot sha256sum; do have "$tool" || chroot_tools=false; done
 if $mac; then
     [ "$(uname -m)" = x86_64 ] || echo "  (This Mac is not an Intel Mac: the build runs emulated and takes much longer.)"
     have docker || die "Docker is not installed. Install Docker Desktop from docker.com (or OrbStack), open it once so it is running, then run this again."
@@ -66,21 +78,25 @@ if $mac; then
     engine=(docker)
 elif [ -n "${OLLIE_BUILD_ENGINE:-}" ]; then
     read -r -a engine <<<"$OLLIE_BUILD_ENGINE"
+elif $chroot_tools && unshare --map-auto --map-root-user true 2>/dev/null; then
+    # As Annie OS Maker: this user, as every user of the build (its own
+    # range of user IDs, which Ollie OS and SteamOS give every account).
+    kind=userns
 elif have podman; then
     # As this user, no password ("rootless"); its storage is in the home
     # folder. os/build.sh adapts the build to that (OLLIE_ROOTLESS=1).
     engine=(podman)
     kind=podman rootless=1
-elif have systemd-nspawn && sudo -n true 2>/dev/null; then
-    # Ollie OS: admin rights without a password, and systemd's own containers.
-    kind=nspawn
+elif $chroot_tools && sudo -n true 2>/dev/null; then
+    # Admin rights that need no password: Annie OS Maker's way, as real root.
+    kind=sudo
 elif have docker && { docker info >/dev/null 2>&1 || sudo -n docker info >/dev/null 2>&1; }; then
     engine=(docker)
     docker info >/dev/null 2>&1 || engine=(sudo -n docker)
-elif have systemd-nspawn && [ -x /usr/local/bin/ollie-first-setup ]; then
-    die "this Ollie OS asks for a password for admin tasks, and the Builder never asks for one. Bring it up to date with the Ollie OS Updater (an up-to-date Ollie OS asks for none), or run the Builder on SteamOS."
+elif [ -x /usr/local/bin/ollie-first-setup ]; then
+    die "this Ollie OS does not let its account build the way Annie OS Maker does, and asks for a password for admin tasks; the Builder never asks for one. Bring it up to date with the Ollie OS Updater, or run the Builder on SteamOS."
 else
-    die "neither Podman nor Docker (usable without a password) is on this computer. SteamOS 3.5 and newer have Podman: update SteamOS, or install Podman, then run this again. (On Ollie OS the Builder needs neither.)"
+    die "this computer lets the Builder build neither the way Annie OS Maker does (a user namespace of its own) nor with Podman or Docker without a password. SteamOS 3.5 and newer, Ollie OS and most Linux allow the first; on Ubuntu 24.04 and newer, AppArmor blocks it."
 fi
 
 # --- 3. Room ----------------------------------------------------------------------------
@@ -92,68 +108,99 @@ if [ "${free_kb:-0}" -lt $((20 * 1024 * 1024)) ]; then
     die "not enough free space: building needs about 20 GB, $work has $((free_kb / 1024 / 1024)) GB free.$hint"
 fi
 
-# --- The Arch Linux to build in, for systemd-nspawn -------------------------------------
+# --- The Arch Linux to build in (all but Podman, Docker and the Mac) -------------------
 # A fresh one each time, from the Arch servers' monthly "bootstrap" download,
-# checked against their checksums. The package downloads are kept until the
-# build succeeds, so running it again after a failure is quicker.
-bootstrap=archlinux-bootstrap-x86_64.tar.zst
+# checked against their checksums (or the one Annie OS Maker left in
+# Downloads, if it is that same one). The package downloads are kept until
+# the build succeeds, so running it again after a failure is quicker.
+bootstrap=archlinux-bootstrap-x86_64.tar.zst bootstrap_file=""
 root="$work/arch-root" build_tmp="$work/build-tmp" pkg_cache="$work/pkg-cache"
 fetch_bootstrap() {
-    local base sum part="$work/$bootstrap.part"
+    local base sum f part="$work/$bootstrap.part"
     # A half download from another day may be last month's: start that over.
     find "$work" -maxdepth 1 -name "$bootstrap.part" -mtime +0 -exec rm -f {} + 2>/dev/null
-    for base in ${OLLIE_BUILD_ARCH_MIRRORS:-https://geo.mirror.pkgbuild.com https://fastly.mirror.pkgbuild.com https://mirror.rackspace.com/archlinux https://mirror.leaseweb.net/archlinux}; do
+    for base in ${OLLIE_BUILD_ARCH_MIRRORS:-https://geo.mirror.pkgbuild.com https://fastly.mirror.pkgbuild.com https://mirror.rackspace.com/archlinux https://mirrors.kernel.org/archlinux}; do
         sum="$(curl -fsSL --retry 3 "$base/iso/latest/sha256sums.txt" 2>/dev/null | awk -v f="$bootstrap" '$2 == f {print $1}')"
         [ -n "$sum" ] || continue
-        if [ -f "$work/$bootstrap" ] && [ "$(sha256sum "$work/$bootstrap" | cut -d ' ' -f 1)" = "$sum" ]; then
-            return 0
-        fi
-        rm -f "$work/$bootstrap"
+        for f in "$work/$bootstrap" "$HOME/Downloads/$bootstrap"; do
+            if [ -f "$f" ] && [ "$(sha256sum "$f" | cut -d ' ' -f 1)" = "$sum" ]; then
+                bootstrap_file="$f"
+                return 0
+            fi
+        done
         if curl -fL --retry 5 -C - -o "$part" "$base/iso/latest/$bootstrap"; then
-            [ "$(sha256sum "$part" | cut -d ' ' -f 1)" = "$sum" ] && mv -f "$part" "$work/$bootstrap" && return 0
-            rm -f "$part" # damaged: start over from the next server
+            if [ "$(sha256sum "$part" | cut -d ' ' -f 1)" = "$sum" ] && mv -f "$part" "$work/$bootstrap"; then
+                bootstrap_file="$work/$bootstrap"
+                return 0
+            fi
+            rm -f "${part:?}" # damaged: start over from the next server
         fi
     done
     return 1
 }
-prepare_root() {
-    sudo -n rm -rf --one-file-system "${root:?}" "${build_tmp:?}" "$work/root.x86_64" &&
-        sudo -n tar --zstd -xpf "$work/$bootstrap" -C "$work" --numeric-owner &&
-        sudo -n mv "$work/root.x86_64" "$root" &&
-        sudo -n install -d -m 1777 "$build_tmp" &&
-        sudo -n install -d -m 0755 "$pkg_cache" || return 1
+# Runs as root of a namespace of its own (a user namespace, or real root with
+# "sudo -n"): unpacks Arch Linux, gives it what a running system has, and
+# builds Ollie OS in it with os/build.sh, as in the Arch Linux container.
+# Every mount is in this namespace only and goes with it.
+build_inside() { # build_inside BOOTSTRAP ROOT SRC TMP CACHE
+    local bootstrap=$1 root=$2 src=$3 tmp=$4 cache=$5 opts
+    printf '==> Unpacking Arch Linux\n'
+    rm -rf --one-file-system "${root:?}" && mkdir -p "$root" "$tmp" "$cache" && chmod 1777 "$tmp" || return 1
+    opts=(--numeric-owner)
+    # (GNU tar cannot keep the bootstrap's file capabilities here, and needn't.)
+    tar --help 2>/dev/null | grep -q -- --warning= && opts+=(--warning=no-unknown-keyword)
+    tar -x --zstd --strip-components=1 "${opts[@]}" -f "$bootstrap" -C "$root" || return 1
+    mkdir -p "$root/src" "$root/var/cache/pacman/pkg"
+    mount --make-rprivate / &&
+        mount --bind "$root" "$root" &&
+        mount -t proc proc "$root/proc" &&
+        mount --rbind /sys "$root/sys" &&
+        mount --rbind /dev "$root/dev" &&
+        mount -t tmpfs -o mode=0755 tmpfs "$root/run" &&
+        mount --bind "$tmp" "$root/tmp" &&
+        mount --bind "$src" "$root/src" &&
+        mount --bind "$cache" "$root/var/cache/pacman/pkg" || return 1
+    rm -f "${root:?}/etc/resolv.conf"
+    cp -L /etc/resolv.conf "$root/etc/resolv.conf" 2>/dev/null
     # The Arch servers for everywhere (the same as in the Arch Linux container).
-    sudo -n sed -i '/^## Worldwide/,/^$/ s/^#Server/Server/' "$root/etc/pacman.d/mirrorlist"
+    sed -i '/^## Worldwide/,/^$/ s/^#Server/Server/' "$root/etc/pacman.d/mirrorlist"
+    # shellcheck disable=SC2016 # pacman's own $repo and $arch
     grep -q '^Server' "$root/etc/pacman.d/mirrorlist" ||
-        echo 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch' | sudo -n tee -a "$root/etc/pacman.d/mirrorlist" >/dev/null
+        echo 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch' >>"$root/etc/pacman.d/mirrorlist"
+    chroot "$root" /usr/bin/env -i HOME=/root TERM="${TERM:-dumb}" LANG=C.UTF-8 \
+        PATH=/usr/local/sbin:/usr/local/bin:/usr/bin OLLIE_ROOTLESS=1 \
+        bash -c 'pacman-key --init && pacman-key --populate archlinux && cd /src && exec bash os/build.sh'
 }
 
 # --- 4. Build ---------------------------------------------------------------------------
 say "Unpacking the Ollie OS recipe"
 src="$work/src"
-if [ -d "$src" ]; then rm -rf "$src" 2>/dev/null || as_builder rm -rf "$src"; fi
+if [ -d "$src" ]; then rm -rf "${src:?}" 2>/dev/null || as_builder rm -rf --one-file-system "${src:?}"; fi
 mkdir -p "$src" && tar -xzf "$source_tar" -C "$src" || die "could not unpack the recipe (is the disk full?)."
 
 start=$(date +%s)
-if [ "$kind" = nspawn ]; then
-    say "Downloading Arch Linux to build in (about 150 MB)"
+case "$kind" in
+userns | sudo)
+    say "Getting Arch Linux to build in (about 150 MB)"
     fetch_bootstrap || die "could not download Arch Linux from the Arch servers. Is the internet connected? Run this again to retry."
-    prepare_root || die "could not set up Arch Linux in $work (is the disk full?)."
-fi
+    ;;
+esac
 
 say "Building Ollie OS (1 to 2 hours; it is fine to leave it running)"
 echo "  Downloading Arch Linux's packages and building. The steps show below; the whole log is in $work/build.log"
-if [ "$kind" = nspawn ]; then
-    nspawn=(sudo -n systemd-nspawn -q --register=no --as-pid2 --console=pipe -D "$root"
-        --bind="$src:/src" --bind="$build_tmp:/tmp" --bind="$pkg_cache:/var/cache/pacman/pkg" --chdir=/src)
-    # Without systemd running the computer (not on Ollie OS), stay in this unit.
-    [ -d /run/systemd/system ] || nspawn+=(--keep-unit)
-    "${nspawn[@]}" bash -c 'pacman-key --init && pacman-key --populate archlinux && exec bash os/build.sh' \
-        </dev/null >"$work/build.log" 2>&1 &
-else
+case "$kind" in
+userns | sudo)
+    ns=(unshare --map-auto --map-root-user --mount --pid --fork --kill-child --)
+    [ "$kind" = sudo ] && ns=(sudo -n unshare --mount --pid --fork --kill-child --)
+    # shellcheck disable=SC2016 # expanded by the bash inside
+    "${ns[@]}" bash -c "$(declare -f build_inside)"'; build_inside "$@"' build_inside \
+        "$bootstrap_file" "$root" "$src" "$build_tmp" "$pkg_cache" </dev/null >"$work/build.log" 2>&1 &
+    ;;
+*)
     "${engine[@]}" run --rm --privileged ${rootless:+-e OLLIE_ROOTLESS=1} -v "$src:/src" -w /src \
         docker.io/library/archlinux:latest bash os/build.sh >"$work/build.log" 2>&1 &
-fi
+    ;;
+esac
 pid=$!
 # Show the build's steps as they come, not every line. (ps, not kill -0: with
 # sudo the build runs as root, which this user may not signal.)
@@ -184,10 +231,10 @@ cp -f "$iso" "$dest/$name" 2>/dev/null || as_builder cp -f "$iso" "$dest/$name" 
 [ -w "$dest/$name" ] || [ -n "$rootless" ] || as_builder chown "$(id -u):$(id -g)" "$dest/$name"
 (cd "$dest" && shasum -a 256 "$name" 2>/dev/null >"$name.sha256" || sha256sum "$name" >"$name.sha256")
 # The build's own copy and the container storage are big; free the space.
-rm -rf "$src" 2>/dev/null || as_builder rm -rf "$src"
-if [ "$kind" = nspawn ]; then
-    sudo -n rm -rf --one-file-system "$root" "$build_tmp" "$pkg_cache" "$work/$bootstrap"
-fi
+rm -rf "${src:?}" 2>/dev/null || as_builder rm -rf --one-file-system "${src:?}"
+case "$kind" in
+userns | sudo) as_builder rm -rf --one-file-system "${root:?}" "${build_tmp:?}" "${pkg_cache:?}" "${work:?}/${bootstrap:?}" ;;
+esac
 printf '\n  %sDone in %d minutes:%s %s\n' "$green$bold" $((($(date +%s) - start) / 60)) "$reset" "$dest/$name"
 echo "  It is the newest Ollie OS, built on this computer."
 
