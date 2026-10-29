@@ -40,6 +40,33 @@ pacman -Su --noconfirm
 # without any font installed the letters come out as boxes.
 pacman -S --noconfirm --needed archiso base-devel git go librsvg noto-fonts sudo
 
+# OLLIE_ROOTLESS=1: in a container started by a normal user (rootless Podman,
+# no password; the Ollie OS Builder app). Its "root" may mount proc, tmpfs
+# and binds but not a fresh devtmpfs, sysfs or devpts, so the chroots
+# pacstrap and arch-chroot set up borrow the container's own /dev and /sys
+# (with everything mounted below them) instead. Those borrowed mounts cannot
+# always be unmounted one by one afterwards, so each run of the two gets a
+# mount namespace of its own: whatever it mounted is gone when it exits, and
+# the build's later clean-up never reaches into /dev or /sys. pacman's
+# download sandbox, which switches to a user the container may not map, is
+# turned off for the build only (not in the ISO's pacman.conf).
+if [[ -n "${OLLIE_ROOTLESS:-}" ]]; then
+    for tool in pacstrap arch-chroot; do
+        sed -i -E \
+            -e 's#chroot_add_mount udev "\$1/dev" -t devtmpfs[^&]*#chroot_add_mount /dev "$1/dev" --rbind #' \
+            -e 's#chroot_add_mount sys "\$1/sys" -t sysfs[^&]*#chroot_add_mount /sys "$1/sys" --rbind #' \
+            -e '/chroot_add_mount devpts "\$1\/dev\/pts"/d' \
+            -e 's#umount "\$\{CHROOT_ACTIVE_MOUNTS\[@\]\}"#umount --recursive --lazy "${CHROOT_ACTIVE_MOUNTS[@]}" 2>/dev/null#' \
+            "/usr/bin/$tool"
+        grep -q 'chroot_add_mount /dev "\$1/dev" --rbind' "/usr/bin/$tool" ||
+            echo "note: could not adapt $tool for a rootless build; it may fail" >&2
+        mv "/usr/bin/$tool" "/usr/bin/$tool.rootless"
+        printf '#!/bin/sh\nexec unshare --mount --propagation private /usr/bin/%s.rootless "$@"\n' "$tool" >"/usr/bin/$tool"
+        chmod 0755 "/usr/bin/$tool"
+    done
+    grep -q '^DisableSandbox' /etc/pacman.conf || sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+fi
+
 git config --global --add safe.directory "$repo"
 version="$(git -C "$repo" describe --tags --always --dirty 2>/dev/null || echo dev)"
 
@@ -156,6 +183,7 @@ echo "firmware: ${firmware[*]}"
 # The installed system gets the container's pacman setup (with multilib) and
 # its working mirror list; the build additionally sees the local AUR repo.
 install -D -m 0644 /etc/pacman.conf "$profile/airootfs/etc/pacman.conf"
+sed -i '/^DisableSandbox/d' "$profile/airootfs/etc/pacman.conf"
 install -D -m 0644 /etc/pacman.d/mirrorlist "$profile/airootfs/etc/pacman.d/mirrorlist"
 cp /etc/pacman.conf "$profile/pacman.conf"
 # Of the cursor package's 24 colour sets, only the one Ollie OS uses goes on

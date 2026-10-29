@@ -6,8 +6,7 @@
 # everything else comes from the Arch Linux servers, Docker Hub and the public
 # download pages of a few packages. The build runs in an Arch Linux container,
 # exactly as the project's own builds do:
-#   - SteamOS / Linux: Podman (SteamOS has it), as root, so it asks for the
-#     password once (on SteamOS set one with  passwd  in Konsole);
+#   - SteamOS / Linux: Podman (SteamOS has it), as this user: no password;
 #   - macOS (Intel): Docker Desktop (or OrbStack / Colima), installed once.
 # It takes 1 to 2 hours and about 20 GB of free space. The ISO goes to
 # Downloads; then USB Maker (or Mac Setup) can put it on a drive.
@@ -22,6 +21,9 @@ die() {
     exit 1
 }
 have() { command -v "$1" >/dev/null 2>&1; }
+# The build's own files belong to the container's users. With rootless Podman
+# this user reaches them through "podman unshare", which needs no password.
+as_builder() { if [ -n "$rootless" ]; then podman unshare "$@"; else sudo "$@"; fi; }
 
 here="$(cd "$(dirname "$0")" && pwd)"
 mac=false
@@ -53,7 +55,7 @@ done
 
 # --- 2. The container engine ----------------------------------------------------------
 work="${OLLIE_BUILD_DIR:-$HOME/Ollie-OS-Builder}"
-engine=()
+engine=() rootless=""
 if $mac; then
     [ "$(uname -m)" = x86_64 ] || echo "  (This Mac is not an Intel Mac: the build runs emulated and takes much longer.)"
     have docker || die "Docker is not installed. Install Docker Desktop from docker.com (or OrbStack), open it once so it is running, then run this again."
@@ -62,13 +64,10 @@ if $mac; then
 elif [ -n "${OLLIE_BUILD_ENGINE:-}" ]; then
     read -r -a engine <<<"$OLLIE_BUILD_ENGINE"
 elif have podman; then
-    # As root (the build mounts file systems), with its storage in the home
-    # folder: SteamOS's system partitions are small.
-    store="$work/containers"
-    engine=(sudo podman --root "$store/storage" --runroot "$store/run")
-    echo
-    echo "Building needs the administrator password once (on SteamOS: the one set with  passwd  in Konsole)."
-    sudo -v || die "that password did not work. On SteamOS, open Konsole, type  passwd , set one, and run this again."
+    # As this user, no password ("rootless"); its storage is in the home
+    # folder. os/build.sh adapts the build to that (OLLIE_ROOTLESS=1).
+    engine=(podman)
+    rootless=1
 elif have docker; then
     engine=(docker)
     docker info >/dev/null 2>&1 || engine=(sudo docker)
@@ -86,26 +85,24 @@ fi
 # --- 4. Build ---------------------------------------------------------------------------
 say "Unpacking the Ollie OS recipe"
 src="$work/src"
-if [ -d "$src" ]; then rm -rf "$src" 2>/dev/null || sudo rm -rf "$src"; fi
+if [ -d "$src" ]; then rm -rf "$src" 2>/dev/null || as_builder rm -rf "$src"; fi
 mkdir -p "$src" && tar -xzf "$source_tar" -C "$src" || die "could not unpack the recipe (is the disk full?)."
 
 say "Building Ollie OS (1 to 2 hours; it is fine to leave it running)"
 echo "  Downloading Arch Linux and building. The steps show below; the whole log is in $work/build.log"
 start=$(date +%s)
-"${engine[@]}" run --rm --privileged -v "$src:/src" -w /src docker.io/library/archlinux:latest \
-    bash os/build.sh >"$work/build.log" 2>&1 &
+"${engine[@]}" run --rm --privileged ${rootless:+-e OLLIE_ROOTLESS=1} -v "$src:/src" -w /src \
+    docker.io/library/archlinux:latest bash os/build.sh >"$work/build.log" 2>&1 &
 pid=$!
 # Show the build's steps as they come, not every line.
 last=""
 while kill -0 "$pid" 2>/dev/null; do
     sleep 5
-    # Keep the password fresh, so it is not asked again at the end.
-    [ "${engine[0]}" = sudo ] && sudo -n -v 2>/dev/null
     now="$(sed 's/\x1b\[[0-9;]*m//g' "$work/build.log" 2>/dev/null | grep -E '^==> |^\[mkarchiso\] INFO' | tail -n 1)"
     if [ -n "$now" ] && [ "$now" != "$last" ]; then
+        last="$now"
         now="${now#==> }"
         printf '  %s  (%d min)\n' "${now#\[mkarchiso\] INFO: }" $((($(date +%s) - start) / 60))
-        last="$now"
     fi
 done
 wait "$pid"
@@ -121,11 +118,11 @@ fi
 dest="$HOME/Downloads"
 mkdir -p "$dest"
 name="$(basename "$iso")"
-cp -f "$iso" "$dest/$name" 2>/dev/null || sudo cp -f "$iso" "$dest/$name" || die "could not copy the ISO to Downloads (is it full?)."
-[ -w "$dest/$name" ] || sudo chown "$(id -u):$(id -g)" "$dest/$name"
+cp -f "$iso" "$dest/$name" 2>/dev/null || as_builder cp -f "$iso" "$dest/$name" || die "could not copy the ISO to Downloads (is it full?)."
+[ -w "$dest/$name" ] || [ -n "$rootless" ] || sudo chown "$(id -u):$(id -g)" "$dest/$name"
 (cd "$dest" && shasum -a 256 "$name" 2>/dev/null >"$name.sha256" || sha256sum "$name" >"$name.sha256")
 # The build's own copy and the container storage are big; free the space.
-rm -rf "$src" 2>/dev/null || sudo rm -rf "$src"
+rm -rf "$src" 2>/dev/null || as_builder rm -rf "$src"
 printf '\n  %sDone in %d minutes:%s %s\n' "$green$bold" $((($(date +%s) - start) / 60)) "$reset" "$dest/$name"
 echo "  It is the newest Ollie OS, built on this computer."
 
