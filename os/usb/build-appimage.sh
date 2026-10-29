@@ -6,6 +6,8 @@
 #   Ollie-OS-Get-ISO-x86_64.AppImage        downloads the ISO next to USB Maker
 #   Ollie-OS-Installer-x86_64.AppImage      downloads the ISO, then USB Maker
 #   Ollie-OS-Updater-x86_64.AppImage        brings an ISO up to the newest Ollie OS
+#   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
+#   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup)
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -159,3 +161,40 @@ APPRUN
     rm -rf "$appdir"
 }
 build_updater
+
+# The Ollie OS recipe: what os/build.sh needs, from the committed tree.
+source_tarball() { # source_tarball OUT.tar.gz
+    (cd "$os/.." && git archive --format=tar.gz -o "$1" HEAD go.mod cmd internal packaging os/build.sh os/ollie-write os/art os/profile)
+}
+
+# The Builder: builds the ISO in an Arch Linux container from the recipe it
+# carries, then hands over to USB Maker (or, on a Mac, Mac Setup).
+build_builder() {
+    local appdir="$out/OllieBuilder.AppDir" mac="$out/Ollie-OS-Builder-Mac"
+    rm -rf "$appdir" "$mac"
+    install -D -m 0755 "$here/ollie-build" "$appdir/usr/bin/ollie-build"
+    install -D -m 0755 "$here/ollie-usb" "$appdir/usr/bin/ollie-usb"
+    install -d "$appdir/usr/share/ollie-build"
+    source_tarball "$appdir/usr/share/ollie-build/ollie-os-source.tar.gz"
+    cat >"$appdir/AppRun" <<'APPRUN'
+#!/bin/sh
+# AppImage entry point: build Ollie OS, then hand over to USB Maker.
+HERE="$(dirname "$(readlink -f "$0")")"
+export OLLIE_USB_MAKER="$HERE/usr/bin/ollie-usb"
+exec "$HERE/usr/bin/ollie-build" "$@"
+APPRUN
+    chmod 0755 "$appdir/AppRun"
+    install -m 0644 "$here/ollie-build.desktop" "$appdir/ollie-build.desktop"
+    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
+    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Builder-x86_64.AppImage"
+    rm -rf "$appdir"
+    # For a Mac: a folder with the Builder, its recipe and Mac Setup, zipped.
+    mkdir -p "$mac"
+    install -m 0755 "$here/ollie-build" "$mac/Ollie-OS-Builder.command"
+    install -m 0755 "$here/mac/Ollie-OS-Mac-Setup.command" "$mac/Ollie-OS-Mac-Setup.command"
+    source_tarball "$mac/ollie-os-source.tar.gz"
+    rm -f "$out/Ollie-OS-Builder-Mac.zip"
+    (cd "$out" && zip -q -r -X Ollie-OS-Builder-Mac.zip "$(basename "$mac")")
+    rm -rf "$mac"
+}
+build_builder

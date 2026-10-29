@@ -1,0 +1,150 @@
+#!/bin/bash
+# Ollie OS Builder: build a brand-new Ollie OS ISO on this computer.
+#
+# No GitHub sign-in and no download of the ISO: the whole Ollie OS recipe
+# (its build script, settings and the Oliver source) is inside this app, and
+# everything else comes from the Arch Linux servers, Docker Hub and the public
+# download pages of a few packages. The build runs in an Arch Linux container,
+# exactly as the project's own builds do:
+#   - SteamOS / Linux: Podman (SteamOS has it), as root, so it asks for the
+#     password once (on SteamOS set one with  passwd  in Konsole);
+#   - macOS (Intel): Docker Desktop (or OrbStack / Colima), installed once.
+# It takes 1 to 2 hours and about 20 GB of free space. The ISO goes to
+# Downloads; then USB Maker (or Mac Setup) can put it on a drive.
+#
+# Written for the bash that comes with macOS (3.2) as well.
+
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
+say() { printf '\n%s==>%s %s%s%s\n' "$teal$bold" "$reset" "$bold" "$*" "$reset"; }
+die() {
+    printf '\n%sError:%s %s\n\nPress Enter to close.' "$red$bold" "$reset" "$1" >&2
+    read -r _
+    exit 1
+}
+have() { command -v "$1" >/dev/null 2>&1; }
+
+here="$(cd "$(dirname "$0")" && pwd)"
+mac=false
+[ "$(uname -s)" = Darwin ] && mac=true
+
+# --- A terminal to talk in (Linux; on a Mac the .command opens Terminal) -----------
+if ! $mac && [ ! -t 0 ] && [ -z "${OLLIE_BUILD_IN_TERMINAL:-}" ]; then
+    export OLLIE_BUILD_IN_TERMINAL=1
+    self="${APPIMAGE:-$here/$(basename "$0")}"
+    for term in konsole gnome-terminal kgx xfce4-terminal xterm; do
+        have "$term" || continue
+        case "$term" in
+        konsole) exec konsole --hold -e "$self" "$@" ;;
+        gnome-terminal | kgx) exec "$term" -- "$self" "$@" ;;
+        *) exec "$term" -hold -e "$self" "$@" ;;
+        esac
+    done
+    exit 1
+fi
+
+printf '\n%s  Ollie OS Builder%s  (builds a brand-new Ollie OS on this computer, 1-2 hours)\n' "$bold" "$reset"
+
+# --- 1. The recipe ------------------------------------------------------------------
+source_tar=""
+for f in "${OLLIE_BUILD_SOURCE:-}" "$here/../share/ollie-build/ollie-os-source.tar.gz" "$here/ollie-os-source.tar.gz"; do
+    [ -n "$f" ] && [ -f "$f" ] && { source_tar="$f"; break; }
+done
+[ -n "$source_tar" ] || die "this copy of the Builder has no Ollie OS recipe inside (ollie-os-source.tar.gz is missing next to it)."
+
+# --- 2. The container engine ----------------------------------------------------------
+work="${OLLIE_BUILD_DIR:-$HOME/Ollie-OS-Builder}"
+engine=()
+if $mac; then
+    [ "$(uname -m)" = x86_64 ] || echo "  (This Mac is not an Intel Mac: the build runs emulated and takes much longer.)"
+    have docker || die "Docker is not installed. Install Docker Desktop from docker.com (or OrbStack), open it once so it is running, then run this again."
+    docker info >/dev/null 2>&1 || die "Docker is installed but not running. Open Docker Desktop (whale icon at the top of the screen), wait until it says running, then run this again."
+    engine=(docker)
+elif [ -n "${OLLIE_BUILD_ENGINE:-}" ]; then
+    read -r -a engine <<<"$OLLIE_BUILD_ENGINE"
+elif have podman; then
+    # As root (the build mounts file systems), with its storage in the home
+    # folder: SteamOS's system partitions are small.
+    store="$work/containers"
+    engine=(sudo podman --root "$store/storage" --runroot "$store/run")
+    echo
+    echo "Building needs the administrator password once (on SteamOS: the one set with  passwd  in Konsole)."
+    sudo -v || die "that password did not work. On SteamOS, open Konsole, type  passwd , set one, and run this again."
+elif have docker; then
+    engine=(docker)
+    docker info >/dev/null 2>&1 || engine=(sudo docker)
+else
+    die "neither Podman nor Docker is on this computer. SteamOS 3.5 and newer have Podman: update SteamOS, or install Podman, then run this again."
+fi
+
+# --- 3. Room ----------------------------------------------------------------------------
+mkdir -p "$work" || die "could not make $work."
+free_kb="$(df -Pk "$work" | awk 'NR == 2 {print $4}')"
+if [ "${free_kb:-0}" -lt $((20 * 1024 * 1024)) ]; then
+    die "not enough free space: building needs about 20 GB, $work has $((free_kb / 1024 / 1024)) GB free."
+fi
+
+# --- 4. Build ---------------------------------------------------------------------------
+say "Unpacking the Ollie OS recipe"
+src="$work/src"
+if [ -d "$src" ]; then rm -rf "$src" 2>/dev/null || sudo rm -rf "$src"; fi
+mkdir -p "$src" && tar -xzf "$source_tar" -C "$src" || die "could not unpack the recipe (is the disk full?)."
+
+say "Building Ollie OS (1 to 2 hours; it is fine to leave it running)"
+echo "  Downloading Arch Linux and building. The steps show below; the whole log is in $work/build.log"
+start=$(date +%s)
+"${engine[@]}" run --rm --privileged -v "$src:/src" -w /src docker.io/library/archlinux:latest \
+    bash os/build.sh >"$work/build.log" 2>&1 &
+pid=$!
+# Show the build's steps as they come, not every line.
+last=""
+while kill -0 "$pid" 2>/dev/null; do
+    sleep 5
+    # Keep the password fresh, so it is not asked again at the end.
+    [ "${engine[0]}" = sudo ] && sudo -n -v 2>/dev/null
+    now="$(sed 's/\x1b\[[0-9;]*m//g' "$work/build.log" 2>/dev/null | grep -E '^==> |^\[mkarchiso\] INFO' | tail -n 1)"
+    if [ -n "$now" ] && [ "$now" != "$last" ]; then
+        now="${now#==> }"
+        printf '  %s  (%d min)\n' "${now#\[mkarchiso\] INFO: }" $((($(date +%s) - start) / 60))
+        last="$now"
+    fi
+done
+wait "$pid"
+rc=$?
+iso="$(ls -t "$src"/os/out/ollie-os-*.iso 2>/dev/null | head -n 1)"
+if [ "$rc" -ne 0 ] || [ -z "$iso" ]; then
+    echo
+    tail -n 15 "$work/build.log" | sed 's/\x1b\[[0-9;]*m//g'
+    die "the build did not finish (see above; the whole log is $work/build.log). Run this again to retry: downloads that failed are tried again."
+fi
+
+# --- 5. The ISO -------------------------------------------------------------------------
+dest="$HOME/Downloads"
+mkdir -p "$dest"
+name="$(basename "$iso")"
+cp -f "$iso" "$dest/$name" 2>/dev/null || sudo cp -f "$iso" "$dest/$name" || die "could not copy the ISO to Downloads (is it full?)."
+[ -w "$dest/$name" ] || sudo chown "$(id -u):$(id -g)" "$dest/$name"
+(cd "$dest" && shasum -a 256 "$name" 2>/dev/null >"$name.sha256" || sha256sum "$name" >"$name.sha256")
+# The build's own copy and the container storage are big; free the space.
+rm -rf "$src" 2>/dev/null || sudo rm -rf "$src"
+printf '\n  %sDone in %d minutes:%s %s\n' "$green$bold" $((($(date +%s) - start) / 60)) "$reset" "$dest/$name"
+echo "  It is the newest Ollie OS, built on this computer."
+
+# --- 6. Onto a drive ------------------------------------------------------------------
+if $mac; then
+    setup="$(ls "$here"/Ollie-OS-Mac-Setup.command 2>/dev/null | head -n 1)"
+    if [ -n "$setup" ]; then
+        printf '\nPut it on this Mac now with Mac Setup? [Y/n] '
+        read -r a
+        case "$a" in [nN]*) ;; *) exec bash "$setup" ;; esac
+    fi
+else
+    maker="${OLLIE_USB_MAKER:-}"
+    if [ -n "$maker" ] && [ -x "$maker" ]; then
+        printf '\nPut it on a drive now with USB Maker? [Y/n] '
+        read -r a
+        case "$a" in [nN]*) ;; *) OLLIE_USB_IN_TERMINAL=1 exec "$maker" "$dest/$name" ;; esac
+    fi
+fi
+echo
+echo "Press Enter to close."
+read -r _
