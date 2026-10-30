@@ -1,0 +1,374 @@
+#!/bin/bash
+# Ollie OS Storage's root helper: keeps everything people save in Ollie OS
+# (the home folders: Steam and its games, downloads, settings) on a drive
+# with room, instead of Ollie OS's own small space.
+#
+#   ollie-storage-helper probe UUID...       free space of these drives ("UUID BYTES")
+#   ollie-storage-helper open UUID USER      mount a drive (for picking a folder on it)
+#   ollie-storage-helper find UUID FOLDER    "SIZE BYTES" if an Ollie OS Storage is there
+#   ollie-storage-helper set USER UUID FOLDER GB
+#       make the storage (or use the one that is there), copy /home into it,
+#       and use it from the next start on. FOLDER is where on the drive
+#       ("" = its top); GB is the storage file's size.
+#   ollie-storage-helper grow GB             make the storage file bigger
+#   ollie-storage-helper skip                stop asking at start-up
+#   ollie-storage-helper boot                (the service) put it in place
+#   ollie-storage-helper stop                (the service) take it away
+#
+# On the drive it is the folder "Ollie OS Storage". On a Linux drive it holds
+# home/ and pacman-cache/ itself; on Windows' and cameras' formats (NTFS,
+# exFAT), which cannot hold Linux files as Steam needs them, it holds one big
+# file with a Linux drive inside (ollie-os-storage.img).
+#
+# The settings are kept in /etc/ollie-storage.conf and, so that a USB drive
+# that starts fresh every time finds them too, on the drive's boot partition.
+#
+# Prints "PROGRESS n text", "ERROR why" and "DONE" lines for the window.
+set -uo pipefail
+
+[[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
+
+readonly CONF=/etc/ollie-storage.conf
+readonly BOOTDIR=/run/ollie-bootdir # the drive's boot partition (ollie-live-setup)
+readonly RUN=/run/ollie-storage
+readonly DRIVE_MNT=$RUN/drive STORE_MNT=$RUN/store
+readonly NAME="Ollie OS Storage" IMG=ollie-os-storage.img
+readonly GB=1000000000
+
+progress() { echo "PROGRESS $*"; }
+error() { echo "ERROR $*"; }
+
+# --- Drives ---------------------------------------------------------------------------
+find_dev() { # find_dev UUID
+    if [[ -e "/dev/disk/by-uuid/$1" ]]; then
+        readlink -f "/dev/disk/by-uuid/$1"
+    else
+        blkid -c /dev/null -U "$1" 2>/dev/null
+    fi
+}
+fs_type() { blkid -p -o value -s TYPE "$1" 2>/dev/null; }
+is_linux_fs() { case "$1" in ext2 | ext3 | ext4 | btrfs | xfs | f2fs) return 0 ;; esac; return 1; }
+# Mounts DEV at DIR (or finds where it is mounted already: the same drive
+# mounted twice by NTFS's FUSE driver would be damaged), and sets $mounted_at.
+# Windows' and cameras' formats keep no owners, so everything on them is
+# OWNER's, as when they are opened in the file manager. On failure $why says
+# why.
+mounted_at="" we_mounted="" why=""
+open_dev() { # open_dev DEV DIR OWNER [ro]
+    local dev=$1 dir=$2 owner=$3 ro=${4:-} fs u g err opts
+    mounted_at="$(findmnt -nfo TARGET -S "$dev")" we_mounted=""
+    [[ -n $mounted_at ]] && return 0
+    fs="$(fs_type "$dev")"
+    u="$(id -u "$owner" 2>/dev/null || echo 0)" g="$(id -g "$owner" 2>/dev/null || echo 0)"
+    opts="uid=$u,gid=$g,umask=022${ro:+,ro}"
+    mkdir -p "$dir"
+    case "$fs" in
+    ntfs) err="$(mount -t ntfs3 -o "$opts" "$dev" "$dir" 2>&1 || mount -t ntfs-3g -o "$opts" "$dev" "$dir" 2>&1)" ;;
+    exfat) err="$(mount -t exfat -o "$opts" "$dev" "$dir" 2>&1)" ;;
+    vfat) err="$(mount -t vfat -o "$opts,utf8,shortname=mixed" "$dev" "$dir" 2>&1)" ;;
+    ext2 | ext3 | ext4 | btrfs | xfs | f2fs) err="$(mount ${ro:+-o ro} "$dev" "$dir" 2>&1)" ;;
+    *)
+        why="the drive is $fs, which Ollie OS cannot keep its storage on"
+        return 1
+        ;;
+    esac
+    if ! mountpoint -q "$dir"; then
+        if [[ $fs == ntfs ]]; then
+            why="Windows did not shut down completely (Fast Startup or hibernation): start Windows and hold Shift while clicking Shut down, then start Ollie OS again ($err)"
+        else
+            why="the drive could not be opened: $err"
+        fi
+        return 1
+    fi
+    mounted_at=$dir we_mounted=1
+    return 0
+}
+free_bytes() { df -B1 --output=avail -- "$1" 2>/dev/null | tail -n 1 | tr -d ' '; }
+
+# --- The settings ----------------------------------------------------------------------
+uuid="" folder="" owner=""
+conf_file() { # the copy to read: the boot partition's, else this system's
+    if [[ -f $BOOTDIR/ollie-storage.conf ]]; then echo "$BOOTDIR/ollie-storage.conf"; else echo "$CONF"; fi
+}
+load() {
+    local f
+    f="$(conf_file)"
+    [[ -f $f ]] || return 1
+    uuid="$(sed -n 's/^UUID=//p' "$f" | head -n 1)"
+    folder="$(sed -n 's/^FOLDER=//p' "$f" | head -n 1)"
+    owner="$(sed -n 's/^USER=//p' "$f" | head -n 1)"
+    [[ -n $uuid ]]
+}
+# Writes FILE (CONTENT) onto the boot partition, if there is a FAT one.
+write_to_boot() { # write_to_boot FILE CONTENT
+    local dir
+    dir="$(readlink -f "$BOOTDIR" 2>/dev/null)"
+    [[ -n $dir ]] && mountpoint -q "$dir" && [[ "$(findmnt -no FSTYPE "$dir")" == vfat ]] || return 0
+    mount -o remount,rw "$dir" || return 0
+    printf '%s' "$2" >"$dir/$1" || true
+    sync
+    mount -o remount,ro "$dir" || true
+}
+main_user() { # this person: the one given, else the first ordinary account
+    if [[ -n ${1:-} ]] && id "$1" &>/dev/null; then echo "$1"; return; fi
+    getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 { print $1; exit }'
+}
+store_dir() { # where the storage is on the mounted drive (never anywhere else)
+    [[ -n $mounted_at ]] && mountpoint -q -- "$mounted_at" || return 1
+    if [[ -n $folder ]]; then echo "$mounted_at/$folder/$NAME"; else echo "$mounted_at/$NAME"; fi
+}
+
+# --- Probing, for the window -----------------------------------------------------------
+do_probe() {
+    local u dev
+    for u in "$@"; do
+        dev="$(find_dev "$u")"
+        [[ -n $dev ]] || continue
+        if open_dev "$dev" "$RUN/probe/$u" root ro; then
+            echo "$u $(free_bytes "$mounted_at")"
+            [[ -n $we_mounted ]] && umount "$mounted_at"
+        fi
+    done
+    return 0
+}
+do_open() { # do_open UUID USER: mounts the drive where the storage will use it
+    local dev
+    dev="$(find_dev "$1")"
+    [[ -n $dev ]] || { error "the drive is not plugged in"; return 1; }
+    open_dev "$dev" "$DRIVE_MNT" "$(main_user "$2")" || { error "$why"; return 1; }
+    echo "MOUNTED $mounted_at"
+}
+do_find() { # do_find UUID FOLDER
+    local dev
+    uuid=$1 folder=${2#/}
+    folder=${folder%/}
+    dev="$(find_dev "$uuid")"
+    [[ -n $dev ]] && open_dev "$dev" "$RUN/probe/$uuid" root ro || return 0
+    local store
+    if store="$(store_dir)"; then
+        if [[ -f "$store/$IMG" ]]; then
+            echo "SIZE $(stat -c %s "$store/$IMG")"
+        elif [[ -d "$store/home" ]]; then
+            echo "SIZE 0"
+        fi
+    fi
+    [[ -n $we_mounted ]] && umount "$mounted_at"
+    return 0
+}
+
+# --- Making it -------------------------------------------------------------------------
+do_set() { # do_set USER UUID FOLDER GB
+    local gb=$4 dev fs store img need free target reuse="" n_users rc
+    owner="$(main_user "$1")" uuid=$2 folder=${3#/}
+    folder=${folder%/}
+    [[ $folder != *..* ]] || { error "that folder cannot be used"; return 1; }
+    dev="$(find_dev "$uuid")"
+    [[ -n $dev ]] || { error "the drive is not plugged in"; return 1; }
+    fs="$(fs_type "$dev")"
+    progress 2 "Opening the drive"
+    open_dev "$dev" "$DRIVE_MNT" "$owner" || { error "$why"; return 1; }
+    store="$(store_dir)" || { error "the drive could not be opened"; return 1; }
+    mkdir -p -- "$store" || { error "nothing can be saved on the drive (it is read-only or full)"; return 1; }
+    mkdir -p "$STORE_MNT"
+    if is_linux_fs "$fs"; then
+        [[ -d "$store/home" ]] && reuse=1
+        mount --bind -- "$store" "$STORE_MNT" || { error "the storage folder could not be used"; return 1; }
+    else
+        [[ $fs != vfat ]] || { error "a FAT32 drive cannot hold a file bigger than 4 GB: pick an exFAT, NTFS or Linux drive"; return 1; }
+        img="$store/$IMG"
+        if [[ -f $img ]]; then
+            reuse=1
+        else
+            free="$(free_bytes "$store")"
+            if ((gb * GB + 2 * GB > ${free:-0})); then
+                error "there is not enough room on the drive for $gb GB"
+                return 1
+            fi
+            progress 5 "Making a $gb GB storage on the drive"
+            # Made at once (not written through, so it is quick).
+            truncate -s "$((gb * GB))" "$img" &&
+                mkfs.ext4 -q -F -m 0 -L OLLIE_STORAGE -E lazy_itable_init=1,lazy_journal_init=1 "$img" ||
+                { rm -f -- "$img"; error "the storage could not be made on the drive"; return 1; }
+            cat >"$store/READ ME - do not delete.txt" <<'EOF'
+This is Ollie OS Storage: everything you save in Ollie OS (Steam and its
+games, downloads, documents, settings) is inside ollie-os-storage.img.
+Deleting it deletes all of that. To give it more room, open Ollie OS Storage
+in Ollie OS (System > Ollie OS Storage) and choose "Make it bigger".
+EOF
+        fi
+        mount -o loop -- "$img" "$STORE_MNT" || { error "the storage could not be opened"; return 1; }
+    fi
+    mkdir -p "$STORE_MNT/home" "$STORE_MNT/pacman-cache"
+    if [[ -z $reuse ]]; then
+        need="$(du -sxb /home 2>/dev/null | cut -f1)"
+        target="$(free_bytes "$STORE_MNT")"
+        if ((${need:-0} + GB > ${target:-0})); then
+            umount "$STORE_MNT"
+            error "the storage is too small for what is in your home now"
+            return 1
+        fi
+        progress 10 "Copying your home into the storage"
+        # -x: folders other drives are mounted on (Stuff Saver's) stay empty.
+        rsync -aHAXx --info=progress2 --no-inc-recursive /home/ "$STORE_MNT/home/" 2>/dev/null |
+            tr '\r' '\n' | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { p = $i + 0; printf "PROGRESS %d Copying your home into the storage\n", 10 + p * 0.85; fflush() } }'
+        # 24: some files went away while copying (caches), which is fine.
+        rc=${PIPESTATUS[0]}
+        if ((rc != 0 && rc != 24)); then
+            umount "$STORE_MNT"
+            error "copying your home into the storage did not finish (is the drive full?)"
+            return 1
+        fi
+        # The next start removes the copy left in Ollie OS's own space, once
+        # the storage is in place.
+        n_users="$(find /home -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | tr '\n' ' ')"
+        printf '%s\n' "$n_users" >"$STORE_MNT/.clear-old-home"
+    fi
+    sync
+    umount "$STORE_MNT"
+    [[ -n $we_mounted ]] && umount "$mounted_at" 2>/dev/null
+    progress 97 "Remembering where it is"
+    local content
+    content="$(printf 'UUID=%s\nFOLDER=%s\nUSER=%s\n' "$uuid" "$folder" "$owner")"
+    printf '%s\n' "$content" >"$CONF"
+    write_to_boot ollie-storage.conf "$content"$'\n'
+    rm -f /var/lib/ollie/storage-skipped
+    systemctl enable ollie-storage.service >/dev/null 2>&1
+    progress 100 "Done"
+    echo DONE
+}
+
+do_grow() { # do_grow GB
+    local gb=$1 img loop free
+    load || { error "Ollie OS Storage is not set up"; return 1; }
+    mountpoint -q "$STORE_MNT" || { error "the storage is not in use now (is the drive plugged in?)"; return 1; }
+    loop="$(findmnt -nfo SOURCE "$STORE_MNT")"
+    img="$(losetup -nO BACK-FILE "$loop" 2>/dev/null | sed 's/ *$//')"
+    [[ -f $img ]] || { error "the storage is a folder on a Linux drive, which has all of the drive's room already"; return 1; }
+    ((gb * GB > $(stat -c %s "$img"))) || { error "it is $(($(stat -c %s "$img") / GB)) GB already"; return 1; }
+    free="$(free_bytes "$(dirname "$img")")"
+    if ((gb * GB - $(stat -c %s "$img") + GB > ${free:-0})); then
+        error "there is not enough room on the drive for $gb GB"
+        return 1
+    fi
+    progress 30 "Making it bigger"
+    truncate -s "$((gb * GB))" "$img" || { error "it could not be made bigger"; return 1; }
+    progress 60 "Making it bigger"
+    if losetup -c "$loop" && resize2fs "$loop" >/dev/null 2>&1; then
+        progress 100 "Done"
+        echo DONE
+    else
+        # The rest happens at the next start, before it is in use.
+        progress 100 "Done"
+        echo "DONE NEXT-START"
+    fi
+}
+# The Linux drive inside the storage file fills the whole file (after "Make
+# it bigger" could not finish while it was in use).
+fill_file() { # fill_file IMG
+    local blocks bsize
+    blocks="$(dumpe2fs -h "$1" 2>/dev/null | sed -n 's/^Block count: *//p')"
+    bsize="$(dumpe2fs -h "$1" 2>/dev/null | sed -n 's/^Block size: *//p')"
+    [[ -n $blocks && -n $bsize ]] || return 0
+    if (($(stat -c %s "$1") > blocks * bsize + 16 * 1024 * 1024)); then
+        e2fsck -f -p "$1" >/dev/null 2>&1
+        resize2fs "$1" >/dev/null 2>&1
+    fi
+    return 0
+}
+
+do_skip() {
+    mkdir -p /var/lib/ollie
+    touch /var/lib/ollie/storage-skipped
+    write_to_boot ollie-storage-skipped $'skipped\n'
+    echo DONE
+}
+
+# --- At start-up --------------------------------------------------------------------------
+status() { mkdir -p "$RUN" && printf '%s\n' "$*" >"$RUN/status"; }
+do_boot() {
+    local dev store img user home u g rc
+    load || return 0
+    owner="$(main_user "$owner")"
+    # The drive may still be appearing.
+    for _ in $(seq 1 30); do
+        dev="$(find_dev "$uuid")"
+        [[ -n $dev ]] && break
+        sleep 1
+    done
+    [[ -n $dev ]] || { status "PROBLEM the drive with Ollie OS Storage is not plugged in"; return 0; }
+    open_dev "$dev" "$DRIVE_MNT" "$owner" || { status "PROBLEM $why"; return 0; }
+    store="$(store_dir)" || { status "PROBLEM the drive could not be opened"; return 0; }
+    mkdir -p "$STORE_MNT"
+    if [[ -f "$store/$IMG" ]]; then
+        img="$store/$IMG"
+        e2fsck -p "$img" >/dev/null 2>&1
+        rc=$?
+        ((rc < 4)) || e2fsck -y "$img" >/dev/null 2>&1
+        fill_file "$img"
+        mount -o loop -- "$img" "$STORE_MNT" || { status "PROBLEM the storage file on the drive could not be opened"; return 0; }
+    elif [[ -d "$store/home" ]]; then
+        mount --bind -- "$store" "$STORE_MNT"
+    else
+        status "PROBLEM Ollie OS Storage is not in its place on the drive any more ($folder)"
+        return 0
+    fi
+    [[ -d "$STORE_MNT/home" ]] || { umount "$STORE_MNT"; status "PROBLEM the storage has no home folder"; return 0; }
+    # Just moved in: the copy left in Ollie OS's own space goes, which frees it.
+    if [[ -f "$STORE_MNT/.clear-old-home" ]]; then
+        for user in $(cat "$STORE_MNT/.clear-old-home"); do
+            [[ -n $user && $user != */* && -d "$STORE_MNT/home/$user" && -d "/home/$user" ]] &&
+                ! mountpoint -q "/home/$user" && rm -rf --one-file-system -- "/home/${user:?}"
+        done
+        rm -f "$STORE_MNT/.clear-old-home"
+        mkdir -p /var/cache/pacman/pkg && find /var/cache/pacman/pkg -xdev -mindepth 1 -delete 2>/dev/null
+    fi
+    mount --bind "$STORE_MNT/home" /home || { status "PROBLEM the storage could not be put in place"; return 0; }
+    mkdir -p "$STORE_MNT/pacman-cache"
+    mount --bind "$STORE_MNT/pacman-cache" /var/cache/pacman/pkg
+    # Every account has its home in the storage, and it is theirs.
+    while IFS=: read -r user _ u g _ home _; do
+        ((u >= 1000 && u < 60000)) && [[ $home == /home/* ]] || continue
+        if [[ ! -d $home ]]; then
+            mkdir -p "$home" && cp -a /etc/skel/. "$home/" && chown -R "$u:$g" "$home"
+        elif [[ "$(stat -c %u "$home")" != "$u" ]]; then
+            chown -R "$u:$g" "$home"
+        fi
+    done < <(getent passwd)
+    status "OK"
+    return 0
+}
+# What is mounted on top at DIR comes from the storage (and not, say, a
+# /home partition of this computer's own).
+from_storage() { # from_storage DIR
+    local top store
+    mountpoint -q "$STORE_MNT" && mountpoint -q "$1" || return 1
+    # (A folder mounted elsewhere shows as DRIVE[/folder].)
+    top="$(findmnt -n -o SOURCE --mountpoint "$1" | tail -n 1 | sed 's/\[.*//')"
+    store="$(findmnt -n -o SOURCE --mountpoint "$STORE_MNT" | tail -n 1 | sed 's/\[.*//')"
+    [[ -n $top && $top == "$store" ]]
+}
+do_stop() {
+    local m
+    for m in /var/cache/pacman/pkg /home; do
+        from_storage "$m" && { umount "$m" 2>/dev/null || umount -l "$m"; }
+    done
+    for m in "$STORE_MNT" "$DRIVE_MNT"; do
+        mountpoint -q "$m" && { umount "$m" 2>/dev/null || umount -l "$m"; }
+    done
+    return 0
+}
+
+case "${1:-}" in
+probe) shift && do_probe "$@" ;;
+open) do_open "${2:?uuid}" "${3:-}" ;;
+find) do_find "${2:?uuid}" "${3:-}" ;;
+set) do_set "${2:?user}" "${3:?uuid}" "${4:-}" "${5:?size}" ;;
+grow) do_grow "${2:?size}" ;;
+skip) do_skip ;;
+boot) do_boot ;;
+stop) do_stop ;;
+*)
+    echo "usage: ollie-storage-helper probe|open|find|set|grow|skip|boot|stop ..." >&2
+    exit 2
+    ;;
+esac

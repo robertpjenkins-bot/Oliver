@@ -1,0 +1,10 @@
+#!/bin/bash
+# After Ollie OS Storage Updater adds its apps (run as root): a Stuff Saver
+# set up before waits for Ollie OS Storage at start-up, so that its folders
+# go into the home the storage puts in place, not under it.
+unit=/etc/systemd/system/ollie-stuff-saver.service
+if [[ -f $unit ]] && ! grep -q '^After=ollie-storage.service' "$unit"; then
+    sed -i '/^RequiresMountsFor=/a After=ollie-storage.service' "$unit"
+    systemctl daemon-reload
+fi
+exit 0

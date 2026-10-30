@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS Storage
+Comment=Choose where Ollie OS keeps everything you save in it
+Exec=/usr/local/bin/ollie-storage --at-login
+Icon=drive-harddisk
+NoDisplay=true
+X-KDE-autostart-after=panel

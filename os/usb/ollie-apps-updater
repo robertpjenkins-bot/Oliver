@@ -1,0 +1,85 @@
+#!/bin/bash
+# Ollie OS app updater: adds apps to the Ollie OS this computer runs (an
+# installed one, or a USB drive that keeps its changes, made with an OLLIE_DATA
+# part), then opens one of them. No password: Ollie OS's admin rights need
+# none. Running it again puts the newest copies in place.
+#
+# What it adds comes with it (share/ollie-apps):
+#   airootfs/   the files, where they are in Ollie OS's own system image;
+#               a service linked in etc/systemd/system/*.wants is switched on
+#   app.conf    TITLE= (its window title), NAME= (what it adds, for
+#               messages), OPEN= (the program opened afterwards)
+#   after-install (if there) run as root afterwards, from the folder it is in
+set -uo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+share="${OLLIE_APPS_SHARE:-$here/../share/ollie-apps}"
+setting() { sed -n "s/^$1=//p" "$share/app.conf" 2>/dev/null | head -n 1; }
+TITLE="$(setting TITLE)" NAME="$(setting NAME)" OPEN="$(setting OPEN)"
+TITLE="${TITLE:-Ollie OS Updater}"
+
+tell() { # tell msgbox|error TEXT
+    if command -v kdialog >/dev/null && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        kdialog --title "$TITLE" "--$1" "$2"
+    else
+        printf '%s\n' "$2"
+    fi
+}
+
+[[ -d "$share/airootfs" ]] || { tell error "This copy of $TITLE has nothing inside to add."; exit 1; }
+if [[ ! -x /usr/local/bin/ollie-first-setup ]]; then
+    tell error "This is not Ollie OS. $TITLE adds $NAME to Ollie OS: run it there."
+    exit 1
+fi
+if ! sudo -n true 2>/dev/null; then
+    tell error "This Ollie OS asks for a password for admin tasks, and $TITLE never asks for one. Bring Ollie OS up to date with the Ollie OS Updater (a new USB from it), then try again."
+    exit 1
+fi
+if [[ -d /run/archiso ]] && ! grep -qE 'cow_label=|cow_device=' /proc/cmdline; then
+    command -v kdialog >/dev/null && ! kdialog --title "$TITLE" --warningcontinuecancel \
+        "Ollie OS is running from its USB drive without keeping changes, so $NAME will be gone when this computer restarts.
+
+The Ollie OS Updater makes a new Ollie OS that has it for good; a USB drive made
+with an OLLIE_DATA part (USB Maker) keeps it too." && exit 0
+fi
+
+# Inside this app (an AppImage) only this user can read; root copies from a
+# copy outside it.
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp:?}"' EXIT
+cp -a "$share/." "$tmp/" || { tell error "Could not unpack $TITLE (is the disk full?)."; exit 1; }
+
+again=""
+units=() failed=""
+while IFS= read -r -d '' path; do
+    rel="${path#"$tmp/airootfs/"}"
+    case "$rel" in
+    etc/systemd/system/*.wants/*)
+        units+=("${rel##*/}")
+        continue
+        ;;
+    usr/local/bin/*) mode=0755 ;;
+    *) mode=0644 ;;
+    esac
+    [[ -e "/$rel" ]] && again=1
+    sudo -n install -D -m "$mode" "$path" "/$rel" || failed+=" /$rel"
+done < <(find "$tmp/airootfs" \( -type f -o -type l \) -print0)
+if [[ -n $failed ]]; then
+    tell error "Could not add$failed to Ollie OS (is the disk full?)."
+    exit 1
+fi
+if ((${#units[@]})); then
+    sudo -n systemctl daemon-reload
+    sudo -n systemctl enable "${units[@]}" >/dev/null 2>&1
+fi
+[[ -f "$tmp/after-install" ]] && (cd "$tmp" && sudo -n bash ./after-install)
+# The apps menu learns about it.
+command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1
+
+if [[ -n $again ]]; then
+    tell msgbox "$NAME: up to date.${OPEN:+ It opens now.}"
+else
+    tell msgbox "$NAME: added to Ollie OS.${OPEN:+ It opens now.}"
+fi
+[[ -n $OPEN && -x $OPEN ]] && exec "$OPEN"
+exit 0

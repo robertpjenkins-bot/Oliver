@@ -1,5 +1,6 @@
 #!/bin/bash
-# The Fixer: finds broken system programs and puts good copies back.
+# The Fixer: finds what is wrong and fixes it: Ollie OS out of room, Steam
+# that does not open, and broken system programs (good copies put back).
 # Opened from the app menu. It checks, shows what it found, and asks before
 # fixing anything. The work is done by ollie-fixer-helper (as root, through
 # Ollie OS's password-less sudo).
@@ -21,6 +22,81 @@ with_progress() { # with_progress TEXT scan|fix LIST
         done
     qdbus6 $bar close >/dev/null 2>&1
 }
+
+gb() { awk -v b="${1:-0}" 'BEGIN { printf "%.1f GB", b / 1e9 }'; }
+room() { df -B1 --output=avail "$1" 2>/dev/null | tail -n 1 | tr -d ' '; }
+readonly LOW=$((3 * 1000 * 1000 * 1000))
+
+# Out of room, apps fail in odd ways (Steam does not open at all): that first.
+out_of_room() {
+    kdialog --title "$TITLE" --yes-label "Choose a drive" --no-label "Not now" --warningyesno \
+        "Ollie OS is almost out of room: only $(gb "$1") is free for what you save.
+That is why apps like Steam stop opening.
+
+Ollie OS Storage keeps everything you save (Steam and its games, downloads,
+settings) on a drive with room instead, or in a folder on one." &&
+        exec /usr/local/bin/ollie-storage
+}
+
+# Steam that does not open: its own program files (not the games) are put
+# back fresh, then it is started and watched.
+fix_steam() {
+    local dir="$HOME/.local/share/Steam" item log="$HOME/Desktop/Steam-problem.txt" spid
+    (($(room "$HOME") >= LOW)) || { out_of_room "$(room "$HOME")"; exit 0; }
+    kdialog --title "$TITLE" --yes-label "Reset Steam" --no-label "Cancel" --yesno \
+        "Steam's own program files are downloaded again (about 500 MB), as when it was
+first started. Your games, saves, logins and Proton versions stay." || exit 0
+    if pgrep -x steam >/dev/null; then
+        steam -shutdown >/dev/null 2>&1
+        for _ in $(seq 1 20); do pgrep -x steam >/dev/null || break; sleep 1; done
+        pkill -x steam 2>/dev/null
+        sleep 2
+    fi
+    if [[ -d $dir && ! -L $dir ]]; then
+        while IFS= read -r -d '' item; do
+            case "${item##*/}" in
+            steamapps | userdata | config | compatibilitytools.d) continue ;;
+            esac
+            rm -rf --one-file-system -- "${item:?}"
+        done < <(find "$dir" -mindepth 1 -maxdepth 1 -print0)
+    fi
+    rm -f "$HOME/.steam/steam" "$HOME/.steam/root" "$HOME/.steampid" "$HOME/.steampath"
+    steam >"$work/steam.log" 2>&1 &
+    spid=$!
+    # Up, once its window process runs; or gone, with what it said. (The
+    # launcher keeps running as long as Steam does.)
+    for _ in $(seq 1 120); do
+        pgrep -x steamwebhelper >/dev/null && {
+            kdialog --title "$TITLE" --msgbox "Steam is starting fresh. The first time, it downloads its own files before its window opens."
+            exit 0
+        }
+        kill -0 "$spid" 2>/dev/null || break
+        sleep 2
+    done
+    if kill -0 "$spid" 2>/dev/null; then
+        kdialog --title "$TITLE" --msgbox "Steam is still downloading its own files. Give it a few minutes; its window opens when it is done."
+        exit 0
+    fi
+    cp "$work/steam.log" "$log" 2>/dev/null
+    kdialog --title "$TITLE" --error "Steam stopped again. What it said last:
+
+$(tail -n 12 "$work/steam.log")
+
+All of it is on the desktop (Steam-problem.txt): DC - Debug Computer can help, or send it."
+    exit 1
+}
+
+home_room="$(room "$HOME")"
+((home_room >= LOW)) || out_of_room "$home_room"
+
+choice="$(kdialog --title "$TITLE" --menu "What is wrong?" \
+    steam "Steam does not open" \
+    room "Ollie OS is out of room" \
+    programs "A program is broken: check every system program")" || exit 0
+case "$choice" in
+steam) fix_steam ;;
+room) exec /usr/local/bin/ollie-storage ;;
+esac
 
 kdialog --title "$TITLE" --yes-label "Check" --no-label "Close" --yesno \
     "The Fixer checks every system program for missing or damaged files,

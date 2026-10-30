@@ -1,0 +1,350 @@
+#!/bin/bash
+# Ollie OS Storage: where Ollie OS keeps everything you save in it (Steam and
+# its games, downloads, documents, settings). On a USB drive Ollie OS has only
+# its own small part for that (OLLIE_DATA, 20 GB); Ollie OS Storage keeps it on
+# a drive with room instead, or in a folder on one (the OLLIE_SHARE part of the
+# same drive, say).
+#
+# Asked at the first start (--at-login, when there is little room) and in the
+# apps menu (System > Ollie OS Storage). The work is done by
+# ollie-storage-helper (as root, through Ollie OS's password-less sudo).
+set -uo pipefail
+
+readonly TITLE="Ollie OS Storage"
+readonly HELPER=/usr/local/bin/ollie-storage-helper
+readonly CONF=/etc/ollie-storage.conf BOOTDIR=/run/ollie-bootdir
+readonly GB=1000000000
+readonly ASK_BELOW=$((50 * GB)) # asked at start-up only when there is less room than this
+me="$(id -un)"
+log="$(mktemp /tmp/ollie-storage.XXXXXX.log)"
+
+size() {
+    awk -v b="${1:-0}" 'BEGIN {
+        if (b >= 1e12) printf "%.1f TB", b / 1e12
+        else if (b >= 1e9) printf "%.0f GB", b / 1e9
+        else printf "%d MB", b / 1e6 }'
+}
+configured() { [[ -f $BOOTDIR/ollie-storage.conf || -f $CONF ]]; }
+skipped() { [[ -f /var/lib/ollie/storage-skipped || -f $BOOTDIR/ollie-storage-skipped ]]; }
+room() { df -B1 --output=avail "$HOME" 2>/dev/null | tail -n 1 | tr -d ' '; }
+status() { cat /run/ollie-storage/status 2>/dev/null; }
+
+# Runs the helper with a progress bar; its output is in $log.
+with_progress() { # with_progress TEXT ARGS...
+    local bar text=$1
+    shift
+    bar="$(kdialog --title "$TITLE" --progressbar "$text" 100)"
+    qdbus6 $bar showCancelButton false >/dev/null 2>&1
+    sudo -n "$HELPER" "$@" 2>&1 | tee "$log" |
+        while read -r word pct rest; do
+            [[ "$word" == PROGRESS ]] || continue
+            qdbus6 $bar Set "" value "$pct" >/dev/null 2>&1
+            qdbus6 $bar setLabelText "$rest... ($pct%)" >/dev/null 2>&1
+        done
+    qdbus6 $bar close >/dev/null 2>&1
+}
+failed() { sed -n 's/^ERROR //p' "$log" | tail -n 1; }
+
+# --- The drives --------------------------------------------------------------------
+declare -A f
+parse() { # parse 'KEY="value" ...' (lsblk -P) into f
+    local rest=$1
+    f=()
+    while [[ $rest =~ ^[[:space:]]*([A-Z:-]+)=\"([^\"]*)\"(.*)$ ]]; do
+        f[${BASH_REMATCH[1]}]="$(printf '%b' "${BASH_REMATCH[2]}")"
+        rest=${BASH_REMATCH[3]}
+    done
+}
+nice_fs() {
+    case "$1" in
+    ntfs) echo "Windows (NTFS)" ;; exfat) echo "exFAT" ;;
+    *) echo "Linux ($1)" ;;
+    esac
+}
+declare -A drive_text drive_fs drive_free drive_name
+picked=""
+# Picks a drive: its ID goes in $picked. (Not run in a subshell: the drives'
+# descriptions are needed afterwards.)
+pick_drive() {
+    local system="" m s line ids=() id model tran kind free items=() best="" best_free=0 bar
+    for m in / /boot /efi /boot/efi /home /var /run/archiso/bootmnt /run/archiso/cowspace; do
+        s="$(findmnt -no SOURCE --mountpoint "$m" 2>/dev/null | sed 's/\[.*//')"
+        [[ -n $s ]] && system+=" $(readlink -f "$s") "
+    done
+    while IFS= read -r line; do
+        parse "$line"
+        case "${f[TYPE]}" in part | disk) ;; *) continue ;; esac
+        # FAT32 holds no file over 4 GB; the rest can hold the storage.
+        case "${f[FSTYPE]}" in ntfs | exfat | ext2 | ext3 | ext4 | btrfs | xfs | f2fs) ;; *) continue ;; esac
+        [[ -n "${f[UUID]}" && "$system" != *" ${f[PATH]} "* ]] || continue
+        case "${f[LABEL]}" in OLLIE_BOOT | OLLIE_ROOT | OLLIE_DATA) continue ;; esac
+        ((${f[SIZE]:-0} >= 16 * GB)) || continue
+        model="" tran=""
+        if [[ -n "${f[PKNAME]}" ]]; then
+            model="$(lsblk -dno MODEL "/dev/${f[PKNAME]}" 2>/dev/null | xargs)"
+            tran="$(lsblk -dno TRAN "/dev/${f[PKNAME]}" 2>/dev/null | xargs)"
+        fi
+        case "$tran" in usb) kind="USB" ;; nvme) kind="internal NVMe" ;; sata | ata) kind="internal" ;; *) kind="" ;; esac
+        id="${f[UUID]}"
+        ids+=("$id")
+        drive_fs[$id]="${f[FSTYPE]}"
+        drive_name[$id]="${f[LABEL]:-the $(size "${f[SIZE]}") drive}"
+        drive_text[$id]="$(size "${f[SIZE]}")  $(nice_fs "${f[FSTYPE]}")${f[LABEL]:+  \"${f[LABEL]}\"}${model:+  $model}${kind:+, $kind}"
+    done < <(lsblk -Pbno NAME,PATH,TYPE,FSTYPE,UUID,SIZE,LABEL,PKNAME)
+    if ((${#ids[@]} == 0)); then
+        kdialog --title "$TITLE" --sorry "No drive for Ollie OS Storage was found.
+
+Plug in a drive with room (16 GB or more, in an NTFS, exFAT or Linux format),
+then open Ollie OS Storage again (System > Ollie OS Storage)."
+        return 1
+    fi
+    # How much room each has (looked at without changing anything).
+    bar="$(kdialog --title "$TITLE" --progressbar "Looking at your drives..." 0)"
+    while read -r id free; do
+        drive_free[$id]=$free
+    done < <(sudo -n "$HELPER" probe "${ids[@]}" 2>/dev/null)
+    qdbus6 $bar close >/dev/null 2>&1
+    for id in "${ids[@]}"; do
+        free="${drive_free[$id]:-}"
+        if [[ -n $free ]]; then
+            drive_text[$id]="$(size "$free") free of ${drive_text[$id]}"
+            ((free > best_free)) && best=$id best_free=$free
+        else
+            drive_text[$id]="${drive_text[$id]}  (could not be opened)"
+        fi
+    done
+    for id in "${ids[@]}"; do
+        items+=("$id" "${drive_text[$id]}" "$([[ $id == "$best" ]] && echo on || echo off)")
+    done
+    picked="$(kdialog --title "$TITLE" --geometry 760x360 --radiolist "Keep Ollie OS's storage on which drive? Nothing on it is erased." "${items[@]}")"
+}
+
+# Where on the drive; prints the folder ("" = right on the drive).
+pick_folder() { # pick_folder ID
+    local id=$1 how mnt dir
+    how="$(kdialog --title "$TITLE" --radiolist "Where on this drive?
+${drive_text[$id]}" \
+        top "Right on the drive (in a folder called \"Ollie OS Storage\")" on \
+        folder "In a folder I choose" off)" || return 1
+    [[ $how == folder ]] || return 0
+    with_progress "Opening the drive..." open "$id" "$me"
+    mnt="$(sed -n 's/^MOUNTED //p' "$log")"
+    if [[ -z $mnt ]]; then
+        kdialog --title "$TITLE" --sorry "The drive could not be opened: $(failed)"
+        return 1
+    fi
+    while :; do
+        dir="$(kdialog --title "$TITLE: choose the folder" --getexistingdirectory "$mnt")" || return 1
+        dir="$(realpath -m -- "$dir")"
+        if [[ "$dir" == "$mnt" ]]; then
+            return 0
+        elif [[ "$dir" == "$mnt"/* ]]; then
+            echo "${dir#"$mnt"/}"
+            return 0
+        fi
+        kdialog --title "$TITLE" --sorry "Please choose a folder on the drive you picked (in $mnt)."
+    done
+}
+
+# How big the storage file is; prints GB.
+pick_size() { # pick_size FREE_BYTES
+    local free=$1 most gb items=() pick="" choice
+    most=$(((free - 2 * GB) * 95 / 100 / GB))
+    if ((most < 16)); then
+        kdialog --title "$TITLE" --sorry "That drive has only $(size "$free") free: too little for Ollie OS Storage."
+        return 1
+    fi
+    for gb in 64 128 256 512 1000 2000 4000; do
+        ((gb <= most)) || continue
+        # Ticked at first: up to half of what is free, and no more than 1 TB.
+        ((gb * GB <= free / 2 && gb <= 1000)) && pick=$gb
+        items+=("$gb" "$(size $((gb * GB)))" off)
+    done
+    items+=("$most" "$(size $((most * GB))): as much as the drive has room for" off)
+    [[ -n $pick ]] || pick=$most
+    local i
+    for ((i = 0; i < ${#items[@]}; i += 3)); do
+        [[ "${items[i]}" == "$pick" ]] && items[i + 2]=on
+    done
+    choice="$(kdialog --title "$TITLE" --radiolist "How big should Ollie OS Storage be? It is one big file on the drive that takes that much of its room (the drive has $(size "$free") free). It can be made bigger later (System > Ollie OS Storage)." "${items[@]}")" || return 1
+    echo "$choice"
+}
+
+close_programs() {
+    local open
+    while :; do
+        open=""
+        pgrep -x steam >/dev/null && open+="  Steam (Steam menu > Exit)"$'\n'
+        pgrep -x firefox >/dev/null && open+="  Firefox"$'\n'
+        [[ -z $open ]] && return 0
+        kdialog --title "$TITLE" --yes-label "They are closed" --no-label "Cancel" --yesno \
+            "Please close these first, so everything in your home can be copied:
+
+$open" || exit 0
+    done
+}
+
+# --- Setting it up -----------------------------------------------------------------------
+set_up() {
+    local id folder="" gb=0 found where home_bytes what big=""
+    pick_drive || exit 0
+    id=$picked
+    [[ -n $id ]] || { kdialog --title "$TITLE" --msgbox "Nothing was changed: no drive was picked."; exit 0; }
+    folder="$(pick_folder "$id")" || exit 0
+    where="${drive_name[$id]}"
+    [[ -n $folder ]] && where="the folder \"$folder\" on $where"
+    found="$(sudo -n "$HELPER" find "$id" "$folder" 2>/dev/null | sed -n 's/^SIZE //p')"
+    if [[ -n $found ]]; then
+        kdialog --title "$TITLE" --yes-label "Use it" --no-label "Cancel" --yesno \
+            "There is an Ollie OS Storage there already${found:+ ($(size "$found"))}.
+
+Use it? What is in it is kept, and Ollie OS uses it from the next start on.
+What you saved in Ollie OS since then is not copied into it." || exit 0
+        what="Ollie OS uses the Ollie OS Storage in $where from the next start on."
+    else
+        case "${drive_fs[$id]}" in
+        ntfs | exfat) gb="$(pick_size "${drive_free[$id]:-0}")" || exit 0 ;;
+        esac
+        home_bytes="$(du -sxb "$HOME" 2>/dev/null | cut -f1)"
+        ((gb > 0)) && big=" ($(size $((gb * GB))))"
+        what="Ollie OS Storage$big is made in $where.
+
+Everything in your home now ($(size "${home_bytes:-0}"): Steam, downloads, documents,
+settings) is copied into it, and from the next start on Ollie OS keeps
+everything there. The copy left in Ollie OS's own small space is removed then,
+which frees that space. Nothing else on the drive is changed."
+    fi
+    kdialog --title "$TITLE" --yes-label "Do it" --no-label "Cancel" --yesno "$what" || exit 0
+    close_programs
+    with_progress "Setting up Ollie OS Storage..." set "$me" "$id" "$folder" "$gb"
+    if grep -q '^DONE' "$log"; then
+        if kdialog --title "$TITLE" --yes-label "Restart now" --no-label "Later" --yesno \
+            "Ollie OS Storage is ready. Ollie OS starts using it when it restarts.
+
+(Until then, what you save is not in it yet.)"; then
+            systemctl reboot
+        fi
+    else
+        kdialog --title "$TITLE" --error "Ollie OS Storage could not be set up: $(failed)
+
+Nothing was changed in Ollie OS."
+    fi
+}
+
+ask() { # ask [first]: the question; "first" offers "Don't ask again"
+    local intro rc
+    intro="Ollie OS has $(size "$(room)") of room left for everything you save in it:
+Steam and its games, downloads, documents and settings.
+
+Choose a drive with more room, or a folder on one (like this drive's
+OLLIE_SHARE part), and Ollie OS keeps all of that there from now on.
+Nothing on it is erased."
+    if [[ ${1:-} == first ]]; then
+        kdialog --title "$TITLE" --yes-label "Choose where" --no-label "Not now" --cancel-label "Don't ask again" \
+            --yesnocancel "$intro"
+        rc=$?
+        case $rc in
+        0) set_up ;;
+        2) sudo -n "$HELPER" skip >/dev/null 2>&1 ;;
+        esac
+    else
+        kdialog --title "$TITLE" --yes-label "Choose where" --no-label "Cancel" --yesno "$intro" && set_up
+    fi
+}
+
+# --- Already set up ------------------------------------------------------------------------
+manage() {
+    local st info choice img loop cur free items=() gb pick=""
+    st="$(status)"
+    case "$st" in
+    OK) info="Ollie OS Storage is in use: $(size "$(room)") free of $(size "$(df -B1 --output=size /home | tail -n 1)")." ;;
+    PROBLEM*) info="Ollie OS Storage could not be used at this start: ${st#PROBLEM }." ;;
+    *) info="Ollie OS starts using Ollie OS Storage at the next start." ;;
+    esac
+    # The storage file, if it is one (not a folder on a Linux drive).
+    loop="$(findmnt -nfo SOURCE /run/ollie-storage/store 2>/dev/null)"
+    img=""
+    [[ $loop == /dev/loop* ]] && img="$(cat "/sys/block/${loop#/dev/}/loop/backing_file" 2>/dev/null)"
+    choice="$(kdialog --title "$TITLE" --menu "$info" \
+        bigger "Make it bigger" \
+        open "Open its folder on the drive")" || exit 0
+    case "$choice" in
+    open)
+        if [[ -n $img ]]; then
+            xdg-open "$(dirname "$img")" >/dev/null 2>&1 &
+        elif mountpoint -q /run/ollie-storage/drive; then
+            xdg-open /run/ollie-storage/drive >/dev/null 2>&1 &
+        else
+            kdialog --title "$TITLE" --sorry "The drive with Ollie OS Storage is not plugged in."
+        fi
+        ;;
+    bigger)
+        if [[ "$st" != OK ]]; then
+            kdialog --title "$TITLE" --sorry "Ollie OS Storage is not in use now, so it cannot be made bigger."
+            exit 0
+        fi
+        if [[ -z $img ]]; then
+            kdialog --title "$TITLE" --msgbox "Ollie OS Storage is a folder on a Linux drive: it has all of that drive's room already."
+            exit 0
+        fi
+        cur=$(($(stat -c %s "$img") / GB))
+        free="$(df -B1 --output=avail "$(dirname "$img")" | tail -n 1 | tr -d ' ')"
+        for gb in 128 256 512 1000 2000 4000 8000; do
+            ((gb > cur && (gb - cur) * GB + 2 * GB <= free)) || continue
+            [[ -z $pick ]] && pick=$gb
+            items+=("$gb" "$(size $((gb * GB)))" "$([[ $gb == "$pick" ]] && echo on || echo off)")
+        done
+        if ((${#items[@]} == 0)); then
+            kdialog --title "$TITLE" --sorry "Ollie OS Storage is $(size $((cur * GB))), and the drive has only $(size "$free") more free."
+            exit 0
+        fi
+        gb="$(kdialog --title "$TITLE" --radiolist "Ollie OS Storage is $(size $((cur * GB))) now; the drive has $(size "$free") more free. How big should it be?" "${items[@]}")" || exit 0
+        with_progress "Making Ollie OS Storage bigger..." grow "$gb"
+        if grep -q '^DONE NEXT-START' "$log"; then
+            kdialog --title "$TITLE" --msgbox "Ollie OS Storage becomes $(size $((gb * GB))) the next time Ollie OS starts."
+        elif grep -q '^DONE' "$log"; then
+            kdialog --title "$TITLE" --msgbox "Ollie OS Storage is $(size $((gb * GB))) now."
+        else
+            kdialog --title "$TITLE" --error "It could not be made bigger: $(failed)"
+        fi
+        ;;
+    esac
+}
+
+# --- At start-up (autostart) ---------------------------------------------------------------
+at_login() {
+    local st
+    st="$(status)"
+    if [[ "$st" == PROBLEM* ]]; then
+        kdialog --title "$TITLE" --sorry "Ollie OS Storage could not be used at this start: ${st#PROBLEM }.
+
+Ollie OS is using its own small space until it can: what you save now is not
+in your storage. When that is fixed, restart Ollie OS."
+        return
+    fi
+    configured && return
+    skipped && return
+    sudo -n true 2>/dev/null || return
+    (($(room) < ASK_BELOW)) || return
+    # Not before the first-start window (username and password) is done.
+    sleep 20
+    for _ in $(seq 1 180); do
+        pgrep -f /usr/local/bin/ollie-first-setup >/dev/null || break
+        sleep 5
+    done
+    ask first
+}
+
+if [[ ${1:-} == --at-login ]]; then
+    at_login
+    exit 0
+fi
+if ! sudo -n true 2>/dev/null; then
+    kdialog --title "$TITLE" --error "Ollie OS Storage needs Ollie OS's admin rights, which here ask for a password. Bring Ollie OS up to date with the Ollie OS Updater, then try again."
+    exit 1
+fi
+if configured; then
+    manage
+else
+    ask
+fi

@@ -258,6 +258,8 @@ Description=Stuff Saver: keep folders on a drive
 BindsTo=$devunit
 After=$devunit
 RequiresMountsFor=$home
+# Into the home Ollie OS Storage puts in place, if it is used.
+After=ollie-storage.service
 # At start-up, before anyone logs in.
 Before=display-manager.service
 

@@ -122,6 +122,8 @@ file_permissions=(
   ["/usr/local/bin/ollie-install-gui"]="0:0:755"
   ["/usr/local/bin/ollie-stuff-saver"]="0:0:755"
   ["/usr/local/bin/ollie-stuff-saver-helper"]="0:0:755"
+  ["/usr/local/bin/ollie-storage"]="0:0:755"
+  ["/usr/local/bin/ollie-storage-helper"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true

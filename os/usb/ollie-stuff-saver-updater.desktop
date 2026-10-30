@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Ollie OS Stuff Saver Updater
-Comment=Add Stuff Saver to this Ollie OS: keep your folders on another drive
-Exec=ollie-stuff-saver-updater
-Icon=ollie-os
-Terminal=false
-Categories=System;

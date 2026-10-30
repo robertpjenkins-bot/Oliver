@@ -7,6 +7,7 @@
 #   Ollie-OS-Installer-x86_64.AppImage      downloads the ISO, then USB Maker
 #   Ollie-OS-Updater-x86_64.AppImage        brings an ISO up to the newest Ollie OS
 #   Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage  adds Stuff Saver to a running Ollie OS
+#   Ollie-OS-Storage-Updater-x86_64.AppImage      adds Ollie OS Storage, the new Fixer and Stuff Saver
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
 #   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup)
 set -euo pipefail
@@ -163,29 +164,52 @@ APPRUN
 }
 build_updater
 
-# Stuff Saver Updater: adds the Stuff Saver app to a running Ollie OS.
-build_stuff_saver_updater() {
-    local appdir="$out/OllieStuffSaver.AppDir" f mode
+# Apps that add apps to a running Ollie OS (ollie-apps-updater):
+#   build_apps_updater APPIMAGE TITLE NAME OPEN AFTER_INSTALL FILE...
+# Each FILE is a path in os/profile/airootfs (a file, or a service's link).
+build_apps_updater() {
+    local appimage=$1 title=$2 name=$3 open=$4 after=$5 appdir="$out/OllieApps.AppDir" f
+    shift 5
     rm -rf "$appdir"
-    install -D -m 0755 "$here/ollie-stuff-saver-updater" "$appdir/usr/bin/ollie-stuff-saver-updater"
-    for f in usr/local/bin/ollie-stuff-saver usr/local/bin/ollie-stuff-saver-helper usr/share/applications/ollie-stuff-saver.desktop; do
-        mode=0644
-        [[ "$f" == usr/local/bin/* ]] && mode=0755
-        install -D -m "$mode" "$os/profile/airootfs/$f" "$appdir/usr/share/ollie-stuff-saver/$f"
+    install -D -m 0755 "$here/ollie-apps-updater" "$appdir/usr/bin/ollie-apps-updater"
+    for f in "$@"; do
+        mkdir -p "$(dirname "$appdir/usr/share/ollie-apps/airootfs/$f")"
+        cp -a "$os/profile/airootfs/$f" "$appdir/usr/share/ollie-apps/airootfs/$f"
     done
+    printf 'TITLE=%s\nNAME=%s\nOPEN=%s\n' "$title" "$name" "$open" >"$appdir/usr/share/ollie-apps/app.conf"
+    [[ -n $after ]] && install -m 0755 "$here/$after" "$appdir/usr/share/ollie-apps/after-install"
     cat >"$appdir/AppRun" <<'APPRUN'
 #!/bin/sh
-# AppImage entry point: add Stuff Saver to this Ollie OS, then open it.
+# AppImage entry point: add the apps to this Ollie OS, then open one.
 HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/ollie-stuff-saver-updater" "$@"
+exec "$HERE/usr/bin/ollie-apps-updater" "$@"
 APPRUN
     chmod 0755 "$appdir/AppRun"
-    install -m 0644 "$here/ollie-stuff-saver-updater.desktop" "$appdir/ollie-stuff-saver-updater.desktop"
+    printf '[Desktop Entry]\nType=Application\nName=%s\nComment=Add %s to this Ollie OS\nExec=ollie-apps-updater\nIcon=ollie-os\nTerminal=false\nCategories=System;\n' \
+        "$title" "$name" >"$appdir/ollie-apps-updater.desktop"
     install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
-    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage"
+    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/$appimage"
     rm -rf "$appdir"
 }
+stuff_saver_files=(usr/local/bin/ollie-stuff-saver usr/local/bin/ollie-stuff-saver-helper
+    usr/share/applications/ollie-stuff-saver.desktop)
+build_stuff_saver_updater() {
+    build_apps_updater Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage "Stuff Saver Updater" "Stuff Saver" \
+        /usr/local/bin/ollie-stuff-saver "" "${stuff_saver_files[@]}"
+}
 build_stuff_saver_updater
+# Ollie OS Storage (asked at the first start: where Ollie OS keeps what is
+# saved in it), the Fixer that knows about room and Steam, and Stuff Saver.
+build_storage_updater() {
+    build_apps_updater Ollie-OS-Storage-Updater-x86_64.AppImage "Ollie OS Storage Updater" \
+        "Ollie OS Storage, the new Fixer and Stuff Saver" /usr/local/bin/ollie-storage ollie-storage-updater.after-install \
+        usr/local/bin/ollie-storage usr/local/bin/ollie-storage-helper usr/share/applications/ollie-storage.desktop \
+        etc/xdg/autostart/ollie-storage.desktop etc/systemd/system/ollie-storage.service \
+        etc/systemd/system/multi-user.target.wants/ollie-storage.service \
+        usr/local/bin/ollie-fixer usr/local/bin/ollie-fixer-helper usr/share/applications/ollie-fixer.desktop \
+        "${stuff_saver_files[@]}"
+}
+build_storage_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz
