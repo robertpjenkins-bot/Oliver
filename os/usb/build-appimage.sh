@@ -6,6 +6,7 @@
 #   Ollie-OS-Get-ISO-x86_64.AppImage        downloads the ISO next to USB Maker
 #   Ollie-OS-Installer-x86_64.AppImage      downloads the ISO, then USB Maker
 #   Ollie-OS-Updater-x86_64.AppImage        brings an ISO up to the newest Ollie OS
+#   Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage  adds Stuff Saver to a running Ollie OS
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
 #   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup)
 set -euo pipefail
@@ -161,6 +162,30 @@ APPRUN
     rm -rf "$appdir"
 }
 build_updater
+
+# Stuff Saver Updater: adds the Stuff Saver app to a running Ollie OS.
+build_stuff_saver_updater() {
+    local appdir="$out/OllieStuffSaver.AppDir" f mode
+    rm -rf "$appdir"
+    install -D -m 0755 "$here/ollie-stuff-saver-updater" "$appdir/usr/bin/ollie-stuff-saver-updater"
+    for f in usr/local/bin/ollie-stuff-saver usr/local/bin/ollie-stuff-saver-helper usr/share/applications/ollie-stuff-saver.desktop; do
+        mode=0644
+        [[ "$f" == usr/local/bin/* ]] && mode=0755
+        install -D -m "$mode" "$os/profile/airootfs/$f" "$appdir/usr/share/ollie-stuff-saver/$f"
+    done
+    cat >"$appdir/AppRun" <<'APPRUN'
+#!/bin/sh
+# AppImage entry point: add Stuff Saver to this Ollie OS, then open it.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/ollie-stuff-saver-updater" "$@"
+APPRUN
+    chmod 0755 "$appdir/AppRun"
+    install -m 0644 "$here/ollie-stuff-saver-updater.desktop" "$appdir/ollie-stuff-saver-updater.desktop"
+    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
+    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage"
+    rm -rf "$appdir"
+}
+build_stuff_saver_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz

@@ -1,0 +1,63 @@
+#!/bin/bash
+# Ollie OS Stuff Saver Updater: adds the Stuff Saver app to this Ollie OS,
+# then opens it. Stuff Saver keeps your folders (Downloads, Documents,
+# Pictures, Steam games, Minecraft worlds and more) on another drive.
+#
+# For Ollie OS installed on a drive, or on a USB drive that keeps its changes
+# (one made with an OLLIE_DATA part). No password: Ollie OS's admin rights
+# need none. Running it again puts the newest Stuff Saver in place.
+set -uo pipefail
+
+readonly TITLE="Stuff Saver Updater"
+here="$(cd "$(dirname "$0")" && pwd)"
+files="${OLLIE_STUFF_SAVER_FILES:-$here/../share/ollie-stuff-saver}"
+
+tell() { # tell msgbox|error|sorry TEXT
+    if command -v kdialog >/dev/null && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        kdialog --title "$TITLE" "--$1" "$2"
+    else
+        printf '%s\n' "$2"
+    fi
+}
+
+if [[ ! -x /usr/local/bin/ollie-first-setup ]]; then
+    tell error "This is not Ollie OS. Stuff Saver Updater adds Stuff Saver to Ollie OS: run it there."
+    exit 1
+fi
+if ! sudo -n true 2>/dev/null; then
+    tell error "This Ollie OS asks for a password for admin tasks, and Stuff Saver Updater never asks for one. Bring Ollie OS up to date with the Ollie OS Updater (a new USB from it), then try again."
+    exit 1
+fi
+for f in usr/local/bin/ollie-stuff-saver usr/local/bin/ollie-stuff-saver-helper usr/share/applications/ollie-stuff-saver.desktop; do
+    [[ -f "$files/$f" ]] || { tell error "This copy of Stuff Saver Updater is missing $f."; exit 1; }
+done
+
+if [[ -d /run/archiso ]] && ! grep -qE 'cow_label=|cow_device=' /proc/cmdline; then
+    command -v kdialog >/dev/null && ! kdialog --title "$TITLE" --warningcontinuecancel \
+        "Ollie OS is running from its USB drive without keeping changes, so Stuff Saver will be gone when this computer restarts.
+
+Installed Ollie OS (or a USB drive made with an OLLIE_DATA part) keeps it." && exit 0
+fi
+
+# Inside this app (an AppImage) only this user can read; root copies from
+# a copy outside it.
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp:?}"' EXIT
+cp -R "$files/." "$tmp/" || { tell error "Could not unpack Stuff Saver (is the disk full?)."; exit 1; }
+again=""
+[[ -x /usr/local/bin/ollie-stuff-saver ]] && again=1
+if ! sudo -n install -D -m 0755 "$tmp/usr/local/bin/ollie-stuff-saver" /usr/local/bin/ollie-stuff-saver ||
+    ! sudo -n install -D -m 0755 "$tmp/usr/local/bin/ollie-stuff-saver-helper" /usr/local/bin/ollie-stuff-saver-helper ||
+    ! sudo -n install -D -m 0644 "$tmp/usr/share/applications/ollie-stuff-saver.desktop" /usr/share/applications/ollie-stuff-saver.desktop; then
+    tell error "Could not add Stuff Saver to Ollie OS (is the disk full?)."
+    exit 1
+fi
+# The apps menu learns about it.
+command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1
+
+if [[ -n $again ]]; then
+    tell msgbox "Stuff Saver is up to date. It opens now; it is also in the apps menu (System > Stuff Saver)."
+else
+    tell msgbox "Stuff Saver is added to Ollie OS. It opens now; from now on it is in the apps menu (System > Stuff Saver)."
+fi
+exec /usr/local/bin/ollie-stuff-saver

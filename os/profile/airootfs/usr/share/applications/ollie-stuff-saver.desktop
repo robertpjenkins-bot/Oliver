@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Stuff Saver
+Comment=Keep your folders (Downloads, Documents, Pictures, games and more) on another drive
+Exec=/usr/local/bin/ollie-stuff-saver
+Icon=folder-sync
+Terminal=false
+Categories=System;Utility;
+Keywords=save;drive;folders;downloads;documents;backup;storage;

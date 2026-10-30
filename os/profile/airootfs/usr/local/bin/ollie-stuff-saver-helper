@@ -1,0 +1,376 @@
+#!/bin/bash
+# Stuff Saver's root helper: keeps folders of someone's home on another drive.
+#
+#   ollie-stuff-saver-helper set USER UUID < FOLDERS
+#       from now on keep these folders on that drive, and move what is in
+#       them now onto it. FOLDERS has one line per folder:
+#       FOLDER_HERE<TAB>NAME_ON_THE_DRIVE
+#   ollie-stuff-saver-helper mount
+#       put the folders on the drive (the service, whenever it is plugged in)
+#   ollie-stuff-saver-helper unmount
+#       give the folders back to this computer (the service, when it goes)
+#   ollie-stuff-saver-helper off [back]
+#       stop; with "back", the files are moved back onto this computer first,
+#       otherwise they stay on the drive
+#
+# Each folder is kept in "Ollie OS Stuff/NAME" on the drive, mounted over the
+# folder here, so whatever is put in it is written to the drive. What is in a
+# folder here is moved onto the drive first (also later: files saved while the
+# drive was unplugged). A folder whose files cannot all be moved (no room, or
+# names or links the drive cannot hold) is left as it is: Stuff Saver never
+# hides a file.
+#
+# The service ollie-stuff-saver.service starts whenever the drive appears (at
+# start-up too, before the login screen) and stops when it goes.
+#
+# Prints "PROGRESS n text", "SAVED folder", "BACK folder" and
+# "NOT folder<TAB>why" lines for the window (ollie-stuff-saver).
+set -uo pipefail
+
+[[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
+
+readonly ETC=/etc/ollie-stuff-saver
+readonly UNIT=/etc/systemd/system/ollie-stuff-saver.service
+readonly MNT=/run/ollie-stuff-saver/drive
+readonly STUFF="Ollie OS Stuff"
+readonly SPARE=$((512 * 1024 * 1024)) # room left free on the drive
+
+progress() { echo "PROGRESS $*"; }
+have_systemd() { [[ -d /run/systemd/system ]]; }
+
+# --- The settings --------------------------------------------------------------
+owner="" uuid="" home="" uid="" gid=""
+load() {
+    [[ -f $ETC/drive && -f $ETC/folders ]] || { echo "Stuff Saver is not set up." >&2; return 1; }
+    uuid="$(sed -n 's/^UUID=//p' "$ETC/drive")"
+    set_owner "$(sed -n 's/^USER=//p' "$ETC/drive")"
+}
+set_owner() {
+    owner="$1"
+    home="$(getent passwd "$owner" | cut -d: -f6)"
+    uid="$(id -u "$owner" 2>/dev/null)" gid="$(id -g "$owner" 2>/dev/null)"
+    [[ -n $home && -n $uid ]] || { echo "There is no user $owner." >&2; return 1; }
+}
+
+# --- The drive -------------------------------------------------------------------
+dev="" drive="" base="" we_mounted=""
+# The drive with this ID (the system's own list first, then a fresh look).
+find_dev() { # find_dev UUID
+    if [[ -e "/dev/disk/by-uuid/$1" ]]; then
+        readlink -f "/dev/disk/by-uuid/$1"
+    else
+        blkid -U "$1" 2>/dev/null
+    fi
+}
+# Its format, read from the drive itself.
+fs_type() { blkid -p -o value -s TYPE "$dev" 2>/dev/null; }
+is_linux_fs() { case "$(fs_type)" in ext2 | ext3 | ext4 | btrfs | xfs | f2fs) return 0 ;; esac; return 1; }
+# Finds the drive and mounts it (unless it is mounted already, then that is
+# used: the same drive mounted twice by NTFS's FUSE driver would be damaged).
+open_drive() {
+    local fs err try
+    dev="$(find_dev "$uuid")"
+    [[ -n $dev ]] || { echo "The drive is not plugged in."; return 1; }
+    drive="$(findmnt -nfo TARGET -S "$dev")"
+    if [[ -z $drive ]]; then
+        fs="$(fs_type)"
+        mkdir -p "$MNT"
+        # A drive just unplugged and plugged back in may still be closing.
+        for try in 1 2 3; do
+            # Windows' and cameras' formats keep no owners: everything on them
+            # is this person's.
+            case "$fs" in
+            ntfs) err="$(mount -t ntfs3 -o "uid=$uid,gid=$gid,umask=022" "$dev" "$MNT" 2>&1 ||
+                mount -t ntfs-3g -o "uid=$uid,gid=$gid,umask=022" "$dev" "$MNT" 2>&1)" ;;
+            exfat) err="$(mount -t exfat -o "uid=$uid,gid=$gid,umask=022" "$dev" "$MNT" 2>&1)" ;;
+            vfat) err="$(mount -t vfat -o "uid=$uid,gid=$gid,umask=022,utf8,shortname=mixed" "$dev" "$MNT" 2>&1)" ;;
+            ext2 | ext3 | ext4 | btrfs | xfs | f2fs) err="$(mount "$dev" "$MNT" 2>&1)" ;;
+            *)
+                echo "The drive is $fs, which Stuff Saver cannot use."
+                return 1
+                ;;
+            esac
+            mountpoint -q "$MNT" && break
+            [[ $try == 3 ]] || sleep 2
+        done
+        if ! mountpoint -q "$MNT"; then
+            if [[ "$fs" == ntfs ]]; then
+                echo "The drive could not be opened: Windows did not shut down completely (Fast Startup or hibernation). Start Windows, hold Shift while clicking Shut down (or turn off Fast Startup), then try again. ($err)"
+            else
+                echo "The drive could not be opened: $err"
+            fi
+            return 1
+        fi
+        drive="$MNT" we_mounted=1
+    fi
+    base="$drive/$STUFF"
+    mkdir -p "$base" 2>/dev/null && touch "$base/.stuff-saver" 2>/dev/null ||
+        { echo "Nothing can be saved on the drive (it is read-only, or full)."; return 1; }
+    is_linux_fs && chown "$uid:$gid" "$base" "$base/.stuff-saver"
+    return 0
+}
+close_drive() {
+    [[ -n $we_mounted ]] && umount "$MNT" 2>/dev/null
+    we_mounted=""
+}
+
+# --- Moving ------------------------------------------------------------------------
+# Moves what is in FROM into TO, never replacing anything already in TO. When
+# $moved names a file, what was moved is listed there, for put_back.
+moved=""
+move_into() { # move_into FROM TO
+    local item dest
+    mkdir -p -- "$2" || return 1
+    [[ -d "$1" ]] || return 0
+    while IFS= read -r -d '' item; do
+        dest="${2:?}/${item##*/}"
+        [[ -e "$dest" || -L "$dest" ]] && continue
+        # Across drives mv copies, and removes the original only once all of
+        # it is copied.
+        mv -n -- "$item" "$2/" 2>/dev/null
+        if [[ -e "$item" || -L "$item" ]]; then
+            # Not all of it could be copied: the original is whole, so the
+            # half copy (made just now, nothing was there) goes.
+            rm -rf -- "${dest:?}"
+        elif [[ -n $moved ]]; then
+            printf '%s\0%s\0' "$dest" "$item" >>"$moved"
+        fi
+    done < <(find "$1" -mindepth 1 -maxdepth 1 -print0)
+}
+# Moves back what move_into listed in $moved.
+put_back() {
+    local dest item
+    while IFS= read -r -d '' dest && IFS= read -r -d '' item; do
+        mv -n -- "$dest" "$item" 2>/dev/null
+    done <"$moved"
+}
+# The first thing in FOLDER that this drive cannot hold, if any: Windows'
+# FAT and exFAT keep no links and no names with \ : * ? " < > |.
+cannot_hold() { # cannot_hold FOLDER
+    case "$(fs_type)" in
+    vfat | exfat) find "$1" \( -type l -o -name '*[\\:*?"<>|]*' \) -print -quit 2>/dev/null ;;
+    esac
+}
+is_empty() { [[ -z "$(find "$1" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; }
+free_bytes() { df -B1 --output=avail -- "$1" 2>/dev/null | tail -n 1 | tr -d ' '; }
+size() { awk -v b="${1:-0}" 'BEGIN { if (b >= 1e9) printf "%.1f GB", b / 1e9; else printf "%d MB", b / 1e6 }'; }
+used_bytes() { du -sxb -- "$1" 2>/dev/null | cut -f1; }
+# A folder of this person's, made as them (so the folders above it are theirs too).
+make_folder() { [[ -d "$1" ]] || runuser -u "$owner" -- mkdir -p -- "$1"; }
+
+# Puts one folder on the drive.
+save_folder() { # save_folder FOLDER NAME
+    local here=$1 name=$2 there="$base/$2" need bad k
+    if mountpoint -q -- "$here"; then
+        echo "SAVED $here"
+        return 0
+    fi
+    if [[ -L "$here" ]]; then
+        printf 'NOT %s\t%s\n' "$here" "it is a link to another folder, so it is left as it is"
+        return 1
+    fi
+    make_folder "$here" || { printf 'NOT %s\t%s\n' "$here" "it could not be made"; return 1; }
+    mkdir -p -- "$there" || { printf 'NOT %s\t%s\n' "$here" "its folder on the drive could not be made"; return 1; }
+    is_linux_fs && chown "$uid:$gid" "$there"
+    moved=""
+    if ! is_empty "$here"; then
+        bad="$(cannot_hold "$here")"
+        if [[ -n $bad ]]; then
+            printf 'NOT %s\t%s\n' "$here" "it has links or names that this drive's format cannot hold (${bad#"$here"/}, for one); a Linux or NTFS drive can hold them"
+            return 1
+        fi
+        need="$(used_bytes "$here")"
+        if ((${need:-0} + SPARE > $(free_bytes "$base"))); then
+            printf 'NOT %s\t%s\n' "$here" "there is not enough room on the drive for what is in it ($(size "$need"))"
+            return 1
+        fi
+        moved="$(mktemp)"
+        move_into "$here" "$there"
+        # Names the drive's folder has already: kept apart, not replaced.
+        for k in "" " 2" " 3" " 4" " 5"; do
+            is_empty "$here" && break
+            move_into "$here" "$base/From this computer$k/$name"
+        done
+        if ! is_empty "$here"; then
+            unmove
+            printf 'NOT %s\t%s\n' "$here" "some of its files could not be copied onto the drive, so it is left as it was"
+            return 1
+        fi
+    fi
+    if mount --bind -- "$there" "$here"; then
+        [[ -n $moved ]] && rm -f "$moved"
+        moved=""
+        echo "SAVED $here"
+    else
+        unmove
+        printf 'NOT %s\t%s\n' "$here" "it could not be put on the drive, so it is left as it was"
+        return 1
+    fi
+}
+# This folder's files go back where they were.
+unmove() {
+    [[ -n $moved ]] || return 0
+    put_back
+    rm -f "$moved"
+    moved=""
+    local k
+    for k in "" " 2" " 3" " 4" " 5"; do
+        rmdir -- "$base/From this computer$k/$name" "$base/From this computer$k" 2>/dev/null
+    done
+}
+
+do_mount() {
+    local n i=0 here name
+    load || return 1
+    open_drive || return 1
+    n="$(grep -c . "$ETC/folders")"
+    while IFS=$'\t' read -r here name; do
+        [[ -n $here && -n $name ]] || continue
+        i=$((i + 1))
+        progress $((i * 100 / (n + 1))) "Saving $name"
+        save_folder "$here" "$name"
+    done <"$ETC/folders"
+    progress 100 "Done"
+    return 0
+}
+
+do_unmount() {
+    local here name
+    load || return 1
+    # Lazily only when a program still has a file open in one.
+    while IFS=$'\t' read -r here name; do
+        mountpoint -q -- "$here" && { umount -- "$here" 2>/dev/null || umount -l -- "$here"; }
+    done < <(tac "$ETC/folders")
+    mountpoint -q "$MNT" && { umount "$MNT" 2>/dev/null || umount -l "$MNT"; }
+    return 0
+}
+
+# --- Turning it on and off -----------------------------------------------------------
+service_name() { systemd-escape --path --suffix=device "/dev/disk/by-uuid/$uuid"; }
+write_unit() {
+    local devunit
+    devunit="$(service_name)"
+    cat >"$UNIT" <<EOF
+# Made by Stuff Saver (ollie-stuff-saver): keep $owner's folders on the drive
+# $uuid whenever it is plugged in.
+[Unit]
+Description=Stuff Saver: keep folders on a drive
+BindsTo=$devunit
+After=$devunit
+RequiresMountsFor=$home
+# At start-up, before anyone logs in.
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ollie-stuff-saver-helper mount
+ExecStop=/usr/local/bin/ollie-stuff-saver-helper unmount
+TimeoutStartSec=30min
+
+[Install]
+WantedBy=$devunit
+EOF
+}
+
+do_set() {
+    local new_uuid=$2 here name real list m new=""
+    set_owner "$1" || return 1
+    dev="$(find_dev "$new_uuid")"
+    [[ -n $dev ]] || { echo "There is no drive $new_uuid."; return 1; }
+    # Never Ollie OS's own drive.
+    for m in / /boot /efi /boot/efi /home /var /run/archiso/bootmnt /run/archiso/cowspace; do
+        if [[ "$(findmnt -rno SOURCE --mountpoint "$m" 2>/dev/null | sed 's/\[.*//')" == "$dev" ]]; then
+            echo "That is a drive Ollie OS itself runs from."
+            return 1
+        fi
+    done
+    if [[ -f $ETC/drive ]] && [[ "$(sed -n 's/^UUID=//p' "$ETC/drive")" != "$new_uuid" ]]; then
+        echo "Stuff Saver is already saving onto another drive: stop that first."
+        return 1
+    fi
+    [[ -f $ETC/drive ]] || new=1
+    uuid=$new_uuid
+    # The folders: each in this person's home, each name a plain one.
+    list="$(mktemp)"
+    [[ -f $ETC/folders ]] && cat "$ETC/folders" >"$list"
+    while IFS=$'\t' read -r here name; do
+        [[ -n $here && -n $name ]] || continue
+        real="$(realpath -m -- "$here")"
+        if [[ "$real" != "$home"/* || "$name" == */* || "$name" == . || "$name" == .. ]]; then
+            printf 'NOT %s\t%s\n' "$here" "it is not a folder in $home"
+            continue
+        fi
+        cut -f1 "$list" | grep -qxF -- "$real" || printf '%s\t%s\n' "$real" "$name" >>"$list"
+    done
+    mkdir -p "$ETC"
+    printf 'UUID=%s\nUSER=%s\n' "$uuid" "$owner" >"$ETC/drive"
+    install -m 0644 "$list" "$ETC/folders"
+    rm -f "$list"
+    write_unit
+    if ! do_mount; then
+        # A first try that could not even open the drive leaves nothing behind.
+        [[ -n $new ]] && rm -f "$UNIT" && rm -rf "${ETC:?}"
+        return 1
+    fi
+    if have_systemd; then
+        systemctl daemon-reload
+        systemctl enable ollie-stuff-saver.service 2>/dev/null
+        systemctl start ollie-stuff-saver.service
+    fi
+    return 0
+}
+
+do_off() {
+    local back=${1:-} here name n i=0 need
+    load || return 1
+    if have_systemd; then
+        systemctl disable --now ollie-stuff-saver.service 2>/dev/null
+    fi
+    do_unmount
+    if [[ $back == back ]]; then
+        if open_drive; then
+            n="$(grep -c . "$ETC/folders")"
+            while IFS=$'\t' read -r here name; do
+                [[ -n $here && -n $name ]] || continue
+                i=$((i + 1))
+                progress $((i * 100 / (n + 1))) "Bringing back $name"
+                is_empty "$base/$name" && { echo "BACK $here"; continue; }
+                make_folder "$here"
+                need="$(used_bytes "$base/$name")"
+                if ((${need:-0} + SPARE > $(free_bytes "$here"))); then
+                    printf 'NOT %s\t%s\n' "$here" "there is not enough room on this computer; it stays on the drive"
+                    continue
+                fi
+                move_into "$base/$name" "$here"
+                # As this person's, wherever they came from.
+                chown -R "$uid:$gid" -- "$here"
+                if is_empty "$base/$name"; then
+                    rmdir -- "$base/$name" 2>/dev/null
+                    echo "BACK $here"
+                else
+                    printf 'NOT %s\t%s\n' "$here" "some of it is still on the drive (names this folder has already)"
+                fi
+            done <"$ETC/folders"
+            close_drive
+        else
+            printf 'NOT %s\t%s\n' all "the drive is not here, so everything stays on it"
+        fi
+    fi
+    rm -f "$UNIT"
+    rm -rf "${ETC:?}"
+    have_systemd && systemctl daemon-reload
+    progress 100 "Done"
+    return 0
+}
+
+case "${1:-}" in
+set) do_set "${2:?user}" "${3:?uuid}" ;;
+mount) do_mount ;;
+unmount) do_unmount ;;
+off) do_off "${2:-}" ;;
+*)
+    echo "usage: ollie-stuff-saver-helper set USER UUID < FOLDERS | mount | unmount | off [back]" >&2
+    exit 2
+    ;;
+esac
