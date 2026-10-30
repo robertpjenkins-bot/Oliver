@@ -5,6 +5,6 @@
 unit=/etc/systemd/system/ollie-stuff-saver.service
 if [[ -f $unit ]] && ! grep -q '^After=ollie-storage.service' "$unit"; then
     sed -i '/^RequiresMountsFor=/a After=ollie-storage.service' "$unit"
-    systemctl daemon-reload
+    systemctl daemon-reload 2>/dev/null
 fi
 exit 0
