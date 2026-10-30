@@ -8,6 +8,7 @@
 #   Ollie-OS-Updater-x86_64.AppImage        brings an ISO up to the newest Ollie OS
 #   Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage  adds Stuff Saver to a running Ollie OS
 #   Ollie-OS-Storage-Updater-x86_64.AppImage      adds Ollie OS Storage, the new Fixer and Stuff Saver
+#   Ollie-OS-Drive-Installer-x86_64.AppImage      adds the Install Ollie OS that installs into a drive or folder
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
 #   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup)
 set -euo pipefail
@@ -210,6 +211,16 @@ build_storage_updater() {
         "${stuff_saver_files[@]}"
 }
 build_storage_updater
+# The Install Ollie OS that also installs into a drive or a folder on one,
+# keeping everything on it (the drive Ollie OS runs from too).
+build_install_updater() {
+    build_apps_updater Ollie-OS-Drive-Installer-x86_64.AppImage "Ollie OS Drive Installer" \
+        "the new Install Ollie OS" /usr/local/bin/ollie-install-gui "" \
+        usr/local/bin/ollie-install-gui usr/local/bin/ollie-install usr/local/bin/ollie-install-folder \
+        usr/local/bin/ollie-storage-helper usr/local/lib/ollie/loop-root usr/local/lib/ollie/ollie-loop-root.service \
+        usr/local/lib/ollie/copy-boot-files etc/initcpio/install/ollie-loop-root usr/share/applications/ollie-install.desktop
+}
+build_install_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz

@@ -1,0 +1,331 @@
+#!/bin/bash
+# Install Ollie OS into a drive or a folder on one, keeping everything else
+# on it: Ollie OS goes into one big system file there ("Ollie OS/
+# ollie-os-system.img", a Linux drive inside a file), so a drive in Windows'
+# formats (NTFS, exFAT: the OLLIE_SHARE part of a USB Maker drive, say) can
+# hold it too, with all of its room. Everything saved in the installed Ollie
+# OS (Steam and its games, downloads) goes into that file.
+#
+# It starts from the start-up part (OLLIE_BOOT) of the drive this Ollie OS
+# runs from: "Ollie OS (installed)" is added there and started by default;
+# the USB's own Ollie OS stays there too, in the start-up menu. The home
+# folders of this Ollie OS (and its newer apps) are copied into the
+# installed one. Nothing else is changed, on any drive.
+#
+# Run as root by the "Install Ollie OS" window, with its answers:
+#   OLLIE_INSTALL_UUID    the drive (partition) for the system file
+#   OLLIE_INSTALL_FOLDER  where on it ("" = right on the drive)
+#   OLLIE_INSTALL_GB      the system file's size
+#   OLLIE_INSTALL_USER    whose the drive's files are (NTFS, exFAT)
+# Prints "PROGRESS n text", "ERROR why" and "DONE" lines.
+# For tests: OLLIE_INSTALL_SOURCE (the system to copy), OLLIE_INSTALL_NEWER
+# (the system to take newer apps and accounts from), OLLIE_INSTALL_HOME,
+# OLLIE_INSTALL_BOOT and OLLIE_INSTALL_BOOT_UUID (a folder standing in for
+# the start-up part, and that part's ID), OLLIE_INSTALL_OPTIONS (more kernel
+# options).
+set -uo pipefail
+
+[[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
+
+readonly SOURCE="${OLLIE_INSTALL_SOURCE:-/run/archiso/airootfs}"
+readonly NEWER="${OLLIE_INSTALL_NEWER:-}"
+readonly HOME_SRC="${OLLIE_INSTALL_HOME:-/home}"
+readonly RUN=/run/ollie-install
+readonly HOST_MNT=$RUN/host TARGET=$RUN/system
+readonly DIRNAME="Ollie OS" FILE=ollie-os-system.img
+readonly GB=1000000000
+
+progress() { echo "PROGRESS $*"; }
+error() {
+    echo "ERROR $*"
+    exit 1
+}
+
+uuid="${OLLIE_INSTALL_UUID:-}" folder="${OLLIE_INSTALL_FOLDER:-}" gb="${OLLIE_INSTALL_GB:-0}"
+owner="${OLLIE_INSTALL_USER:-}"
+folder=${folder#/} folder=${folder%/}
+[[ -n $uuid ]] || error "no drive was given"
+[[ $folder != *..* ]] || error "that folder cannot be used"
+[[ $gb =~ ^[0-9]+$ ]] && ((gb >= 24)) || error "the system file must be 24 GB or more"
+[[ -d "$SOURCE/usr" ]] || error "this only works when started from Ollie OS's own USB drive"
+[[ -n $owner ]] || owner="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 { print $1; exit }')"
+uid="$(id -u "$owner" 2>/dev/null || echo 1000)" gid="$(id -g "$owner" 2>/dev/null || echo 1000)"
+
+# --- Cleaning up, however it ends --------------------------------------------------------
+made_file="" host_mounted="" boot_was_ro="" bootdir="" loopdev=""
+cleanup() {
+    if mountpoint -q "$TARGET"; then
+        umount -R "$TARGET" 2>/dev/null || umount -R -l "$TARGET"
+    fi
+    [[ -n $loopdev ]] && losetup -d "$loopdev" 2>/dev/null
+    # A system file that was not finished goes (only the one made now).
+    [[ -n $made_file ]] && rm -f -- "$made_file"
+    [[ -n $host_mounted ]] && umount "$HOST_MNT" 2>/dev/null
+    [[ -n $boot_was_ro ]] && mount -o remount,ro "$bootdir" 2>/dev/null
+    return 0
+}
+trap cleanup EXIT
+
+# --- The start-up part ----------------------------------------------------------------------
+progress 1 "Looking at the drives"
+bootdir="${OLLIE_INSTALL_BOOT:-}" boot_dev=""
+if [[ -n $bootdir ]]; then
+    boot_uuid="${OLLIE_INSTALL_BOOT_UUID:-}"
+else
+    for d in /run/ollie-bootdir /run/archiso/bootmnt; do
+        d="$(readlink -f "$d" 2>/dev/null)"
+        [[ -n $d ]] && mountpoint -q "$d" && { bootdir=$d; break; }
+    done
+    [[ -n $bootdir ]] && [[ "$(findmnt -no FSTYPE "$bootdir")" == vfat ]] ||
+        error "Ollie OS is not running from a drive made by USB Maker (with an OLLIE_BOOT start-up part), which the installed Ollie OS needs to start from"
+    boot_dev="$(findmnt -no SOURCE "$bootdir")"
+    boot_uuid="$(blkid -o value -s UUID "$boot_dev")"
+    if findmnt -no OPTIONS "$bootdir" | grep -qw ro; then
+        mount -o remount,rw "$bootdir" || error "Ollie OS's start-up part could not be opened for writing"
+        boot_was_ro=1
+    fi
+fi
+[[ -d "$bootdir/loader/entries" && -n $boot_uuid ]] ||
+    error "Ollie OS's start-up part has no start-up menu (loader) to add the installed Ollie OS to"
+(($(df -B1 --output=avail "$bootdir" | tail -n 1) > 400 * 1000 * 1000)) ||
+    error "Ollie OS's start-up part is full (it needs 400 MB free)"
+
+# --- The drive for the system file -------------------------------------------------------------
+if [[ -e "/dev/disk/by-uuid/$uuid" ]]; then
+    dev="$(readlink -f "/dev/disk/by-uuid/$uuid")"
+else
+    dev="$(blkid -c /dev/null -U "$uuid" 2>/dev/null)"
+fi
+[[ -b $dev ]] || error "the drive is not plugged in"
+[[ $dev != "$boot_dev" ]] || error "that is Ollie OS's start-up part"
+for m in / /run/archiso/bootmnt /run/archiso/cowspace /home; do
+    [[ "$(findmnt -no SOURCE --mountpoint "$m" 2>/dev/null | sed 's/\[.*//')" == "$dev" ]] &&
+        error "that is a part Ollie OS itself runs from"
+done
+fs="$(blkid -p -o value -s TYPE "$dev")"
+case "$fs" in
+ntfs) host_fs=ntfs3 host_opts="uid=$uid,gid=$gid,umask=022" ;;
+exfat) host_fs=exfat host_opts="uid=$uid,gid=$gid,umask=022" ;;
+ext2 | ext3 | ext4 | btrfs | xfs | f2fs) host_fs=$fs host_opts="" ;;
+vfat) error "a FAT32 drive cannot hold a file bigger than 4 GB: pick an exFAT, NTFS or Linux drive" ;;
+*) error "the drive is $fs, which Ollie OS cannot be installed into" ;;
+esac
+host="$(findmnt -nfo TARGET -S "$dev")"
+if [[ -z $host ]]; then
+    mkdir -p "$HOST_MNT"
+    mount -t "$host_fs" ${host_opts:+-o "$host_opts"} "$dev" "$HOST_MNT" 2>/dev/null ||
+        { [[ $fs == ntfs ]] && mount -t ntfs-3g ${host_opts:+-o "$host_opts"} "$dev" "$HOST_MNT"; } ||
+        error "the drive could not be opened$([[ $fs == ntfs ]] && echo ": if Windows uses it, start Windows and hold Shift while clicking Shut down")"
+    host=$HOST_MNT host_mounted=1
+fi
+mountpoint -q "$host" || error "the drive could not be opened"
+place="$host${folder:+/$folder}/$DIRNAME"
+img="$place/$FILE"
+[[ ! -e $img ]] || error "there is an installed Ollie OS there already ($img)"
+mkdir -p -- "$place" || error "nothing can be saved on the drive (it is read-only or full)"
+(($(df -B1 --output=avail "$place" | tail -n 1) >= gb * GB + 2 * GB)) ||
+    error "there is not enough room on the drive for $gb GB"
+
+# --- The system file ------------------------------------------------------------------------------
+progress 3 "Making the $gb GB system file"
+made_file=$img
+truncate -s "$((gb * GB))" "$img" &&
+    mkfs.ext4 -q -F -m 1 -L OLLIE_SYSTEM -E lazy_itable_init=1,lazy_journal_init=1 "$img" ||
+    error "the system file could not be made on the drive"
+sys_uuid="$(blkid -p -o value -s UUID "$img")"
+cat >"$place/READ ME - do not delete.txt" <<'EOF'
+This is Ollie OS, installed into this drive: the whole system and everything
+saved in it (Steam and its games, downloads, documents, settings) is inside
+ollie-os-system.img. Deleting it deletes all of that.
+EOF
+mkdir -p "$TARGET"
+loopdev="$(losetup -f --show "$img")" && mount "$loopdev" "$TARGET" || error "the system file could not be opened"
+
+# --- Ollie OS itself ------------------------------------------------------------------------------
+progress 5 "Copying Ollie OS"
+rsync -aAXH --numeric-ids --info=progress2 --no-inc-recursive --exclude=/boot/ "$SOURCE/" "$TARGET/" 2>/dev/null |
+    tr '\r' '\n' | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { p = int(5 + $i * 45 / 100); if (p != last) { print "PROGRESS " p " Copying Ollie OS"; fflush(); last = p } } }'
+((PIPESTATUS[0] == 0)) || error "copying Ollie OS failed (is the drive faulty or full?)"
+mkdir -p "$TARGET/boot"
+if [[ -f "$bootdir/arch/boot/x86_64/vmlinuz-linux" ]]; then
+    cp "$bootdir/arch/boot/x86_64/vmlinuz-linux" "$TARGET/boot/vmlinuz-linux"
+else
+    cp "$(ls "$TARGET"/usr/lib/modules/*/vmlinuz | head -n 1)" "$TARGET/boot/vmlinuz-linux"
+fi || error "Ollie OS's kernel could not be copied"
+
+# Ollie OS's apps as they are in this one (newer ones an updater added).
+newer="${NEWER:-/}"
+for d in usr/local/bin usr/local/lib/ollie etc/initcpio; do
+    [[ -d "$newer/$d" ]] && rsync -a "$newer/$d/" "$TARGET/$d/"
+done
+for f in "$newer"/usr/share/applications/ollie-*.desktop "$newer"/etc/xdg/autostart/ollie-*.desktop \
+    "$newer"/etc/systemd/system/ollie-storage.service; do
+    [[ -f $f ]] && install -D -m 0644 "$f" "$TARGET/${f#"$newer"/}"
+done
+
+# The Fixer's good copy of the system: the image Ollie OS started from.
+for sfs in "$bootdir/arch/x86_64/airootfs.sfs" /run/archiso/copytoram/airootfs.sfs; do
+    if [[ -f "$sfs" ]]; then
+        progress 50 "Keeping a copy of the system for The Fixer"
+        install -D -m 0644 "$sfs" "$TARGET/var/lib/ollie/fixer/airootfs.sfs"
+        break
+    fi
+done
+
+# --- The home folders ------------------------------------------------------------------------------
+progress 55 "Copying your home (Steam, downloads, settings)"
+need="$(du -sxb "$HOME_SRC" 2>/dev/null | cut -f1)"
+((${need:-0} + GB < $(df -B1 --output=avail "$TARGET" | tail -n 1))) ||
+    error "the system file is too small for what is in your home now ($((need / GB)) GB): pick a bigger size"
+# -x: folders other drives are mounted on (Stuff Saver's) stay empty.
+rsync -aHAXx --numeric-ids --info=progress2 --no-inc-recursive "$HOME_SRC/" "$TARGET/home/" 2>/dev/null |
+    tr '\r' '\n' | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { p = int(55 + $i * 25 / 100); if (p != last) { print "PROGRESS " p " Copying your home (Steam, downloads, settings)"; fflush(); last = p } } }'
+rc=${PIPESTATUS[0]}
+((rc == 0 || rc == 24)) || error "copying your home failed (is the drive faulty or full?)"
+
+# --- Setting it up --------------------------------------------------------------------------------
+progress 82 "Setting up the installed Ollie OS"
+# Not a live USB any more.
+rm -f "$TARGET/etc/mkinitcpio.conf.d/archiso.conf" \
+    "$TARGET/etc/systemd/system/multi-user.target.wants/ollie-live-setup.service" \
+    "$TARGET/usr/share/applications/ollie-install.desktop"
+# One start-up image with every driver (no autodetect), so it starts on any
+# computer the drive is plugged into.
+cat >"$TARGET/etc/mkinitcpio.d/linux.preset" <<'EOF'
+ALL_kver="/boot/vmlinuz-linux"
+PRESETS=('default')
+default_image="/boot/initramfs-linux.img"
+default_options="-S autodetect"
+EOF
+# root has no password, so without this a start-up problem ends at "root
+# account is locked" instead of a repair prompt.
+for unit in emergency rescue; do
+    install -D -m 0644 /dev/stdin "$TARGET/etc/systemd/system/$unit.service.d/ollie-shell.conf" <<'EOF'
+[Service]
+Environment=SYSTEMD_SULOGIN_FORCE=1
+EOF
+done
+cat >"$TARGET/etc/mkinitcpio.conf.d/ollie.conf" <<'EOF'
+FILES=(/etc/systemd/system/emergency.service.d/ollie-shell.conf /etc/systemd/system/rescue.service.d/ollie-shell.conf)
+EOF
+# Starting from the system file.
+cat >"$TARGET/etc/mkinitcpio.conf.d/ollie-loop-root.conf" <<'EOF'
+# Ollie OS is installed into a system file: open it at start-up.
+HOOKS+=(ollie-loop-root)
+EOF
+cat >"$TARGET/etc/ollie-loop-root.conf" <<EOF
+HOST_UUID=$uuid
+HOST_FS=$host_fs
+HOST_OPTS=$host_opts
+FILE=${folder:+$folder/}$DIRNAME/$FILE
+BOOT_UUID=$boot_uuid
+EOF
+install -D -m 0644 /dev/stdin "$TARGET/etc/pacman.d/hooks/95-ollie-boot-files.hook" <<'EOF'
+# Ollie OS starts from the kernel and start-up image on the drive's start-up
+# part: copy new ones there (after 90-mkinitcpio-install.hook made them).
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Target = usr/lib/modules/*/vmlinuz
+Target = usr/lib/initcpio/*
+Target = usr/lib/firmware/*
+Target = usr/src/*/dkms.conf
+
+[Action]
+Description = Copying the new kernel to Ollie OS's start-up part...
+When = PostTransaction
+Exec = /usr/local/lib/ollie/copy-boot-files
+EOF
+cat >"$TARGET/etc/fstab" <<EOF
+# Ollie OS, installed into a system file (see /etc/ollie-loop-root.conf).
+UUID=$sys_uuid / ext4 rw,noatime 0 1
+EOF
+echo ollie >"$TARGET/etc/hostname"
+if tz="$(readlink "${newer%/}/etc/localtime" 2>/dev/null)"; then ln -sf "$tz" "$TARGET/etc/localtime"; fi
+sed -i 's/^#\(en_US.UTF-8 UTF-8\)/\1/' "$TARGET/etc/locale.gen"
+echo LANG=en_US.UTF-8 >"$TARGET/etc/locale.conf"
+
+# The accounts of this Ollie OS, with their passwords (or none), and whether
+# it logs in by itself or shows the login screen.
+# (In a file only root can read, removed again inside: NAME UID GID HASH.)
+accounts="$TARGET/root/ollie-accounts"
+install -m 0600 /dev/null "$accounts"
+awk -F: '$3 >= 1000 && $3 < 60000 && $6 ~ "^/home/" { print $1, $3, $4 }' "${newer%/}/etc/passwd" |
+    while read -r name u g; do
+        echo "$name $u $g $(awk -F: -v n="$name" '$1 == n { print $2 }' "${newer%/}/etc/shadow" 2>/dev/null)"
+    done >"$accounts"
+[[ -s $accounts ]] || echo "ollie 1000 1000" >"$accounts"
+if [[ -d "${newer%/}/etc/sddm.conf.d" ]]; then
+    rm -rf -- "${TARGET:?}/etc/sddm.conf.d"
+    cp -a "${newer%/}/etc/sddm.conf.d" "$TARGET/etc/sddm.conf.d"
+fi
+for f in var/lib/sddm/state.conf var/lib/ollie/setup-done; do
+    [[ -f "${newer%/}/$f" ]] && install -D -m 0644 "${newer%/}/$f" "$TARGET/$f"
+done
+
+progress 88 "Making Ollie OS's start-up image"
+arch-chroot "$TARGET" /bin/bash -uo pipefail -s <<'CHROOT' >/dev/null 2>"$RUN/chroot.log" ||
+locale-gen
+while read -r name u g hash; do
+    getent group "$g" >/dev/null || groupadd -g "$g" "$name"
+    id "$name" &>/dev/null || useradd -M -u "$u" -g "$g" -G wheel,video,audio,input,storage -s /bin/bash -c "$name" "$name"
+    if [[ $hash == '$'* ]]; then usermod -p "$hash" "$name"; else passwd -d "$name" >/dev/null; fi
+    [[ -d /home/$name ]] || { mkdir -p "/home/$name" && cp -a /etc/skel/. "/home/$name/"; }
+    chown "$u:$g" "/home/$name"
+done </root/ollie-accounts
+rm -f /root/ollie-accounts
+passwd -l root >/dev/null
+mkinitcpio -P
+CHROOT
+    error "the installed Ollie OS could not be set up ($(tail -n 3 "$RUN/chroot.log" | tr '\n' ' '))"
+[[ -s "$TARGET/boot/initramfs-linux.img" ]] || error "the start-up image was not made"
+
+# --- Starting it ---------------------------------------------------------------------------------
+progress 95 "Adding it to the start-up menu"
+mkdir -p "$bootdir/ollie-installed"
+cp -f "$TARGET/boot/vmlinuz-linux" "$TARGET/boot/initramfs-linux.img" "$bootdir/ollie-installed/" ||
+    error "the start-up files could not be copied (is the start-up part full?)"
+opts="root=UUID=$sys_uuid rw ollie.loop${OLLIE_INSTALL_OPTIONS:+ $OLLIE_INSTALL_OPTIONS}"
+cat >"$bootdir/loader/entries/00-ollie-installed.conf" <<EOF
+title    Ollie OS (installed)
+sort-key 00
+linux    /ollie-installed/vmlinuz-linux
+initrd   /ollie-installed/initramfs-linux.img
+options  $opts quiet
+EOF
+# Without "quiet", to see what goes wrong if starting ever fails.
+cat >"$bootdir/loader/entries/00-ollie-installed-messages.conf" <<EOF
+title    Ollie OS (installed, show start-up messages)
+sort-key 00b
+linux    /ollie-installed/vmlinuz-linux
+initrd   /ollie-installed/initramfs-linux.img
+options  $opts
+EOF
+loader="$bootdir/loader/loader.conf"
+if grep -q '^default' "$loader" 2>/dev/null; then
+    sed -i 's/^default.*/default 00-ollie-installed.conf/' "$loader"
+else
+    echo "default 00-ollie-installed.conf" >>"$loader"
+fi
+sed -i 's/^timeout.*/timeout 4/' "$loader"
+# Older computers (BIOS): the same in SYSLINUX's menu.
+sys="$bootdir/boot/syslinux"
+if [[ -f "$sys/archiso_sys.cfg" ]]; then
+    cat >"$sys/ollie-installed.cfg" <<EOF
+LABEL ollieinstalled
+MENU LABEL Ollie OS (installed)
+LINUX /ollie-installed/vmlinuz-linux
+INITRD /ollie-installed/initramfs-linux.img
+APPEND $opts quiet
+EOF
+    grep -q 'ollie-installed.cfg' "$sys/archiso_sys.cfg" ||
+        sed -i 's/^INCLUDE archiso_sys-linux.cfg/INCLUDE ollie-installed.cfg\n&/' "$sys/archiso_sys.cfg"
+    sed -i 's/^DEFAULT .*/DEFAULT ollieinstalled/; s/^TIMEOUT .*/TIMEOUT 40/' "$sys/archiso_sys.cfg"
+fi
+sync
+
+# Finished: the file stays.
+made_file=""
+progress 100 "Done"
+echo DONE

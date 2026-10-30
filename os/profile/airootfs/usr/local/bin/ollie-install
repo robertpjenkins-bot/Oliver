@@ -136,7 +136,7 @@ progress 5 "Copying Ollie OS"
 if [[ -n "${OLLIE_INSTALL_PROGRESS:-}" ]]; then
     # rsync's overall percentage, as 5 to 75 of the whole install.
     rsync -aAXH --info=progress2 --no-inc-recursive --exclude=/boot/ "$SOURCE/" "$TARGET/" |
-        stdbuf -o0 tr '\r' '\n' | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) {p = 5 + int($i) * 70 / 100; if (p != last) {print "PROGRESS " p " Copying Ollie OS"; fflush(); last = p}}}'
+        stdbuf -o0 tr '\r' '\n' | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) {p = int(5 + $i * 70 / 100); if (p != last) {print "PROGRESS " p " Copying Ollie OS"; fflush(); last = p}}}'
     ((PIPESTATUS[0] == 0)) || die "copying Ollie OS failed (is the drive faulty?)."
 else
     rsync -aAXH --info=progress2 --exclude=/boot/ "$SOURCE/" "$TARGET/"

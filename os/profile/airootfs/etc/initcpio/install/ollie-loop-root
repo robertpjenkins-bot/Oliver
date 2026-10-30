@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# mkinitcpio hook: start an Ollie OS that is installed into a system file on a
+# drive (ollie-install-folder). See /usr/local/lib/ollie/loop-root.
+
+build() {
+    # The formats a drive with the file may have (those built in are skipped).
+    map add_module 'loop?' 'exfat?' 'ntfs3?' 'ext4?' 'btrfs?' 'xfs?' 'f2fs?' 'vfat?'
+    map add_binary losetup sed
+    add_file /etc/ollie-loop-root.conf
+    add_file /usr/local/lib/ollie/loop-root /usr/local/lib/ollie/loop-root 0755
+    add_file /usr/local/lib/ollie/ollie-loop-root.service /usr/lib/systemd/system/ollie-loop-root.service
+    add_symlink /usr/lib/systemd/system/initrd.target.wants/ollie-loop-root.service ../ollie-loop-root.service
+}
+
+help() {
+    cat <<HELPEOF
+Starts Ollie OS from a system file on a drive (kernel option ollie.loop; the
+file is named in /etc/ollie-loop-root.conf). Goes after the systemd hook.
+HELPEOF
+}
+
+# vim: set ft=sh ts=4 sw=4 et:

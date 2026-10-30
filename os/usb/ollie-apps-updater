@@ -58,9 +58,10 @@ while IFS= read -r -d '' path; do
         units+=("${rel##*/}")
         continue
         ;;
-    usr/local/bin/*) mode=0755 ;;
     *) mode=0644 ;;
     esac
+    # Programs (in usr/local/bin, or Ollie OS's helpers in usr/local/lib/ollie).
+    [[ -f $path && -x $path ]] && mode=0755
     [[ -e "/$rel" ]] && again=1
     sudo -n install -D -m "$mode" "$path" "/$rel" || failed+=" /$rel"
 done < <(find "$tmp/airootfs" \( -type f -o -type l \) -print0)

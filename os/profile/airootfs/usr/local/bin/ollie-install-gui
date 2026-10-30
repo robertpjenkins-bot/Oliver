@@ -48,11 +48,174 @@ kind() { # kind DISK: internal or USB, and the connection
     esac
 }
 
-kdialog --title "$TITLE" --yes-label "Choose a drive" --no-label "Cancel" --yesno \
-    "Install Ollie OS onto a drive of this computer, so it starts without the USB.
+# --- Into a drive or a folder, keeping everything on it (ollie-install-folder) -------------
+readonly GB=1000000000 STORAGE=/usr/local/bin/ollie-storage-helper
+size() {
+    awk -v b="${1:-0}" 'BEGIN {
+        if (b >= 1e12) printf "%.1f TB", b / 1e12
+        else if (b >= 1e9) printf "%.0f GB", b / 1e9
+        else printf "%d MB", b / 1e6 }'
+}
+declare -A f
+parse() { # parse 'KEY="value" ...' (lsblk -P) into f
+    local rest=$1
+    f=()
+    while [[ $rest =~ ^[[:space:]]*([A-Z:-]+)=\"([^\"]*)\"(.*)$ ]]; do
+        f[${BASH_REMATCH[1]}]="$(printf '%b' "${BASH_REMATCH[2]}")"
+        rest=${BASH_REMATCH[3]}
+    done
+}
+nice_fs() { case "$1" in ntfs) echo "Windows (NTFS)" ;; exfat) echo "exFAT" ;; *) echo "Linux ($1)" ;; esac; }
 
-Like Batocera's \"Install on a new disk\": the drive you pick is erased
-completely and Ollie OS gets all of it.
+into_folder() {
+    local system="" m s line ids=() id items=() best="" best_free=0 free bar pick where folder="" how mnt dir
+    local home_bytes gb most sizes=() log rc boot_disk host_disk two="" pick_gb=""
+    declare -A text name pdisk freeof
+    sudo -n true 2>/dev/null || {
+        kdialog --title "$TITLE" --error "Installing needs Ollie OS's admin rights, which here ask for a password. Bring Ollie OS up to date with the Ollie OS Updater, then try again."
+        exit 1
+    }
+    for m in / /boot /efi /home /run/archiso/bootmnt /run/archiso/cowspace /run/ollie-bootdir; do
+        s="$(findmnt -no SOURCE --mountpoint "$(readlink -f "$m")" 2>/dev/null | sed 's/\[.*//')"
+        [[ -n $s ]] && system+=" $(readlink -f "$s") "
+    done
+    while IFS= read -r line; do
+        parse "$line"
+        case "${f[TYPE]}" in part | disk) ;; *) continue ;; esac
+        # FAT32 holds no file over 4 GB.
+        case "${f[FSTYPE]}" in ntfs | exfat | ext2 | ext3 | ext4 | btrfs | xfs | f2fs) ;; *) continue ;; esac
+        [[ -n "${f[UUID]}" && "$system" != *" ${f[PATH]} "* ]] || continue
+        case "${f[LABEL]}" in OLLIE_BOOT | OLLIE_ROOT | OLLIE_DATA) continue ;; esac
+        ((${f[SIZE]:-0} >= 32 * GB)) || continue
+        id="${f[UUID]}"
+        ids+=("$id")
+        pdisk[$id]="${f[PKNAME]}"
+        name[$id]="${f[LABEL]:-the $(size "${f[SIZE]}") drive}"
+        text[$id]="$(size "${f[SIZE]}")  $(nice_fs "${f[FSTYPE]}")${f[LABEL]:+  \"${f[LABEL]}\"}"
+        [[ -n "${f[PKNAME]}" ]] && text[$id]+="  $(lsblk -dno MODEL "/dev/${f[PKNAME]}" 2>/dev/null | xargs)"
+    done < <(lsblk -Pbno NAME,PATH,TYPE,FSTYPE,UUID,SIZE,LABEL,PKNAME)
+    if ((${#ids[@]} == 0)); then
+        kdialog --title "$TITLE" --sorry "No drive to install into was found: one of 32 GB or more, in an NTFS, exFAT or Linux format.
+
+(The OLLIE_SHARE part of a USB Maker drive counts; FAT32 cannot hold Ollie OS.)"
+        exit 0
+    fi
+    bar="$(kdialog --title "$TITLE" --progressbar "Looking at your drives..." 0)"
+    while read -r id free; do freeof[$id]=$free; done < <(sudo -n "$STORAGE" probe "${ids[@]}" 2>/dev/null)
+    qdbus6 $bar close >/dev/null 2>&1
+    for id in "${ids[@]}"; do
+        free="${freeof[$id]:-}"
+        if [[ -n $free ]]; then
+            text[$id]="$(size "$free") free of ${text[$id]}"
+            ((free > best_free)) && best=$id best_free=$free
+        else
+            text[$id]+="  (could not be opened)"
+        fi
+    done
+    for id in "${ids[@]}"; do items+=("$id" "${text[$id]}" "$([[ $id == "$best" ]] && echo on || echo off)"); done
+    pick="$(kdialog --title "$TITLE" --geometry 760x360 --radiolist "Install Ollie OS into which drive? Nothing on it is erased." "${items[@]}")" || exit 0
+    [[ -n $pick ]] || exit 0
+    free="${freeof[$pick]:-0}"
+
+    how="$(kdialog --title "$TITLE" --radiolist "Where on this drive?
+${text[$pick]}" \
+        top "Right on the drive (in a folder called \"Ollie OS\")" on \
+        folder "In a folder I choose" off)" || exit 0
+    if [[ $how == folder ]]; then
+        log="$(sudo -n "$STORAGE" open "$pick" "$(id -un)" 2>&1)"
+        mnt="$(sed -n 's/^MOUNTED //p' <<<"$log")"
+        [[ -n $mnt ]] || { kdialog --title "$TITLE" --sorry "The drive could not be opened: $(sed -n 's/^ERROR //p' <<<"$log")"; exit 1; }
+        while :; do
+            dir="$(kdialog --title "$TITLE: choose the folder" --getexistingdirectory "$mnt")" || exit 0
+            dir="$(realpath -m -- "$dir")"
+            [[ "$dir" == "$mnt" ]] && break
+            [[ "$dir" == "$mnt"/* ]] && { folder="${dir#"$mnt"/}"; break; }
+            kdialog --title "$TITLE" --sorry "Please choose a folder on the drive you picked (in $mnt)."
+        done
+    fi
+    where="${name[$pick]}"
+    [[ -n $folder ]] && where="the folder \"$folder\" on $where"
+
+    # How big: the whole system, what is in your home now, and room to grow.
+    home_bytes="$(du -sxb /home 2>/dev/null | cut -f1)"
+    most=$(((free - 2 * GB) * 95 / 100 / GB))
+    local least=$((${home_bytes:-0} / GB + 24))
+    if ((most < least)); then
+        kdialog --title "$TITLE" --sorry "That drive has $(size "$free") free: Ollie OS and what is in your home now need at least $least GB."
+        exit 0
+    fi
+    for gb in 32 64 128 256 512 1000 2000 4000; do
+        ((gb >= least && gb <= most)) || continue
+        ((gb * GB <= free / 2 && gb <= 1000)) && pick_gb=$gb
+        sizes+=("$gb" "$(size $((gb * GB)))" off)
+    done
+    sizes+=("$most" "$(size $((most * GB))): as much as the drive has room for" off)
+    [[ -n ${pick_gb:-} ]] || pick_gb=$most
+    for ((m = 0; m < ${#sizes[@]}; m += 3)); do [[ "${sizes[m]}" == "$pick_gb" ]] && sizes[m + 2]=on; done
+    gb="$(kdialog --title "$TITLE" --radiolist "How big should installed Ollie OS be? It is one big file on the drive that takes that much of its room (the drive has $(size "$free") free); Steam games and everything you save go in it." "${sizes[@]}")" || exit 0
+
+    boot_disk="$(lsblk -no PKNAME "$(findmnt -no SOURCE "$(readlink -f /run/ollie-bootdir 2>/dev/null || echo /run/archiso/bootmnt)" 2>/dev/null)" 2>/dev/null | head -n 1)"
+    host_disk="${pdisk[$pick]}"
+    [[ -n $boot_disk && -n $host_disk && $boot_disk != "$host_disk" ]] &&
+        two="
+
+It starts from the drive Ollie OS runs from now, so both drives need to be
+plugged in to start it."
+    kdialog --title "$TITLE" --yes-label "Install" --no-label "Cancel" --yesno \
+        "Ollie OS is installed into $where, as one $(size $((gb * GB))) file, with everything in your home now ($(size "${home_bytes:-0}"): Steam,
+downloads, settings) copied in.
+
+Nothing else on any drive is changed: the Ollie OS you are using now stays on
+its USB drive too, in the start-up menu. After a restart, the installed Ollie
+OS starts by itself.$two" || exit 0
+    while pgrep -x steam >/dev/null || pgrep -x firefox >/dev/null; do
+        kdialog --title "$TITLE" --yes-label "They are closed" --no-label "Cancel" --yesno \
+            "Please close Steam (Steam menu > Exit) and Firefox first, so everything in your home can be copied." || exit 0
+    done
+
+    bar="$(kdialog --title "$TITLE" --progressbar "Installing Ollie OS..." 100)"
+    qdbus6 $bar showCancelButton false >/dev/null 2>&1
+    OLLIE_INSTALL_UUID="$pick" OLLIE_INSTALL_FOLDER="$folder" OLLIE_INSTALL_GB="$gb" OLLIE_INSTALL_USER="$(id -un)" \
+        sudo -n --preserve-env=OLLIE_INSTALL_UUID,OLLIE_INSTALL_FOLDER,OLLIE_INSTALL_GB,OLLIE_INSTALL_USER \
+        /usr/local/bin/ollie-install-folder </dev/null 2>&1 | tee "$log_file" |
+        while read -r word pct text; do
+            [[ "$word" == PROGRESS ]] || continue
+            qdbus6 $bar Set "" value "$pct" >/dev/null 2>&1
+            qdbus6 $bar setLabelText "$text... ($pct%)" >/dev/null 2>&1
+        done
+    rc=${PIPESTATUS[0]}
+    qdbus6 $bar close >/dev/null 2>&1
+    if ((rc != 0)) || ! grep -q '^DONE' "$log_file"; then
+        cp "$log_file" "$HOME/Desktop/Install-Ollie-OS-problem.txt" 2>/dev/null
+        kdialog --title "$TITLE" --error "Installing did not finish: $(sed -n 's/^ERROR //p' "$log_file" | tail -n 1)
+
+Nothing was changed. The details are on the desktop (Install-Ollie-OS-problem.txt)."
+        exit 1
+    fi
+    if kdialog --title "$TITLE" --yes-label "Restart now" --no-label "Later" --yesno \
+        "Ollie OS is installed into $where.
+
+Restart, and the installed Ollie OS starts by itself, with everything you
+save from now on on that drive. (The USB's own Ollie OS is still in the
+start-up menu: \"Ollie OS (x86_64, UEFI)\".)"; then
+        systemctl reboot
+    fi
+    exit 0
+}
+log_file="$log"
+
+how="$(kdialog --title "$TITLE" --geometry 700x300 --radiolist "Install Ollie OS, so all of a drive's room is Ollie OS's: Steam games and
+everything you save go there, and it starts by itself.
+
+How?" \
+    folder "Into a drive or a folder on one, keeping everything on it (the drive Ollie OS runs from too)" on \
+    whole "Onto a whole drive, erasing it: Ollie OS gets all of it (like Batocera's \"Install on a new disk\")" off)" || exit 0
+[[ $how == folder ]] && into_folder
+
+kdialog --title "$TITLE" --yes-label "Choose a drive" --no-label "Cancel" --yesno \
+    "Install Ollie OS onto a whole drive of this computer, so it starts without the USB.
+
+The drive you pick is erased completely and Ollie OS gets all of it.
 
 The installed Ollie OS starts on new computers (Dells, Intel Macs, the Steam
 Machine) and on older Dells set to Legacy / BIOS." || exit 0

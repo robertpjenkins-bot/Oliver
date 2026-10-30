@@ -190,7 +190,7 @@ for rel in "${changed[@]}"; do
         printf '"%s" S %s 0777 0 0 %s\n' "$rel" "$now" "$(readlink "$files/$rel")" >>"$pf"
     else
         mode=0644
-        [[ "$rel" == usr/local/bin/* ]] && mode=0755
+        [[ "$rel" == usr/local/bin/* || ( "$rel" == usr/local/lib/ollie/* && -x "$files/$rel" ) ]] && mode=0755
         printf '"%s" F %s %s 0 0 cat "%s"\n' "$rel" "$now" "$mode" "$files/$rel" >>"$pf"
     fi
 done
