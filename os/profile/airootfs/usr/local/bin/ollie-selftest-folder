@@ -25,7 +25,7 @@ chown -R ollie:ollie /home/ollie/Downloads
 start=$(date +%s)
 OLLIE_INSTALL_BOOT=/mnt/ob OLLIE_INSTALL_BOOT_UUID="$(blkid -s UUID -o value "$boot_part")" \
     OLLIE_INSTALL_UUID="$(blkid -s UUID -o value "$share_part")" OLLIE_INSTALL_FOLDER="My Games/Linux" \
-    OLLIE_INSTALL_GB=24 OLLIE_INSTALL_USER=ollie OLLIE_INSTALL_OPTIONS="console=ttyS0,115200" \
+    OLLIE_INSTALL_GB=16 OLLIE_INSTALL_USER=ollie OLLIE_INSTALL_OPTIONS="console=ttyS0,115200" \
     /usr/local/bin/ollie-install-folder </dev/null >/tmp/folder.log 2>&1
 if grep -q '^DONE' /tmp/folder.log; then
     say "installer finished in $((($(date +%s) - start) / 60)) minutes"

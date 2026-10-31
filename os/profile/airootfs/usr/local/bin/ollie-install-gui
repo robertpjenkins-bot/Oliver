@@ -49,6 +49,12 @@ kind() { # kind DISK: internal or USB, and the connection
 }
 
 # --- Into a drive or a folder, keeping everything on it (ollie-install-folder) -------------
+# How long making a file of GB takes, written out on a USB hard drive (about
+# 150 MB a second; an SSD is quicker).
+takes() { # takes GB
+    local m=$(($1 * 1000 / 150 / 60))
+    if ((m < 2)); then echo "a minute or two"; elif ((m < 90)); then echo "about $m minutes"; else echo "about $(((m + 30) / 60)) hours"; fi
+}
 readonly GB=1000000000 STORAGE=/usr/local/bin/ollie-storage-helper
 size() {
     awk -v b="${1:-0}" 'BEGIN {
@@ -69,8 +75,8 @@ nice_fs() { case "$1" in ntfs) echo "Windows (NTFS)" ;; exfat) echo "exFAT" ;; *
 
 into_folder() {
     local system="" m s line ids=() id items=() best="" best_free=0 free bar pick where folder="" how mnt dir
-    local home_bytes gb most sizes=() log rc boot_disk host_disk two="" pick_gb=""
-    declare -A text name pdisk freeof
+    local home_bytes gb most sizes=() log rc boot_disk host_disk two="" pick_gb="" time=""
+    declare -A text name pdisk pfs freeof
     sudo -n true 2>/dev/null || {
         kdialog --title "$TITLE" --error "Installing needs Ollie OS's admin rights, which here ask for a password. Bring Ollie OS up to date with the Ollie OS Updater, then try again."
         exit 1
@@ -89,7 +95,7 @@ into_folder() {
         ((${f[SIZE]:-0} >= 32 * GB)) || continue
         id="${f[UUID]}"
         ids+=("$id")
-        pdisk[$id]="${f[PKNAME]}"
+        pdisk[$id]="${f[PKNAME]}" pfs[$id]="${f[FSTYPE]}"
         name[$id]="${f[LABEL]:-the $(size "${f[SIZE]}") drive}"
         text[$id]="$(size "${f[SIZE]}")  $(nice_fs "${f[FSTYPE]}")${f[LABEL]:+  \"${f[LABEL]}\"}"
         [[ -n "${f[PKNAME]}" ]] && text[$id]+="  $(lsblk -dno MODEL "/dev/${f[PKNAME]}" 2>/dev/null | xargs)"
@@ -146,10 +152,15 @@ ${text[$pick]}" \
     fi
     for gb in 32 64 128 256 512 1000 2000 4000; do
         ((gb >= least && gb <= most)) || continue
-        ((gb * GB <= free / 2 && gb <= 1000)) && pick_gb=$gb
-        sizes+=("$gb" "$(size $((gb * GB)))" off)
+        time=""
+        [[ ${pfs[$pick]} == ntfs || ${pfs[$pick]} == exfat ]] && time="   (takes $(takes "$gb") to make)"
+        # Ticked at first: up to half of what is free, and no more than 512 GB.
+        ((gb * GB <= free / 2 && gb <= 512)) && pick_gb=$gb
+        sizes+=("$gb" "$(size $((gb * GB)))$time" off)
     done
-    sizes+=("$most" "$(size $((most * GB))): as much as the drive has room for" off)
+    time=""
+    [[ ${pfs[$pick]} == ntfs || ${pfs[$pick]} == exfat ]] && time="   (takes $(takes "$most"))"
+    sizes+=("$most" "$(size $((most * GB))): as much as the drive has room for$time" off)
     [[ -n ${pick_gb:-} ]] || pick_gb=$most
     for ((m = 0; m < ${#sizes[@]}; m += 3)); do [[ "${sizes[m]}" == "$pick_gb" ]] && sizes[m + 2]=on; done
     gb="$(kdialog --title "$TITLE" --radiolist "How big should installed Ollie OS be? It is one big file on the drive that takes that much of its room (the drive has $(size "$free") free); Steam games and everything you save go in it." "${sizes[@]}")" || exit 0

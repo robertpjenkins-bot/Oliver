@@ -36,6 +36,21 @@ readonly DIRNAME="Ollie OS" FILE=ollie-os-system.img
 readonly GB=1000000000
 
 progress() { echo "PROGRESS $*"; }
+# Writes zeros into FILE from byte FROM up to byte TO, showing progress FIRST
+# to LAST (percent of the whole install) with TEXT.
+write_zeros() { # write_zeros FILE FROM TO FIRST LAST TEXT (FROM and TO: whole MiB)
+    local file=$1 from=$2 to=$3 first=$4 last=$5 text=$6 oflags=seek_bytes
+    # Straight to the drive where it can, so the progress is real; never
+    # while the file is in use (WRITE_ZEROS_CACHED=1), as that would go round
+    # the cache the drive inside it uses.
+    touch "$file" && [[ -z ${WRITE_ZEROS_CACHED:-} ]] && ((from % 1048576 == 0 && to % 1048576 == 0)) &&
+        dd if=/dev/zero of="$file" bs=1M count=0 oflag=direct status=none 2>/dev/null && oflags+=,direct
+    dd if=/dev/zero of="$file" bs=16M seek="$from" count=$((to - from)) iflag=count_bytes \
+        oflag="$oflags" conv=notrunc,fsync status=progress 2>&1 |
+        tr '\r' '\n' | awk -v from="$from" -v to="$to" -v a="$first" -v b="$last" -v t="$text" '
+            $1 ~ /^[0-9]+$/ && $2 == "bytes" { p = int(a + ($1 / (to - from)) * (b - a)); if (p != last) { print "PROGRESS " p " " t; fflush(); last = p } }'
+    ((PIPESTATUS[0] == 0)) && (($(stat -c %s "$file") >= to))
+}
 error() {
     echo "ERROR $*"
     exit 1
@@ -46,7 +61,7 @@ owner="${OLLIE_INSTALL_USER:-}"
 folder=${folder#/} folder=${folder%/}
 [[ -n $uuid ]] || error "no drive was given"
 [[ $folder != *..* ]] || error "that folder cannot be used"
-[[ $gb =~ ^[0-9]+$ ]] && ((gb >= 24)) || error "the system file must be 24 GB or more"
+[[ $gb =~ ^[0-9]+$ ]] && ((gb >= 16)) || error "the system file must be 16 GB or more"
 [[ -d "$SOURCE/usr" ]] || error "this only works when started from Ollie OS's own USB drive"
 [[ -n $owner ]] || owner="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 { print $1; exit }')"
 uid="$(id -u "$owner" 2>/dev/null || echo 1000)" gid="$(id -g "$owner" 2>/dev/null || echo 1000)"
@@ -129,8 +144,18 @@ mkdir -p -- "$place" || error "nothing can be saved on the drive (it is read-onl
 # --- The system file ------------------------------------------------------------------------------
 progress 3 "Making the $gb GB system file"
 made_file=$img
-truncate -s "$((gb * GB))" "$img" &&
-    mkfs.ext4 -q -F -m 1 -L OLLIE_SYSTEM -E lazy_itable_init=1,lazy_journal_init=1 "$img" ||
+bytes=$((gb * GB / 16777216 * 16777216)) # whole pieces of 16 MiB
+if [[ $host_fs == ntfs3 || $host_fs == exfat ]]; then
+    # Windows' formats keep no gaps in a file: the Linux drive inside would
+    # have it written out the first time it writes near its end (at once),
+    # with nothing to show for it. Written out here instead, as the progress
+    # bar shows. (About a minute for every 9 GB on a USB hard drive.)
+    write_zeros "$img" 0 "$bytes" 3 30 "Making room on the drive ($gb GB)" ||
+        error "the system file could not be made on the drive (is it full or faulty?)"
+else
+    truncate -s "$bytes" "$img" || error "the system file could not be made on the drive"
+fi
+mkfs.ext4 -q -F -m 1 -L OLLIE_SYSTEM -E lazy_itable_init=1,lazy_journal_init=1 "$img" ||
     error "the system file could not be made on the drive"
 sys_uuid="$(blkid -p -o value -s UUID "$img")"
 cat >"$place/READ ME - do not delete.txt" <<'EOF'
@@ -142,9 +167,9 @@ mkdir -p "$TARGET"
 loopdev="$(losetup -f --show "$img")" && mount "$loopdev" "$TARGET" || error "the system file could not be opened"
 
 # --- Ollie OS itself ------------------------------------------------------------------------------
-progress 5 "Copying Ollie OS"
+progress 31 "Copying Ollie OS"
 rsync -aAXH --numeric-ids --info=progress2 --no-inc-recursive --exclude=/boot/ "$SOURCE/" "$TARGET/" 2>/dev/null |
-    tr '\r' '\n' | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { p = int(5 + $i * 45 / 100); if (p != last) { print "PROGRESS " p " Copying Ollie OS"; fflush(); last = p } } }'
+    tr '\r' '\n' | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { p = int(31 + $i * 27 / 100); if (p != last) { print "PROGRESS " p " Copying Ollie OS"; fflush(); last = p } } }'
 ((PIPESTATUS[0] == 0)) || error "copying Ollie OS failed (is the drive faulty or full?)"
 mkdir -p "$TARGET/boot"
 if [[ -f "$bootdir/arch/boot/x86_64/vmlinuz-linux" ]]; then
@@ -166,20 +191,20 @@ done
 # The Fixer's good copy of the system: the image Ollie OS started from.
 for sfs in "$bootdir/arch/x86_64/airootfs.sfs" /run/archiso/copytoram/airootfs.sfs; do
     if [[ -f "$sfs" ]]; then
-        progress 50 "Keeping a copy of the system for The Fixer"
+        progress 58 "Keeping a copy of the system for The Fixer"
         install -D -m 0644 "$sfs" "$TARGET/var/lib/ollie/fixer/airootfs.sfs"
         break
     fi
 done
 
 # --- The home folders ------------------------------------------------------------------------------
-progress 55 "Copying your home (Steam, downloads, settings)"
+progress 62 "Copying your home (Steam, downloads, settings)"
 need="$(du -sxb "$HOME_SRC" 2>/dev/null | cut -f1)"
 ((${need:-0} + GB < $(df -B1 --output=avail "$TARGET" | tail -n 1))) ||
     error "the system file is too small for what is in your home now ($((need / GB)) GB): pick a bigger size"
 # -x: folders other drives are mounted on (Stuff Saver's) stay empty.
 rsync -aHAXx --numeric-ids --info=progress2 --no-inc-recursive "$HOME_SRC/" "$TARGET/home/" 2>/dev/null |
-    tr '\r' '\n' | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { p = int(55 + $i * 25 / 100); if (p != last) { print "PROGRESS " p " Copying your home (Steam, downloads, settings)"; fflush(); last = p } } }'
+    tr '\r' '\n' | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { p = int(62 + $i * 18 / 100); if (p != last) { print "PROGRESS " p " Copying your home (Steam, downloads, settings)"; fflush(); last = p } } }'
 rc=${PIPESTATUS[0]}
 ((rc == 0 || rc == 24)) || error "copying your home failed (is the drive faulty or full?)"
 

@@ -146,6 +146,12 @@ ${drive_text[$id]}" \
     done
 }
 
+# How long making a file of GB takes, written out on a USB hard drive (about
+# 150 MB a second; an SSD is quicker).
+takes() { # takes GB
+    local m=$(($1 * 1000 / 150 / 60))
+    if ((m < 2)); then echo "a minute or two"; elif ((m < 90)); then echo "about $m minutes"; else echo "about $(((m + 30) / 60)) hours"; fi
+}
 # How big the storage file is; prints GB.
 pick_size() { # pick_size FREE_BYTES
     local free=$1 most gb items=() pick="" choice
@@ -156,17 +162,18 @@ pick_size() { # pick_size FREE_BYTES
     fi
     for gb in 64 128 256 512 1000 2000 4000; do
         ((gb <= most)) || continue
-        # Ticked at first: up to half of what is free, and no more than 1 TB.
-        ((gb * GB <= free / 2 && gb <= 1000)) && pick=$gb
-        items+=("$gb" "$(size $((gb * GB)))" off)
+        # Ticked at first: up to half of what is free, and no more than 512 GB
+        # (about an hour to make).
+        ((gb * GB <= free / 2 && gb <= 512)) && pick=$gb
+        items+=("$gb" "$(size $((gb * GB)))   (takes $(takes "$gb") to make)" off)
     done
-    items+=("$most" "$(size $((most * GB))): as much as the drive has room for" off)
+    items+=("$most" "$(size $((most * GB))): as much as the drive has room for   (takes $(takes "$most"))" off)
     [[ -n $pick ]] || pick=$most
     local i
     for ((i = 0; i < ${#items[@]}; i += 3)); do
         [[ "${items[i]}" == "$pick" ]] && items[i + 2]=on
     done
-    choice="$(kdialog --title "$TITLE" --radiolist "How big should Ollie OS Storage be? It is one big file on the drive that takes that much of its room (the drive has $(size "$free") free). It can be made bigger later (System > Ollie OS Storage)." "${items[@]}")" || return 1
+    choice="$(kdialog --title "$TITLE" --radiolist "How big should Ollie OS Storage be? It is one big file on the drive that takes that much of its room (the drive has $(size "$free") free). Making it writes the whole file once, which takes a while on a hard drive. It can be made bigger later (System > Ollie OS Storage)." "${items[@]}")" || return 1
     echo "$choice"
 }
 

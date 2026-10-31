@@ -36,6 +36,21 @@ readonly NAME="Ollie OS Storage" IMG=ollie-os-storage.img
 readonly GB=1000000000
 
 progress() { echo "PROGRESS $*"; }
+# Writes zeros into FILE from byte FROM up to byte TO, showing progress FIRST
+# to LAST (percent of the whole job) with TEXT.
+write_zeros() { # write_zeros FILE FROM TO FIRST LAST TEXT (FROM and TO: whole MiB)
+    local file=$1 from=$2 to=$3 first=$4 last=$5 text=$6 oflags=seek_bytes
+    # Straight to the drive where it can, so the progress is real; never
+    # while the file is in use (WRITE_ZEROS_CACHED=1), as that would go round
+    # the cache the drive inside it uses.
+    touch "$file" && [[ -z ${WRITE_ZEROS_CACHED:-} ]] && ((from % 1048576 == 0 && to % 1048576 == 0)) &&
+        dd if=/dev/zero of="$file" bs=1M count=0 oflag=direct status=none 2>/dev/null && oflags+=,direct
+    dd if=/dev/zero of="$file" bs=16M seek="$from" count=$((to - from)) iflag=count_bytes \
+        oflag="$oflags" conv=notrunc,fsync status=progress 2>&1 |
+        tr '\r' '\n' | awk -v from="$from" -v to="$to" -v a="$first" -v b="$last" -v t="$text" '
+            $1 ~ /^[0-9]+$/ && $2 == "bytes" { p = int(a + ($1 / (to - from)) * (b - a)); if (p != last) { print "PROGRESS " p " " t; fflush(); last = p } }'
+    ((PIPESTATUS[0] == 0)) && (($(stat -c %s "$file") >= to))
+}
 error() { echo "ERROR $*"; }
 
 # --- Drives ---------------------------------------------------------------------------
@@ -185,8 +200,12 @@ do_set() { # do_set USER UUID FOLDER GB
                 return 1
             fi
             progress 5 "Making a $gb GB storage on the drive"
-            # Made at once (not written through, so it is quick).
-            truncate -s "$((gb * GB))" "$img" &&
+            # Windows' formats keep no gaps in a file: the Linux drive inside
+            # would have it written out the first time it writes near its end
+            # (at once), with nothing to show for it. Written out here
+            # instead, as the progress bar shows (about a minute for every
+            # 9 GB on a USB hard drive).
+            write_zeros "$img" 0 $((gb * GB / 16777216 * 16777216)) 5 40 "Making room on the drive ($gb GB)" &&
                 mkfs.ext4 -q -F -m 0 -L OLLIE_STORAGE -E lazy_itable_init=1,lazy_journal_init=1 "$img" ||
                 { rm -f -- "$img"; error "the storage could not be made on the drive"; return 1; }
             cat >"$store/READ ME - do not delete.txt" <<'EOF'
@@ -207,10 +226,10 @@ EOF
             error "the storage is too small for what is in your home now"
             return 1
         fi
-        progress 10 "Copying your home into the storage"
+        progress 41 "Copying your home into the storage"
         # -x: folders other drives are mounted on (Stuff Saver's) stay empty.
         rsync -aHAXx --info=progress2 --no-inc-recursive /home/ "$STORE_MNT/home/" 2>/dev/null |
-            tr '\r' '\n' | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { p = $i + 0; printf "PROGRESS %d Copying your home into the storage\n", 10 + p * 0.85; fflush() } }'
+            tr '\r' '\n' | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { p = $i + 0; printf "PROGRESS %d Copying your home into the storage\n", 41 + p * 0.54; fflush() } }'
         # 24: some files went away while copying (caches), which is fine.
         rc=${PIPESTATUS[0]}
         if ((rc != 0 && rc != 24)); then
@@ -250,8 +269,9 @@ do_grow() { # do_grow GB
         error "there is not enough room on the drive for $gb GB"
         return 1
     fi
-    progress 30 "Making it bigger"
-    truncate -s "$((gb * GB))" "$img" || { error "it could not be made bigger"; return 1; }
+    # The new part written out at once, as when it was made.
+    WRITE_ZEROS_CACHED=1 write_zeros "$img" "$(stat -c %s "$img")" $((gb * GB / 16777216 * 16777216)) 5 90 "Making it bigger ($gb GB)" ||
+        { error "it could not be made bigger (is the drive full?)"; return 1; }
     progress 60 "Making it bigger"
     if losetup -c "$loop" && resize2fs "$loop" >/dev/null 2>&1; then
         progress 100 "Done"
