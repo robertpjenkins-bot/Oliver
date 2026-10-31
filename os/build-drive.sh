@@ -81,17 +81,17 @@ reinstall() { pacstrap -C "$profile/pacman.conf" -G -M "$t" "$@" >/tmp/ollie-rei
 uuid="$(blkid -s UUID -o value "$root_part")"
 problems=0
 {
-    echo "Ollie OS Drive Writer: the check of $disk ($(lsblk -dno SIZE "$disk" | xargs) $(lsblk -dno MODEL "$disk" | xargs)), $(date '+%Y-%m-%d %H:%M')"
+    echo "Ollie OS Drive Writer: the check of $disk ($(lsblk -dno SIZE,MODEL "$disk" | xargs)), $(date '+%Y-%m-%d %H:%M')"
     echo
 } >"$report"
 # check NAME TEST FIX: TEST (a function, run apart: what it sets is not kept)
-# passes, or FIX runs and TEST must pass after it.
+# passes, or FIX runs and TEST must pass after it. What was wrong is noted.
 check() {
-    local name=$1 test=$2 fix=$3 why
+    local name=$1 test=$2 fix=$3 why was
     if why="$($test 2>&1)"; then
         printf '  OK       %s\n' "$name" | tee -a "$report"
-    elif $fix >/dev/null 2>&1 && why="$($test 2>&1)"; then
-        printf '  FIXED    %s\n' "$name" | tee -a "$report"
+    elif $fix >/dev/null 2>&1 && was=$why && why="$($test 2>&1)"; then
+        printf '  FIXED    %s (%s)\n' "$name" "$(head -c 200 <<<"$was" | tr '\n' ' ' | xargs)" | tee -a "$report"
     else
         printf '  PROBLEM  %s%s\n' "$name" "${why:+: $(head -c 300 <<<"$why" | tr '\n' ' ')}" | tee -a "$report"
         problems=$((problems + 1))
@@ -202,20 +202,23 @@ test_fstab() {
 fix_fstab() { genfstab -U "$t" >"$t/etc/fstab"; }
 check "The drive's parts are found at start-up (fstab)" test_fstab fix_fstab
 
+# (Service links point at /usr/lib/... inside Ollie OS: -L, as this Arch
+# Linux's own /usr is not Ollie OS's.)
 test_first_start() {
     grep -q '^ollie:' "$t/etc/passwd" || { echo "the account is missing"; return 1; }
-    [[ -e "$t/etc/xdg/autostart/ollie-first-setup.desktop" ]] || { echo "the first-start setup is missing"; return 1; }
-    [[ ! -e "$t/etc/systemd/system/multi-user.target.wants/ollie-live-setup.service" ]] || { echo "the live USB's set-up is still on"; return 1; }
-    [[ -e "$t/etc/systemd/system/display-manager.service" ]] || { echo "the desktop does not start"; return 1; }
+    [[ -s "$t/etc/xdg/autostart/ollie-first-setup.desktop" ]] || { echo "the first-start setup is missing"; return 1; }
+    [[ ! -L "$t/etc/systemd/system/multi-user.target.wants/ollie-live-setup.service" ]] || { echo "the live USB's set-up is still on"; return 1; }
+    [[ -L "$t/etc/systemd/system/display-manager.service" && -e "$t$(readlink "$t/etc/systemd/system/display-manager.service")" ]] ||
+        { echo "the desktop does not start"; return 1; }
 }
 fix_first_start() {
     rm -f "$t/etc/systemd/system/multi-user.target.wants/ollie-live-setup.service"
     grep -q '^ollie:' "$t/etc/passwd" || in_target useradd -m -G wheel,video,audio,input,storage -s /bin/bash -c "Ollie" ollie
     in_target passwd -d ollie
-    [[ -e "$t/etc/xdg/autostart/ollie-first-setup.desktop" ]] ||
+    [[ -s "$t/etc/xdg/autostart/ollie-first-setup.desktop" ]] ||
         install -D -m 0644 "$profile/airootfs/etc/xdg/autostart/ollie-first-setup.desktop" "$t/etc/xdg/autostart/ollie-first-setup.desktop"
-    [[ -e "$t/etc/systemd/system/display-manager.service" ]] ||
-        ln -sf /usr/lib/systemd/system/sddm.service "$t/etc/systemd/system/display-manager.service"
+    [[ -e "$t/usr/lib/systemd/system/sddm.service" ]] || reinstall sddm
+    ln -sfn /usr/lib/systemd/system/sddm.service "$t/etc/systemd/system/display-manager.service"
 }
 check "The desktop, and the first start that asks for your name and password" test_first_start fix_first_start
 

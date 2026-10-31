@@ -51,9 +51,10 @@ pacman -Su --noconfirm
 # noto-fonts: rsvg-convert draws the "Ollie OS" text on the wallpaper with it;
 # without any font installed the letters come out as boxes.
 pacman -S --noconfirm --needed archiso base-devel git go librsvg noto-fonts sudo
-# Onto a drive: Ollie OS's installer partitions, formats and makes it start.
+# Onto a drive: Ollie OS's installer partitions, formats and makes it start
+# (and checks the time zone it is given), and build-drive.sh checks it.
 if [[ -n "${OLLIE_BUILD_DISK:-}" ]]; then
-    pacman -S --noconfirm --needed btrfs-progs dosfstools gptfdisk parted syslinux
+    pacman -S --noconfirm --needed btrfs-progs diffutils dosfstools gptfdisk parted syslinux tzdata
 fi
 
 # OLLIE_ROOTLESS=1: in an Arch Linux started by a normal user, with no
