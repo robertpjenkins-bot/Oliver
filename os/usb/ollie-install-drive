@@ -183,19 +183,21 @@ done
 [[ -n $recipe ]] || die "this copy of the Drive Writer has no Ollie OS recipe inside (ollie-os-source.tar.gz)."
 
 # --- 2. The drive ------------------------------------------------------------------------
-# Never a drive this computer itself runs from.
+# Never a drive this computer itself runs from, nor the one this app or its
+# work folder is on.
+work="${OLLIE_DRIVE_DIR:-$HOME/Ollie-OS-Drive-Writer}"
 system=""
-for m in / /home /boot /boot/efi /efi /var /usr /run/archiso/bootmnt; do
-    s="$(findmnt -no SOURCE --mountpoint "$m" 2>/dev/null | sed 's/\[.*//')"
+for m in / /home /boot /boot/efi /efi /var /usr /run/archiso/bootmnt "$HOME" "$(dirname "${APPIMAGE:-$here/x}")"; do
+    s="$(findmnt -no SOURCE --target "$m" 2>/dev/null | sed 's/\[.*//')"
     [[ -n $s ]] && system+=" $(lsblk -sno NAME,TYPE "$s" 2>/dev/null | awk '$2 == "disk" {gsub(/[^A-Za-z0-9]/, "", $1); print $1}') "
 done
 contents() { # contents DISK: what is on it now, in a few words
     local fs labels
-    fs="$(lsblk -nro FSTYPE "$1" | sort -u | tr '\n' ' ')" labels="$(lsblk -nro LABEL "$1" | tr '\n' ' ')"
+    fs="$(lsblk -nro FSTYPE "$1" | sort -u | xargs)" labels="$(lsblk -nro LABEL "$1" | xargs)"
     if [[ "$labels" == *OLLIE_BOOT* ]]; then echo "has Ollie OS on it"
     elif [[ "$fs" == *apfs* || "$fs" == *hfsplus* ]]; then echo "has macOS on it"
     elif [[ "$fs" == *ntfs* ]]; then echo "has Windows files on it"
-    elif [[ -z "${fs// /}" ]]; then echo "empty"
+    elif [[ -z $fs ]]; then echo "empty"
     else echo "has files on it ($fs)"
     fi
 }
@@ -235,7 +237,6 @@ fi
 tz="$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')"
 
 # --- 3. Room on this computer, for the while ------------------------------------------------
-work="${OLLIE_DRIVE_DIR:-$HOME/Ollie-OS-Drive-Writer}"
 mkdir -p "$work" || die "could not make $work."
 free_kb="$(df -Pk "$work" | awk 'NR == 2 {print $4}')"
 if ((${free_kb:-0} < 5 * 1024 * 1024)); then
