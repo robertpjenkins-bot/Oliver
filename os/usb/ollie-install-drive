@@ -1,0 +1,216 @@
+#!/bin/bash
+# Ollie OS Drive Writer: installs Ollie OS onto a drive, from SteamOS or any
+# Linux (not from Ollie OS itself). Pick the drive, and Ollie OS is written
+# onto it installed, ready to start, with all of the drive's room for Steam
+# and everything you save. The drive is erased.
+#
+# It runs Ollie OS's own installer (ollie-install, the one behind "Install
+# Ollie OS") from the ISO's system, opened on this computer for the while
+# (in /run, not installed here), so the drive is set up exactly as when
+# Ollie OS installs itself: it starts on Dells, Intel Macs and the Steam
+# Machine, and on older computers set to BIOS / Legacy.
+#
+#   ollie-install-drive [ISO]
+#
+# In the Ollie OS Drive Writer AppImage, Get ISO runs first (downloads the
+# newest ISO and brings it up to date) and hands the ISO over; with
+# OLLIE_REMOVE_WHEN_DONE=1 the ISOs are removed from this computer once
+# Ollie OS is on the drive. Writing to a drive needs this computer's admin
+# rights: on SteamOS that is your password (set one with passwd in Konsole).
+# For tests: OLLIE_DRIVE=/dev/... and OLLIE_DRIVE_YES=1 (no questions).
+set -uo pipefail
+
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
+say() { printf '\n%s==>%s %s%s%s\n' "$teal$bold" "$reset" "$bold" "$*" "$reset"; }
+die() {
+    printf '\n%sError:%s %s\n\nPress Enter to close.' "$red$bold" "$reset" "$*" >&2
+    read -r _ || true
+    exit 1
+}
+have() { command -v "$1" >/dev/null 2>&1; }
+readonly RUN=/run/ollie-drive-writer
+readonly NEED_BYTES=$((32 * 1000 * 1000 * 1000))
+
+# --- As root: open the ISO's system and run its installer onto the drive ----------
+if [[ "${1:-}" == --root ]]; then
+    iso=${2:?} disk=${3:?} tz=${4:-UTC}
+    [[ $EUID -eq 0 ]] || die "this part runs as root"
+    # Run from a copy in /tmp (root cannot read inside the AppImage): it goes.
+    [[ "${BASH_SOURCE[0]}" == /tmp/ollie-install-drive.* ]] && rm -f -- "${BASH_SOURCE[0]}"
+    root=$RUN/root
+    cleanup() {
+        if mountpoint -q "$root"; then umount -R "$root" 2>/dev/null || umount -R -l "$root"; fi
+        for m in "$RUN/sfs" "$RUN/iso" "$RUN/rw"; do mountpoint -q "$m" && { umount "$m" 2>/dev/null || umount -l "$m"; }; done
+        return 0
+    }
+    trap cleanup EXIT
+    mkdir -p "$RUN/iso" "$RUN/sfs" "$RUN/rw" "$root"
+    say "Opening Ollie OS"
+    mount -o loop,ro "$iso" "$RUN/iso" || die "the ISO could not be opened (is the download complete?)."
+    [[ -f "$RUN/iso/arch/x86_64/airootfs.sfs" ]] || die "this is not an Ollie OS ISO."
+    mount -o loop,ro "$RUN/iso/arch/x86_64/airootfs.sfs" "$RUN/sfs" || die "Ollie OS's system in the ISO could not be opened."
+    [[ -x "$RUN/sfs/usr/local/bin/ollie-install" ]] || die "this Ollie OS ISO is too old to install from (no installer in it): run the Updater on it first."
+    # Ollie OS's system as it runs from a USB, with room for its own changes
+    # in memory; its installer finds the ISO where a USB start puts it.
+    mount -t tmpfs -o size=2G tmpfs "$RUN/rw" && mkdir -p "$RUN/rw/upper" "$RUN/rw/work" &&
+        mount -t overlay overlay -o "lowerdir=$RUN/sfs,upperdir=$RUN/rw/upper,workdir=$RUN/rw/work" "$root" ||
+        die "Ollie OS's system could not be opened on this computer (no overlay support?)."
+    mount -t proc proc "$root/proc" &&
+        mount --rbind /sys "$root/sys" && mount --make-rslave "$root/sys" &&
+        mount --rbind /dev "$root/dev" && mount --make-rslave "$root/dev" &&
+        mount -t tmpfs -o mode=0755 tmpfs "$root/run" &&
+        mkdir -p "$root/run/udev" "$root/run/archiso/bootmnt" "$root/run/archiso/airootfs" &&
+        mount --bind /run/udev "$root/run/udev" &&
+        mount --bind "$RUN/iso" "$root/run/archiso/bootmnt" &&
+        mount --bind "$RUN/sfs" "$root/run/archiso/airootfs" ||
+        die "Ollie OS's system could not be set up on this computer."
+    # Nothing of the drive may stay in use.
+    for part in $(lsblk -lnpo NAME "$disk" | tail -n +2); do
+        umount "$part" 2>/dev/null
+        swapoff "$part" 2>/dev/null
+    done
+    if lsblk -lnpo MOUNTPOINTS "$disk" | grep -q .; then
+        die "a part of the drive is still in use: close what has files open on it (or eject it in the file manager and plug it in again), then try again."
+    fi
+
+    say "Installing Ollie OS onto $disk"
+    chroot "$root" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/bin HOME=/root TERM="${TERM:-dumb}" LANG=C.UTF-8 \
+        OLLIE_INSTALL_DISK="$disk" OLLIE_INSTALL_YES=1 OLLIE_INSTALL_PROGRESS=1 OLLIE_INSTALL_TIMEZONE="$tz" OLLIE_INSTALL_NO_EFI_VARS=1 \
+        /usr/local/bin/ollie-install </dev/null 2>&1 | tee "$RUN/install.log" |
+        while IFS= read -r line; do
+            if [[ $line == "PROGRESS "* ]]; then
+                set -- $line
+                printf '\r  %3d%%  %-60s' "$2" "${*:3}"
+            fi
+        done
+    rc=${PIPESTATUS[0]}
+    echo
+    if ((rc != 0)) || ! grep -q '^PROGRESS 100 ' "$RUN/install.log"; then
+        echo
+        grep -v '^PROGRESS' "$RUN/install.log" | tail -n 12
+        cp "$RUN/install.log" /tmp/ollie-drive-writer-problem.txt 2>/dev/null
+        die "installing did not finish (see above; all of it is in /tmp/ollie-drive-writer-problem.txt)."
+    fi
+    sync
+    exit 0
+fi
+
+# --- A terminal to talk in -----------------------------------------------------------
+if [[ ! -t 0 && -z "${OLLIE_DRIVE_IN_TERMINAL:-}" ]]; then
+    export OLLIE_DRIVE_IN_TERMINAL=1
+    self="${APPIMAGE:-$(realpath -- "$0")}"
+    for term in konsole gnome-terminal kgx xfce4-terminal xterm; do
+        have "$term" || continue
+        case "$term" in
+        konsole) exec konsole --hold -e "$self" "$@" ;;
+        gnome-terminal | kgx) exec "$term" -- "$self" "$@" ;;
+        *) exec "$term" -hold -e "$self" "$@" ;;
+        esac
+    done
+    exit 1
+fi
+
+printf '\n%s  Ollie OS Drive Writer%s  (installs Ollie OS onto a drive: all of it is Ollie OS'"'"'s)\n' "$bold" "$reset"
+if [[ -x /usr/local/bin/ollie-first-setup ]]; then
+    echo "  (This is Ollie OS: \"Install Ollie OS\" in its apps menu does the same from here.)"
+fi
+for tool in lsblk losetup mount chroot sudo; do have "$tool" || die "this computer is missing $tool."; done
+
+# --- 1. The ISO ------------------------------------------------------------------------
+iso="${1:-}"
+if [[ -z $iso ]]; then
+    here="$(dirname "${APPIMAGE:-$0}")"
+    # The newest one brought up to date by the Updater, else the newest.
+    iso="$(ls -t "$HOME"/Downloads/ollie-os-*-updated.iso "$HOME"/Desktop/ollie-os-*-updated.iso "$here"/ollie-os-*-updated.iso 2>/dev/null | head -n 1)"
+    [[ -n $iso ]] || iso="$(ls -t "$HOME"/Downloads/ollie-os-*.iso "$HOME"/Desktop/ollie-os-*.iso "$here"/ollie-os-*.iso 2>/dev/null | head -n 1)"
+fi
+[[ -n $iso && -f $iso ]] || die "no Ollie OS ISO found (in Downloads). The Ollie OS Drive Writer AppImage downloads it by itself."
+iso="$(realpath -- "$iso")"
+echo "  Ollie OS: $iso"
+
+# --- 2. The drive ------------------------------------------------------------------------
+# Never a drive this computer itself runs from.
+system=""
+for m in / /home /boot /boot/efi /efi /var /usr /run/archiso/bootmnt; do
+    s="$(findmnt -no SOURCE --mountpoint "$m" 2>/dev/null | sed 's/\[.*//')"
+    [[ -n $s ]] && system+=" $(lsblk -sno NAME,TYPE "$s" 2>/dev/null | awk '$2 == "disk" {gsub(/[^A-Za-z0-9]/, "", $1); print $1}') "
+done
+contents() { # contents DISK: what is on it now, in a few words
+    local fs labels
+    fs="$(lsblk -nro FSTYPE "$1" | sort -u | tr '\n' ' ')" labels="$(lsblk -nro LABEL "$1" | tr '\n' ' ')"
+    if [[ "$labels" == *OLLIE_BOOT* ]]; then echo "has Ollie OS on it"
+    elif [[ "$fs" == *apfs* || "$fs" == *hfsplus* ]]; then echo "has macOS on it"
+    elif [[ "$fs" == *ntfs* ]]; then echo "has Windows files on it"
+    elif [[ -z "${fs// /}" ]]; then echo "empty"
+    else echo "has files on it ($fs)"
+    fi
+}
+disk="${OLLIE_DRIVE:-}"
+if [[ -z $disk ]]; then
+    say "Drives to install Ollie OS onto (32 GB or more; the one this computer runs from is not listed)"
+    echo
+    disks=()
+    while read -r name type; do
+        [[ $type == disk ]] || continue
+        case "$name" in loop* | zram* | sr* | ram* | nbd*) continue ;; esac
+        [[ "$system" == *" $name "* ]] && continue
+        bytes="$(lsblk -bdno SIZE "/dev/$name")"
+        ((bytes >= NEED_BYTES)) || continue
+        disks+=("/dev/$name")
+        tran="$(lsblk -dno TRAN "/dev/$name" | xargs)"
+        printf '  %d) %-12s %8s  %-4s %-28s %s\n' "${#disks[@]}" "/dev/$name" "$(lsblk -dno SIZE "/dev/$name" | xargs)" \
+            "${tran^^}" "$(lsblk -dno MODEL "/dev/$name" | xargs | cut -c1-28)" "$(contents "/dev/$name")"
+    done < <(lsblk -dnro NAME,TYPE)
+    ((${#disks[@]} > 0)) || die "no drive of 32 GB or more was found. Plug in the drive for Ollie OS, then run this again."
+    echo
+    read -rp "Install Ollie OS onto which drive? [1-${#disks[@]}] " pick
+    [[ "$pick" =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#disks[@]})) || die "no such drive; nothing was changed."
+    disk="${disks[pick - 1]}"
+fi
+[[ -b $disk && "$(lsblk -dno TYPE "$disk")" == disk ]] || die "$disk is not a drive."
+[[ "$system" != *" ${disk#/dev/} "* ]] || die "$disk is the drive this computer runs from."
+
+echo
+lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS "$disk"
+printf '\n%sEVERYTHING on %s (%s, %s) will be erased%s, and Ollie OS gets all of it.\n' \
+    "$red$bold" "$disk" "$(lsblk -dno SIZE "$disk" | xargs)" "$(contents "$disk")" "$reset"
+if [[ -z "${OLLIE_DRIVE_YES:-}" ]]; then
+    read -rp "Type ERASE to install Ollie OS onto it: " answer
+    [[ "$answer" == ERASE ]] || die "cancelled; nothing was changed."
+fi
+tz="$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')"
+
+# --- 3. Installing (as root) ----------------------------------------------------------------
+say "Writing to a drive needs this computer's admin rights"
+copy="$(mktemp /tmp/ollie-install-drive.XXXXXX)"
+cat -- "${BASH_SOURCE[0]}" >"$copy"
+if [[ $EUID -eq 0 ]]; then
+    bash "$copy" --root "$iso" "$disk" "${tz:-UTC}"
+else
+    sudo -v || die "that password did not work. On SteamOS, set one with  passwd  in Konsole, then try again."
+    sudo bash "$copy" --root "$iso" "$disk" "${tz:-UTC}"
+fi
+rc=$?
+rm -f -- "$copy"
+((rc == 0)) || exit "$rc"
+
+# --- 4. Done ---------------------------------------------------------------------------------
+if [[ -n "${OLLIE_REMOVE_WHEN_DONE:-}" ]]; then
+    # The copies of Ollie OS this computer kept for the install go.
+    base="${iso%-updated.iso}"
+    base="${base%.iso}"
+    rm -f -- "$base.iso" "$base.iso.sha256" "$base-updated.iso" "$base-updated.iso.sha256"
+    echo "  (The Ollie OS copies on this computer are removed: $(basename "$base").iso.)"
+fi
+printf '\n%s  Done: Ollie OS is installed on %s.%s\n' "$green$bold" "$disk" "$reset"
+cat <<EOF
+
+  Plug the drive into the computer for Ollie OS and start from it:
+    Dell: tap F12 at the Dell logo and pick the drive ("UEFI: ..." or "OLLIE_BOOT").
+    Mac:  hold Option while it starts and pick "EFI Boot".
+    Steam Machine: hold Volume Down and pick the drive.
+  On its first start it asks you to make a username and password.
+
+Press Enter to close.
+EOF
+read -r _ || true

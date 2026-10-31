@@ -5,6 +5,7 @@
 #   Ollie-OS-Drive-Doctor-x86_64.AppImage   checks an Ollie OS drive and fixes it
 #   Ollie-OS-Get-ISO-x86_64.AppImage        downloads the ISO next to USB Maker
 #   Ollie-OS-Installer-x86_64.AppImage      downloads the ISO, then USB Maker
+#   Ollie-OS-Drive-Writer-x86_64.AppImage   downloads the ISO, then installs it onto a drive
 #   Ollie-OS-Updater-x86_64.AppImage        brings an ISO up to the newest Ollie OS
 #   Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage  adds Stuff Saver to a running Ollie OS
 #   Ollie-OS-Storage-Updater-x86_64.AppImage      adds Ollie OS Storage, the new Fixer and Stuff Saver
@@ -144,6 +145,30 @@ APPRUN
     rm -rf "$appdir"
 }
 build_installer
+
+# Get ISO and the Drive Writer in one, for SteamOS or any Linux: download,
+# then install Ollie OS onto the chosen drive; the ISOs go when it is done.
+build_drive_writer() {
+    local appdir="$out/OllieDriveWriter.AppDir"
+    rm -rf "$appdir"
+    install -D -m 0755 "$here/ollie-get-iso" "$appdir/usr/bin/ollie-get-iso"
+    install -D -m 0755 "$here/ollie-install-drive" "$appdir/usr/bin/ollie-install-drive"
+    add_update_kit "$appdir"
+    cat >"$appdir/AppRun" <<'APPRUN'
+#!/bin/sh
+# AppImage entry point: download Ollie OS, make it the newest, then install it onto a drive.
+HERE="$(dirname "$(readlink -f "$0")")"
+export OLLIE_USB_MAKER="$HERE/usr/bin/ollie-install-drive" OLLIE_UPDATER="$HERE/usr/bin/ollie-update"
+export OLLIE_GET_TITLE="Ollie OS Drive Writer" OLLIE_REMOVE_WHEN_DONE=1
+exec "$HERE/usr/bin/ollie-get-iso" "$@"
+APPRUN
+    chmod 0755 "$appdir/AppRun"
+    install -m 0644 "$here/ollie-drive-writer.desktop" "$appdir/ollie-drive-writer.desktop"
+    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
+    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Drive-Writer-x86_64.AppImage"
+    rm -rf "$appdir"
+}
+build_drive_writer
 
 build_updater() {
     local appdir="$out/OllieUpdater.AppDir"

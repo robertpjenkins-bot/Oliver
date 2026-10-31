@@ -11,7 +11,8 @@
 #
 # In the Ollie OS Installer AppImage, OLLIE_USB_MAKER names the USB Maker
 # carried inside it: the ISO then goes in Downloads and USB Maker starts
-# straight away, at choosing the drive.
+# straight away, at choosing the drive. (In the Drive Writer AppImage it is
+# the Drive Writer, and OLLIE_GET_TITLE its name.)
 set -uo pipefail
 
 readonly REPO="${OLLIE_REPO:-robertpjenkins-bot/Oliver}"
@@ -49,7 +50,7 @@ if [[ ! -t 0 && -z "${OLLIE_GET_IN_TERMINAL:-}" ]]; then
 fi
 
 if [[ -n "${OLLIE_USB_MAKER:-}" ]]; then
-    printf '\n%s  Ollie OS Installer%s  (downloads Ollie OS, then puts it on a drive)\n' "$bold" "$reset"
+    printf '\n%s  %s%s  (downloads Ollie OS, then puts it on a drive)\n' "$bold" "${OLLIE_GET_TITLE:-Ollie OS Installer}" "$reset"
 else
     printf '\n%s  Ollie OS Get ISO%s  (downloads Ollie OS for USB Maker)\n' "$bold" "$reset"
 fi

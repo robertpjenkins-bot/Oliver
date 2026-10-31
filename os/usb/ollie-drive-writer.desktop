@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS Drive Writer
+Comment=Download Ollie OS and install it onto a drive
+Exec=ollie-get-iso
+Icon=ollie-os
+Terminal=false
+Categories=System;
