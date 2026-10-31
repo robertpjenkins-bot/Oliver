@@ -91,7 +91,7 @@ check() {
     if why="$($test 2>&1)"; then
         printf '  OK       %s\n' "$name" | tee -a "$report"
     elif $fix >/dev/null 2>&1 && was=$why && why="$($test 2>&1)"; then
-        printf '  FIXED    %s (%s)\n' "$name" "$(head -c 200 <<<"$was" | tr '\n' ' ' | xargs)" | tee -a "$report"
+        printf '  FIXED    %s (%s)\n' "$name" "$(head -c 200 <<<"$was" | tr -s '\n ' '  ' | sed 's/ $//')" | tee -a "$report"
     else
         printf '  PROBLEM  %s%s\n' "$name" "${why:+: $(head -c 300 <<<"$why" | tr '\n' ' ')}" | tee -a "$report"
         problems=$((problems + 1))
