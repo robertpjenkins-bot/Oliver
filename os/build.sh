@@ -7,6 +7,10 @@
 #
 # The ISO and its checksum land in os/out/.
 #
+# With OLLIE_BUILD_DISK=/dev/... (the Ollie OS Drive Writer) there is no ISO:
+# Ollie OS is installed straight onto that drive, which is erased, by
+# os/build-drive.sh, and the check of it lands in os/out/Ollie-OS-check.txt.
+#
 # The profile starts from archiso's own "releng" profile for the boot loader
 # configuration, which tracks the installed archiso version, and layers
 # os/profile on top for everything that makes the system Ollie OS.
@@ -47,6 +51,10 @@ pacman -Su --noconfirm
 # noto-fonts: rsvg-convert draws the "Ollie OS" text on the wallpaper with it;
 # without any font installed the letters come out as boxes.
 pacman -S --noconfirm --needed archiso base-devel git go librsvg noto-fonts sudo
+# Onto a drive: Ollie OS's installer partitions, formats and makes it start.
+if [[ -n "${OLLIE_BUILD_DISK:-}" ]]; then
+    pacman -S --noconfirm --needed btrfs-progs dosfstools gptfdisk parted syslinux
+fi
 
 # OLLIE_ROOTLESS=1: in an Arch Linux started by a normal user, with no
 # password (the Ollie OS Builder app: a user namespace of its own, the way
@@ -210,6 +218,12 @@ cat >>"$profile/pacman.conf" <<EOF
 SigLevel = Optional TrustAll
 Server = file://$localrepo
 EOF
+
+if [[ -n "${OLLIE_BUILD_DISK:-}" ]]; then
+    step "Installing Ollie OS onto $OLLIE_BUILD_DISK"
+    mkdir -p "$out"
+    exec bash "$os/build-drive.sh" "$profile" "$OLLIE_BUILD_DISK" "$out/Ollie-OS-check.txt"
+fi
 
 step "Building the ISO"
 mkdir -p "$out"

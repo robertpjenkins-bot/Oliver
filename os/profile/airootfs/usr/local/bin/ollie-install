@@ -12,6 +12,10 @@
 #   OLLIE_INSTALL_PROGRESS=1     (prints "PROGRESS percent text" lines)
 #   OLLIE_INSTALL_NO_EFI_VARS=1  (leaves this computer's start-up list alone:
 #                                 the Drive Writer, installing from SteamOS)
+#   OLLIE_INSTALL_FILL=COMMAND   (puts Ollie OS's system on the drive by running
+#                                 COMMAND TARGET, instead of copying the live
+#                                 USB's: the Drive Writer, which installs it
+#                                 from Arch Linux's packages; see os/build-drive.sh)
 set -euo pipefail
 
 readonly BOOT_SIZE=512M
@@ -36,7 +40,7 @@ cleanup() {
 trap cleanup EXIT
 
 [[ $EUID -eq 0 ]] || exec sudo --preserve-env=OLLIE_INSTALL_DISK,OLLIE_INSTALL_YES,OLLIE_INSTALL_HOSTNAME,OLLIE_INSTALL_TIMEZONE,OLLIE_INSTALL_PROGRESS,OLLIE_INSTALL_NO_EFI_VARS "$0" "$@"
-[[ -d "$SOURCE/usr" ]] || die "this only works when started from the Ollie OS live USB."
+[[ -n "${OLLIE_INSTALL_FILL:-}" || -d "$SOURCE/usr" ]] || die "this only works when started from the Ollie OS live USB."
 
 # The drive the live USB itself is on, so it is never offered as a target.
 live_disk=""
@@ -133,14 +137,19 @@ mount -o "$opts,subvol=@" "$root_part" "$TARGET"
 mount --mkdir -o "$opts,subvol=@home" "$root_part" "$TARGET/home"
 mount --mkdir "$boot_part" "$TARGET/boot"
 
-say "Copying Ollie OS (this takes a few minutes)"
-progress 5 "Copying Ollie OS"
-if [[ -n "${OLLIE_INSTALL_PROGRESS:-}" ]]; then
+if [[ -n "${OLLIE_INSTALL_FILL:-}" ]]; then
+    say "Installing Ollie OS's programs"
+    progress 5 "Installing Ollie OS's programs"
+    "$OLLIE_INSTALL_FILL" "$TARGET" || die "installing Ollie OS's programs failed (see above)."
+elif [[ -n "${OLLIE_INSTALL_PROGRESS:-}" ]]; then
+    say "Copying Ollie OS (this takes a few minutes)"
+    progress 5 "Copying Ollie OS"
     # rsync's overall percentage, as 5 to 75 of the whole install.
     rsync -aAXH --info=progress2 --no-inc-recursive --exclude=/boot/ "$SOURCE/" "$TARGET/" |
         stdbuf -o0 tr '\r' '\n' | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) {p = int(5 + $i * 70 / 100); if (p != last) {print "PROGRESS " p " Copying Ollie OS"; fflush(); last = p}}}'
     ((PIPESTATUS[0] == 0)) || die "copying Ollie OS failed (is the drive faulty?)."
 else
+    say "Copying Ollie OS (this takes a few minutes)"
     rsync -aAXH --info=progress2 --exclude=/boot/ "$SOURCE/" "$TARGET/"
 fi
 

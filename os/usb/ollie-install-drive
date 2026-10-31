@@ -1,26 +1,30 @@
 #!/bin/bash
-# Ollie OS Drive Writer: installs Ollie OS onto a drive, from SteamOS or any
-# Linux (not from Ollie OS itself). Pick the drive, and Ollie OS is written
-# onto it installed, ready to start, with all of the drive's room for Steam
-# and everything you save. The drive is erased.
+# Ollie OS Drive Writer: makes Ollie OS right on a drive, from SteamOS or any
+# Linux (not from Ollie OS itself). Pick the drive (it is erased), and Ollie OS
+# is installed onto all of it, ready to start, with all of the drive's room
+# for Steam and everything you save.
 #
-# It runs Ollie OS's own installer (ollie-install, the one behind "Install
-# Ollie OS") from the ISO's system, opened on this computer for the while
-# (in /run, not installed here), so the drive is set up exactly as when
-# Ollie OS installs itself: it starts on Dells, Intel Macs and the Steam
-# Machine, and on older computers set to BIOS / Legacy.
+# No GitHub and no ISO. Arch Linux comes from the Arch Linux servers (or a
+# copy of it found in Downloads, such as the one Annie OS Maker leaves
+# there), and is made into Ollie OS on the drive by the Ollie OS recipe
+# inside this app: the same recipe the ISO is built from (os/build.sh, with
+# os/build-drive.sh), finished by Ollie OS's own installer, so the drive
+# starts on the Steam Machine, Dells, Intel Macs and older BIOS computers.
+# Arch's packages are downloaded onto the drive itself. What it needs on this
+# computer for the while (about 4 GB, in the Ollie-OS-Drive-Writer folder in
+# your home folder) is removed when it is done. At the end it checks the
+# drive, fixes what is wrong, and saves the report in Downloads.
 #
-#   ollie-install-drive [ISO]
+#   ollie-install-drive
 #
-# In the Ollie OS Drive Writer AppImage, Get ISO runs first (downloads the
-# newest ISO and brings it up to date) and hands the ISO over; with
-# OLLIE_REMOVE_WHEN_DONE=1 the ISOs are removed from this computer once
-# Ollie OS is on the drive. Writing to a drive needs this computer's admin
-# rights: on SteamOS that is your password (set one with passwd in Konsole).
-# For tests: OLLIE_DRIVE=/dev/... and OLLIE_DRIVE_YES=1 (no questions).
+# Writing to a drive needs this computer's admin rights: on SteamOS that is
+# your password (set one with passwd in Konsole).
+# For tests: OLLIE_DRIVE=/dev/... and OLLIE_DRIVE_YES=1 (no questions);
+# OLLIE_DRIVE_BOOTSTRAP=FILE, an Arch Linux bootstrap to use as it is, or a
+# folder with an Arch Linux in it, used in place (and changed).
 set -uo pipefail
 
-bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' yellow=$'\e[33m' reset=$'\e[0m'
 say() { printf '\n%s==>%s %s%s%s\n' "$teal$bold" "$reset" "$bold" "$*" "$reset"; }
 die() {
     printf '\n%sError:%s %s\n\nPress Enter to close.' "$red$bold" "$reset" "$*" >&2
@@ -28,71 +32,120 @@ die() {
     exit 1
 }
 have() { command -v "$1" >/dev/null 2>&1; }
-readonly RUN=/run/ollie-drive-writer
 readonly NEED_BYTES=$((32 * 1000 * 1000 * 1000))
+readonly BOOTSTRAP=archlinux-bootstrap-x86_64.tar.zst
+# Started from the desktop, some systems leave chroot's folder out of PATH.
+PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"
 
-# --- As root: open the ISO's system and run its installer onto the drive ----------
+# Runs as root of a namespace of its own: unpacks Arch Linux, gives it what a
+# running system has (this computer's drives among it), and in it the recipe
+# installs Ollie OS onto the drive (os/build.sh with OLLIE_BUILD_DISK). Every
+# mount is in this namespace only and goes with it.
+build_inside() { # build_inside BOOTSTRAP ROOT SRC TMP CACHE DISK TIMEZONE
+    local bootstrap=$1 root=$2 src=$3 tmp=$4 cache=$5 disk=$6 tz=$7 opts
+    printf '\e[1;36m==> Unpacking Arch Linux\e[0m\n'
+    rm -rf --one-file-system "${root:?}" && mkdir -p "$root" "$tmp" "$cache" && chmod 1777 "$tmp" || return 1
+    mount --make-rprivate / || return 1
+    if [[ -d $bootstrap ]]; then
+        mount --bind "$bootstrap" "$root" || return 1
+    else
+        opts=(--numeric-owner)
+        tar --help 2>/dev/null | grep -q -- --warning= && opts+=(--warning=no-unknown-keyword)
+        case "$bootstrap" in *.zst) opts+=(--zstd) ;; *.gz) opts+=(--gzip) ;; esac
+        tar -x --strip-components=1 "${opts[@]}" -f "$bootstrap" -C "$root" || return 1
+        mount --bind "$root" "$root" || return 1
+    fi
+    mkdir -p "$root/src" "$root/var/cache/pacman/pkg" &&
+        mount -t proc proc "$root/proc" &&
+        mount --rbind /sys "$root/sys" &&
+        mount --rbind /dev "$root/dev" &&
+        mount -t tmpfs -o mode=0755 tmpfs "$root/run" &&
+        mount --bind "$tmp" "$root/tmp" &&
+        mount --bind "$src" "$root/src" &&
+        mount --bind "$cache" "$root/var/cache/pacman/pkg" || return 1
+    if [[ -d /run/udev ]]; then
+        mkdir -p "$root/run/udev" && mount --bind /run/udev "$root/run/udev" || return 1
+    fi
+    rm -f "${root:?}/etc/resolv.conf"
+    cp -L /etc/resolv.conf "$root/etc/resolv.conf" 2>/dev/null
+    # The Arch servers for everywhere (the same as in the Arch Linux container).
+    sed -i '/^## Worldwide/,/^$/ s/^#Server/Server/' "$root/etc/pacman.d/mirrorlist"
+    # shellcheck disable=SC2016 # pacman's own $repo and $arch
+    grep -q '^Server' "$root/etc/pacman.d/mirrorlist" ||
+        echo 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch' >>"$root/etc/pacman.d/mirrorlist"
+    chroot "$root" /usr/bin/env -i HOME=/root TERM="${TERM:-dumb}" LANG=C.UTF-8 \
+        PATH=/usr/local/sbin:/usr/local/bin:/usr/bin OLLIE_BUILD_DISK="$disk" OLLIE_INSTALL_TIMEZONE="$tz" \
+        bash -c 'pacman-key --init && pacman-key --populate archlinux && cd /src && exec bash os/build.sh'
+}
+
+# --- As root: install Ollie OS onto the drive ------------------------------------------
 if [[ "${1:-}" == --root ]]; then
-    iso=${2:?} disk=${3:?} tz=${4:-UTC}
+    work=${2:?} bootstrap=${3:?} disk=${4:?} tz=${5:-UTC} owner=${6:?}
     [[ $EUID -eq 0 ]] || die "this part runs as root"
     # Run from a copy in /tmp (root cannot read inside the AppImage): it goes.
     [[ "${BASH_SOURCE[0]}" == /tmp/ollie-install-drive.* ]] && rm -f -- "${BASH_SOURCE[0]}"
-    root=$RUN/root
-    cleanup() {
-        if mountpoint -q "$root"; then umount -R "$root" 2>/dev/null || umount -R -l "$root"; fi
-        for m in "$RUN/sfs" "$RUN/iso" "$RUN/rw"; do mountpoint -q "$m" && { umount "$m" 2>/dev/null || umount -l "$m"; }; done
-        return 0
+    src=$work/src root=$work/arch-root tmp=$work/build-tmp cache=$work/pkg-cache log=$work/drive-writer.log
+    # Nothing of the drive may stay in use, and this computer must not open
+    # it while Ollie OS is written to it (SteamOS opens drives plugged in by
+    # itself): its parts are closed now, and every few seconds until done.
+    free_drive() {
+        local part
+        for part in $(lsblk -lnpo NAME "$disk" | tail -n +2); do
+            umount "$part" 2>/dev/null
+            swapoff "$part" 2>/dev/null
+        done
     }
-    trap cleanup EXIT
-    mkdir -p "$RUN/iso" "$RUN/sfs" "$RUN/rw" "$root"
-    say "Opening Ollie OS"
-    mount -o loop,ro "$iso" "$RUN/iso" || die "the ISO could not be opened (is the download complete?)."
-    [[ -f "$RUN/iso/arch/x86_64/airootfs.sfs" ]] || die "this is not an Ollie OS ISO."
-    mount -o loop,ro "$RUN/iso/arch/x86_64/airootfs.sfs" "$RUN/sfs" || die "Ollie OS's system in the ISO could not be opened."
-    [[ -x "$RUN/sfs/usr/local/bin/ollie-install" ]] || die "this Ollie OS ISO is too old to install from (no installer in it): run the Updater on it first."
-    # Ollie OS's system as it runs from a USB, with room for its own changes
-    # in memory; its installer finds the ISO where a USB start puts it.
-    mount -t tmpfs -o size=2G tmpfs "$RUN/rw" && mkdir -p "$RUN/rw/upper" "$RUN/rw/work" &&
-        mount -t overlay overlay -o "lowerdir=$RUN/sfs,upperdir=$RUN/rw/upper,workdir=$RUN/rw/work" "$root" ||
-        die "Ollie OS's system could not be opened on this computer (no overlay support?)."
-    mount -t proc proc "$root/proc" &&
-        mount --rbind /sys "$root/sys" && mount --make-rslave "$root/sys" &&
-        mount --rbind /dev "$root/dev" && mount --make-rslave "$root/dev" &&
-        mount -t tmpfs -o mode=0755 tmpfs "$root/run" &&
-        mkdir -p "$root/run/udev" "$root/run/archiso/bootmnt" "$root/run/archiso/airootfs" &&
-        mount --bind /run/udev "$root/run/udev" &&
-        mount --bind "$RUN/iso" "$root/run/archiso/bootmnt" &&
-        mount --bind "$RUN/sfs" "$root/run/archiso/airootfs" ||
-        die "Ollie OS's system could not be set up on this computer."
-    # Nothing of the drive may stay in use.
-    for part in $(lsblk -lnpo NAME "$disk" | tail -n +2); do
-        umount "$part" 2>/dev/null
-        swapoff "$part" 2>/dev/null
-    done
+    free_drive
     if lsblk -lnpo MOUNTPOINTS "$disk" | grep -q .; then
         die "a part of the drive is still in use: close what has files open on it (or eject it in the file manager and plug it in again), then try again."
     fi
+    (while sleep 3; do free_drive; done) &
+    watcher=$!
+    finish() {
+        kill "$watcher" 2>/dev/null
+        # The Arch Linux it worked in and the recipe go; only the report stays.
+        rm -rf --one-file-system "${src:?}" "${root:?}" "${tmp:?}" "${cache:?}" "${log:?}" 2>/dev/null
+        free_drive
+        return 0
+    }
+    trap finish EXIT
+    rm -rf --one-file-system "${src:?}" && mkdir -p "$src" && tar -xzf "$work/ollie-os-source.tar.gz" -C "$src" ||
+        die "could not unpack the Ollie OS recipe (is this computer's disk full?)."
 
-    say "Installing Ollie OS onto $disk"
-    chroot "$root" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/bin HOME=/root TERM="${TERM:-dumb}" LANG=C.UTF-8 \
-        OLLIE_INSTALL_DISK="$disk" OLLIE_INSTALL_YES=1 OLLIE_INSTALL_PROGRESS=1 OLLIE_INSTALL_TIMEZONE="$tz" OLLIE_INSTALL_NO_EFI_VARS=1 \
-        /usr/local/bin/ollie-install </dev/null 2>&1 | tee "$RUN/install.log" |
-        while IFS= read -r line; do
-            if [[ $line == "PROGRESS "* ]]; then
-                set -- $line
-                printf '\r  %3d%%  %-60s' "$2" "${*:3}"
-            fi
-        done
-    rc=${PIPESTATUS[0]}
+    start=$(date +%s)
+    unshare --mount --pid --fork --kill-child -- bash -c "$(declare -f build_inside)"'; build_inside "$@"' build_inside \
+        "$bootstrap" "$root" "$src" "$tmp" "$cache" "$disk" "$tz" </dev/null >"$log" 2>&1 &
+    pid=$!
+    # Its steps as they come (the recipe's and the installer's, not every
+    # line), and how far the install is.
+    last=""
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 3
+        now="$(grep -a -E $'^\e\\[1;36m==> |^\e\\[36m\e\\[1m==>|^PROGRESS [0-9]+ ' "$log" 2>/dev/null | tail -n 1 | sed 's/\x1b\[[0-9;]*m//g')"
+        [[ -n $now && $now != "$last" ]] || continue
+        last=$now
+        mins=$((($(date +%s) - start) / 60))
+        if [[ $now == PROGRESS* ]]; then
+            read -r _ pct text <<<"$now"
+            printf '\r  %3d%%  %-56.56s %3d min' "$pct" "$text" "$mins"
+        else
+            printf '\n  %-62.62s %3d min\n' "${now#==> }" "$mins"
+        fi
+    done
+    wait "$pid"
+    rc=$?
     echo
-    if ((rc != 0)) || ! grep -q '^PROGRESS 100 ' "$RUN/install.log"; then
-        echo
-        grep -v '^PROGRESS' "$RUN/install.log" | tail -n 12
-        cp "$RUN/install.log" /tmp/ollie-drive-writer-problem.txt 2>/dev/null
-        die "installing did not finish (see above; all of it is in /tmp/ollie-drive-writer-problem.txt)."
+    report=$src/os/out/Ollie-OS-check.txt
+    if [[ -s $report ]]; then
+        cp -f "$report" "$work/Ollie-OS-check.txt" && chown "$owner" "$work/Ollie-OS-check.txt"
     fi
+    sed 's/\x1b\[[0-9;]*m//g' "$log" >"$work/Ollie-OS-Drive-Writer.log" && chown "$owner" "$work/Ollie-OS-Drive-Writer.log"
     sync
-    exit 0
+    if ((rc != 0 && rc != 3)); then
+        echo
+        grep -a -v '^PROGRESS ' "$work/Ollie-OS-Drive-Writer.log" | tail -n 15
+    fi
+    exit "$rc"
 fi
 
 # --- A terminal to talk in -----------------------------------------------------------
@@ -107,26 +160,27 @@ if [[ ! -t 0 && -z "${OLLIE_DRIVE_IN_TERMINAL:-}" ]]; then
         *) exec "$term" -hold -e "$self" "$@" ;;
         esac
     done
+    msg="No terminal program found. Run this from a terminal instead."
+    have kdialog && kdialog --error "$msg"
+    have zenity && zenity --error --text="$msg"
     exit 1
 fi
 
-printf '\n%s  Ollie OS Drive Writer%s  (installs Ollie OS onto a drive: all of it is Ollie OS'"'"'s)\n' "$bold" "$reset"
+printf '\n%s  Ollie OS Drive Writer%s  (makes Ollie OS from Arch Linux, right on a drive)\n' "$bold" "$reset"
 if [[ -x /usr/local/bin/ollie-first-setup ]]; then
-    echo "  (This is Ollie OS: \"Install Ollie OS\" in its apps menu does the same from here.)"
+    echo "  (This is Ollie OS: \"Install Ollie OS\" in its apps menu installs it onto a drive from here.)"
 fi
-for tool in lsblk losetup mount chroot sudo; do have "$tool" || die "this computer is missing $tool."; done
+for tool in curl tar zstd gzip unshare chroot sha256sum lsblk findmnt mount sudo; do
+    have "$tool" || die "this computer is missing $tool."
+done
 
-# --- 1. The ISO ------------------------------------------------------------------------
-iso="${1:-}"
-if [[ -z $iso ]]; then
-    here="$(dirname "${APPIMAGE:-$0}")"
-    # The newest one brought up to date by the Updater, else the newest.
-    iso="$(ls -t "$HOME"/Downloads/ollie-os-*-updated.iso "$HOME"/Desktop/ollie-os-*-updated.iso "$here"/ollie-os-*-updated.iso 2>/dev/null | head -n 1)"
-    [[ -n $iso ]] || iso="$(ls -t "$HOME"/Downloads/ollie-os-*.iso "$HOME"/Desktop/ollie-os-*.iso "$here"/ollie-os-*.iso 2>/dev/null | head -n 1)"
-fi
-[[ -n $iso && -f $iso ]] || die "no Ollie OS ISO found (in Downloads). The Ollie OS Drive Writer AppImage downloads it by itself."
-iso="$(realpath -- "$iso")"
-echo "  Ollie OS: $iso"
+# --- 1. The recipe -------------------------------------------------------------------
+here="$(cd "$(dirname "$0")" && pwd)"
+recipe=""
+for f in "${OLLIE_BUILD_SOURCE:-}" "$here/../share/ollie-build/ollie-os-source.tar.gz" "$here/ollie-os-source.tar.gz"; do
+    [[ -n $f && -f $f ]] && { recipe=$f; break; }
+done
+[[ -n $recipe ]] || die "this copy of the Drive Writer has no Ollie OS recipe inside (ollie-os-source.tar.gz)."
 
 # --- 2. The drive ------------------------------------------------------------------------
 # Never a drive this computer itself runs from.
@@ -180,29 +234,95 @@ if [[ -z "${OLLIE_DRIVE_YES:-}" ]]; then
 fi
 tz="$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')"
 
-# --- 3. Installing (as root) ----------------------------------------------------------------
+# --- 3. Room on this computer, for the while ------------------------------------------------
+work="${OLLIE_DRIVE_DIR:-$HOME/Ollie-OS-Drive-Writer}"
+mkdir -p "$work" || die "could not make $work."
+free_kb="$(df -Pk "$work" | awk 'NR == 2 {print $4}')"
+if ((${free_kb:-0} < 5 * 1024 * 1024)); then
+    die "not enough free space on this computer: it needs about 5 GB for the while (Ollie OS itself goes onto the drive), $work has $((free_kb / 1024 / 1024)) GB free."
+fi
+cp -f "$recipe" "$work/ollie-os-source.tar.gz" || die "could not copy the recipe to $work."
+
+# --- 4. Arch Linux: a copy found on this computer, or from the Arch servers ------------------
+# A copy is used if it is recent (Arch's monthly "bootstrap" download; one
+# much older may not take today's packages), else downloaded fresh and
+# checked against the Arch servers' checksums.
+bootstrap="${OLLIE_DRIVE_BOOTSTRAP:-}" downloaded="" found=""
+if [[ -z $bootstrap ]]; then
+    found="$(find "$work" "$HOME/Downloads" "$HOME/Desktop" "$here" -maxdepth 1 -type f \
+        \( -name 'archlinux-bootstrap*x86_64.tar.zst' -o -name 'archlinux-bootstrap*x86_64.tar.gz' \) \
+        -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n 1 | cut -d ' ' -f 2-)"
+    if [[ -n $found && -n "$(find "$found" -mtime -100 2>/dev/null)" ]]; then
+        say "Using the Arch Linux found on this computer: $found"
+        if { case "$found" in *.zst) zstd -tq "$found" ;; *) gzip -t "$found" ;; esac; } 2>/dev/null; then
+            bootstrap=$found
+        else
+            echo "  (It is damaged; downloading Arch Linux instead.)"
+        fi
+    fi
+fi
+if [[ -z $bootstrap ]]; then
+    say "Downloading Arch Linux from the Arch Linux servers (about 150 MB)"
+    part="$work/$BOOTSTRAP.part"
+    find "$work" -maxdepth 1 -name "$BOOTSTRAP.part" -mtime +0 -exec rm -f {} + 2>/dev/null
+    for base in ${OLLIE_BUILD_ARCH_MIRRORS:-https://geo.mirror.pkgbuild.com https://fastly.mirror.pkgbuild.com https://mirror.rackspace.com/archlinux https://mirrors.kernel.org/archlinux}; do
+        sum="$(curl -fsSL --retry 3 "$base/iso/latest/sha256sums.txt" 2>/dev/null | awk -v f="$BOOTSTRAP" '$2 == f {print $1}')"
+        [[ -n $sum ]] || continue
+        if curl -fL --retry 5 -C - -o "$part" "$base/iso/latest/$BOOTSTRAP"; then
+            if [[ "$(sha256sum "$part" | cut -d ' ' -f 1)" == "$sum" ]] && mv -f "$part" "$work/$BOOTSTRAP"; then
+                bootstrap="$work/$BOOTSTRAP" downloaded=1
+                break
+            fi
+            rm -f -- "${part:?}" # damaged: start over from the next server
+        fi
+    done
+    if [[ -z $bootstrap && -n $found ]]; then
+        echo "  (Could not download it; using the older copy found on this computer: $found)"
+        bootstrap=$found
+    fi
+    [[ -n $bootstrap ]] || die "could not download Arch Linux from the Arch servers. Is the internet connected? Run this again to retry."
+fi
+
+# --- 5. Installing (as root) ------------------------------------------------------------------
 say "Writing to a drive needs this computer's admin rights"
 copy="$(mktemp /tmp/ollie-install-drive.XXXXXX)"
 cat -- "${BASH_SOURCE[0]}" >"$copy"
-if [[ $EUID -eq 0 ]]; then
-    bash "$copy" --root "$iso" "$disk" "${tz:-UTC}"
-else
+if [[ $EUID -ne 0 ]]; then
     sudo -v || die "that password did not work. On SteamOS, set one with  passwd  in Konsole, then try again."
-    sudo bash "$copy" --root "$iso" "$disk" "${tz:-UTC}"
+fi
+say "Making Ollie OS on $disk (30 to 90 minutes; it is fine to leave it running)"
+echo "  Arch Linux's packages are downloaded onto the drive, then set up as Ollie OS. The steps show below."
+if [[ $EUID -eq 0 ]]; then
+    bash "$copy" --root "$work" "$bootstrap" "$disk" "${tz:-UTC}" "$(id -u):$(id -g)"
+else
+    sudo bash "$copy" --root "$work" "$bootstrap" "$disk" "${tz:-UTC}" "$(id -u):$(id -g)"
 fi
 rc=$?
 rm -f -- "$copy"
-((rc == 0)) || exit "$rc"
 
-# --- 4. Done ---------------------------------------------------------------------------------
-if [[ -n "${OLLIE_REMOVE_WHEN_DONE:-}" ]]; then
-    # The copies of Ollie OS this computer kept for the install go.
-    base="${iso%-updated.iso}"
-    base="${base%.iso}"
-    rm -f -- "$base.iso" "$base.iso.sha256" "$base-updated.iso" "$base-updated.iso.sha256"
-    echo "  (The Ollie OS copies on this computer are removed: $(basename "$base").iso.)"
+# --- 6. The report, and this computer cleaned up ------------------------------------------------
+mkdir -p "$HOME/Downloads"
+saved=""
+if [[ -s "$work/Ollie-OS-check.txt" ]]; then
+    mv -f "$work/Ollie-OS-check.txt" "$HOME/Downloads/Ollie-OS-Drive-check.txt" && saved="$HOME/Downloads/Ollie-OS-Drive-check.txt"
 fi
-printf '\n%s  Done: Ollie OS is installed on %s.%s\n' "$green$bold" "$disk" "$reset"
+if ((rc != 0 && rc != 3)); then
+    mv -f "$work/Ollie-OS-Drive-Writer.log" "$HOME/Downloads/Ollie-OS-Drive-Writer-problem.txt" 2>/dev/null
+    [[ -n $downloaded ]] && echo "  (Arch Linux stays in $work, so trying again is quicker.)"
+    die "Ollie OS could not be made on the drive (see above; all of it is in Downloads, Ollie-OS-Drive-Writer-problem.txt). Run this again to retry."
+fi
+rm -f -- "$work/Ollie-OS-Drive-Writer.log" "$work/ollie-os-source.tar.gz" "$work/$BOOTSTRAP" "$work/$BOOTSTRAP.part"
+rmdir -- "$work" 2>/dev/null
+echo "  (What it put on this computer is removed.)"
+
+echo
+[[ -n $saved ]] && cat "$saved"
+if ((rc == 3)); then
+    printf '\n%s  Ollie OS is on %s, but the check found problems (above).%s Run the Drive Writer again to fix them.\n' "$yellow$bold" "$disk" "$reset"
+else
+    printf '\n%s  Done: Ollie OS is installed on %s, and checked.%s\n' "$green$bold" "$disk" "$reset"
+fi
+[[ -n $saved ]] && echo "  The check is saved in Downloads: $(basename "$saved")"
 cat <<EOF
 
   Plug the drive into the computer for Ollie OS and start from it:

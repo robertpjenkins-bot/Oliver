@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Ollie OS Drive Writer
-Comment=Download Ollie OS and install it onto a drive
-Exec=ollie-get-iso
+Comment=Make Ollie OS from Arch Linux right on a drive
+Exec=ollie-install-drive
 Icon=ollie-os
 Terminal=false
 Categories=System;
