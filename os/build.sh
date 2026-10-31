@@ -173,7 +173,9 @@ rsvg-convert -w 640 -h 480 -o "$profile/syslinux/splash.png" "$os/art/splash.svg
 
 step "Building AUR packages: $(list "$os/profile/aur-packages.txt" | tr '\n' ' ')"
 id builder &>/dev/null || useradd -m builder
-echo 'builder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/builder
+# No terminal of its own for sudo (its use_pty): with no admin rights
+# (OLLIE_ROOTLESS) it may not make one ("unable to allocate pty").
+printf 'builder ALL=(ALL) NOPASSWD: ALL\nDefaults !use_pty\n' >/etc/sudoers.d/builder
 rm -rf "$localrepo"
 install -d -o builder "$localrepo"
 while read -r pkg; do
