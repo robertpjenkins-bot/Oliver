@@ -226,7 +226,7 @@ build_install_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz
-    (cd "$os/.." && git archive --format=tar.gz -o "$1" HEAD go.mod cmd internal packaging os/build.sh os/build-drive.sh os/ollie-write os/art os/profile)
+    (cd "$os/.." && git archive --format=tar.gz -o "$1" HEAD go.mod cmd internal packaging os/build.sh os/build-drive.sh os/build-drive-files.sh os/drive-common.sh os/ollie-write os/art os/profile)
 }
 
 # The Builder: builds the ISO in an Arch Linux container from the recipe it

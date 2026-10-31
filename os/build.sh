@@ -10,6 +10,8 @@
 # With OLLIE_BUILD_DISK=/dev/... (the Ollie OS Drive Writer) there is no ISO:
 # Ollie OS is installed straight onto that drive, which is erased, by
 # os/build-drive.sh, and the check of it lands in os/out/Ollie-OS-check.txt.
+# With OLLIE_BUILD_FILES=FOLDER and OLLIE_BUILD_ESP=FOLDER (the Drive Writer
+# with no admin rights: a drive's two parts, mounted) by os/build-drive-files.sh.
 #
 # The profile starts from archiso's own "releng" profile for the boot loader
 # configuration, which tracks the installed archiso version, and layers
@@ -55,6 +57,11 @@ pacman -S --noconfirm --needed archiso base-devel git go librsvg noto-fonts sudo
 # (and checks the time zone it is given), and build-drive.sh checks it.
 if [[ -n "${OLLIE_BUILD_DISK:-}" ]]; then
     pacman -S --noconfirm --needed btrfs-progs diffutils dosfstools gptfdisk parted syslinux tzdata
+fi
+# Onto a drive with no admin rights (OLLIE_BUILD_FILES, see build-drive-files.sh):
+# only files are written, as you; the checks compare files.
+if [[ -n "${OLLIE_BUILD_FILES:-}" ]]; then
+    pacman -S --noconfirm --needed diffutils zstd
 fi
 
 # OLLIE_ROOTLESS=1: in an Arch Linux started by a normal user, with no
@@ -137,6 +144,8 @@ file_permissions=(
   ["/usr/local/bin/ollie-install-folder"]="0:0:755"
   ["/usr/local/lib/ollie/loop-root"]="0:0:755"
   ["/usr/local/lib/ollie/copy-boot-files"]="0:0:755"
+  ["/usr/local/lib/ollie/unpack-root"]="0:0:755"
+  ["/usr/local/lib/ollie/drive-finish"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true
@@ -224,6 +233,11 @@ if [[ -n "${OLLIE_BUILD_DISK:-}" ]]; then
     step "Installing Ollie OS onto $OLLIE_BUILD_DISK"
     mkdir -p "$out"
     exec bash "$os/build-drive.sh" "$profile" "$OLLIE_BUILD_DISK" "$out/Ollie-OS-check.txt"
+fi
+if [[ -n "${OLLIE_BUILD_FILES:-}" ]]; then
+    step "Putting Ollie OS on the drive"
+    mkdir -p "$out"
+    exec bash "$os/build-drive-files.sh" "$profile" "$OLLIE_BUILD_FILES" "${OLLIE_BUILD_ESP:?}" "$out/Ollie-OS-check.txt"
 fi
 
 step "Building the ISO"

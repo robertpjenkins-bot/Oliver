@@ -4,21 +4,29 @@
 # is installed onto all of it, ready to start, with all of the drive's room
 # for Steam and everything you save.
 #
-# No GitHub and no ISO. Arch Linux comes from the Arch Linux servers (or a
-# copy of it found in Downloads, such as the one Annie OS Maker leaves
-# there), and is made into Ollie OS on the drive by the Ollie OS recipe
-# inside this app: the same recipe the ISO is built from (os/build.sh, with
-# os/build-drive.sh), finished by Ollie OS's own installer, so the drive
-# starts on the Steam Machine, Dells, Intel Macs and older BIOS computers.
+# No GitHub, no ISO and no password. Arch Linux comes from the Arch Linux
+# servers (or a copy of it found in Downloads, such as the one Annie OS Maker
+# leaves there), and is made into Ollie OS on the drive by the Ollie OS recipe
+# inside this app, the same recipe the ISO is built from (os/build.sh).
 # Arch's packages are downloaded onto the drive itself. What it needs on this
 # computer for the while (about 4 GB, in the Ollie-OS-Drive-Writer folder in
 # your home folder) is removed when it is done. At the end it checks the
 # drive, fixes what is wrong, and saves the report in Downloads.
 #
+# With no password (SteamOS, and most Linux): this computer's own disk
+# service (udisks, which lets you format a USB drive in Dolphin) erases the
+# drive and makes its two parts, and the recipe runs as "root" of a user
+# namespace of its own (really you), as the Builder does
+# (os/build-drive-files.sh). As you cannot give files on the drive their
+# owners (root, the system's own users), Ollie OS goes on it packed, and the
+# drive's first start unpacks it as root: that start takes 5 to 15 minutes
+# longer, once, and must be on a newer (UEFI) computer: the Steam Machine, a
+# Dell, a Mac. Only where this computer does not allow that is its admin
+# password asked for, and Ollie OS's own installer writes the drive as root
+# (os/build-drive.sh).
+#
 #   ollie-install-drive
 #
-# Writing to a drive needs this computer's admin rights: on SteamOS that is
-# your password (set one with passwd in Konsole).
 # For tests: OLLIE_DRIVE=/dev/... and OLLIE_DRIVE_YES=1 (no questions);
 # OLLIE_DRIVE_BOOTSTRAP=FILE, an Arch Linux bootstrap to use as it is, or a
 # folder with an Arch Linux in it, used in place (and changed).
@@ -37,12 +45,15 @@ readonly BOOTSTRAP=archlinux-bootstrap-x86_64.tar.zst
 # Started from the desktop, some systems leave chroot's folder out of PATH.
 PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"
 
-# Runs as root of a namespace of its own: unpacks Arch Linux, gives it what a
-# running system has (this computer's drives among it), and in it the recipe
-# installs Ollie OS onto the drive (os/build.sh with OLLIE_BUILD_DISK). Every
-# mount is in this namespace only and goes with it.
-build_inside() { # build_inside BOOTSTRAP ROOT SRC TMP CACHE DISK TIMEZONE
-    local bootstrap=$1 root=$2 src=$3 tmp=$4 cache=$5 disk=$6 tz=$7 opts
+# Runs as root of a namespace of its own (real root, or a user namespace's):
+# unpacks Arch Linux, gives it what a running system has, and in it the recipe
+# puts Ollie OS on the drive (os/build.sh). Every mount is in this namespace
+# only and goes with it. The drive:
+#   disk DISK                                 as root (OLLIE_BUILD_DISK)
+#   files DRIVE BOOT ROOT_UUID BOOT_UUID DISK  its two parts, mounted, no
+#                                             admin rights (OLLIE_BUILD_FILES)
+build_inside() { # build_inside BOOTSTRAP ROOT SRC TMP CACHE TIMEZONE disk|files ...
+    local bootstrap=$1 root=$2 src=$3 tmp=$4 cache=$5 tz=$6 how=$7 opts env
     printf '\e[1;36m==> Unpacking Arch Linux\e[0m\n'
     rm -rf --one-file-system "${root:?}" && mkdir -p "$root" "$tmp" "$cache" && chmod 1777 "$tmp" || return 1
     mount --make-rprivate / || return 1
@@ -63,8 +74,16 @@ build_inside() { # build_inside BOOTSTRAP ROOT SRC TMP CACHE DISK TIMEZONE
         mount --bind "$tmp" "$root/tmp" &&
         mount --bind "$src" "$root/src" &&
         mount --bind "$cache" "$root/var/cache/pacman/pkg" || return 1
-    if [[ -d /run/udev ]]; then
-        mkdir -p "$root/run/udev" && mount --bind /run/udev "$root/run/udev" || return 1
+    if [[ $how == disk ]]; then
+        env=(OLLIE_BUILD_DISK="$8")
+        if [[ -d /run/udev ]]; then
+            mkdir -p "$root/run/udev" && mount --bind /run/udev "$root/run/udev" || return 1
+        fi
+    else
+        env=(OLLIE_ROOTLESS=1 OLLIE_BUILD_FILES=/drive OLLIE_BUILD_ESP=/drive-boot
+            OLLIE_ROOT_UUID="${10}" OLLIE_BOOT_UUID="${11}" OLLIE_DRIVE_NAME="${12}")
+        mkdir -p "$root/drive" "$root/drive-boot" &&
+            mount --bind "$8" "$root/drive" && mount --bind "$9" "$root/drive-boot" || return 1
     fi
     rm -f "${root:?}/etc/resolv.conf"
     cp -L /etc/resolv.conf "$root/etc/resolv.conf" 2>/dev/null
@@ -74,8 +93,29 @@ build_inside() { # build_inside BOOTSTRAP ROOT SRC TMP CACHE DISK TIMEZONE
     grep -q '^Server' "$root/etc/pacman.d/mirrorlist" ||
         echo 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch' >>"$root/etc/pacman.d/mirrorlist"
     chroot "$root" /usr/bin/env -i HOME=/root TERM="${TERM:-dumb}" LANG=C.UTF-8 \
-        PATH=/usr/local/sbin:/usr/local/bin:/usr/bin OLLIE_BUILD_DISK="$disk" OLLIE_INSTALL_TIMEZONE="$tz" \
+        PATH=/usr/local/sbin:/usr/local/bin:/usr/bin OLLIE_INSTALL_TIMEZONE="$tz" "${env[@]}" \
         bash -c 'pacman-key --init && pacman-key --populate archlinux && cd /src && exec bash os/build.sh'
+}
+
+# Shows the build's steps as they come (the recipe's and the installer's, not
+# every line), and how far it is, until PID is done; then its exit status.
+show_progress() { # show_progress PID LOG
+    local pid=$1 log=$2 start last="" now mins pct text
+    start=$(date +%s)
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 3
+        now="$(grep -a -E $'^\e\\[1;36m==> |^\e\\[36m\e\\[1m==>|^PROGRESS [0-9]+ ' "$log" 2>/dev/null | tail -n 1 | sed 's/\x1b\[[0-9;]*m//g')"
+        [[ -n $now && $now != "$last" ]] || continue
+        last=$now
+        mins=$((($(date +%s) - start) / 60))
+        if [[ $now == PROGRESS* ]]; then
+            read -r _ pct text <<<"$now"
+            printf '\r  %3d%%  %-56.56s %3d min' "$pct" "$text" "$mins"
+        else
+            printf '\n  %-62.62s %3d min\n' "${now#==> }" "$mins"
+        fi
+    done
+    wait "$pid"
 }
 
 # --- As root: install Ollie OS onto the drive ------------------------------------------
@@ -112,27 +152,9 @@ if [[ "${1:-}" == --root ]]; then
     rm -rf --one-file-system "${src:?}" && mkdir -p "$src" && tar -xzf "$work/ollie-os-source.tar.gz" -C "$src" ||
         die "could not unpack the Ollie OS recipe (is this computer's disk full?)."
 
-    start=$(date +%s)
     unshare --mount --pid --fork --kill-child -- bash -c "$(declare -f build_inside)"'; build_inside "$@"' build_inside \
-        "$bootstrap" "$root" "$src" "$tmp" "$cache" "$disk" "$tz" </dev/null >"$log" 2>&1 &
-    pid=$!
-    # Its steps as they come (the recipe's and the installer's, not every
-    # line), and how far the install is.
-    last=""
-    while kill -0 "$pid" 2>/dev/null; do
-        sleep 3
-        now="$(grep -a -E $'^\e\\[1;36m==> |^\e\\[36m\e\\[1m==>|^PROGRESS [0-9]+ ' "$log" 2>/dev/null | tail -n 1 | sed 's/\x1b\[[0-9;]*m//g')"
-        [[ -n $now && $now != "$last" ]] || continue
-        last=$now
-        mins=$((($(date +%s) - start) / 60))
-        if [[ $now == PROGRESS* ]]; then
-            read -r _ pct text <<<"$now"
-            printf '\r  %3d%%  %-56.56s %3d min' "$pct" "$text" "$mins"
-        else
-            printf '\n  %-62.62s %3d min\n' "${now#==> }" "$mins"
-        fi
-    done
-    wait "$pid"
+        "$bootstrap" "$root" "$src" "$tmp" "$cache" "$tz" disk "$disk" </dev/null >"$log" 2>&1 &
+    show_progress $! "$log"
     rc=$?
     echo
     report=$src/os/out/Ollie-OS-check.txt
@@ -170,7 +192,7 @@ printf '\n%s  Ollie OS Drive Writer%s  (makes Ollie OS from Arch Linux, right on
 if [[ -x /usr/local/bin/ollie-first-setup ]]; then
     echo "  (This is Ollie OS: \"Install Ollie OS\" in its apps menu installs it onto a drive from here.)"
 fi
-for tool in curl tar zstd gzip unshare chroot sha256sum lsblk findmnt mount sudo; do
+for tool in curl tar zstd gzip unshare chroot sha256sum lsblk findmnt mount; do
     have "$tool" || die "this computer is missing $tool."
 done
 
@@ -284,22 +306,116 @@ if [[ -z $bootstrap ]]; then
     [[ -n $bootstrap ]] || die "could not download Arch Linux from the Arch servers. Is the internet connected? Run this again to retry."
 fi
 
-# --- 5. Installing (as root) ------------------------------------------------------------------
-say "Writing to a drive needs this computer's admin rights"
-copy="$(mktemp /tmp/ollie-install-drive.XXXXXX)"
-cat -- "${BASH_SOURCE[0]}" >"$copy"
-if [[ $EUID -ne 0 ]]; then
-    sudo -v || die "that password did not work. On SteamOS, set one with  passwd  in Konsole, then try again."
+# --- 5. Onto the drive, with no password -------------------------------------------------------
+# This computer's disk service (udisks) erases and formats a drive plugged in
+# by USB for whoever is at the desktop, with no password, as when Dolphin
+# formats one; it asks for one for the drives the computer itself runs from.
+udisks() { busctl --timeout=900 call org.freedesktop.UDisks2 "$@"; }
+udisks_obj() { echo "/org/freedesktop/UDisks2/block_devices/$(basename "$1")"; }
+udisks_prop() { # udisks_prop OBJECT INTERFACE PROPERTY
+    busctl get-property org.freedesktop.UDisks2 "$1" "org.freedesktop.UDisks2.$2" "$3" 2>/dev/null | sed -n 's/^s "\(.*\)"$/\1/p'
+}
+# A part's mount point; mounted by the disk service if this computer has not
+# done so by itself already (SteamOS opens drives plugged in).
+open_part() { # open_part DEVICE
+    local m _
+    for _ in 1 2 3 4 5; do
+        m="$(findmnt -no TARGET --source "$1" 2>/dev/null | head -n 1)"
+        [[ -n $m ]] || m="$(udisks "$(udisks_obj "$1")" org.freedesktop.UDisks2.Filesystem Mount 'a{sv}' 0 2>/dev/null | sed -n 's/^s "\(.*\)"$/\1/p')"
+        [[ -n $m ]] && { echo "$m"; return 0; }
+        sleep 2
+    done
+    return 1
+}
+as_ns() { unshare --map-auto --map-root-user "$@"; }
+rc=""
+if have busctl && busctl introspect org.freedesktop.UDisks2 /org/freedesktop/UDisks2/Manager >/dev/null 2>&1 &&
+    as_ns true 2>/dev/null; then
+    say "Erasing $disk and making Ollie OS's parts on it (no password needed)"
+    why=""
+    for part in $(lsblk -lnpo NAME "$disk" | tail -n +2); do
+        [[ -z "$(lsblk -no MOUNTPOINTS "$part" | xargs)" ]] && continue
+        udisks "$(udisks_obj "$part")" org.freedesktop.UDisks2.Filesystem Unmount 'a{sv}' 0 >/dev/null 2>&1 ||
+            die "a part of the drive is in use ($(lsblk -no MOUNTPOINTS "$part" | xargs)): close what has files open on it, then try again."
+    done
+    mib=$((1024 * 1024))
+    # The start-up part (1 GB, FAT32, as every computer's start-up reads it),
+    # and Ollie OS's part in all the rest (btrfs, made yours).
+    if ! why="$(udisks "$(udisks_obj "$disk")" org.freedesktop.UDisks2.Block Format 'sa{sv}' gpt 0 2>&1)"; then
+        :
+    elif ! esp_obj="$(udisks "$(udisks_obj "$disk")" org.freedesktop.UDisks2.PartitionTable CreatePartitionAndFormat \
+        'ttssa{sv}sa{sv}' "$mib" "$((1024 * mib))" c12a7328-f81f-11d2-ba4b-00a0c93ec93b OLLIE_BOOT 0 \
+        vfat 1 label s OLLIE_BOOT 2>&1)"; then
+        why=$esp_obj
+    elif ! root_obj="$(udisks "$(udisks_obj "$disk")" org.freedesktop.UDisks2.PartitionTable CreatePartitionAndFormat \
+        'ttssa{sv}sa{sv}' "$((1025 * mib))" 0 4f68bce3-e8cd-4db1-96e7-fbcaf984b709 OLLIE_ROOT 0 \
+        btrfs 2 label s OLLIE take-ownership b true 2>&1)"; then
+        why=$root_obj
+    else
+        esp_obj="$(sed -n 's/^o "\(.*\)"$/\1/p' <<<"$esp_obj")" root_obj="$(sed -n 's/^o "\(.*\)"$/\1/p' <<<"$root_obj")"
+        esp_dev="/dev/$(basename "$esp_obj")" root_dev="/dev/$(basename "$root_obj")"
+        udevadm settle 2>/dev/null
+        esp_mnt="$(open_part "$esp_dev")" && root_mnt="$(open_part "$root_dev")" ||
+            die "the drive's new parts could not be opened. Unplug the drive, plug it in again, and run this again."
+        [[ -w $esp_mnt && -w $root_mnt ]] || die "the drive's new parts are not writable ($esp_mnt, $root_mnt)."
+        boot_uuid="$(udisks_prop "$esp_obj" Block IdUUID)" root_uuid="$(udisks_prop "$root_obj" Block IdUUID)"
+        [[ -n $boot_uuid && -n $root_uuid ]] || die "the drive's new parts have no IDs; run this again."
+
+        say "Making Ollie OS on $disk (30 to 90 minutes; it is fine to leave it running)"
+        echo "  Arch Linux's packages are downloaded onto the drive, then set up as Ollie OS. The steps show below."
+        src=$work/src root=$work/arch-root tmp=$work/build-tmp cache=$work/pkg-cache log=$work/drive-writer.log
+        [[ -d $src ]] && as_ns rm -rf --one-file-system "${src:?}"
+        mkdir -p "$src" && tar -xzf "$work/ollie-os-source.tar.gz" -C "$src" ||
+            die "could not unpack the Ollie OS recipe (is this computer's disk full?)."
+        unshare --map-auto --map-root-user --mount --pid --fork --kill-child -- \
+            bash -c "$(declare -f build_inside)"'; build_inside "$@"' build_inside \
+            "$bootstrap" "$root" "$src" "$tmp" "$cache" "${tz:-UTC}" files "$root_mnt" "$esp_mnt" "$root_uuid" "$boot_uuid" "$disk" \
+            </dev/null >"$log" 2>&1 &
+        show_progress $! "$log"
+        rc=$?
+        echo
+        [[ -s $src/os/out/Ollie-OS-check.txt ]] && cp -f "$src/os/out/Ollie-OS-check.txt" "$work/Ollie-OS-check.txt"
+        sed 's/\x1b\[[0-9;]*m//g' "$log" >"$work/Ollie-OS-Drive-Writer.log"
+        if ((rc != 0 && rc != 3)); then
+            echo
+            grep -a -v '^PROGRESS ' "$work/Ollie-OS-Drive-Writer.log" | tail -n 15
+            # What a build cut off left on the drive (files of the user namespace's
+            # users) goes, as they can only be removed from in it.
+            as_ns rm -rf --one-file-system "${root_mnt:?}/ollie-system"
+        fi
+        # The Arch Linux it worked in and the recipe go; only the report stays.
+        as_ns rm -rf --one-file-system "${src:?}" "${root:?}" "${tmp:?}" "${cache:?}" "${log:?}"
+        sync
+        for o in "$esp_obj" "$root_obj"; do
+            udisks "$o" org.freedesktop.UDisks2.Filesystem Unmount 'a{sv}' 0 >/dev/null 2>&1
+        done
+        unpacked_later=1
+    fi
+    if [[ -z $rc ]]; then
+        echo "  This computer would not let its disk service change the drive with no password:"
+        echo "    ${why:0:300}"
+    fi
 fi
-say "Making Ollie OS on $disk (30 to 90 minutes; it is fine to leave it running)"
-echo "  Arch Linux's packages are downloaded onto the drive, then set up as Ollie OS. The steps show below."
-if [[ $EUID -eq 0 ]]; then
-    bash "$copy" --root "$work" "$bootstrap" "$disk" "${tz:-UTC}" "$(id -u):$(id -g)"
-else
-    sudo bash "$copy" --root "$work" "$bootstrap" "$disk" "${tz:-UTC}" "$(id -u):$(id -g)"
+
+# --- 5b. Onto the drive as root, where that is the only way -----------------------------------
+if [[ -z $rc ]]; then
+    say "Writing to this drive needs this computer's admin rights"
+    copy="$(mktemp /tmp/ollie-install-drive.XXXXXX)"
+    cat -- "${BASH_SOURCE[0]}" >"$copy"
+    if [[ $EUID -ne 0 ]]; then
+        have sudo || die "this computer has no sudo to get its admin rights with."
+        sudo -v || die "that password did not work. On SteamOS, set one with  passwd  in Konsole, then try again."
+    fi
+    say "Making Ollie OS on $disk (30 to 90 minutes; it is fine to leave it running)"
+    echo "  Arch Linux's packages are downloaded onto the drive, then set up as Ollie OS. The steps show below."
+    if [[ $EUID -eq 0 ]]; then
+        bash "$copy" --root "$work" "$bootstrap" "$disk" "${tz:-UTC}" "$(id -u):$(id -g)"
+    else
+        sudo bash "$copy" --root "$work" "$bootstrap" "$disk" "${tz:-UTC}" "$(id -u):$(id -g)"
+    fi
+    rc=$?
+    rm -f -- "$copy"
 fi
-rc=$?
-rm -f -- "$copy"
 
 # --- 6. The report, and this computer cleaned up ------------------------------------------------
 mkdir -p "$HOME/Downloads"
@@ -330,6 +446,12 @@ cat <<EOF
     Dell: tap F12 at the Dell logo and pick the drive ("UEFI: ..." or "OLLIE_BOOT").
     Mac:  hold Option while it starts and pick "EFI Boot".
     Steam Machine: hold Volume Down and pick the drive.
+EOF
+if [[ -n ${unpacked_later:-} ]]; then
+    echo "  Its first start unpacks Ollie OS onto the drive: 5 to 15 minutes, once. Do that"
+    echo "  first start on one of those (older computers set to BIOS work after it)."
+fi
+cat <<'EOF'
   On its first start it asks you to make a username and password.
 
 Press Enter to close.

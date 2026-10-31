@@ -1,0 +1,50 @@
+#!/bin/sh
+# In the start-up image (initramfs) of an Ollie OS the Drive Writer put on a
+# drive without admin rights (ollie-install-drive, build-drive-files.sh): it
+# could only write files as the person running it, so it packed Ollie OS's
+# system into ollie-system.tar.zst (and ollie-home.tar.zst) on Ollie OS's part
+# of the drive. At the first start this unpacks them as root, every file with
+# its owner and permissions, into the subvolumes Ollie OS starts from (@ and
+# @home), and removes them. Then the start goes on as usual.
+say() { echo "Ollie OS: $*" >/dev/console; }
+
+dev=""
+for word in $(cat /proc/cmdline); do
+    case "$word" in root=UUID=*) dev="/dev/disk/by-uuid/${word#root=UUID=}" ;; esac
+done
+[ -n "$dev" ] && [ -e "$dev" ] || exit 0
+top=/run/ollie-unpack
+mkdir -p "$top"
+if ! mount -t btrfs -o subvolid=5 "$dev" "$top"; then
+    say "the drive could not be opened to finish setting up Ollie OS."
+    exit 1
+fi
+if [ -f "$top/ollie-system.tar.zst" ]; then
+    say "first start: unpacking Ollie OS onto this drive. This takes 5 to 15 minutes, only this once."
+    # What a start that was cut off left half done goes first.
+    for sub in @ @home; do
+        [ -d "$top/$sub" ] && btrfs subvolume delete "$top/$sub" >/dev/null
+    done
+    ok=1
+    btrfs subvolume create "$top/@" >/dev/null && btrfs subvolume create "$top/@home" >/dev/null || ok=0
+    unpack() { # unpack ARCHIVE INTO
+        /usr/local/lib/ollie/gnutar -x -p --numeric-owner --xattrs --xattrs-include='*' --acls -I zstd -f "$1" -C "$2" \
+            --checkpoint=25000 --checkpoint-action='echo=Ollie OS: unpacking... %T'
+    }
+    [ "$ok" = 1 ] && unpack "$top/ollie-system.tar.zst" "$top/@" || ok=0
+    if [ "$ok" = 1 ] && [ -f "$top/ollie-home.tar.zst" ]; then
+        unpack "$top/ollie-home.tar.zst" "$top/@home" || ok=0
+    fi
+    sync
+    if [ "$ok" = 1 ]; then
+        rm -f "$top/ollie-system.tar.zst" "$top/ollie-home.tar.zst"
+        sync
+        say "Ollie OS is unpacked; starting it."
+    else
+        say "unpacking did not finish (is the drive full or faulty?). Start the computer again to try again."
+        umount "$top"
+        exit 1
+    fi
+fi
+umount "$top"
+exit 0

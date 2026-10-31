@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# mkinitcpio hook: the first start of an Ollie OS that the Drive Writer put on
+# a drive without admin rights. See /usr/local/lib/ollie/unpack-root.
+
+build() {
+    map add_module 'btrfs?' 'zstd?'
+    # GNU tar under a name of its own (busybox has a tar too, without what this needs).
+    add_binary /usr/bin/tar /usr/local/lib/ollie/gnutar
+    map add_binary zstd btrfs
+    add_file /usr/local/lib/ollie/unpack-root /usr/local/lib/ollie/unpack-root 0755
+    add_file /usr/local/lib/ollie/ollie-unpack.service /usr/lib/systemd/system/ollie-unpack.service
+    add_symlink /usr/lib/systemd/system/initrd.target.wants/ollie-unpack.service ../ollie-unpack.service
+}
+
+help() {
+    cat <<HELPEOF
+At the first start of an Ollie OS the Drive Writer made (kernel option
+ollie.unpack), unpacks its system onto the drive as root. Goes after the
+systemd hook.
+HELPEOF
+}
+
+# vim: set ft=sh ts=4 sw=4 et:
