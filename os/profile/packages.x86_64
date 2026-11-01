@@ -62,6 +62,10 @@ sddm
 sddm-kcm
 kdialog
 dolphin
+# The app store, with Flathub (flatpak) and Arch Linux's own apps (packagekit-qt6)
+discover
+flatpak
+packagekit-qt6
 konsole
 kate
 firefox

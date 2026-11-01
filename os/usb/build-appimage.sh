@@ -10,6 +10,7 @@
 #   Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage  adds Stuff Saver to a running Ollie OS
 #   Ollie-OS-Storage-Updater-x86_64.AppImage      adds Ollie OS Storage, the new Fixer and Stuff Saver
 #   Ollie-OS-Drive-Installer-x86_64.AppImage      adds the Install Ollie OS that installs into a drive or folder
+#   Ollie-OS-Discover-Updater-x86_64.AppImage     adds Discover, the app store, with Flathub
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
 #   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup)
 set -euo pipefail
@@ -223,6 +224,19 @@ build_install_updater() {
         usr/local/lib/ollie/copy-boot-files etc/initcpio/install/ollie-loop-root usr/share/applications/ollie-install.desktop
 }
 build_install_updater
+# Discover, the app store, from the Arch servers (not files of Ollie OS's own).
+build_discover_updater() {
+    local appdir="$out/OllieDiscover.AppDir"
+    rm -rf "$appdir"
+    install -D -m 0755 "$here/ollie-discover-updater" "$appdir/usr/bin/ollie-discover-updater"
+    printf '#!/bin/sh\n# AppImage entry point: add Discover to Ollie OS.\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/ollie-discover-updater" "$@"\n' >"$appdir/AppRun"
+    chmod 0755 "$appdir/AppRun"
+    install -m 0644 "$here/ollie-discover-updater.desktop" "$appdir/ollie-discover-updater.desktop"
+    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
+    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Discover-Updater-x86_64.AppImage"
+    rm -rf "$appdir"
+}
+build_discover_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz
