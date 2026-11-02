@@ -1,0 +1,7 @@
+#!/bin/bash
+# Restart into Windows: restarts the computer straight into Windows Boot
+# Manager on Ollie OS's start-up menu (added by ollie-windows-boot), this once.
+if ! systemctl reboot --boot-loader-entry=auto-windows; then
+    kdialog --title "Restart into Windows" --error "Windows is not on Ollie OS's start-up menu on this computer. Run the Windows Boot Updater here first, or pick Windows in the menu when the computer starts." 2>/dev/null
+    exit 1
+fi

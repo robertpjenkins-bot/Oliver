@@ -11,6 +11,7 @@
 #   Ollie-OS-Storage-Updater-x86_64.AppImage      adds Ollie OS Storage, the new Fixer and Stuff Saver
 #   Ollie-OS-Drive-Installer-x86_64.AppImage      adds the Install Ollie OS that installs into a drive or folder
 #   Ollie-OS-Discover-Updater-x86_64.AppImage     adds Discover, the app store, with Flathub
+#   Ollie-OS-Windows-Boot-Updater-x86_64.AppImage puts Windows on Ollie OS's start-up menu
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
 #   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup)
 set -euo pipefail
@@ -237,6 +238,23 @@ build_discover_updater() {
     rm -rf "$appdir"
 }
 build_discover_updater
+# Windows on Ollie OS's start-up menu, and Restart into Windows.
+build_windows_updater() {
+    local appdir="$out/OllieWindows.AppDir" f
+    rm -rf "$appdir"
+    install -D -m 0755 "$here/ollie-windows-updater" "$appdir/usr/bin/ollie-windows-updater"
+    for f in usr/local/bin/ollie-windows-boot usr/local/bin/ollie-restart-windows usr/share/applications/ollie-restart-windows.desktop; do
+        mkdir -p "$(dirname "$appdir/usr/share/ollie-apps/airootfs/$f")"
+        cp -a "$os/profile/airootfs/$f" "$appdir/usr/share/ollie-apps/airootfs/$f"
+    done
+    printf '#!/bin/sh\n# AppImage entry point: put Windows on Ollie OS'"'"'s start-up menu.\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/ollie-windows-updater" "$@"\n' >"$appdir/AppRun"
+    chmod 0755 "$appdir/AppRun"
+    install -m 0644 "$here/ollie-windows-updater.desktop" "$appdir/ollie-windows-updater.desktop"
+    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
+    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Windows-Boot-Updater-x86_64.AppImage"
+    rm -rf "$appdir"
+}
+build_windows_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz

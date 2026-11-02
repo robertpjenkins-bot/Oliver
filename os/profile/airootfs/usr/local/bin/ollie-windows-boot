@@ -1,0 +1,53 @@
+#!/bin/bash
+# Windows on Ollie OS's start-up menu: copies Windows Boot Manager from this
+# computer's own Windows start-up part (its EFI system partition) onto Ollie
+# OS's start-up part (mounted at /boot). Ollie OS's start-up menu
+# (systemd-boot) then finds it by itself and shows "Windows Boot Manager",
+# which starts Windows from where it is; Windows is not changed. The menu
+# shows for 4 seconds. Running it again (after a big Windows update, say)
+# copies the newest one. As root, with no password (Ollie OS's admin rights).
+#
+#   ollie-windows-boot
+set -uo pipefail
+[[ $EUID -eq 0 ]] || exec sudo -n "$0" "$@"
+readonly ESP_TYPE=c12a7328-f81f-11d2-ba4b-00a0c93ec93b
+die() { echo "Error: $*" >&2; exit 1; }
+
+boot="$(findmnt -no SOURCE /boot | sed 's/\[.*//')"
+[[ "$(findmnt -no FSTYPE /boot)" == vfat && -d /boot/loader ]] ||
+    die "Ollie OS's start-up part is not at /boot: this works on Ollie OS installed on a drive, not on the live USB."
+
+tmp="$(mktemp -d)"
+trap 'mountpoint -q "$tmp" && umount "$tmp"; rmdir "$tmp"' EXIT
+found=""
+while read -r part type; do
+    [[ ${type,,} == "$ESP_TYPE" && $part != "$boot" ]] || continue
+    m="$(findmnt -no TARGET --source "$part" | head -n 1)"
+    if [[ -z $m ]]; then
+        mount -o ro "$part" "$tmp" 2>/dev/null || continue
+        m=$tmp
+    fi
+    if [[ -f $m/EFI/Microsoft/Boot/bootmgfw.efi ]]; then
+        rm -rf /boot/EFI/Microsoft.new
+        if cp -r "$m/EFI/Microsoft" /boot/EFI/Microsoft.new; then
+            rm -rf /boot/EFI/Microsoft
+            mv /boot/EFI/Microsoft.new /boot/EFI/Microsoft && found=$part
+        else
+            rm -rf /boot/EFI/Microsoft.new
+            mountpoint -q "$tmp" && umount "$tmp"
+            die "not enough room on Ollie OS's start-up part for Windows Boot Manager."
+        fi
+    fi
+    mountpoint -q "$tmp" && umount "$tmp"
+    [[ -n $found ]] && break
+done < <(lsblk -lnpo NAME,PARTTYPE)
+[[ -n $found ]] || die "no Windows was found on this computer (no Windows start-up part with Windows Boot Manager). Run this on the computer that has Windows, with the Ollie OS drive plugged into it."
+
+# Long enough to pick it.
+if grep -q '^timeout' /boot/loader/loader.conf; then
+    sed -i 's/^timeout.*/timeout 4/' /boot/loader/loader.conf
+else
+    echo 'timeout 4' >>/boot/loader/loader.conf
+fi
+sync
+echo "Windows Boot Manager (from $found) is on Ollie OS's start-up menu."

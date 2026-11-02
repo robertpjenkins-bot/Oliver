@@ -144,6 +144,8 @@ file_permissions=(
   ["/usr/local/bin/ollie-install-folder"]="0:0:755"
   ["/usr/local/lib/ollie/loop-root"]="0:0:755"
   ["/usr/local/lib/ollie/copy-boot-files"]="0:0:755"
+  ["/usr/local/bin/ollie-windows-boot"]="0:0:755"
+  ["/usr/local/bin/ollie-restart-windows"]="0:0:755"
   ["/usr/local/lib/ollie/unpack-root"]="0:0:755"
   ["/usr/local/lib/ollie/drive-finish"]="0:0:755"
 )
