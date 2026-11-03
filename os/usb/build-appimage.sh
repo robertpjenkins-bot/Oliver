@@ -12,6 +12,7 @@
 #   Ollie-OS-Drive-Installer-x86_64.AppImage      adds the Install Ollie OS that installs into a drive or folder
 #   Ollie-OS-Discover-Updater-x86_64.AppImage     adds Discover, the app store, with Flathub
 #   Ollie-OS-Windows-Boot-Updater-x86_64.AppImage puts Windows on Ollie OS's start-up menu
+#   Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage adds Wallpaper Maker (your name, or a drawing)
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
 #   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup)
 set -euo pipefail
@@ -255,6 +256,14 @@ build_windows_updater() {
     rm -rf "$appdir"
 }
 build_windows_updater
+# Wallpaper Maker: a background with your name (and the OS called by it), or drawn.
+build_wallpaper_updater() {
+    build_apps_updater Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage "Wallpaper Maker Updater" "Wallpaper Maker" \
+        /usr/local/bin/ollie-wallpaper-maker "" \
+        usr/local/bin/ollie-wallpaper-maker usr/local/bin/ollie-rename usr/local/share/ollie/wallpaper-maker.qml \
+        usr/share/applications/ollie-wallpaper-maker.desktop
+}
+build_wallpaper_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz

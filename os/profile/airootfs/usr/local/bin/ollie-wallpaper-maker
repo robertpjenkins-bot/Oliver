@@ -1,0 +1,27 @@
+#!/bin/bash
+# Wallpaper Maker: type your name and get a background like Ollie OS's own
+# ("<name> OS"), or draw one; it becomes the desktop's background, saved in
+# Pictures/Wallpapers. With its tick box it also calls this computer's OS
+# by that name (ollie-rename). The window is wallpaper-maker.qml.
+set -uo pipefail
+dir="$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")/Wallpapers"
+mkdir -p "$dir"
+out="$dir/my-wallpaper-$(date +%Y%m%d-%H%M%S).png"
+result="$(qml6 /usr/local/share/ollie/wallpaper-maker.qml -- "$out" 2>&1 | sed -n 's/.*OLLIE-RESULT //p' | tail -n 1)"
+[[ -s $out ]] || exit 0 # closed without making one
+
+msg="Your new background is on. (It is saved in Pictures, Wallpapers.)"
+plasma-apply-wallpaperimage "$out" >/dev/null 2>&1 || msg="It is saved in Pictures, Wallpapers: right-click the desktop, Desktop and Wallpaper, to put it on."
+if [[ $result == "rename "* ]]; then
+    name="${result#rename }"
+    if sudo -n /usr/local/bin/ollie-rename "$name" >/dev/null 2>&1; then
+        msg+="
+
+This computer's OS is now called $name (on the start-up menu and in About This System)."
+    else
+        msg+="
+
+The OS could not be renamed (this Ollie OS asks for a password for admin tasks)."
+    fi
+fi
+kdialog --title "Wallpaper Maker" --msgbox "$msg" 2>/dev/null
