@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" font-family="Noto Sans, DejaVu Sans, sans-serif">
+<rect width="1200" height="640" fill="#fcfcfb"/>
+<text x="40" y="62" font-size="34" font-weight="700" fill="#0b0b0b">Who has ARM devices?</text>
+<text x="40" y="98" font-size="19" fill="#52514e">Share of devices with an ARM chip vs. a non-ARM (x86: Intel or AMD) chip. Rough estimates, 2025–2026.</text>
+<rect x="40" y="124" width="18" height="18" rx="4" fill="#2a78d6"/><text x="66" y="139" font-size="19" fill="#0b0b0b">ARM</text>
+<rect x="140" y="124" width="18" height="18" rx="4" fill="#eb6834"/><text x="166" y="139" font-size="19" fill="#0b0b0b">Non-ARM (x86: Intel, AMD)</text>
+<line x1="360.0" y1="180" x2="360.0" y2="580" stroke="#e4e3df" stroke-width="1"/>
+<text x="360.0" y="604" font-size="16" fill="#8a8984" text-anchor="middle">0%</text>
+<line x1="555.0" y1="180" x2="555.0" y2="580" stroke="#e4e3df" stroke-width="1"/>
+<text x="555.0" y="604" font-size="16" fill="#8a8984" text-anchor="middle">25%</text>
+<line x1="750.0" y1="180" x2="750.0" y2="580" stroke="#e4e3df" stroke-width="1"/>
+<text x="750.0" y="604" font-size="16" fill="#8a8984" text-anchor="middle">50%</text>
+<line x1="945.0" y1="180" x2="945.0" y2="580" stroke="#e4e3df" stroke-width="1"/>
+<text x="945.0" y="604" font-size="16" fill="#8a8984" text-anchor="middle">75%</text>
+<line x1="1140.0" y1="180" x2="1140.0" y2="580" stroke="#e4e3df" stroke-width="1"/>
+<text x="1140.0" y="604" font-size="16" fill="#8a8984" text-anchor="middle">100%</text>
+<text x="344" y="235.0" font-size="20" fill="#0b0b0b" text-anchor="end">Phones &amp; tablets</text>
+<rect x="360" y="200" width="772.2" height="56" rx="4" fill="#2a78d6"/>
+<rect x="1134.2" y="200" width="5.7999999999999545" height="56" rx="4" fill="#eb6834"/>
+<text x="746.1" y="235.0" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">99%</text>
+<text x="1148" y="235.0" font-size="18" fill="#52514e">1%</text>
+<text x="344" y="331.0" font-size="20" fill="#0b0b0b" text-anchor="end">New laptops &amp; desktops</text>
+<rect x="360" y="296" width="117.0" height="56" rx="4" fill="#2a78d6"/>
+<rect x="479.0" y="296" width="661.0" height="56" rx="4" fill="#eb6834"/>
+<text x="418.5" y="331.0" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">15%</text>
+<text x="808.5" y="331.0" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">85%</text>
+<text x="344" y="427.0" font-size="20" fill="#0b0b0b" text-anchor="end">PC gamers on Steam</text>
+<rect x="360" y="392" width="15.6" height="56" rx="4" fill="#2a78d6"/>
+<rect x="377.6" y="392" width="762.4" height="56" rx="4" fill="#eb6834"/>
+<text x="387.6" y="427.0" font-size="20" font-weight="700" fill="#ffffff">2% ARM</text>
+<text x="757.8" y="427.0" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">98%</text>
+<text x="344" y="523.0" font-size="20" fill="#0b0b0b" text-anchor="end">Your 4 computers</text>
+<rect x="360.0" y="488" width="780.0" height="56" rx="4" fill="#eb6834"/>
+<text x="372" y="523.0" font-size="20" font-weight="700" fill="#ffffff">0% ARM</text>
+<text x="750.0" y="523.0" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">100%</text>
+<text x="40" y="628" font-size="15" fill="#8a8984">Phones are almost all ARM. Most PCs (and nearly all PC gamers) are x86, like the Steam Machine, the Dell, the 2015 Mac and your desktop.</text>
+</svg>
