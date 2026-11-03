@@ -60,7 +60,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build Ollie OS USB Maker
-        run: bash os/usb/build-appimage.sh
+        run: |
+          # The updater apps carry xorriso and squashfs-tools from this computer.
+          sudo apt-get update -q && sudo apt-get install -y -q xorriso squashfs-tools zip
+          bash os/usb/build-appimage.sh
       - uses: actions/upload-artifact@v4
         # The ISO release below carries it too, so a full artifact storage
         # does not stop the build.
@@ -103,7 +106,10 @@ jobs:
           retention-days: 7
 
       - name: Build Ollie OS USB Maker for the release
-        run: sudo bash os/usb/build-appimage.sh
+        run: |
+          # The updater apps carry xorriso and squashfs-tools from this computer.
+          sudo apt-get update -q && sudo apt-get install -y -q xorriso squashfs-tools zip
+          sudo bash os/usb/build-appimage.sh
 
       # Release files do not count against the artifact storage, which can
       # fill up. A release file may be at most 2 GB, so the ISO goes up in
@@ -137,6 +143,7 @@ jobs:
           **Put Ollie OS on a drive** (download into Downloads):
           - $what: write it to a USB drive with **Ollie-OS-USB-Maker** (Linux, SteamOS) or any ISO writer (balenaEtcher, Rufus), then start the computer from it.
           - **Ollie-OS-Drive-Writer-x86_64.AppImage** (SteamOS, Linux): pick a drive and it installs Ollie OS onto it, no password. Its first start unpacks it (5 to 15 minutes, once).
+          - **Ollie-OS-Builder-x86_64.AppImage** (SteamOS, Linux): builds a brand-new Ollie OS ISO on your computer, no password (1 to 2 hours, about 20 GB free). **Ollie-OS-Builder-Mac.zip** does it on a Mac.
 
           **Add to an Ollie OS you have** (no password):
           - **Wallpaper Maker Updater**: a background with your name on it, or draw one
@@ -150,7 +157,8 @@ jobs:
             "${files[@]}" *.sha256 Ollie-OS-USB-Maker-x86_64.AppImage Ollie-OS-Drive-Writer-x86_64.AppImage \
             Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage Ollie-OS-Discover-Updater-x86_64.AppImage \
             Ollie-OS-Windows-Boot-Updater-x86_64.AppImage Ollie-OS-Storage-Updater-x86_64.AppImage \
-            Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage Ollie-OS-Drive-Installer-x86_64.AppImage
+            Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage Ollie-OS-Drive-Installer-x86_64.AppImage \
+            Ollie-OS-Builder-x86_64.AppImage Ollie-OS-Builder-Mac.zip
 
       - name: Publish a release for os-v* tags
         if: startsWith(github.ref, 'refs/tags/os-v')
