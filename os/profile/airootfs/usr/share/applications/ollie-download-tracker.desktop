@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Download Tracker
+Comment=See how many times your GitHub downloads were downloaded
+Exec=/usr/local/bin/ollie-download-tracker
+Icon=folder-download
+Terminal=false
+Categories=Network;Utility;

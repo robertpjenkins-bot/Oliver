@@ -160,6 +160,7 @@ jobs:
 
           **Add to an Ollie OS you have** (no password):
           - **Wallpaper Maker Updater**: a background with your name on it, or draw one
+          - **Download Tracker Updater**: see how many times each file here was downloaded
           - **Discover Updater**: Discover, the app store, with Flathub
           - **Windows Boot Updater**: Windows on the start-up menu
           - **Storage Updater**, **Stuff Saver Updater**, **Drive Installer**
@@ -169,6 +170,7 @@ jobs:
           Built from ${GITHUB_SHA::7} on $(date -u '+%Y-%m-%d %H:%M UTC')." \
             "${files[@]}" *.sha256 Ollie-OS-USB-Maker-x86_64.AppImage Ollie-OS-Drive-Writer-x86_64.AppImage \
             Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage Ollie-OS-Discover-Updater-x86_64.AppImage \
+            Ollie-OS-Download-Tracker-Updater-x86_64.AppImage \
             Ollie-OS-Windows-Boot-Updater-x86_64.AppImage Ollie-OS-Storage-Updater-x86_64.AppImage \
             Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage Ollie-OS-Drive-Installer-x86_64.AppImage \
             Ollie-OS-Builder-x86_64.AppImage Ollie-OS-Builder-Mac.zip Ollie-OS-Installer-Windows.exe Ollie-OS-Installer-Mac.dmg

@@ -13,6 +13,7 @@
 #   Ollie-OS-Discover-Updater-x86_64.AppImage     adds Discover, the app store, with Flathub
 #   Ollie-OS-Windows-Boot-Updater-x86_64.AppImage puts Windows on Ollie OS's start-up menu
 #   Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage adds Wallpaper Maker (your name, or a drawing)
+#   Ollie-OS-Download-Tracker-Updater-x86_64.AppImage adds Download Tracker (biobro's GitHub downloads)
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
 #   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup)
 set -euo pipefail
@@ -264,6 +265,14 @@ build_wallpaper_updater() {
         usr/share/applications/ollie-wallpaper-maker.desktop
 }
 build_wallpaper_updater
+# Download Tracker: how many times each of biobro's release files was downloaded.
+build_tracker_updater() {
+    build_apps_updater Ollie-OS-Download-Tracker-Updater-x86_64.AppImage "Download Tracker Updater" "Download Tracker" \
+        /usr/local/bin/ollie-download-tracker "" \
+        usr/local/bin/ollie-download-tracker usr/local/share/ollie/download-tracker.qml \
+        usr/share/applications/ollie-download-tracker.desktop
+}
+build_tracker_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz

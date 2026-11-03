@@ -147,6 +147,7 @@ file_permissions=(
   ["/usr/local/bin/ollie-windows-boot"]="0:0:755"
   ["/usr/local/bin/ollie-wallpaper-maker"]="0:0:755"
   ["/usr/local/bin/ollie-rename"]="0:0:755"
+  ["/usr/local/bin/ollie-download-tracker"]="0:0:755"
   ["/usr/local/bin/ollie-restart-windows"]="0:0:755"
   ["/usr/local/lib/ollie/unpack-root"]="0:0:755"
   ["/usr/local/lib/ollie/drive-finish"]="0:0:755"
