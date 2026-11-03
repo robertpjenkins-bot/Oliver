@@ -111,6 +111,18 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q xorriso squashfs-tools zip
           sudo bash os/usb/build-appimage.sh
 
+      # (Go comes back: "Make room" removed the runner's tool cache.)
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Build the Windows (.exe) and Mac (.dmg) installers
+        run: |
+          (cd os/windows/installer && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ../../out/Ollie-OS-Installer-Windows.exe .)
+          mkdir -p /tmp/dmg/"Ollie OS Installer" && cp -p os/usb/mac/"Ollie OS Installer.command" os/usb/mac/"Read me.txt" /tmp/dmg/"Ollie OS Installer"/
+          xorriso -as mkisofs -quiet -V "Ollie OS Installer" -R -J -hfsplus -o os/out/Ollie-OS-Installer-Mac.dmg /tmp/dmg/"Ollie OS Installer"
+
       # Release files do not count against the artifact storage, which can
       # fill up. A release file may be at most 2 GB, so the ISO goes up in
       # two parts; the USB Maker joins them by itself.
@@ -141,6 +153,7 @@ jobs:
             --notes "A great custom version of Arch Linux: comes with Steam, Wine and more, plus a debugger and a driver installer.
 
           **Put Ollie OS on a drive** (download into Downloads):
+          - **Ollie-OS-Installer-Windows.exe** (Windows) or **Ollie-OS-Installer-Mac.dmg** (Mac): downloads Ollie OS and puts it on a USB drive.
           - $what: write it to a USB drive with **Ollie-OS-USB-Maker** (Linux, SteamOS) or any ISO writer (balenaEtcher, Rufus), then start the computer from it.
           - **Ollie-OS-Drive-Writer-x86_64.AppImage** (SteamOS, Linux): pick a drive and it installs Ollie OS onto it, no password. Its first start unpacks it (5 to 15 minutes, once).
           - **Ollie-OS-Builder-x86_64.AppImage** (SteamOS, Linux): builds a brand-new Ollie OS ISO on your computer, no password (1 to 2 hours, about 20 GB free). **Ollie-OS-Builder-Mac.zip** does it on a Mac.
@@ -158,7 +171,7 @@ jobs:
             Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage Ollie-OS-Discover-Updater-x86_64.AppImage \
             Ollie-OS-Windows-Boot-Updater-x86_64.AppImage Ollie-OS-Storage-Updater-x86_64.AppImage \
             Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage Ollie-OS-Drive-Installer-x86_64.AppImage \
-            Ollie-OS-Builder-x86_64.AppImage Ollie-OS-Builder-Mac.zip
+            Ollie-OS-Builder-x86_64.AppImage Ollie-OS-Builder-Mac.zip Ollie-OS-Installer-Windows.exe Ollie-OS-Installer-Mac.dmg
 
       - name: Publish a release for os-v* tags
         if: startsWith(github.ref, 'refs/tags/os-v')

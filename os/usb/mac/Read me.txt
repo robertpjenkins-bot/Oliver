@@ -1,0 +1,9 @@
+Ollie OS Installer for Mac
+
+1. Plug in a USB drive (8 GB or more). Everything on it is erased.
+2. Right-click "Ollie OS Installer.command" and choose Open (the first time
+   macOS asks, because it is not from the App Store: click Open).
+3. Pick the drive, type ERASE, then this Mac's password.
+4. When it says Done, start the computer from the USB drive:
+   Intel Mac: hold Option while it starts, pick "EFI Boot".
+   Steam Machine: hold Volume Down.  Dell and most PCs: tap F12.
