@@ -1,0 +1,52 @@
+name: Etros release
+
+# Builds Etros's installers (etros/installer/build-dist.sh) and publishes
+# them as the "Etros (newest)" release, each time they change.
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/happy-heisenberg-5vvn6r]
+    paths: ['etros/**', '.github/workflows/etros-release.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: etros-release
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: etros/installer/go.mod
+      - name: Tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends genisoimage zip
+      - name: Vet
+        run: cd etros/installer && go vet .
+      - name: Build
+        run: etros/installer/build-dist.sh
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd etros/installer/dist
+          sha256sum -- *.zip *.dmg > SHA256SUMS.txt
+          gh release delete etros-newest --yes --cleanup-tag 2>/dev/null || true
+          gh release create etros-newest --latest --target "$GITHUB_SHA" \
+            --title "Etros (newest)" \
+            --notes "Built $(date -u '+%Y-%m-%d %H:%M UTC') from $(git rev-parse --short HEAD).
+
+          **Which one?**
+          - **Put Etros on an SD card** (Raspberry Pi 5 / R36S): *Etros Maker* for your computer.
+          - **Update a card that has Etros**: *Etros Updater*.
+          - **Put Etros on an Intel Mac**: *Etros Mac Installer - Linux* (run on a Steam Machine, Steam Deck or other Linux computer).
+            Plug the Mac in holding T, or type **f** to make folders to copy onto the Mac's BATOCERA partition in Finder.
+          - *Etros Installer*: the older all-in-one installer.
+
+          Unzip it and double-click the program inside. Each zip has a READ ME." \
+            -- *.zip *.dmg SHA256SUMS.txt
