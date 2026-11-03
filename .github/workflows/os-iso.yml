@@ -109,9 +109,10 @@ jobs:
       # fill up. A release file may be at most 2 GB, so the ISO goes up in
       # two parts; the USB Maker joins them by itself.
       - name: Publish the newest build as the "Ollie OS (newest)" release
-        # Only when started by hand: pushes build and test, but leave the
-        # release alone (it may hold an edited ISO, see os-iso-edit.yml).
-        if: "github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/os-v')"
+        # When started by hand, and for every push to the branch Ollie OS is
+        # made on (claude/fervent-gates-cs7smv): the newest build is the
+        # download. Other branches' pushes build and test only.
+        if: "!startsWith(github.ref, 'refs/tags/os-v') && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/claude/fervent-gates-cs7smv')"
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -129,16 +130,27 @@ jobs:
             what="**$iso.part0** and **$iso.part1** (the ISO in two parts; the USB Maker joins them)"
           fi
           gh release delete ollie-os-newest --yes --cleanup-tag 2>/dev/null || true
-          gh release create ollie-os-newest --prerelease --target "$GITHUB_SHA" \
-            --title "Ollie OS (newest build)" \
-            --notes "Built from ${GITHUB_SHA::7} on $(date -u '+%Y-%m-%d %H:%M UTC').
+          gh release create ollie-os-newest --latest --target "$GITHUB_SHA" \
+            --title "Ollie OS ($(date -u '+%Y-%m-%d'))" \
+            --notes "A great custom version of Arch Linux: comes with Steam, Wine and more, plus a debugger and a driver installer.
 
-          Download into Downloads:
-          - $what
-          - **Ollie-OS-USB-Maker-x86_64.AppImage** to put it on a USB drive
+          **Put Ollie OS on a drive** (download into Downloads):
+          - $what: write it to a USB drive with **Ollie-OS-USB-Maker** (Linux, SteamOS) or any ISO writer (balenaEtcher, Rufus), then start the computer from it.
+          - **Ollie-OS-Drive-Writer-x86_64.AppImage** (SteamOS, Linux): pick a drive and it installs Ollie OS onto it, no password. Its first start unpacks it (5 to 15 minutes, once).
 
-          Or write the ISO to a drive with any ISO writer." \
-            "${files[@]}" *.sha256 Ollie-OS-USB-Maker*-x86_64.AppImage
+          **Add to an Ollie OS you have** (no password):
+          - **Wallpaper Maker Updater**: a background with your name on it, or draw one
+          - **Discover Updater**: Discover, the app store, with Flathub
+          - **Windows Boot Updater**: Windows on the start-up menu
+          - **Storage Updater**, **Stuff Saver Updater**, **Drive Installer**
+
+          Starting from the drive: Steam Machine and Steam Deck, hold Volume Down; Dell, tap F12; Mac, hold Option.
+
+          Built from ${GITHUB_SHA::7} on $(date -u '+%Y-%m-%d %H:%M UTC')." \
+            "${files[@]}" *.sha256 Ollie-OS-USB-Maker-x86_64.AppImage Ollie-OS-Drive-Writer-x86_64.AppImage \
+            Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage Ollie-OS-Discover-Updater-x86_64.AppImage \
+            Ollie-OS-Windows-Boot-Updater-x86_64.AppImage Ollie-OS-Storage-Updater-x86_64.AppImage \
+            Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage Ollie-OS-Drive-Installer-x86_64.AppImage
 
       - name: Publish a release for os-v* tags
         if: startsWith(github.ref, 'refs/tags/os-v')
