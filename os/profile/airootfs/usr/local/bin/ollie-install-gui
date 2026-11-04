@@ -275,6 +275,18 @@ $details" \
     exit 0
 }
 
+# Windows on the start-up menu too? (Only Windows on another drive is left:
+# the one picked is erased.)
+windows=""
+if kdialog --title "$TITLE" --icon ollie-os --yes-label "Yes, Windows too" --no-label "No, only Ollie OS" --yesno \
+    "Should Windows be there too?
+
+If this computer has Windows${warn:+ on another drive (the Windows on $disk will be erased)}, Ollie OS's
+start-up menu will show it, so each time the computer starts you can pick
+Ollie OS or Windows. Windows itself is not changed."; then
+    windows=1
+fi
+
 # The time zone this Ollie OS already uses, or UTC.
 tz="$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')"
 [[ -n "$tz" ]] || tz=UTC
@@ -282,8 +294,8 @@ tz="$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')"
 # --- Install ---------------------------------------------------------------------
 bar="$(kdialog --title "$TITLE" --progressbar "Preparing the drive..." 100)"
 qdbus6 $bar showCancelButton false >/dev/null 2>&1
-OLLIE_INSTALL_DISK="$disk" OLLIE_INSTALL_YES=1 OLLIE_INSTALL_PROGRESS=1 OLLIE_INSTALL_TIMEZONE="$tz" \
-    sudo -n --preserve-env=OLLIE_INSTALL_DISK,OLLIE_INSTALL_YES,OLLIE_INSTALL_PROGRESS,OLLIE_INSTALL_TIMEZONE \
+OLLIE_INSTALL_DISK="$disk" OLLIE_INSTALL_YES=1 OLLIE_INSTALL_PROGRESS=1 OLLIE_INSTALL_TIMEZONE="$tz" OLLIE_INSTALL_WINDOWS="$windows" \
+    sudo -n --preserve-env=OLLIE_INSTALL_DISK,OLLIE_INSTALL_YES,OLLIE_INSTALL_PROGRESS,OLLIE_INSTALL_TIMEZONE,OLLIE_INSTALL_WINDOWS \
     /usr/local/bin/ollie-install </dev/null 2>&1 | tee "$log" |
     while read -r word pct text; do
         [[ "$word" == PROGRESS ]] || continue
@@ -307,7 +319,10 @@ if kdialog --title "$TITLE" --yes-label "Restart now" --no-label "Later" --yesno
     "Ollie OS is installed on $disk.
 
 Remove the USB drive, then restart. On its first start it asks you to create a
-username and password.
+username and password.${windows:+
+
+Windows: Ollie OS puts it on its start-up menu at its first start (if this
+computer has Windows). The menu shows for a few seconds each time it starts.}
 
 If the computer still starts the old system:
   Dell: tap F12 at the Dell logo and pick the drive (\"UEFI: ...\" or \"OLLIE_BOOT\").

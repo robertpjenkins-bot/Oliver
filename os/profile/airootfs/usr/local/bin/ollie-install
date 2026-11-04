@@ -10,6 +10,9 @@
 #   OLLIE_INSTALL_DISK=/dev/...  OLLIE_INSTALL_YES=1  (no questions)
 #   OLLIE_INSTALL_HOSTNAME, OLLIE_INSTALL_TIMEZONE
 #   OLLIE_INSTALL_PROGRESS=1     (prints "PROGRESS percent text" lines)
+#   OLLIE_INSTALL_WINDOWS=1      (Windows on the start-up menu: at each start,
+#                                until it has, the installed Ollie OS looks for
+#                                Windows on the computer: ollie-windows-boot)
 #   OLLIE_INSTALL_NO_EFI_VARS=1  (leaves this computer's start-up list alone:
 #                                 the Drive Writer, installing from SteamOS)
 #   OLLIE_INSTALL_FILL=COMMAND   (puts Ollie OS's system on the drive by running
@@ -39,7 +42,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-[[ $EUID -eq 0 ]] || exec sudo --preserve-env=OLLIE_INSTALL_DISK,OLLIE_INSTALL_YES,OLLIE_INSTALL_HOSTNAME,OLLIE_INSTALL_TIMEZONE,OLLIE_INSTALL_PROGRESS,OLLIE_INSTALL_NO_EFI_VARS "$0" "$@"
+[[ $EUID -eq 0 ]] || exec sudo --preserve-env=OLLIE_INSTALL_DISK,OLLIE_INSTALL_YES,OLLIE_INSTALL_HOSTNAME,OLLIE_INSTALL_TIMEZONE,OLLIE_INSTALL_PROGRESS,OLLIE_INSTALL_NO_EFI_VARS,OLLIE_INSTALL_WINDOWS "$0" "$@"
 [[ -n "${OLLIE_INSTALL_FILL:-}" || -d "$SOURCE/usr" ]] || die "this only works when started from the Ollie OS live USB."
 
 # The drive the live USB itself is on, so it is never offered as a target.
@@ -100,6 +103,11 @@ hostname="${OLLIE_INSTALL_HOSTNAME:-}" timezone="${OLLIE_INSTALL_TIMEZONE:-}"
 hostname="${hostname:-ollie}"
 [[ "$hostname" =~ ^[A-Za-z0-9-]{1,63}$ ]] || die "the computer name may only use letters, digits and -."
 [[ -n "${OLLIE_INSTALL_YES:-}" ]] || read -rp "Time zone, e.g. America/New_York or Europe/London [UTC]: " timezone
+windows="${OLLIE_INSTALL_WINDOWS:-}"
+if [[ -z "${OLLIE_INSTALL_YES:-}" ]]; then
+    read -rp "Should Windows be on the start-up menu too, if this computer has it? [y/N] " windows
+    [[ ${windows,,} == y* ]] && windows=1 || windows=""
+fi
 timezone="${timezone:-UTC}"
 [[ -f "/usr/share/zoneinfo/$timezone" ]] || die "unknown time zone '$timezone'."
 
@@ -220,6 +228,11 @@ else
     bootctl install --esp-path=/boot 2>/dev/null || bootctl install --esp-path=/boot --no-variables
 fi
 CHROOT
+if [[ -n $windows ]]; then
+    mkdir -p "$TARGET/etc/systemd/system/multi-user.target.wants"
+    ln -sfn /etc/systemd/system/ollie-windows-boot.service \
+        "$TARGET/etc/systemd/system/multi-user.target.wants/ollie-windows-boot.service"
+fi
 
 cat >"$TARGET/boot/loader/loader.conf" <<'EOF'
 default ollie.conf
