@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Minecraft
+Comment=The official Minecraft Launcher (got the first time you open it)
+Exec=/usr/local/bin/ollie-minecraft
+Icon=ollie-minecraft
+Terminal=false
+Categories=Game;

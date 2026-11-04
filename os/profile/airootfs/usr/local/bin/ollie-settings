@@ -1,0 +1,50 @@
+#!/bin/bash
+# Ollie OS Settings: Steam's Game Mode, the FPS counter, Speed Boost, the
+# start-up sound, colours, and (for grown-ups, behind the parent PIN) Screen
+# Time, the Inappropriate Typing Scanner and Firefox's password. The window is settings.qml; it
+# says what to change on its console (OLLIE-ACTION ...), and this does it.
+set -uo pipefail
+cfg="$HOME/.config/ollie" mango="$HOME/.config/MangoHud/MangoHud.conf"
+mkdir -p "$cfg"
+flag() { [[ -e "$cfg/$1" ]] && echo off || echo on; }
+setting() { sed -n "s/^$1=//p" "$2" 2>/dev/null | tail -n 1; }
+fps=on
+grep -qx 'no_display' "$mango" 2>/dev/null && fps=off
+args=(
+    "steam=$(flag steam-in-window)" "fps=$fps" "boost=$(flag no-speed-boost)" "sound=$(flag no-startup-sound)"
+    "mode=$(setting MODE "$cfg/colours")" "colour=$(setting COLOUR "$cfg/colours")"
+    "screentime=$(setting SCREEN_TIME /etc/ollie/parent.conf)" "scanner=$(setting SCANNER /etc/ollie/parent.conf)"
+    "pin=$(setting PIN_MD5 /etc/ollie/parent.conf)" "left=$(/usr/local/bin/ollie-parent left)"
+    "firefox=$([[ -n "$(setting FIREFOX_SHA256 /etc/ollie/parent.conf)" ]] && echo on || echo off)"
+)
+onoff() { # onoff FILE on|off: the setting is on when FILE is not there
+    if [[ $2 == on ]]; then rm -f "$cfg/$1"; else touch "$cfg/$1"; fi
+}
+while IFS= read -r line; do
+    [[ $line == *"OLLIE-ACTION "* ]] || continue
+    read -r -a a <<<"${line#*OLLIE-ACTION }"
+    case "${a[0]}" in
+    steam) onoff steam-in-window "${a[1]}" ;;
+    boost) onoff no-speed-boost "${a[1]}" ;;
+    sound) onoff no-startup-sound "${a[1]}" ;;
+    fps)
+        mkdir -p "${mango%/*}"
+        touch "$mango"
+        sed -i '/^no_display$/d' "$mango"
+        [[ ${a[1]} == off ]] && echo no_display >>"$mango"
+        ;;
+    colours) /usr/local/bin/ollie-colours "${a[1]}" "${a[2]}" ${a[3]:+--background} ;;
+    screen-time) sudo -n /usr/local/bin/ollie-parent screen-time "${a[1]}" ;;
+    extra) sudo -n /usr/local/bin/ollie-parent extra "${a[1]}" ;;
+    scanner) sudo -n /usr/local/bin/ollie-parent scanner "${a[1]}" ;;
+    pin) printf '%s\n' "${a[1]:-}" | sudo -n /usr/local/bin/ollie-parent pin ;;
+    firefox-password)
+        if [[ ${a[1]:-} == remove ]]; then
+            printf '\n' | sudo -n /usr/local/bin/ollie-parent firefox-password
+        else
+            /usr/local/bin/ollie-firefox --set &
+        fi
+        ;;
+    notes) /usr/local/bin/ollie-scanner-notes --unlocked & ;; # Settings asked for the PIN already
+    esac
+done < <(qml6 /usr/local/share/ollie/settings.qml -- "${args[@]}" 2>&1)

@@ -4,3 +4,8 @@ umu-launcher
 winetricks
 gamemode
 lib32-gamemode
+# Ollie OS 2: Speed Boost, the FPS counter, the start-up animation
+mangohud
+lib32-mangohud
+plymouth
+libinput

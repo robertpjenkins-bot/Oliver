@@ -1,0 +1,10 @@
+# Game controllers: Steam (and other games) may talk to them directly, as
+# the person at the computer, as soon as they are plugged in or paired.
+# Steam's own rules cover Valve's, Xbox, PlayStation and Switch pads; these
+# add the makers of other and cheaper ones.
+# 8BitDo, PowerA, PDP, HORI, Mad Catz, Nacon, ThrustMaster, ZD/ShanWan, DragonRise,
+# GameSir, Gamesir/Flydigi, Razer (pads), BigBen, Snakebyte, Sony, Nintendo, Microsoft
+KERNEL=="hidraw*", ATTRS{idVendor}=="2dc8|20d6|0e6f|0f0d|0738|146b|044f|2563|0079|3537|04b4|1532|146b|0c12|054c|057e|045e|28de", TAG+="uaccess"
+KERNEL=="hidraw*", KERNELS=="*2DC8:*|*20D6:*|*0E6F:*|*0F0D:*|*054C:*|*057E:*|*045E:*|*28DE:*|*3537:*", TAG+="uaccess"
+# Any game pad or joystick the kernel knows: its event device for the person too.
+SUBSYSTEM=="input", ENV{ID_INPUT_JOYSTICK}=="1", TAG+="uaccess"

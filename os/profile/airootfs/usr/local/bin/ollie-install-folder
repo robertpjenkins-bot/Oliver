@@ -317,7 +317,7 @@ title    Ollie OS (installed)
 sort-key 00
 linux    /ollie-installed/vmlinuz-linux
 initrd   /ollie-installed/initramfs-linux.img
-options  $opts quiet
+options  $opts quiet splash
 EOF
 # Without "quiet", to see what goes wrong if starting ever fails.
 cat >"$bootdir/loader/entries/00-ollie-installed-messages.conf" <<EOF
@@ -342,7 +342,7 @@ LABEL ollieinstalled
 MENU LABEL Ollie OS (installed)
 LINUX /ollie-installed/vmlinuz-linux
 INITRD /ollie-installed/initramfs-linux.img
-APPEND $opts quiet
+APPEND $opts quiet splash
 EOF
     grep -q 'ollie-installed.cfg' "$sys/archiso_sys.cfg" ||
         sed -i 's/^INCLUDE archiso_sys-linux.cfg/INCLUDE ollie-installed.cfg\n&/' "$sys/archiso_sys.cfg"

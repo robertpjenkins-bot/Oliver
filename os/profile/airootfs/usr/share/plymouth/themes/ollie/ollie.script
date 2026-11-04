@@ -1,0 +1,50 @@
+# Ollie OS's start-up animation: the Ollie OS cube turning in its glow, with
+# "Ollie OS" under it, on the wallpaper's teal (os/art/make-startup-art.py
+# draws the pictures).
+Window.SetBackgroundTopColor(0.06, 0.46, 0.43);    # #0f766e
+Window.SetBackgroundBottomColor(0.03, 0.24, 0.22); # #083c38
+
+frames = 24;
+for (i = 0; i < frames; i++)
+    cube_image[i] = Image("cube-" + i + ".png");
+
+cx = Window.GetX() + Window.GetWidth() / 2;
+cy = Window.GetY() + Window.GetHeight() / 2;
+
+glow = Sprite(Image("glow.png"));
+glow.SetX(cx - glow.GetImage().GetWidth() / 2);
+glow.SetY(cy - 60 - glow.GetImage().GetHeight() / 2);
+glow.SetZ(0);
+
+cube = Sprite(cube_image[0]);
+cube.SetX(cx - cube_image[0].GetWidth() / 2);
+cube.SetY(cy - 60 - cube_image[0].GetHeight() / 2);
+cube.SetZ(1);
+
+name = Sprite(Image("name.png"));
+name.SetX(cx - name.GetImage().GetWidth() / 2);
+name.SetY(cy + 90);
+name.SetZ(1);
+name.SetOpacity(0);
+
+tick = 0;
+fun refresh() {
+    # 50 times a second: a new picture every 2, so a quarter turn a second.
+    cube.SetImage(cube_image[Math.Int(tick / 2) % frames]);
+    if (tick < 50)
+        name.SetOpacity(tick / 50);
+    else
+        name.SetOpacity(1);
+    tick++;
+}
+Plymouth.SetRefreshFunction(refresh);
+
+# Messages (such as "checking the drive") under the name, small.
+message = Sprite();
+message.SetZ(2);
+fun show_message(text) {
+    message.SetImage(Image.Text(text, 1, 1, 1));
+    message.SetX(cx - message.GetImage().GetWidth() / 2);
+    message.SetY(cy + 190);
+}
+Plymouth.SetMessageFunction(show_message);

@@ -1,0 +1,14 @@
+#!/bin/bash
+# Screen Time is over for today: a window over the whole screen (timesup.qml)
+# until tomorrow, or until a grown-up types the PIN for more time. Started
+# by ollie-screen-time; closing it only brings it back.
+set -uo pipefail
+pin="$(sed -n 's/^PIN_MD5=//p' /etc/ollie/parent.conf 2>/dev/null | tail -n 1)"
+while [[ "$(/usr/local/bin/ollie-parent left)" == 0 ]]; do
+    while IFS= read -r line; do
+        case "$line" in
+        *"OLLIE-ACTION extra "*) sudo -n /usr/local/bin/ollie-parent extra "${line##* }" ;;
+        esac
+    done < <(qml6 /usr/local/share/ollie/timesup.qml -- "pin=$pin" 2>&1)
+    sleep 1
+done

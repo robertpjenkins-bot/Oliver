@@ -14,6 +14,7 @@
 #   Ollie-OS-Windows-Boot-Updater-x86_64.AppImage puts Windows on Ollie OS's start-up menu
 #   Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage adds Wallpaper Maker (your name, or a drawing)
 #   Ollie-OS-Download-Tracker-Updater-x86_64.AppImage adds Download Tracker (biobro's GitHub downloads)
+#   Ollie-OS-Game-Pack-Updater-x86_64.AppImage   adds the Game Pack: Game Mode, Speed Boost, FPS, Minecraft, Settings...
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
 #   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup)
 set -euo pipefail
@@ -185,6 +186,11 @@ build_apps_updater() {
     done
     printf 'TITLE=%s\nNAME=%s\nOPEN=%s\n' "$title" "$name" "$open" >"$appdir/usr/share/ollie-apps/app.conf"
     [[ -n $after ]] && install -m 0755 "$here/$after" "$appdir/usr/share/ollie-apps/after-install"
+    # More files made for this one updater (apps_updater_extra AIROOTFS-DIR), if it has some.
+    if declare -F apps_updater_extra >/dev/null; then
+        apps_updater_extra "$appdir/usr/share/ollie-apps/airootfs"
+        unset -f apps_updater_extra
+    fi
     cat >"$appdir/AppRun" <<'APPRUN'
 #!/bin/sh
 # AppImage entry point: add the apps to this Ollie OS, then open one.
@@ -273,6 +279,30 @@ build_tracker_updater() {
         usr/share/applications/ollie-download-tracker.desktop
 }
 build_tracker_updater
+# The Game Pack: Steam in Game Mode, Speed Boost, the FPS counter, controllers,
+# Minecraft, the start-up animation and sound, Welcome, Ollie OS Settings
+# (colours, Screen Time, the Typing Scanner) and Update Ollie OS, which opens
+# next to get the packages they use.
+build_game_pack_updater() {
+    local f files=() air="$os/profile/airootfs"
+    for f in usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox} \
+        usr/local/lib/ollie/{speed-boost-hook,boot-splash} usr/local/share/ollie/{welcome.qml,settings.qml,timesup.qml,scanner-words.txt} \
+        usr/local/share/applications/{steam,firefox}.desktop usr/share/applications/ollie-{minecraft,os-update,welcome,settings,scanner-notes}.desktop \
+        usr/share/icons/hicolor/scalable/apps/ollie-minecraft.svg etc/xdg/autostart/ollie-{welcome,startup-sound}.desktop \
+        etc/systemd/user/ollie-speed-boost.service etc/systemd/system/ollie-{screen-time,typing-scanner}.service \
+        etc/systemd/system/multi-user.target.wants/ollie-{screen-time,typing-scanner}.service \
+        etc/gamemode.ini etc/environment.d/20-ollie-games.conf etc/udev/rules.d/71-ollie-controllers.rules \
+        etc/plymouth/plymouthd.conf etc/mkinitcpio.conf.d/ollie-splash.conf usr/share/sounds/ollie/startup.ogg; do
+        files+=("$f")
+    done
+    for f in "$air"/usr/share/plymouth/themes/ollie/*; do files+=("${f#"$air/"}"); done
+    # Ollie OS's background in Settings' other colours, when this computer can draw them.
+    apps_updater_extra() { command -v rsvg-convert >/dev/null && bash "$os/art/colour-wallpapers.sh" "$1/usr/share/wallpapers"; return 0; }
+    build_apps_updater Ollie-OS-Game-Pack-Updater-x86_64.AppImage "Ollie OS Game Pack Updater" \
+        "the Game Pack (Game Mode, Speed Boost, FPS counter, Minecraft, Welcome, Settings, Screen Time, Typing Scanner, Firefox password)" \
+        /usr/local/bin/ollie-os-update ollie-game-pack.after-install "${files[@]}"
+}
+build_game_pack_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz

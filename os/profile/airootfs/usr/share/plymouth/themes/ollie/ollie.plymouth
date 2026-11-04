@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Ollie OS
+Description=The Ollie OS cube turning while Ollie OS starts
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/ollie
+ScriptFile=/usr/share/plymouth/themes/ollie/ollie.script

@@ -1,0 +1,11 @@
+[Unit]
+Description=Ollie OS Speed Boost (full power while a game runs)
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/local/bin/ollie-speed-boost
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

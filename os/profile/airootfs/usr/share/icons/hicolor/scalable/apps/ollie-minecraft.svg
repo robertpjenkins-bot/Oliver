@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-112 -112 224 224" width="256" height="256">
+  <!-- Ollie OS's Minecraft button: a block of grass, in the Ollie OS cube's shape. -->
+  <g stroke="#1f2a10" stroke-width="5" stroke-linejoin="round">
+    <polygon points="0,-100 86.6,-50 0,0 -86.6,-50" fill="#6abe30"/>
+    <polygon points="-86.6,-50 0,0 0,100 -86.6,50" fill="#9b6a3c"/>
+    <polygon points="0,0 86.6,-50 86.6,50 0,100" fill="#7a5230"/>
+    <polygon points="-86.6,-50 0,0 0,24 -20,10 -40,22 -62,4 -86.6,-24" fill="#5aa62a"/>
+    <polygon points="0,0 86.6,-50 86.6,-24 66,-8 46,-20 22,8 0,24" fill="#4c9124"/>
+  </g>
+</svg>

@@ -61,8 +61,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build Ollie OS USB Maker
         run: |
-          # The updater apps carry xorriso and squashfs-tools from this computer.
-          sudo apt-get update -q && sudo apt-get install -y -q xorriso squashfs-tools zip
+          # The updater apps carry xorriso and squashfs-tools from this computer;
+          # rsvg-convert draws the Game Pack Updater's coloured backgrounds.
+          sudo apt-get update -q && sudo apt-get install -y -q xorriso squashfs-tools zip librsvg2-bin
           bash os/usb/build-appimage.sh
       - uses: actions/upload-artifact@v4
         # The ISO release below carries it too, so a full artifact storage
@@ -107,8 +108,9 @@ jobs:
 
       - name: Build Ollie OS USB Maker for the release
         run: |
-          # The updater apps carry xorriso and squashfs-tools from this computer.
-          sudo apt-get update -q && sudo apt-get install -y -q xorriso squashfs-tools zip
+          # The updater apps carry xorriso and squashfs-tools from this computer;
+          # rsvg-convert draws the Game Pack Updater's coloured backgrounds.
+          sudo apt-get update -q && sudo apt-get install -y -q xorriso squashfs-tools zip librsvg2-bin
           sudo bash os/usb/build-appimage.sh
 
       # (Go comes back: "Make room" removed the runner's tool cache.)

@@ -1,0 +1,54 @@
+#!/bin/bash
+# The Inappropriate Typing Scanner's notes, for grown-ups: they open only
+# with the parent PIN (Ollie OS Settings), since only an administrator may
+# read them (/var/lib/ollie/typing-scanner/notes.txt).
+#   ollie-scanner-notes             asks for the PIN, then shows them
+#   ollie-scanner-notes --unlocked  shows them (Ollie OS Settings, after its PIN)
+#   ollie-scanner-notes --new-pin   a grown-up makes the parent PIN (if none)
+set -uo pipefail
+readonly TITLE="Typing Scanner notes" CONF=/etc/ollie/parent.conf NOTES=/var/lib/ollie/typing-scanner/notes.txt
+pin_sum() { sed -n 's/^PIN_MD5=//p' "$CONF" 2>/dev/null | tail -n 1; }
+sum() { printf 'ollie-os:%s' "$1" | md5sum | cut -d' ' -f1; }
+
+new_pin() {
+    local a b
+    while :; do
+        a="$(kdialog --title "$TITLE" --password "Grown-up: choose a parent PIN (4 to 8 numbers).
+The Typing Scanner's notes, Screen Time and these settings open only with it.")" || return 1
+        b="$(kdialog --title "$TITLE" --password "Type the same PIN again")" || return 1
+        if [[ ! $a =~ ^[0-9]{4,8}$ ]]; then
+            kdialog --title "$TITLE" --sorry "A PIN is 4 to 8 numbers."
+        elif [[ $a != "$b" ]]; then
+            kdialog --title "$TITLE" --sorry "The two PINs were not the same. Try again."
+        else
+            printf '%s\n' "$a" | sudo -n /usr/local/bin/ollie-parent pin && return 0
+            kdialog --title "$TITLE" --error "Could not save the PIN."
+            return 1
+        fi
+    done
+}
+
+case "${1:-}" in
+--new-pin) new_pin; exit ;;
+--unlocked) ;;
+*)
+    if [[ -z "$(pin_sum)" ]]; then
+        kdialog --title "$TITLE" --msgbox "There is no parent PIN yet. A grown-up makes one now, and then the notes open with it." || exit 0
+        new_pin || exit 0
+    else
+        pin="$(kdialog --title "$TITLE" --password "Grown-up: type the parent PIN to see the notes.")" || exit 0
+        if [[ "$(sum "$pin")" != "$(pin_sum)" ]]; then
+            kdialog --title "$TITLE" --sorry "That is not the parent PIN."
+            exit 1
+        fi
+    fi
+    ;;
+esac
+
+show="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/ollie-notes.XXXXXX")"
+trap 'rm -f -- "${show:?}"' EXIT
+# shellcheck disable=SC2024 # (the copy is this user's own file)
+if ! sudo -n cat "$NOTES" >"$show" 2>/dev/null; then
+    echo "No notes yet: no bad words have been typed." >"$show"
+fi
+kdialog --title "$TITLE" --textbox "$show" 640 480

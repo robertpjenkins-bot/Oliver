@@ -1,0 +1,22 @@
+#!/bin/bash
+# Turns on Ollie OS's start-up animation on an installed Ollie OS (as root):
+# the Ollie OS theme, Plymouth in the start-up image, and "splash" on the
+# start-up menu's Ollie OS entries (the ones with "quiet"; the entries that
+# show start-up messages stay as they are). Does nothing without Plymouth.
+[[ -e /usr/lib/initcpio/install/plymouth ]] || exit 0
+[[ -d /run/archiso ]] && exit 0 # the live USB goes without
+changed=""
+if ! grep -qx 'Theme=ollie' /etc/plymouth/plymouthd.conf 2>/dev/null; then
+    mkdir -p /etc/plymouth
+    printf '# Ollie OS start-up animation\n[Daemon]\nTheme=ollie\nShowDelay=0\n' >/etc/plymouth/plymouthd.conf
+    changed=1
+fi
+if ! lsinitcpio /boot/initramfs-linux.img 2>/dev/null | grep -q 'plymouth'; then
+    changed=1
+fi
+[[ -n $changed ]] && mkinitcpio -P >/dev/null 2>&1
+for f in /boot/loader/entries/*.conf /boot/syslinux/syslinux.cfg /efi/loader/entries/*.conf /boot/efi/loader/entries/*.conf; do
+    [[ -f $f ]] || continue
+    sed -E -i '/^[[:space:]]*(options|APPEND)[[:space:]].*[[:space:]]quiet([[:space:]]|$)/{/[[:space:]]splash([[:space:]]|$)/!s/[[:space:]]quiet([[:space:]]|$)/ quiet splash\1/}' "$f"
+done
+exit 0

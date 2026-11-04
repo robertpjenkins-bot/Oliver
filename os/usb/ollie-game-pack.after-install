@@ -1,0 +1,13 @@
+#!/bin/bash
+# After Ollie OS Game Pack Updater adds its files (run as root): switch on
+# what runs by itself. (Its packages, and the start-up animation, come with
+# Update Ollie OS, which opens next.)
+systemctl --global enable ollie-speed-boost.service >/dev/null 2>&1
+systemctl start ollie-screen-time.service ollie-typing-scanner.service 2>/dev/null
+udevadm control --reload 2>/dev/null
+udevadm trigger --subsystem-match=hidraw --subsystem-match=input 2>/dev/null
+# Ollie OS Settings' grown-up settings stay as they were (first time: none).
+[[ -f /etc/ollie/parent.conf ]] ||
+    { mkdir -p /etc/ollie && printf 'SCREEN_TIME=0\nSCANNER=off\nASKED=no\nPIN_MD5=\n' >/etc/ollie/parent.conf; }
+chmod 0644 /etc/ollie/parent.conf
+exit 0

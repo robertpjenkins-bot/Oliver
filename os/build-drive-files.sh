@@ -109,7 +109,7 @@ put_boot_files() {
         cp -f "$t/usr/lib/systemd/boot/efi/systemd-bootx64.efi" "$esp/EFI/BOOT/BOOTX64.EFI" &&
         cp -f "$t/usr/lib/systemd/boot/efi/systemd-bootx64.efi" "$esp/EFI/systemd/systemd-bootx64.efi" &&
         printf 'default ollie.conf\ntimeout 2\neditor no\n' >"$esp/loader/loader.conf" &&
-        entry "Ollie OS" " quiet" >"$esp/loader/entries/ollie.conf" &&
+        entry "Ollie OS" " quiet splash" >"$esp/loader/entries/ollie.conf" &&
         entry "Ollie OS (show start-up messages)" "" >"$esp/loader/entries/ollie-fallback.conf" &&
         cp -f "$t"/usr/lib/syslinux/bios/{ldlinux.c32,libcom32.c32,libutil.c32,menu.c32} "$esp/syslinux/" &&
         cat >"$esp/syslinux/syslinux.cfg" <<EOF
@@ -122,7 +122,7 @@ LABEL ollie
     MENU LABEL Ollie OS
     LINUX /vmlinuz-linux
     INITRD /initramfs-linux.img
-    APPEND root=UUID=$uuid rootflags=subvol=@ rw quiet
+    APPEND root=UUID=$uuid rootflags=subvol=@ rw quiet splash
 LABEL messages
     MENU LABEL Ollie OS (show start-up messages)
     LINUX /vmlinuz-linux

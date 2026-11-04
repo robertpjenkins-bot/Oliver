@@ -1,0 +1,28 @@
+[Desktop Entry]
+Name=Steam
+Comment=Play your games (opens in Game Mode; Ollie OS Settings can change that)
+Exec=/usr/local/bin/ollie-steam %U
+Icon=steam
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;Game;
+MimeType=x-scheme-handler/steam;x-scheme-handler/steamlink;
+PrefersNonDefaultGPU=true
+X-KDE-RunOnDiscreteGpu=true
+Actions=GameMode;Window;Store;Library;
+
+[Desktop Action GameMode]
+Name=Game Mode (big screen)
+Exec=/usr/local/bin/ollie-steam --game-mode
+
+[Desktop Action Window]
+Name=Steam in a window
+Exec=/usr/local/bin/ollie-steam --window
+
+[Desktop Action Store]
+Name=Store
+Exec=/usr/local/bin/ollie-steam steam://store
+
+[Desktop Action Library]
+Name=Library
+Exec=/usr/local/bin/ollie-steam steam://open/games

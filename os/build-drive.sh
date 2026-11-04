@@ -63,7 +63,7 @@ fix_uefi() {
     in_target bootctl install --esp-path=/boot --no-variables 2>/dev/null ||
         in_target bootctl update --esp-path=/boot --no-variables 2>/dev/null
     printf 'default ollie.conf\ntimeout 2\neditor no\n' >"$t/boot/loader/loader.conf"
-    entry "Ollie OS" " quiet" >"$t/boot/loader/entries/ollie.conf"
+    entry "Ollie OS" " quiet splash" >"$t/boot/loader/entries/ollie.conf"
     entry "Ollie OS (show start-up messages)" "" >"$t/boot/loader/entries/ollie-fallback.conf"
 }
 check "Starting on new computers: Steam Machine, Dells, Intel Macs (UEFI)" test_uefi fix_uefi

@@ -230,7 +230,7 @@ cat >"$TARGET/boot/loader/entries/ollie.conf" <<EOF
 title   Ollie OS
 linux   /vmlinuz-linux
 initrd  /initramfs-linux.img
-options root=UUID=$root_uuid rootflags=subvol=@ rw quiet
+options root=UUID=$root_uuid rootflags=subvol=@ rw quiet splash
 EOF
 # Without "quiet", to see what goes wrong if starting ever fails.
 cat >"$TARGET/boot/loader/entries/ollie-fallback.conf" <<EOF
@@ -257,7 +257,7 @@ LABEL ollie
     MENU LABEL Ollie OS
     LINUX /vmlinuz-linux
     INITRD /initramfs-linux.img
-    APPEND root=UUID=$root_uuid rootflags=subvol=@ rw quiet
+    APPEND root=UUID=$root_uuid rootflags=subvol=@ rw quiet splash
 LABEL messages
     MENU LABEL Ollie OS (show start-up messages)
     LINUX /vmlinuz-linux

@@ -1,0 +1,8 @@
+#!/bin/bash
+# Ollie OS's start-up sound, when the desktop appears (Ollie OS Settings
+# switches it off with ~/.config/ollie/no-startup-sound).
+[[ -e "$HOME/.config/ollie/no-startup-sound" ]] && exit 0
+sound=/usr/share/sounds/ollie/startup.ogg
+sleep 1
+pw-play "$sound" 2>/dev/null || paplay "$sound" 2>/dev/null
+exit 0

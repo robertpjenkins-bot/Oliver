@@ -1,0 +1,74 @@
+#!/bin/bash
+# Ollie OS's settings for grown-ups: Screen Time, the Inappropriate Typing
+# Scanner, Firefox's password and the parent PIN, in /etc/ollie/parent.conf. Changing them needs
+# admin rights (Ollie OS Settings runs it with sudo; it asks for the PIN
+# itself); reading them does not.
+#   ollie-parent get                     the settings
+#   ollie-parent left                    minutes of screen time left today ("off": no limit)
+#   ollie-parent screen-time MINUTES     the daily limit (0: none)
+#   ollie-parent extra MINUTES           more time for today only
+#   ollie-parent scanner on|off
+#   ollie-parent asked                   someone was asked about the scanner
+#   ollie-parent pin                     a new PIN, from the input (empty: none)
+#   ollie-parent firefox-password        Firefox's password, from the input (empty: none)
+#   ollie-parent firefox-asked           someone was asked about Firefox's password
+set -uo pipefail
+readonly CONF=/etc/ollie/parent.conf STATE=/var/lib/ollie/screen-time
+setting() { sed -n "s/^$1=//p" "$CONF" 2>/dev/null | tail -n 1; }
+put() { # put KEY VALUE
+    mkdir -p /etc/ollie
+    [[ -f $CONF ]] || printf 'SCREEN_TIME=0\nSCANNER=off\nASKED=no\nPIN_MD5=\n' >"$CONF"
+    if grep -q "^$1=" "$CONF"; then
+        sed -i "s|^$1=.*|$1=$2|" "$CONF"
+    else
+        echo "$1=$2" >>"$CONF"
+    fi
+    chmod 0644 "$CONF"
+}
+number() { [[ ${1:-} =~ ^[0-9]{1,4}$ ]] || { echo "not a number of minutes: ${1:-}" >&2; exit 2; }; }
+today() { cat "$STATE/$1-$(date +%F)" 2>/dev/null || echo 0; }
+
+case "${1:-}" in
+get) cat "$CONF" 2>/dev/null ;;
+left)
+    limit="$(setting SCREEN_TIME)"
+    if [[ ! $limit =~ ^[0-9]+$ ]] || ((limit == 0)); then
+        echo off
+    else
+        left=$((limit + $(today extra) - $(today used)))
+        echo $((left > 0 ? left : 0))
+    fi
+    ;;
+screen-time) number "${2:-}" && put SCREEN_TIME "$2" ;;
+extra)
+    number "${2:-}"
+    mkdir -p "$STATE"
+    echo $(($(today extra) + $2)) >"$STATE/extra-$(date +%F)"
+    ;;
+scanner)
+    case "${2:-}" in on | off) ;; *) echo "on or off" >&2; exit 2 ;; esac
+    put SCANNER "$2"
+    put ASKED yes
+    systemctl restart ollie-typing-scanner.service 2>/dev/null
+    ;;
+asked) put ASKED yes ;;
+pin)
+    IFS= read -r pin || pin=""
+    if [[ -z $pin ]]; then
+        put PIN_MD5 ""
+    else
+        put PIN_MD5 "$(printf 'ollie-os:%s' "$pin" | md5sum | cut -d' ' -f1)"
+    fi
+    ;;
+firefox-password)
+    IFS= read -r pw || pw=""
+    if [[ -z $pw ]]; then
+        put FIREFOX_SHA256 ""
+    else
+        put FIREFOX_SHA256 "$(printf 'ollie-firefox:%s' "$pw" | sha256sum | cut -d' ' -f1)"
+    fi
+    put FIREFOX_ASKED yes
+    ;;
+firefox-asked) put FIREFOX_ASKED yes ;;
+*) sed -n '2,17s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+esac

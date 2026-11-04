@@ -151,6 +151,22 @@ file_permissions=(
   ["/usr/local/bin/ollie-restart-windows"]="0:0:755"
   ["/usr/local/lib/ollie/unpack-root"]="0:0:755"
   ["/usr/local/lib/ollie/drive-finish"]="0:0:755"
+  ["/usr/local/bin/ollie-steam"]="0:0:755"
+  ["/usr/local/bin/ollie-speed-boost"]="0:0:755"
+  ["/usr/local/lib/ollie/speed-boost-hook"]="0:0:755"
+  ["/usr/local/lib/ollie/boot-splash"]="0:0:755"
+  ["/usr/local/bin/ollie-minecraft"]="0:0:755"
+  ["/usr/local/bin/ollie-startup-sound"]="0:0:755"
+  ["/usr/local/bin/ollie-os-update"]="0:0:755"
+  ["/usr/local/bin/ollie-colours"]="0:0:755"
+  ["/usr/local/bin/ollie-settings"]="0:0:755"
+  ["/usr/local/bin/ollie-welcome"]="0:0:755"
+  ["/usr/local/bin/ollie-parent"]="0:0:755"
+  ["/usr/local/bin/ollie-screen-time"]="0:0:755"
+  ["/usr/local/bin/ollie-timesup"]="0:0:755"
+  ["/usr/local/bin/ollie-typing-scanner"]="0:0:755"
+  ["/usr/local/bin/ollie-scanner-notes"]="0:0:755"
+  ["/usr/local/bin/ollie-firefox"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true
@@ -173,6 +189,8 @@ mkdir -p "$images"
 for size in 1280x720 1920x1080 2560x1440 3840x2160; do
     rsvg-convert -w "${size%x*}" -h "${size#*x}" -o "$images/$size.png" "$os/art/wallpaper.svg"
 done
+# The same background in Ollie OS Settings' other colours.
+bash "$os/art/colour-wallpapers.sh" "$profile/airootfs/usr/share/wallpapers"
 # The BIOS boot menu background; syslinux wants exactly 640x480.
 rsvg-convert -w 640 -h 480 -o "$profile/syslinux/splash.png" "$os/art/splash.svg"
 
