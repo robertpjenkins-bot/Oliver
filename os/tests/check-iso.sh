@@ -123,6 +123,30 @@ check "chpasswd for the first-start account" test -x "$r/usr/bin/chpasswd"
 check "installer asks for no password" bash -c "! grep -q 'read -rsp' '$r/usr/local/bin/ollie-install'"
 check "translations kept (NoExtract removed)" compgen -G "$r/usr/share/locale/de/LC_MESSAGES/*"
 
+echo "== The Game Pack"
+for p in gamemode lib32-gamemode mangohud lib32-mangohud plymouth libinput; do
+    check "package $p" pkg "$p"
+done
+for f in steam speed-boost minecraft startup-sound os-update colours settings welcome parent screen-time \
+    timesup typing-scanner scanner-notes firefox; do
+    check "/usr/local/bin/ollie-$f is executable" test -x "$r/usr/local/bin/ollie-$f"
+done
+check "Steam opens the Ollie OS way" grep -q 'ollie-steam' "$r/usr/local/share/applications/steam.desktop"
+check "Firefox asks for its password" grep -q 'ollie-firefox' "$r/usr/local/share/applications/firefox.desktop"
+check "start-up animation theme" test -s "$r/usr/share/plymouth/themes/ollie/cube-0.png"
+check "start-up animation chosen" grep -q '^Theme=ollie' "$r/etc/plymouth/plymouthd.conf"
+check "live USB's start-up image without the animation" bash -c "! grep -q plymouth '$r/etc/mkinitcpio.conf.d/archiso.conf'"
+check "start-up sound" test -s "$r/usr/share/sounds/ollie/startup.ogg"
+check "Speed Boost runs at every start" test -L "$r/etc/systemd/user/default.target.wants/ollie-speed-boost.service"
+check "Screen Time runs at every start" test -L "$r/etc/systemd/system/multi-user.target.wants/ollie-screen-time.service"
+check "FPS counter on in games" grep -q '^MANGOHUD=1' "$r/etc/environment.d/20-ollie-games.conf"
+check "controller rules" test -s "$r/etc/udev/rules.d/71-ollie-controllers.rules"
+check "purple and red backgrounds" test -s "$r/usr/share/wallpapers/OllieOS-Purple/contents/images/1920x1080.png"
+check "grown-up settings start empty" grep -q '^PIN_MD5=$' "$r/etc/ollie/parent.conf"
+check "Welcome opens at the first start" test -f "$r/etc/xdg/autostart/ollie-welcome.desktop"
+check "qml6 for Welcome and Settings" test -x "$r/usr/bin/qml6"
+check "libinput for the Typing Scanner" test -x "$r/usr/bin/libinput"
+
 echo
 echo "== The 25 largest packages (installed MB)"
 for d in "$r"/var/lib/pacman/local/*/; do

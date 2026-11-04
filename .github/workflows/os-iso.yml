@@ -133,7 +133,10 @@ jobs:
           # build-appimage.sh above.
           cp -f os/out/Ollie-OS-Builder-Windows.exe os/out/Ollie-OS-Installer-Windows.exe
           # Ollie OS Demo: a pretend Ollie OS desktop to try, as .exe, .dmg and AppImage.
-          APPIMAGETOOL=os/out/appimagetool-x86_64.AppImage bash os/demo/build.sh
+          # (appimagetool unpacks itself into TMPDIR; the one in /tmp is root's
+          # from the USB Maker step.)
+          mkdir -p "$RUNNER_TEMP/appimage"
+          TMPDIR="$RUNNER_TEMP/appimage" APPIMAGETOOL=os/out/appimagetool-x86_64.AppImage bash os/demo/build.sh
 
       # Release files do not count against the artifact storage, which can
       # fill up. A release file may be at most 2 GB, so the ISO goes up in
