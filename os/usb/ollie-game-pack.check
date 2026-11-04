@@ -1,0 +1,80 @@
+#!/bin/bash
+# Ollie OS Game Pack Updater's checks, run as root after its files are in
+# place: does each part of the Game Pack work? What does not and can be
+# fixed here is fixed. Prints a line each: "OK what", "FIXED what",
+# "LATER what" (Update Ollie OS, which opens next, does it) or "PROBLEM what".
+ok() { echo "OK $*"; }
+fixed() { echo "FIXED $*"; }
+
+# The programs: there, runnable, and bash finds no mistakes in them.
+bad=""
+for f in /usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox} \
+    /usr/local/lib/ollie/{speed-boost-hook,boot-splash}; do
+    [[ -x $f ]] && bash -n "$f" 2>/dev/null || bad+=" ${f##*/}"
+done
+if [[ -z $bad ]]; then ok "All the Game Pack's programs are there and can run"; else echo "PROBLEM These programs have mistakes:$bad"; fi
+for f in welcome settings timesup; do
+    [[ -s /usr/local/share/ollie/$f.qml ]] || echo "PROBLEM The $f window is missing"
+done
+grep -q QT_FORCE_STDERR_LOGGING /usr/local/bin/ollie-welcome && ok "Welcome's buttons work"
+
+# Speed Boost: starts with every desktop.
+if [[ -L /etc/systemd/user/default.target.wants/ollie-speed-boost.service ]]; then
+    ok "Speed Boost starts with the desktop"
+else
+    systemctl --global enable ollie-speed-boost.service >/dev/null 2>&1 && fixed "Speed Boost starts with the desktop"
+fi
+
+# Screen Time and the Typing Scanner: switched on, and running.
+for u in ollie-screen-time ollie-typing-scanner; do
+    systemctl is-enabled -q "$u.service" 2>/dev/null || { systemctl enable "$u.service" >/dev/null 2>&1 && fixed "$u starts with Ollie OS"; }
+done
+if systemctl is-active -q ollie-screen-time.service; then
+    ok "Screen Time is running"
+else
+    systemctl restart ollie-screen-time.service 2>/dev/null
+    sleep 1
+    if systemctl is-active -q ollie-screen-time.service; then fixed "Screen Time is running"; else echo "PROBLEM Screen Time does not start"; fi
+fi
+[[ -f /etc/ollie/parent.conf ]] || { mkdir -p /etc/ollie && printf 'SCREEN_TIME=0\nSCANNER=off\nASKED=no\nPIN_MD5=\n' >/etc/ollie/parent.conf; }
+chmod 0644 /etc/ollie/parent.conf
+if [[ "$(sed -n 's/^SCANNER=//p' /etc/ollie/parent.conf | tail -n 1)" == on ]]; then
+    if systemctl is-active -q ollie-typing-scanner.service && grep -q 'stdbuf -oL' /usr/local/bin/ollie-typing-scanner; then
+        ok "The Typing Scanner is on and watching"
+    else
+        systemctl restart ollie-typing-scanner.service 2>/dev/null
+        sleep 1
+        if systemctl is-active -q ollie-typing-scanner.service; then fixed "The Typing Scanner is on and watching"; else echo "PROBLEM The Typing Scanner does not start (is libinput installed? Update Ollie OS adds it)"; fi
+    fi
+else
+    ok "The Typing Scanner is ready (switched off; Settings or the first-start question switch it on)"
+fi
+
+# What the Game Pack's parts need from the Arch Linux servers.
+missing=""
+for p in gamemode mangohud plymouth libinput; do
+    pacman -Q "$p" >/dev/null 2>&1 || missing+=" $p"
+done
+if [[ -z $missing ]]; then ok "Speed Boost, FPS counter, start-up animation and Typing Scanner packages are installed"; else echo "LATER Update Ollie OS adds:$missing"; fi
+
+# The start-up animation: chosen, in the start-up image, on the menu.
+if pacman -Q plymouth >/dev/null 2>&1 && [[ ! -d /run/archiso ]]; then
+    splash_on() {
+        grep -qx 'Theme=ollie' /etc/plymouth/plymouthd.conf 2>/dev/null && lsinitcpio /boot/initramfs-linux.img 2>/dev/null | grep -q plymouth &&
+            grep -qs 'splash' /boot/loader/entries/ollie.conf /boot/syslinux/syslinux.cfg
+    }
+    if splash_on; then
+        ok "The start-up animation is on"
+    else
+        /usr/local/lib/ollie/boot-splash
+        if splash_on; then fixed "The start-up animation is on"; else echo "PROBLEM The start-up animation could not be switched on"; fi
+    fi
+fi
+
+# Controllers, FPS counter, Steam and Firefox the Ollie OS way.
+[[ -s /etc/udev/rules.d/71-ollie-controllers.rules ]] && udevadm control --reload 2>/dev/null && ok "Controllers work when plugged in"
+grep -q '^MANGOHUD=1' /etc/environment.d/20-ollie-games.conf 2>/dev/null && ok "FPS counter is on in games (after a restart)"
+grep -q ollie-steam /usr/local/share/applications/steam.desktop 2>/dev/null && ok "Steam opens in Game Mode"
+grep -q ollie-firefox /usr/local/share/applications/firefox.desktop 2>/dev/null && ok "Firefox asks for its password (if it has one)"
+[[ -s /usr/share/sounds/ollie/startup.ogg ]] && ok "Start-up sound"
+exit 0

@@ -281,7 +281,12 @@ build_game_pack_updater() {
     done
     for f in "$air"/usr/share/plymouth/themes/ollie/*; do files+=("${f#"$air/"}"); done
     # Ollie OS's background in Settings' other colours, when this computer can draw them.
-    apps_updater_extra() { command -v rsvg-convert >/dev/null && bash "$os/art/colour-wallpapers.sh" "$1/usr/share/wallpapers"; return 0; }
+    # (And its checks that each part works: share/ollie-apps/check.)
+    apps_updater_extra() {
+        install -m 0755 "$here/ollie-game-pack.check" "$1/../check"
+        command -v rsvg-convert >/dev/null && bash "$os/art/colour-wallpapers.sh" "$1/usr/share/wallpapers"
+        return 0
+    }
     build_apps_updater Ollie-OS-Game-Pack-Updater-x86_64.AppImage "Ollie OS Game Pack Updater" \
         "the Game Pack (Game Mode, Speed Boost, FPS counter, Minecraft, Welcome, Settings, Screen Time, Typing Scanner, Firefox password)" \
         /usr/local/bin/ollie-os-update ollie-game-pack.after-install "${files[@]}"
