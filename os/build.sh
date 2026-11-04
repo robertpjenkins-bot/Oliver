@@ -170,6 +170,10 @@ file_permissions=(
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true
+# The live USB starts without the start-up animation (Plymouth is there for
+# installed Ollie OS, whose start-up image has it): plymouth.enable=0.
+grep -rlZ 'archisobasedir=' "$profile/efiboot" "$profile/syslinux" "$profile/grub" 2>/dev/null |
+    xargs -0r sed -i -E '/plymouth\.enable=/!s/(archisobasedir=[^ ]*)/\1 plymouth.enable=0/'
 grep -rlZ 'Arch Linux' "$profile/efiboot" "$profile/syslinux" "$profile/grub" 2>/dev/null |
     xargs -0r sed -i -e 's/Arch Linux install medium/Ollie OS/g' -e 's/Arch Linux/Ollie OS/g'
 

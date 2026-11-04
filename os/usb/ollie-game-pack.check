@@ -39,12 +39,12 @@ fi
 [[ -f /etc/ollie/parent.conf ]] || { mkdir -p /etc/ollie && printf 'SCREEN_TIME=0\nSCANNER=off\nASKED=no\nPIN_MD5=\n' >/etc/ollie/parent.conf; }
 chmod 0644 /etc/ollie/parent.conf
 if [[ "$(sed -n 's/^SCANNER=//p' /etc/ollie/parent.conf | tail -n 1)" == on ]]; then
-    if systemctl is-active -q ollie-typing-scanner.service && grep -q 'stdbuf -oL' /usr/local/bin/ollie-typing-scanner; then
+    if systemctl is-active -q ollie-typing-scanner.service && grep -q 'keyboards()' /usr/local/bin/ollie-typing-scanner; then
         ok "The Typing Scanner is on and watching"
     else
         systemctl restart ollie-typing-scanner.service 2>/dev/null
         sleep 1
-        if systemctl is-active -q ollie-typing-scanner.service; then fixed "The Typing Scanner is on and watching"; else echo "PROBLEM The Typing Scanner does not start (is libinput installed? Update Ollie OS adds it)"; fi
+        if systemctl is-active -q ollie-typing-scanner.service; then fixed "The Typing Scanner is on and watching"; else echo "PROBLEM The Typing Scanner does not start"; fi
     fi
 else
     ok "The Typing Scanner is ready (switched off; Settings or the first-start question switch it on)"
@@ -52,7 +52,7 @@ fi
 
 # What the Game Pack's parts need from the Arch Linux servers.
 missing=""
-for p in gamemode mangohud plymouth libinput; do
+for p in gamemode mangohud plymouth; do
     pacman -Q "$p" >/dev/null 2>&1 || missing+=" $p"
 done
 if [[ -z $missing ]]; then ok "Speed Boost, FPS counter, start-up animation and Typing Scanner packages are installed"; else echo "LATER Update Ollie OS adds:$missing"; fi

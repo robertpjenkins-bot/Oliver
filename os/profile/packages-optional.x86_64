@@ -9,3 +9,5 @@ mangohud
 lib32-mangohud
 plymouth
 libinput
+libinput-tools
+evtest

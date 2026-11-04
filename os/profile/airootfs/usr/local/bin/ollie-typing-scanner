@@ -14,7 +14,6 @@
 set -uo pipefail
 readonly CONF=/etc/ollie/parent.conf WORDS=/usr/local/share/ollie/scanner-words.txt
 [[ "$(sed -n 's/^SCANNER=//p' "$CONF" 2>/dev/null | tail -n 1)" == on ]] || exit 0
-command -v libinput >/dev/null || { echo "libinput is not installed" >&2; exit 1; }
 
 # The same spelling for the word typed and the list: small letters, the
 # look-alikes as letters, and no letter twice in a row.
@@ -71,10 +70,40 @@ check() { # check WORD
     done
 }
 
+# The keyboard, a line per key: "KEY_A (30) pressed", as libinput says it.
+# libinput's command (in libinput-tools on newer Arch Linux) follows
+# keyboards plugged in later too; without it, each keyboard's own device is
+# read directly (od turns its events into numbers; a keyboard plugged in
+# later restarts this service: /etc/udev/rules.d/72-ollie-typing-scanner.rules).
+# Line by line, as each key is pressed: into a pipe, both would otherwise
+# keep their output back until 4 KB of it have piled up (dozens of keys).
+keyboards() { # the event devices of the keyboards (key and key-repeat events, the kbd handler)
+    awk '/^H: Handlers=/ { kbd = / kbd /; for (i = 1; i <= NF; i++) if ($i ~ /^event[0-9]+$/) ev = $i }
+         /^B: EV=/ { split($2, a, "="); evbits = a[2] }
+         /^$/ { if (kbd && ev != "" && length(evbits) >= 6 && substr(evbits, length(evbits) - 5, 1) ~ /[13579bdf]/) print ev; kbd = 0; ev = ""; evbits = "" }' /proc/bus/input/devices
+}
+keys() {
+    if command -v libinput >/dev/null && libinput debug-events --help >/dev/null 2>&1; then
+        stdbuf -oL libinput debug-events --show-keycodes 2>/dev/null
+        return
+    fi
+    local ev
+    for ev in $(keyboards); do
+        # struct input_event, 24 bytes: time (8 numbers), type, code, value (2).
+        stdbuf -i0 -oL od -An -v -w24 -tu2 "/dev/input/$ev" &
+    done | awk 'BEGIN {
+            split("ESC 1 2 3 4 5 6 7 8 9 0 MINUS EQUAL BACKSPACE TAB Q W E R T Y U I O P LEFTBRACE RIGHTBRACE ENTER LEFTCTRL A S D F G H J K L SEMICOLON APOSTROPHE GRAVE LEFTSHIFT BACKSLASH Z X C V B N M COMMA DOT SLASH RIGHTSHIFT KPASTERISK LEFTALT SPACE", n, " ")
+            for (i in n) name[i] = n[i]
+        }
+        $9 == 1 && ($11 == 0 || $11 == 1) {
+            k = ($10 in name) ? name[$10] : "OTHER"
+            printf "KEYBOARD_KEY KEY_%s (%d) %s\n", k, $10, ($11 == 1 ? "pressed" : "released")
+            fflush()
+        }'
+}
+
 word="" shift=""
-# Line by line, as each key is pressed: into a pipe, libinput would otherwise
-# keep its words back until it has 4 KB of them (dozens of keys).
-stdbuf -oL libinput debug-events --show-keycodes 2>/dev/null | while IFS= read -r line; do
+keys | while IFS= read -r line; do
     [[ $line =~ (KEY_[A-Z0-9]+)\ \([0-9]+\)\ (pressed|released) ]] || continue
     key=${BASH_REMATCH[1]} how=${BASH_REMATCH[2]}
     if [[ $key == KEY_LEFTSHIFT || $key == KEY_RIGHTSHIFT ]]; then

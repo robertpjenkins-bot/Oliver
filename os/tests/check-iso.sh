@@ -145,7 +145,8 @@ check "purple and red backgrounds" test -s "$r/usr/share/wallpapers/OllieOS-Purp
 check "grown-up settings start empty" grep -q '^PIN_MD5=$' "$r/etc/ollie/parent.conf"
 check "Welcome opens at the first start" test -f "$r/etc/xdg/autostart/ollie-welcome.desktop"
 check "qml6 for Welcome and Settings" test -x "$r/usr/bin/qml6"
-check "libinput for the Typing Scanner" test -x "$r/usr/bin/libinput"
+check "a keyboard reader for the Typing Scanner (libinput, or od and stdbuf)" bash -c "test -x '$r/usr/bin/libinput' || { test -x '$r/usr/bin/od' && test -x '$r/usr/bin/stdbuf'; }"
+check "live USB starts without the start-up animation" grep -rq 'plymouth.enable=0' "$work/iso/loader/entries"
 
 echo
 echo "== The 25 largest packages (installed MB)"

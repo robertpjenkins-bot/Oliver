@@ -275,7 +275,7 @@ build_game_pack_updater() {
         usr/share/icons/hicolor/scalable/apps/ollie-minecraft.svg etc/xdg/autostart/ollie-{welcome,startup-sound}.desktop \
         etc/systemd/user/ollie-speed-boost.service etc/systemd/system/ollie-{screen-time,typing-scanner}.service \
         etc/systemd/system/multi-user.target.wants/ollie-{screen-time,typing-scanner}.service \
-        etc/gamemode.ini etc/environment.d/20-ollie-games.conf etc/udev/rules.d/71-ollie-controllers.rules \
+        etc/gamemode.ini etc/environment.d/20-ollie-games.conf etc/udev/rules.d/71-ollie-controllers.rules etc/udev/rules.d/72-ollie-typing-scanner.rules \
         etc/plymouth/plymouthd.conf etc/mkinitcpio.conf.d/ollie-splash.conf usr/share/sounds/ollie/startup.ogg; do
         files+=("$f")
     done

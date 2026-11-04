@@ -1,0 +1,3 @@
+# A keyboard plugged in: the Inappropriate Typing Scanner (if it is on)
+# starts again, so it reads that keyboard too.
+ACTION=="add", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_KEYBOARD}=="1", RUN+="/usr/bin/systemctl --no-block try-restart ollie-typing-scanner.service"
