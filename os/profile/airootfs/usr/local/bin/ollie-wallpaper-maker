@@ -4,6 +4,10 @@
 # Pictures/Wallpapers. With its tick box it also calls this computer's OS
 # by that name (ollie-rename). The window is wallpaper-maker.qml.
 set -uo pipefail
+# The window says what to do in its console messages (console.log). Qt sends
+# those to the system journal when its output is not a terminal (always,
+# started from the desktop): here they must come, plain.
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
 dir="$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")/Wallpapers"
 mkdir -p "$dir"
 out="$dir/my-wallpaper-$(date +%Y%m%d-%H%M%S).png"

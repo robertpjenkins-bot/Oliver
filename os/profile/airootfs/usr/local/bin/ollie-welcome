@@ -9,6 +9,10 @@
 # the Inappropriate Typing Scanner and whether Firefox should have a
 # password, then opens the window if it is time.
 set -uo pipefail
+# The window says what to do in its console messages (console.log). Qt sends
+# those to the system journal when its output is not a terminal (always,
+# started from the desktop): here they must come, plain.
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
 cfg="$HOME/.config/ollie"
 mkdir -p "$cfg"
 readonly CONF=/etc/ollie/parent.conf
@@ -49,7 +53,7 @@ fi
 touch "$cfg/welcome-seen"
 at_start=off
 [[ -e "$cfg/welcome-at-start" ]] && at_start=on
-open() { (setsid "$@" >/dev/null 2>&1 &); }
+open() { (setsid env -u QT_FORCE_STDERR_LOGGING -u QT_MESSAGE_PATTERN -u QT_LOGGING_RULES "$@" >/dev/null 2>&1 &); }
 while IFS= read -r line; do
     [[ $line == *"OLLIE-ACTION "* ]] || continue
     read -r -a a <<<"${line#*OLLIE-ACTION }"

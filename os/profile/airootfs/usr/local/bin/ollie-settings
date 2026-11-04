@@ -4,6 +4,10 @@
 # Time, the Inappropriate Typing Scanner and Firefox's password. The window is settings.qml; it
 # says what to change on its console (OLLIE-ACTION ...), and this does it.
 set -uo pipefail
+# The window says what to do in its console messages (console.log). Qt sends
+# those to the system journal when its output is not a terminal (always,
+# started from the desktop): here they must come, plain.
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
 cfg="$HOME/.config/ollie" mango="$HOME/.config/MangoHud/MangoHud.conf"
 mkdir -p "$cfg"
 flag() { [[ -e "$cfg/$1" ]] && echo off || echo on; }

@@ -3,6 +3,10 @@
 # until tomorrow, or until a grown-up types the PIN for more time. Started
 # by ollie-screen-time; closing it only brings it back.
 set -uo pipefail
+# The window says what to do in its console messages (console.log). Qt sends
+# those to the system journal when its output is not a terminal (always,
+# started from the desktop): here they must come, plain.
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
 pin="$(sed -n 's/^PIN_MD5=//p' /etc/ollie/parent.conf 2>/dev/null | tail -n 1)"
 while [[ "$(/usr/local/bin/ollie-parent left)" == 0 ]]; do
     while IFS= read -r line; do
