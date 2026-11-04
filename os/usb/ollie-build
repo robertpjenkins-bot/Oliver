@@ -1,17 +1,20 @@
 #!/bin/bash
-# Ollie OS Builder: build a brand-new Ollie OS ISO on this computer.
+# Ollie OS Builder: build a brand-new Ollie OS ISO on this computer: it
+# downloads the official Arch Linux ISO from the Arch Linux servers, opens
+# it, and turns it into Ollie OS.
 #
-# No GitHub sign-in and no download of the ISO: the whole Ollie OS recipe
+# No GitHub and no sign-in, and no download of an Ollie OS ISO: the whole recipe
 # (its build script, settings and the Oliver source) is inside this app, and
 # everything else comes from the Arch Linux servers and the public download
 # pages of a few packages. It never asks for a password:
-#   - Ollie OS, SteamOS, Linux: the way Annie OS Maker builds Annie OS. Arch
-#     Linux's own "bootstrap" (a small Arch Linux in a folder) comes from the
-#     Arch servers, and the build runs inside it as "root" of a user
+#   - Ollie OS, SteamOS, Linux: the way Annie OS Maker builds Annie OS. The
+#     system inside the Arch Linux ISO is unpacked into a folder, and the
+#     build runs inside it as "root" of a user
 #     namespace of its own, which any user may make: really this user, so
 #     nothing outside its folder is touched. (Where that is not allowed:
 #     Podman as this user, or sudo where it needs no password.)
-#   - macOS (Intel): Docker Desktop (or OrbStack / Colima), installed once.
+#   - macOS (Intel): Docker Desktop (or OrbStack / Colima), installed once;
+#     the same happens in an Arch Linux container (os/build-from-arch-iso.sh).
 # It takes 1 to 2 hours and about 20 GB of free space. The ISO goes to
 # Downloads; then USB Maker (or Mac Setup) can put it on a drive.
 #
@@ -37,6 +40,10 @@ as_builder() {
 }
 
 here="$(cd "$(dirname "$0")" && pwd)"
+# The tools to open an ISO and its system (xorriso, unsquashfs) come inside
+# the AppImage; otherwise this computer's own.
+kit="$here/../lib/ollie-build"
+tool_path() { if [ -x "$kit/bin/$1" ]; then echo "$kit/bin/$1"; elif have "$1"; then command -v "$1"; fi; }
 mac=false
 [ "$(uname -s)" = Darwin ] && mac=true
 # Started from the desktop, some systems leave chroot's folder out of PATH.
@@ -70,7 +77,8 @@ done
 work="${OLLIE_BUILD_DIR:-$HOME/Ollie-OS-Builder}"
 engine=() kind=docker rootless=""
 chroot_tools=true
-for tool in curl tar zstd unshare chroot sha256sum; do have "$tool" || chroot_tools=false; done
+for tool in curl unshare chroot sha256sum; do have "$tool" || chroot_tools=false; done
+[ -n "$(tool_path unsquashfs)" ] && { have bsdtar || [ -n "$(tool_path xorriso)" ]; } || chroot_tools=false
 if $mac; then
     [ "$(uname -m)" = x86_64 ] || echo "  (This Mac is not an Intel Mac: the build runs emulated and takes much longer.)"
     have docker || die "Docker is not installed. Install Docker Desktop from docker.com (or OrbStack), open it once so it is running, then run this again."
@@ -109,28 +117,28 @@ if [ "${free_kb:-0}" -lt $((20 * 1024 * 1024)) ]; then
 fi
 
 # --- The Arch Linux to build in (all but Podman, Docker and the Mac) -------------------
-# A fresh one each time, from the Arch servers' monthly "bootstrap" download,
-# checked against their checksums (or the one Annie OS Maker left in
-# Downloads, if it is that same one). The package downloads are kept until
-# the build succeeds, so running it again after a failure is quicker.
-bootstrap=archlinux-bootstrap-x86_64.tar.zst bootstrap_file=""
+# The official Arch Linux ISO, from the Arch servers, checked against their
+# checksums (or one already in Downloads, if it is that same one). The
+# package downloads are kept until the build succeeds, so running it again
+# after a failure is quicker.
+arch_iso=archlinux-x86_64.iso iso_file=""
 root="$work/arch-root" build_tmp="$work/build-tmp" pkg_cache="$work/pkg-cache"
-fetch_bootstrap() {
-    local base sum f part="$work/$bootstrap.part"
+fetch_iso() {
+    local base sum f part="$work/$arch_iso.part"
     # A half download from another day may be last month's: start that over.
-    find "$work" -maxdepth 1 -name "$bootstrap.part" -mtime +0 -exec rm -f {} + 2>/dev/null
+    find "$work" -maxdepth 1 -name "$arch_iso.part" -mtime +0 -exec rm -f {} + 2>/dev/null
     for base in ${OLLIE_BUILD_ARCH_MIRRORS:-https://geo.mirror.pkgbuild.com https://fastly.mirror.pkgbuild.com https://mirror.rackspace.com/archlinux https://mirrors.kernel.org/archlinux}; do
-        sum="$(curl -fsSL --retry 3 "$base/iso/latest/sha256sums.txt" 2>/dev/null | awk -v f="$bootstrap" '$2 == f {print $1}')"
+        sum="$(curl -fsSL --retry 3 "$base/iso/latest/sha256sums.txt" 2>/dev/null | awk -v f="$arch_iso" '$2 == f {print $1}')"
         [ -n "$sum" ] || continue
-        for f in "$work/$bootstrap" "$HOME/Downloads/$bootstrap"; do
+        for f in "$work/$arch_iso" "$HOME/Downloads/$arch_iso"; do
             if [ -f "$f" ] && [ "$(sha256sum "$f" | cut -d ' ' -f 1)" = "$sum" ]; then
-                bootstrap_file="$f"
+                iso_file="$f"
                 return 0
             fi
         done
-        if curl -fL --retry 5 -C - -o "$part" "$base/iso/latest/$bootstrap"; then
-            if [ "$(sha256sum "$part" | cut -d ' ' -f 1)" = "$sum" ] && mv -f "$part" "$work/$bootstrap"; then
-                bootstrap_file="$work/$bootstrap"
+        if curl -fL --retry 5 -C - -o "$part" "$base/iso/latest/$arch_iso"; then
+            if [ "$(sha256sum "$part" | cut -d ' ' -f 1)" = "$sum" ] && mv -f "$part" "$work/$arch_iso"; then
+                iso_file="$work/$arch_iso"
                 return 0
             fi
             rm -f "${part:?}" # damaged: start over from the next server
@@ -138,18 +146,26 @@ fetch_bootstrap() {
     done
     return 1
 }
+# The system inside the ISO (arch/x86_64/airootfs.sfs), next to it.
+open_iso() {
+    rm -rf "${work:?}/arch"
+    if have bsdtar; then
+        bsdtar -xf "$iso_file" -C "$work" arch/x86_64/airootfs.sfs
+    else
+        mkdir -p "$work/arch/x86_64" &&
+            "$(tool_path xorriso)" -osirrox on -indev "$iso_file" -extract /arch/x86_64/airootfs.sfs "$work/arch/x86_64/airootfs.sfs" >/dev/null 2>&1
+    fi && [ -s "$work/arch/x86_64/airootfs.sfs" ]
+}
 # Runs as root of a namespace of its own (a user namespace, or real root with
 # "sudo -n"): unpacks Arch Linux, gives it what a running system has, and
 # builds Ollie OS in it with os/build.sh, as in the Arch Linux container.
 # Every mount is in this namespace only and goes with it.
-build_inside() { # build_inside BOOTSTRAP ROOT SRC TMP CACHE
-    local bootstrap=$1 root=$2 src=$3 tmp=$4 cache=$5 opts
-    printf '==> Unpacking Arch Linux\n'
-    rm -rf --one-file-system "${root:?}" && mkdir -p "$root" "$tmp" "$cache" && chmod 1777 "$tmp" || return 1
-    opts=(--numeric-owner)
-    # (GNU tar cannot keep the bootstrap's file capabilities here, and needn't.)
-    tar --help 2>/dev/null | grep -q -- --warning= && opts+=(--warning=no-unknown-keyword)
-    tar -x --zstd --strip-components=1 "${opts[@]}" -f "$bootstrap" -C "$root" || return 1
+build_inside() { # build_inside SYSTEM.SFS UNSQUASHFS ROOT SRC TMP CACHE
+    local sfs=$1 unsquashfs=$2 root=$3 src=$4 tmp=$5 cache=$6
+    printf '==> Unpacking the Arch Linux ISO\n'
+    rm -rf --one-file-system "${root:?}" && mkdir -p "$tmp" "$cache" && chmod 1777 "$tmp" || return 1
+    # (Its files' extra attributes cannot be kept here, and needn't.)
+    "$unsquashfs" -no-progress -no-xattrs -d "$root" "$sfs" >/dev/null || return 1
     mkdir -p "$root/src" "$root/var/cache/pacman/pkg"
     mount --make-rprivate / &&
         mount --bind "$root" "$root" &&
@@ -181,12 +197,19 @@ mkdir -p "$src" && tar -xzf "$source_tar" -C "$src" || die "could not unpack the
 start=$(date +%s)
 case "$kind" in
 userns | sudo)
-    say "Getting Arch Linux to build in (about 150 MB)"
-    fetch_bootstrap || die "could not download Arch Linux from the Arch servers. Is the internet connected? Run this again to retry."
+    say "Downloading the Arch Linux ISO from the Arch Linux servers (about 1.4 GB)"
+    fetch_iso || die "could not download the Arch Linux ISO from the Arch servers. Is the internet connected? Run this again to retry."
+    say "Opening the Arch Linux ISO"
+    open_iso || die "could not open the Arch Linux ISO (is the disk full?). Run this again to retry."
+    # Its tools, where the build's own users can reach them (not inside the AppImage).
+    unsq="$(tool_path unsquashfs)"
+    if [ -d "$kit/bin" ]; then
+        rm -rf "${work:?}/tools" && cp -a "$kit" "$work/tools" && unsq="$work/tools/bin/unsquashfs"
+    fi
     ;;
 esac
 
-say "Building Ollie OS (1 to 2 hours; it is fine to leave it running)"
+say "Turning it into Ollie OS (1 to 2 hours; it is fine to leave it running)"
 echo "  Downloading Arch Linux's packages and building. The steps show below; the whole log is in $work/build.log"
 case "$kind" in
 userns | sudo)
@@ -194,11 +217,11 @@ userns | sudo)
     [ "$kind" = sudo ] && ns=(sudo -n unshare --mount --pid --fork --kill-child --)
     # shellcheck disable=SC2016 # expanded by the bash inside
     "${ns[@]}" bash -c "$(declare -f build_inside)"'; build_inside "$@"' build_inside \
-        "$bootstrap_file" "$root" "$src" "$build_tmp" "$pkg_cache" </dev/null >"$work/build.log" 2>&1 &
+        "$work/arch/x86_64/airootfs.sfs" "$unsq" "$root" "$src" "$build_tmp" "$pkg_cache" </dev/null >"$work/build.log" 2>&1 &
     ;;
 *)
     "${engine[@]}" run --rm --privileged ${rootless:+-e OLLIE_ROOTLESS=1} -v "$src:/src" -w /src \
-        docker.io/library/archlinux:latest bash os/build.sh >"$work/build.log" 2>&1 &
+        docker.io/library/archlinux:latest bash os/build-from-arch-iso.sh /var/tmp/ollie-from-iso >"$work/build.log" 2>&1 &
     ;;
 esac
 pid=$!
@@ -233,10 +256,10 @@ cp -f "$iso" "$dest/$name" 2>/dev/null || as_builder cp -f "$iso" "$dest/$name" 
 # The build's own copy and the container storage are big; free the space.
 rm -rf "${src:?}" 2>/dev/null || as_builder rm -rf --one-file-system "${src:?}"
 case "$kind" in
-userns | sudo) as_builder rm -rf --one-file-system "${root:?}" "${build_tmp:?}" "${pkg_cache:?}" "${work:?}/${bootstrap:?}" ;;
+userns | sudo) as_builder rm -rf --one-file-system "${root:?}" "${build_tmp:?}" "${pkg_cache:?}" "${work:?}/arch" "${work:?}/tools" "${work:?}/${arch_iso:?}" ;;
 esac
 printf '\n  %sDone in %d minutes:%s %s\n' "$green$bold" $((($(date +%s) - start) / 60)) "$reset" "$dest/$name"
-echo "  It is the newest Ollie OS, built on this computer."
+echo "  It is the newest Ollie OS, made from the Arch Linux ISO on this computer."
 
 # --- 6. Onto a drive ------------------------------------------------------------------
 if $mac; then

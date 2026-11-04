@@ -4,7 +4,7 @@
 #   Ollie-OS-USB-Maker-Zip-x86_64.AppImage  the Zip edition: takes only a zip
 #   Ollie-OS-Drive-Doctor-x86_64.AppImage   checks an Ollie OS drive and fixes it
 #   Ollie-OS-Get-ISO-x86_64.AppImage        downloads the ISO next to USB Maker
-#   Ollie-OS-Installer-x86_64.AppImage      downloads the ISO, then USB Maker
+#   Ollie-OS-Installer-x86_64.AppImage      the Builder (below), under the Installer's name
 #   Ollie-OS-Drive-Writer-x86_64.AppImage   makes Ollie OS from Arch Linux right on a drive
 #   Ollie-OS-Updater-x86_64.AppImage        brings an ISO up to the newest Ollie OS
 #   Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage  adds Stuff Saver to a running Ollie OS
@@ -131,26 +131,9 @@ APPRUN
 build_get_iso
 
 # Get ISO and USB Maker in one: download, then straight on to choosing the drive.
-build_installer() {
-    local appdir="$out/OllieInstaller.AppDir"
-    rm -rf "$appdir"
-    install -D -m 0755 "$here/ollie-get-iso" "$appdir/usr/bin/ollie-get-iso"
-    install -D -m 0755 "$here/ollie-usb" "$appdir/usr/bin/ollie-usb"
-    add_update_kit "$appdir"
-    cat >"$appdir/AppRun" <<'APPRUN'
-#!/bin/sh
-# AppImage entry point: download Ollie OS, make it the newest, then USB Maker.
-HERE="$(dirname "$(readlink -f "$0")")"
-export OLLIE_USB_MAKER="$HERE/usr/bin/ollie-usb" OLLIE_UPDATER="$HERE/usr/bin/ollie-update"
-exec "$HERE/usr/bin/ollie-get-iso" "$@"
-APPRUN
-    chmod 0755 "$appdir/AppRun"
-    install -m 0644 "$here/ollie-installer.desktop" "$appdir/ollie-installer.desktop"
-    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
-    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Installer-x86_64.AppImage"
-    rm -rf "$appdir"
-}
-build_installer
+# (The Installers are the Builders, under the name people look for: they
+# download the Arch Linux ISO and turn it into Ollie OS, no GitHub. See
+# build_builder.)
 
 
 build_updater() {
@@ -307,15 +290,33 @@ build_game_pack_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz
-    (cd "$os/.." && git archive --format=tar.gz -o "$1" HEAD go.mod cmd internal packaging os/build.sh os/build-drive.sh os/build-drive-files.sh os/drive-common.sh os/ollie-write os/art os/profile)
+    (cd "$os/.." && git archive --format=tar.gz -o "$1" HEAD go.mod cmd internal packaging os/build.sh os/build-from-arch-iso.sh os/build-drive.sh os/build-drive-files.sh os/drive-common.sh os/ollie-write os/art os/profile)
 }
 
 # The Builder: builds the ISO in an Arch Linux container from the recipe it
 # carries, then hands over to USB Maker (or, on a Mac, Mac Setup).
+# carry_tools KIT TOOL...: this computer's TOOLs and their libraries into
+# KIT (bin/ the ones to run, libexec/ and lib/), for computers without them.
+carry_tools() {
+    local kit=$1 b lib
+    shift
+    install -d "$kit/bin" "$kit/libexec" "$kit/lib"
+    for b in "$@"; do
+        install -m 0755 "$(command -v "$b")" "$kit/libexec/$b"
+        ldd "$(command -v "$b")" | awk '$3 ~ /^\// {print $3}' | while read -r lib; do
+            case "$(basename "$lib")" in libc.so* | libm.so* | ld-linux* | libpthread* | libdl.so* | librt.so*) continue ;; esac
+            cp -nL "$lib" "$kit/lib/"
+        done
+        printf '#!/bin/sh\nd="$(dirname "$(readlink -f "$0")")"\nLD_LIBRARY_PATH="$d/../lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" exec "$d/../libexec/%s" "$@"\n' "$b" >"$kit/bin/$b"
+        chmod 0755 "$kit/bin/$b"
+    done
+}
 build_builder() {
     local appdir="$out/OllieBuilder.AppDir" mac="$out/Ollie-OS-Builder-Mac"
     rm -rf "$appdir" "$mac"
     install -D -m 0755 "$here/ollie-build" "$appdir/usr/bin/ollie-build"
+    # To open the Arch Linux ISO and the system inside it.
+    carry_tools "$appdir/usr/lib/ollie-build" xorriso unsquashfs
     install -D -m 0755 "$here/ollie-usb" "$appdir/usr/bin/ollie-usb"
     install -d "$appdir/usr/share/ollie-build"
     source_tarball "$appdir/usr/share/ollie-build/ollie-os-source.tar.gz"
@@ -331,6 +332,8 @@ APPRUN
     install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
     ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Builder-x86_64.AppImage"
     rm -rf "$appdir"
+    # The Installer is the same: it makes Ollie OS from the Arch Linux ISO, then USB Maker.
+    cp -f "$out/Ollie-OS-Builder-x86_64.AppImage" "$out/Ollie-OS-Installer-x86_64.AppImage"
     # For a Mac: a folder with the Builder, its recipe and Mac Setup, zipped.
     mkdir -p "$mac"
     install -m 0755 "$here/ollie-build" "$mac/Ollie-OS-Builder.command"
@@ -342,6 +345,7 @@ APPRUN
     if command -v xorriso >/dev/null; then
         rm -f "$out/Ollie-OS-Builder-Mac.dmg"
         xorriso -as mkisofs -quiet -V "Ollie OS Builder" -R -J -hfsplus -o "$out/Ollie-OS-Builder-Mac.dmg" "$mac"
+        cp -f "$out/Ollie-OS-Builder-Mac.dmg" "$out/Ollie-OS-Installer-Mac.dmg"
     fi
     rm -rf "$mac"
 }

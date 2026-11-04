@@ -1,11 +1,11 @@
-// Ollie OS Builder for Windows: builds a brand-new Ollie OS ISO on this PC,
-// with no GitHub: the whole Ollie OS recipe is inside this program, and
-// everything else comes from the Arch Linux servers. Then it can put the ISO
-// on a USB drive.
+// Ollie OS Builder for Windows: downloads the official Arch Linux ISO from
+// the Arch Linux servers and turns it into Ollie OS, on this PC, with no
+// GitHub and no sign-in: the whole Ollie OS recipe is inside this program
+// (os/build-from-arch-iso.sh). Then it can put the new ISO on a USB drive.
 //
-// It builds inside Windows' own Linux (WSL 2), in an Arch Linux of its own
-// called "OllieOS-Builder" (Arch Linux's official WSL image), the way the
-// Builder does on Linux and a Mac. Without WSL it offers to install it
+// It works inside Windows' own Linux (WSL 2), in a small Arch Linux of its
+// own called "OllieOS-Builder" (Arch Linux's official WSL image), the way
+// the Builder does on Linux and a Mac. Without WSL it offers to install it
 // (Windows asks to allow changes, then the PC restarts once).
 // It takes 1 to 2 hours and about 20 GB of free space. The ISO goes to
 // Downloads.
@@ -134,15 +134,13 @@ func build() error {
 	if err := os.WriteFile(src, source, 0o644); err != nil {
 		return fmt.Errorf("could not unpack the recipe (is the disk full?): %v", err)
 	}
-	say("Building Ollie OS (1 to 2 hours: the Arch Linux packages download, then Ollie OS is put together)")
+	say("Downloading the Arch Linux ISO and turning it into Ollie OS (1 to 2 hours)")
 	fmt.Println("  You can use the PC meanwhile. Closing this window stops the build; running it again carries on.")
 	script := `set -e
 src="$(wslpath -u "$1")"; dl="$(wslpath -u "$2")"
 mkdir -p /root/ollie-src && cd /root/ollie-src
 rm -rf os go.mod cmd internal packaging && tar -xzf "$src"
-pacman-key --init >/dev/null 2>&1 || true
-pacman-key --populate archlinux >/dev/null 2>&1 || true
-bash os/build.sh
+bash os/build-from-arch-iso.sh /root/ollie-from-iso
 iso="$(ls -t os/out/ollie-os-*.iso | head -n 1)"
 mkdir -p "$dl"
 cp -f "$iso" "$dl/"
