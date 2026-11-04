@@ -16,7 +16,8 @@
 #   Ollie-OS-Download-Tracker-Updater-x86_64.AppImage adds Download Tracker (biobro's GitHub downloads)
 #   Ollie-OS-Game-Pack-Updater-x86_64.AppImage   adds the Game Pack: Game Mode, Speed Boost, FPS, Minecraft, Settings...
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
-#   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup)
+#   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup); and as .dmg
+# (Ollie-OS-Builder-Windows.exe, for Windows: os/windows/builder/build.sh.)
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -337,6 +338,11 @@ APPRUN
     source_tarball "$mac/ollie-os-source.tar.gz"
     rm -f "$out/Ollie-OS-Builder-Mac.zip"
     (cd "$out" && zip -q -r -X Ollie-OS-Builder-Mac.zip "$(basename "$mac")")
+    # The same as a .dmg (opens on a Mac like a drive), where xorriso is here.
+    if command -v xorriso >/dev/null; then
+        rm -f "$out/Ollie-OS-Builder-Mac.dmg"
+        xorriso -as mkisofs -quiet -V "Ollie OS Builder" -R -J -hfsplus -o "$out/Ollie-OS-Builder-Mac.dmg" "$mac"
+    fi
     rm -rf "$mac"
 }
 build_builder

@@ -129,6 +129,8 @@ jobs:
           (cd os/windows/installer && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ../../out/Ollie-OS-Installer-Windows.exe .)
           mkdir -p /tmp/dmg/"Ollie OS Installer" && cp -p os/usb/mac/"Ollie OS Installer.command" os/usb/mac/"Read me.txt" /tmp/dmg/"Ollie OS Installer"/
           xorriso -as mkisofs -quiet -V "Ollie OS Installer" -R -J -hfsplus -o os/out/Ollie-OS-Installer-Mac.dmg /tmp/dmg/"Ollie OS Installer"
+          # Ollie OS Builder for Windows: builds the ISO on a PC, in WSL.
+          OUTDIR="$PWD/os/out" bash os/windows/builder/build.sh
           # Ollie OS Demo: a pretend Ollie OS desktop to try, as .exe, .dmg and AppImage.
           APPIMAGETOOL=os/out/appimagetool-x86_64.AppImage bash os/demo/build.sh
 
@@ -165,11 +167,12 @@ jobs:
           - **Ollie-OS-Installer-Windows.exe** (Windows) or **Ollie-OS-Installer-Mac.dmg** (Mac): downloads Ollie OS and puts it on a USB drive.
           - $what: write it to a USB drive with **Ollie-OS-USB-Maker** (Linux, SteamOS) or any ISO writer (balenaEtcher, Rufus), then start the computer from it.
           - **Ollie-OS-Drive-Writer-x86_64.AppImage** (SteamOS, Linux): pick a drive and it installs Ollie OS onto it, no password. Its first start unpacks it (5 to 15 minutes, once).
-          - **Ollie-OS-Builder-x86_64.AppImage** (SteamOS, Linux): builds a brand-new Ollie OS ISO on your computer, no password (1 to 2 hours, about 20 GB free). **Ollie-OS-Builder-Mac.zip** does it on a Mac.
+          - **Ollie-OS-Builder-x86_64.AppImage** (SteamOS, Linux): builds a brand-new Ollie OS ISO on your computer, no password (1 to 2 hours, about 20 GB free). **Ollie-OS-Builder-Windows.exe** does it on Windows, **Ollie-OS-Builder-Mac.dmg** (or .zip) on a Mac.
 
           **Try it first:** **Ollie OS Demo** (Windows .exe, Mac .dmg, Linux AppImage) opens a pretend Ollie OS desktop in your browser. Everything works except Steam.
 
           **Add to an Ollie OS you have** (no password):
+          - **Game Pack Updater**: Steam in Game Mode, Speed Boost, FPS counter, Minecraft, start-up animation, Welcome, Ollie OS Settings (colours, Screen Time, Typing Scanner, Firefox password), Update Ollie OS
           - **Wallpaper Maker Updater**: a background with your name on it, or draw one
           - **Download Tracker Updater**: see how many times each file here was downloaded
           - **Discover Updater**: Discover, the app store, with Flathub
@@ -184,7 +187,9 @@ jobs:
             Ollie-OS-Download-Tracker-Updater-x86_64.AppImage \
             Ollie-OS-Windows-Boot-Updater-x86_64.AppImage Ollie-OS-Storage-Updater-x86_64.AppImage \
             Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage Ollie-OS-Drive-Installer-x86_64.AppImage \
-            Ollie-OS-Builder-x86_64.AppImage Ollie-OS-Builder-Mac.zip Ollie-OS-Installer-Windows.exe Ollie-OS-Installer-Mac.dmg \
+            Ollie-OS-Game-Pack-Updater-x86_64.AppImage \
+            Ollie-OS-Builder-x86_64.AppImage Ollie-OS-Builder-Mac.zip Ollie-OS-Builder-Mac.dmg Ollie-OS-Builder-Windows.exe \
+            Ollie-OS-Installer-Windows.exe Ollie-OS-Installer-Mac.dmg \
             Ollie-OS-Demo-Windows.exe Ollie-OS-Demo-Mac.dmg Ollie-OS-Demo-x86_64.AppImage
 
       - name: Publish a release for os-v* tags
