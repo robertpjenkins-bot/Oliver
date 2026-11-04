@@ -72,7 +72,9 @@ check() { # check WORD
 }
 
 word="" shift=""
-libinput debug-events --show-keycodes 2>/dev/null | while IFS= read -r line; do
+# Line by line, as each key is pressed: into a pipe, libinput would otherwise
+# keep its words back until it has 4 KB of them (dozens of keys).
+stdbuf -oL libinput debug-events --show-keycodes 2>/dev/null | while IFS= read -r line; do
     [[ $line =~ (KEY_[A-Z0-9]+)\ \([0-9]+\)\ (pressed|released) ]] || continue
     key=${BASH_REMATCH[1]} how=${BASH_REMATCH[2]}
     if [[ $key == KEY_LEFTSHIFT || $key == KEY_RIGHTSHIFT ]]; then
