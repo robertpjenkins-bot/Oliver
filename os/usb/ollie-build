@@ -247,6 +247,7 @@ if [ "$rc" -ne 0 ] || [ -z "$iso" ]; then
 fi
 
 # --- 5. The ISO -------------------------------------------------------------------------
+say "Copying the new Ollie OS ISO to Downloads"
 dest="$HOME/Downloads"
 mkdir -p "$dest"
 name="$(basename "$iso")"
@@ -254,6 +255,7 @@ cp -f "$iso" "$dest/$name" 2>/dev/null || as_builder cp -f "$iso" "$dest/$name" 
 [ -w "$dest/$name" ] || [ -n "$rootless" ] || as_builder chown "$(id -u):$(id -g)" "$dest/$name"
 (cd "$dest" && shasum -a 256 "$name" 2>/dev/null >"$name.sha256" || sha256sum "$name" >"$name.sha256")
 # The build's own copy and the container storage are big; free the space.
+say "Cleaning up (removing the build's leftover files, a minute or two)"
 rm -rf "${src:?}" 2>/dev/null || as_builder rm -rf --one-file-system "${src:?}"
 case "$kind" in
 userns | sudo) as_builder rm -rf --one-file-system "${root:?}" "${build_tmp:?}" "${pkg_cache:?}" "${work:?}/arch" "${work:?}/tools" "${work:?}/${arch_iso:?}" ;;
@@ -265,16 +267,42 @@ echo "  It is the newest Ollie OS, made from the Arch Linux ISO on this computer
 if $mac; then
     setup="$(ls "$here"/Ollie-OS-Mac-Setup.command 2>/dev/null | head -n 1)"
     if [ -n "$setup" ]; then
-        printf '\nPut it on this Mac now with Mac Setup? [Y/n] '
-        read -r a
-        case "$a" in [nN]*) ;; *) exec bash "$setup" ;; esac
+        while :; do
+            printf '\n%sOllie OS is ready! Do you want to write it to a drive now (Mac Setup)? [y/n]%s ' "$bold" "$reset"
+            read -r a || a=n
+            case "$a" in
+            [yY]*) exec bash "$setup" ;;
+            [nN]*) echo "  OK! Not written to a drive. The ISO stays in Downloads: $dest/$name"; break ;;
+            esac
+        done
     fi
 else
     maker="${OLLIE_USB_MAKER:-}"
     if [ -n "$maker" ] && [ -x "$maker" ]; then
-        printf '\nPut it on a drive now with USB Maker? [Y/n] '
-        read -r a
-        case "$a" in [nN]*) ;; *) OLLIE_USB_IN_TERMINAL=1 exec "$maker" "$dest/$name" ;; esac
+        # Asked in a window (hard to miss after an hour), or here.
+        write=""
+        if have kdialog && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+            kdialog --title "Ollie OS Builder" --icon ollie-os --yes-label "Yes, write it to a drive" --no-label "No, just keep the ISO" --yesno \
+                "Ollie OS is ready! ($name, in Downloads)
+
+Do you want to write it to a drive now?
+(USB Maker opens; everything on the drive you pick is erased.)" && write=1
+        else
+            while :; do
+                printf '\n%sOllie OS is ready! Do you want to write it to a drive now? [y/n]%s ' "$bold" "$reset"
+                read -r a || a=n
+                case "$a" in
+                [yY]*) write=1; break ;;
+                [nN]*) break ;;
+                esac
+            done
+        fi
+        if [ -n "$write" ]; then
+            OLLIE_USB_IN_TERMINAL=1 exec "$maker" "$dest/$name"
+        fi
+        echo
+        echo "  OK! Not written to a drive. The ISO stays in Downloads: $dest/$name"
+        echo "  (To write it later: open this app's USB Maker, or any ISO writer such as balenaEtcher.)"
     fi
 fi
 echo

@@ -168,10 +168,23 @@ echo "OLLIE-ISO $(basename "$iso")"`
 	}
 	path := filepath.Join(downloads, iso)
 	fmt.Println()
+	fmt.Println("==> The new Ollie OS ISO is in Downloads")
 	fmt.Println("  Done! The new Ollie OS is in Downloads: " + iso)
 	fmt.Println("  (To free its 20 GB later: wsl --unregister " + distro + ")")
 	fmt.Println()
-	if a := strings.ToLower(ask("Put it on a USB drive now? [y/N] ")); a == "y" || a == "yes" {
+	write := false
+	for {
+		a := strings.ToLower(ask("Ollie OS is ready! Do you want to write it to a drive now? [y/n] "))
+		if strings.HasPrefix(a, "y") {
+			write = true
+			break
+		}
+		if strings.HasPrefix(a, "n") {
+			fmt.Println("  OK! Not written to a drive. The ISO stays in Downloads.")
+			break
+		}
+	}
+	if write {
 		self, _ := os.Executable()
 		q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 		if err := exec.Command("powershell", "-NoProfile", "-Command",
