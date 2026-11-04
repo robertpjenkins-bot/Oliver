@@ -59,6 +59,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The updaters list what changed since an older commit (UPDATE_BASE).
+          fetch-depth: 0
       - name: Build Ollie OS USB Maker
         run: |
           # The updater apps carry xorriso and squashfs-tools from this computer;
@@ -121,11 +124,12 @@ jobs:
 
       - name: Build the Windows (.exe) and Mac (.dmg) installers
         run: |
+          # The USB Maker step above ran as root: its folder becomes this user's.
+          sudo chown -R "$(id -u)" os/out
           (cd os/windows/installer && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ../../out/Ollie-OS-Installer-Windows.exe .)
           mkdir -p /tmp/dmg/"Ollie OS Installer" && cp -p os/usb/mac/"Ollie OS Installer.command" os/usb/mac/"Read me.txt" /tmp/dmg/"Ollie OS Installer"/
           xorriso -as mkisofs -quiet -V "Ollie OS Installer" -R -J -hfsplus -o os/out/Ollie-OS-Installer-Mac.dmg /tmp/dmg/"Ollie OS Installer"
           # Ollie OS Demo: a pretend Ollie OS desktop to try, as .exe, .dmg and AppImage.
-          sudo chown -R "$(id -u)" os/out
           APPIMAGETOOL=os/out/appimagetool-x86_64.AppImage bash os/demo/build.sh
 
       # Release files do not count against the artifact storage, which can
