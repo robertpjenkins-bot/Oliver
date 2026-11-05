@@ -13,7 +13,7 @@ for f in /usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-upda
     [[ -x $f ]] && bash -n "$f" 2>/dev/null || bad+=" ${f##*/}"
 done
 if [[ -z $bad ]]; then ok "All the Game Pack's programs are there and can run"; else echo "PROBLEM These programs have mistakes:$bad"; fi
-for f in welcome settings timesup; do
+for f in welcome settings timesup updates; do
     [[ -s /usr/local/share/ollie/$f.qml ]] || echo "PROBLEM The $f window is missing"
 done
 grep -q QT_FORCE_STDERR_LOGGING /usr/local/bin/ollie-welcome && ok "Welcome's buttons work"

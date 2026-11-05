@@ -147,6 +147,7 @@ check "Welcome opens at the first start" test -f "$r/etc/xdg/autostart/ollie-wel
 check "qml6 for Welcome and Settings" test -x "$r/usr/bin/qml6"
 check "a keyboard reader for the Typing Scanner (libinput, or od and stdbuf)" bash -c "test -x '$r/usr/bin/libinput' || { test -x '$r/usr/bin/od' && test -x '$r/usr/bin/stdbuf'; }"
 check "Update Checker in the menu" test -f "$r/usr/share/applications/ollie-update-checker.desktop"
+check "the list of the latest updates" test -s "$r/usr/local/share/ollie/updates.qml"
 check "Update Checker is asked about at the first start (off until then)" bash -c "! test -e '$r/etc/systemd/user/timers.target.wants/ollie-update-checker.timer' && grep -q update-checker '$r/usr/local/bin/ollie-welcome'"
 check "python for the Update Checker" test -x "$r/usr/bin/python3"
 check "live USB starts without the start-up animation" grep -rq 'plymouth.enable=0' "$work/iso/loader/entries"

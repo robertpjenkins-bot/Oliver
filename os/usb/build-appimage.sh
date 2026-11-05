@@ -271,7 +271,7 @@ build_tracker_updater
 build_game_pack_updater() {
     local f files=() air="$os/profile/airootfs"
     for f in usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox,update-checker} \
-        usr/local/lib/ollie/{speed-boost-hook,boot-splash} usr/local/share/ollie/{welcome.qml,settings.qml,timesup.qml,scanner-words.txt} \
+        usr/local/lib/ollie/{speed-boost-hook,boot-splash} usr/local/share/ollie/{welcome.qml,settings.qml,timesup.qml,updates.qml,scanner-words.txt} \
         usr/local/share/applications/{steam,firefox}.desktop usr/share/applications/ollie-{minecraft,os-update,welcome,settings,scanner-notes,update-checker}.desktop \
         usr/share/icons/hicolor/scalable/apps/ollie-minecraft.svg etc/xdg/autostart/ollie-{welcome,startup-sound}.desktop \
         etc/systemd/user/ollie-speed-boost.service etc/systemd/user/ollie-update-checker.{service,timer} etc/systemd/system/ollie-{screen-time,typing-scanner}.service \

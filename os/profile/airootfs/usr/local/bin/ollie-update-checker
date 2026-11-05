@@ -8,8 +8,8 @@
 # password; it is GitHub's public list of releases.
 #
 #   ollie-update-checker               check (every few hours: ollie-update-checker.timer)
-#   ollie-update-checker --now         check now, and say so when there is nothing new
-#                                      (Ollie OS Updates in the apps menu)
+#   ollie-update-checker --now         the list of the latest updates, newest first, to
+#                                      install from (Ollie OS Updates in the apps menu)
 #   ollie-update-checker --install TAG install that update (in a window that shows it)
 #   ollie-update-checker --enable|--disable   switch the checker on or off for everyone
 #                                      (the first-start question, Ollie OS Settings)
@@ -51,7 +51,7 @@ for r in reversed(json.load(sys.stdin)):
         continue
     body = (r.get("body") or "").replace("\r", "").split(mark)[0].strip()
     files = [{"name": a["name"], "url": a["browser_download_url"], "digest": a.get("digest") or ""} for a in r.get("assets", [])]
-    print(json.dumps({"tag": tag, "title": r.get("name") or tag, "body": body, "files": files}))
+    print(json.dumps({"tag": tag, "title": r.get("name") or tag, "date": (r.get("published_at") or "")[:10], "body": body, "files": files}))
 ' "$PREFIX" "$MARK"
 }
 field() { python3 -I -c 'import json, sys; print(json.loads(sys.argv[1])[sys.argv[2]])' "$1" "$2"; }
@@ -100,9 +100,38 @@ for f in json.loads(sys.argv[1])["files"]:
         "$( ((others > 0)) && printf '\n  Its other files are in Downloads, Ollie OS Updates (the folder opened).')")"
 fi
 
+# --- The list of the latest updates (Ollie OS Updates in the apps menu) ------------------
+# updates.qml shows them, newest first, each with what is new and an Install
+# button (or "Installed"); it says on its console what to do.
+if [[ ${1:-} == --now ]]; then
+    export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+    while :; do
+        if all="$(updates)"; then ok=yes; else ok=no all=""; fi
+        list="$(python3 -I -c '
+import json, sys
+done = set(open(sys.argv[1]).read().split())
+items = [json.loads(l) for l in sys.stdin if l.strip()]
+for u in items:
+    u["installed"] = u["tag"] in done
+    u["files"] = [f["name"] for f in u["files"]]
+print(json.dumps(list(reversed(items))))' "$installed" <<<"$all")"
+        again=""
+        while IFS= read -r l; do
+            case "$l" in
+            *"OLLIE-ACTION install "*)
+                t="${l##* }"
+                grep -qxF "$t" "$seen" || echo "$t" >>"$seen"
+                (setsid "$0" --install "$t" >/dev/null 2>&1 &)
+                ;;
+            *"OLLIE-ACTION refresh"*) again=1 ;;
+            esac
+        done < <(qml6 /usr/local/share/ollie/updates.qml -- "ok=$ok" "list=$list" 2>&1)
+        [[ -n $again ]] || exit 0
+    done
+fi
+
 # --- Checking ----------------------------------------------------------------------------
 if ! all="$(updates)"; then
-    [[ ${1:-} == --now ]] && kdialog --title "$TITLE" --sorry "Could not check for updates. Is the internet connected?"
     exit 0
 fi
 new=()
@@ -110,29 +139,13 @@ while IFS= read -r line; do
     [[ -n $line ]] || continue
     tag="$(field "$line" tag)"
     grep -qxF "$tag" "$installed" && continue
-    # (The timer tells about each update once; Ollie OS Updates shows all not installed.)
-    [[ ${1:-} != --now ]] && grep -qxF "$tag" "$seen" && continue
+    # (The timer tells about each update once; Ollie OS Updates lists them all.)
+    grep -qxF "$tag" "$seen" && continue
     new+=("$line")
 done <<<"$all"
 
-if ((${#new[@]} == 0)); then
-    [[ ${1:-} == --now ]] && kdialog --title "$TITLE" --msgbox "Ollie OS is up to date: there are no new updates."
-    exit 0
-fi
+((${#new[@]})) || exit 0
 
-if [[ ${1:-} == --now ]]; then
-    items=()
-    for line in "${new[@]}"; do items+=("$(field "$line" tag)" "$(field "$line" title)"); done
-    pick="$(kdialog --title "$TITLE" --menu "New Ollie OS updates. Pick one to see what is new and install it:" "${items[@]}")" || exit 0
-    for line in "${new[@]}"; do
-        [[ "$(field "$line" tag)" == "$pick" ]] || continue
-        kdialog --title "$TITLE" --yes-label "Install" --no-label "Not now" --yesno \
-            "$(field "$line" title)
-
-$(field "$line" body)" && exec "$0" --install "$pick"
-    done
-    exit 0
-fi
 
 for line in "${new[@]}"; do
     tag="$(field "$line" tag)" title="$(field "$line" title)" body="$(field "$line" body)"
