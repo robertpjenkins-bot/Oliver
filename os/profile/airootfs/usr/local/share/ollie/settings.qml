@@ -1,9 +1,10 @@
 // Ollie OS Settings (ollie-settings). Each change is said on the console as
 // OLLIE-ACTION ... for ollie-settings to make:
-//   steam|fps|boost|sound on|off     colours dark|light teal|purple|red [bg]
+//   steam|fps|boost|sound on|off     colours dark|light teal|purple|red|gold [bg]
 //   screen-time MINUTES   extra MINUTES   scanner on|off   pin NEWPIN   notes
 // Arguments (what is on now): steam= fps= boost= sound= mode= colour=
 // screentime= scanner= pin= (the PIN's check sum) left= (minutes left today)
+// gold=on|off (the secret Ollie Gold colour, once found in Ollie Finder)
 // firefox=on|off (whether Firefox has a password; firefox-password set|remove).
 // The grown-ups' part opens with the parent PIN; without one, a grown-up
 // makes one first.
@@ -121,6 +122,7 @@ ApplicationWindow {
                         spacing: 12
                         Repeater {
                             model: [{ name: "teal", label: "Teal", c: "#14b8a6" }, { name: "purple", label: "Purple", c: "#a855f7" }, { name: "red", label: "Red", c: "#f43f5e" }]
+                                .concat(win.arg("gold") === "on" ? [{ name: "gold", label: "✨ Gold", c: "#f59e0b" }] : [])
                             delegate: ColumnLayout {
                                 required property var modelData
                                 Rectangle {

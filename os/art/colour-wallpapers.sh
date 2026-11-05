@@ -1,7 +1,8 @@
 #!/bin/bash
 # Ollie OS's background in the other colours Ollie OS Settings offers
 # (ollie-colours): wallpaper.svg with its teal swapped, drawn as Plasma
-# wallpaper packages OllieOS-Purple and OllieOS-Red. Needs rsvg-convert.
+# wallpaper packages OllieOS-Purple, OllieOS-Red and OllieOS-Gold (a
+# secret: the Ollie Gold theme, found in Ollie Finder). Needs rsvg-convert.
 #   colour-wallpapers.sh WALLPAPERS-DIR
 set -euo pipefail
 art="$(cd "$(dirname "$0")" && pwd)"
@@ -10,6 +11,7 @@ dest=${1:?}
 teal=(       083c38   0b4f4a   0f766e   14b8a6   2dd4bf   5eead4   9eeee4)
 purple=(     2e1065   3b0764   7e22ce   a855f7   c084fc   d8b4fe   e9d5ff)
 red=(        4c0519   4c0519   be123c   f43f5e   fb7185   fda4af   ffe4e6)
+gold=(       451a03   78350f   b45309   f59e0b   fbbf24   fcd34d   fef3c7)
 make() { # make NAME COLOURS...
     local name=$1 dir="$dest/OllieOS-$1" sed=() i size
     shift
@@ -25,3 +27,4 @@ make() { # make NAME COLOURS...
 }
 make Purple "${purple[@]}"
 make Red "${red[@]}"
+make Gold "${gold[@]}"

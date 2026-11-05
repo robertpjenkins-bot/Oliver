@@ -1,7 +1,8 @@
 #!/bin/bash
 # Ollie OS's colours: dark or light, and the colour of buttons, highlights
 # and the background, for the whole desktop and its apps.
-#   ollie-colours dark|light teal|purple|red [--background]
+#   ollie-colours dark|light teal|purple|red|gold [--background]
+# (gold is a secret: Ollie Gold, which Ollie Finder unlocks.)
 # --background also puts on Ollie OS's background in that colour.
 set -uo pipefail
 mode=${1:-dark} colour=${2:-teal}
@@ -9,7 +10,8 @@ case $colour in
 teal) hex="#14b8a6" rgb="20,184,166" wall=OllieOS ;;
 purple) hex="#a855f7" rgb="168,85,247" wall=OllieOS-Purple ;;
 red) hex="#f43f5e" rgb="244,63,94" wall=OllieOS-Red ;;
-*) echo "teal, purple or red" >&2; exit 2 ;;
+gold) hex="#f59e0b" rgb="245,158,11" wall=OllieOS-Gold ;;
+*) echo "teal, purple, red or gold" >&2; exit 2 ;;
 esac
 case $mode in
 dark) scheme=BreezeDark plasma=breeze-dark icons=breeze-dark ;;

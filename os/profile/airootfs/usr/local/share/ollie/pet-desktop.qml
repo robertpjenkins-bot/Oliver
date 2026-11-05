@@ -68,6 +68,7 @@ Window {
         y: win.height - height - 4
         mood: win.mood
         stage: win.ageDays < 2 ? 0 : win.ageDays < 6 ? 1 : 2
+        golden: win.pet.name.toLowerCase() === "ollie"
         scale: 0.8
     }
     Rectangle { // what it says now and then

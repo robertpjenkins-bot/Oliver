@@ -3,6 +3,9 @@
 // matches). Enter opens the first; arrows move; a click opens; "folder"
 // shows where a file is. Says on the console what to open:
 // OLLIE-ACTION open app|file PATH, or show PATH.
+// Secrets: type "ollie" (unlocks the Ollie Gold colours: OLLIE-ACTION secret
+// gold), "party" (confetti) or "biobro" (who made Ollie OS); the last two
+// say OLLIE-ACTION say TEXT (Ollie's voice).
 // Arguments: index=FILE (lines: kind TAB name TAB path), home=DIR.
 import QtQuick
 import QtQuick.Controls
@@ -42,6 +45,7 @@ ApplicationWindow {
     }
 
     function emoji(it) {
+        if (it.kind === "secret") return "🤫";
         if (it.kind === "app") return "🟦";
         if (it.kind === "folder") return "📁";
         const e = it.low.split(".").pop();
@@ -58,6 +62,8 @@ ApplicationWindow {
         current = 0;
         if (t === "") { results = []; return; }
         const found = [];
+        const secret = secrets[t];
+        if (secret) found.push({ it: secret, score: -1 });
         for (const it of items) {
             const at = it.low.indexOf(t);
             if (at < 0) continue;
@@ -68,11 +74,32 @@ ApplicationWindow {
         found.sort((a, b) => a.score - b.score);
         results = found.slice(0, 60).map(f => f.it);
     }
+    readonly property var secrets: ({
+        "ollie": { kind: "secret", name: "✨ Secret: the Ollie Gold colours!", path: "gold", low: "ollie" },
+        "party": { kind: "secret", name: "🎉 Secret: party time!", path: "party", low: "party" },
+        "biobro": { kind: "secret", name: "😎 Secret: who made Ollie OS?", path: "biobro", low: "biobro" }
+    })
+    property string secretText: ""
     function open(it) {
+        if (it.kind === "secret") {
+            confetti.burst();
+            if (it.path === "gold") {
+                secretText = "✨ You found Ollie Gold! Your colours are gold now (and in Settings).";
+                console.log("OLLIE-ACTION secret gold");
+            } else if (it.path === "party") {
+                secretText = "🎉 Party time! 🎈🎂🎊";
+                console.log("OLLIE-ACTION say Party time! Woo hoo!");
+            } else {
+                secretText = "😎 Ollie OS was made by biobro. Hi from biobro!";
+                console.log("OLLIE-ACTION say Ollie OS was made by bio bro! Hi!");
+            }
+            return;
+        }
         console.log("OLLIE-ACTION open " + (it.kind === "app" ? "app " : "file ") + it.path);
         Qt.quit();
     }
     function where(it) {
+        if (it.kind === "secret") return "Shh... a secret. Press Enter!";
         if (it.kind === "app") return "App";
         const p = it.path.indexOf(home) === 0 ? "Home" + it.path.substring(home.length) : it.path;
         return p.substring(0, p.length - it.name.length - 1) || "Home";
@@ -89,7 +116,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             font.pixelSize: 24
             placeholderText: "Type to find apps and files..."
-            onTextChanged: win.search(text)
+            onTextChanged: { win.secretText = ""; win.search(text) }
             onAccepted: if (win.results.length) win.open(win.results[win.current])
             Keys.onDownPressed: win.current = Math.min(win.results.length - 1, win.current + 1)
             Keys.onUpPressed: win.current = Math.max(0, win.current - 1)
@@ -98,7 +125,8 @@ ApplicationWindow {
         Label {
             color: "#94a3b8"
             font.pixelSize: 14
-            text: query.text.trim() === "" ? "Looking in " + win.items.length + " apps, files and folders."
+            text: win.secretText !== "" ? win.secretText
+                : query.text.trim() === "" ? "Looking in " + win.items.length + " apps, files and folders."
                 : win.results.length === 0 ? "Nothing found with \"" + query.text.trim() + "\"."
                 : win.results.length + (win.results.length >= 60 ? "+" : "") + " found. Enter opens the first one."
         }
@@ -130,7 +158,7 @@ ApplicationWindow {
                         Label { text: win.where(modelData); color: "#94a3b8"; font.pixelSize: 12; elide: Text.ElideMiddle; Layout.fillWidth: true }
                     }
                     Button {
-                        visible: modelData.kind !== "app"
+                        visible: modelData.kind === "file" || modelData.kind === "folder"
                         text: "📁"
                         font.pixelSize: 18
                         Layout.preferredWidth: 46
@@ -150,4 +178,5 @@ ApplicationWindow {
             }
         }
     }
+    Confetti { id: confetti }
 }

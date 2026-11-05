@@ -1,6 +1,8 @@
 // Ollie OS Welcome (ollie-welcome): big buttons for what you'd do first.
 // Each says what to open on the console (OLLIE-ACTION open NAME), and the
 // tick box whether to open at every start (OLLIE-ACTION at-start on|off).
+// A secret: the code ↑ ↑ ↓ ↓ ← → ← → B A makes a rainbow and confetti, and
+// unlocks the Ollie Gold colours in Settings (OLLIE-ACTION secret konami).
 // Arguments: atstart=on|off store=on|off.
 import QtQuick
 import QtQuick.Controls
@@ -34,11 +36,27 @@ ApplicationWindow {
         { icon: "🔔", label: "New from biobro", hint: "Updates to install", act: "updates" }
     ].concat(arg("store") === "on" ? [{ icon: "🛍️", label: "App store", hint: "More apps (Discover)", act: "store" }] : [])
 
+    // The secret code.
+    readonly property var code: [Qt.Key_Up, Qt.Key_Up, Qt.Key_Down, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right, Qt.Key_Left, Qt.Key_Right, Qt.Key_B, Qt.Key_A]
+    property int codeAt: 0
+    property bool rainbow: false
+    function key(k) {
+        codeAt = k === code[codeAt] ? codeAt + 1 : (k === code[0] ? 1 : 0);
+        if (codeAt === code.length) {
+            codeAt = 0; rainbow = true; confetti.burst();
+            act("secret konami");
+        }
+    }
+    Item { id: keys; focus: true; Keys.onPressed: (e) => win.key(e.key) }
+
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
-            GradientStop { position: 0; color: "#0f766e" }
-            GradientStop { position: 1; color: "#083c38" }
+            GradientStop { position: 0; color: win.rainbow ? "#ef4444" : "#0f766e" }
+            GradientStop { position: 0.25; color: win.rainbow ? "#f59e0b" : "#0d6b64" }
+            GradientStop { position: 0.5; color: win.rainbow ? "#22c55e" : "#0b5e57" }
+            GradientStop { position: 0.75; color: win.rainbow ? "#3b82f6" : "#0a4f49" }
+            GradientStop { position: 1; color: win.rainbow ? "#a855f7" : "#083c38" }
         }
     }
 
@@ -57,7 +75,7 @@ ApplicationWindow {
             ColumnLayout {
                 spacing: 2
                 Label { text: "Welcome to Ollie OS!"; color: "white"; font.pixelSize: 34; font.bold: true }
-                Label { text: "What do you want to do first?"; color: "#ccfbf1"; font.pixelSize: 18 }
+                Label { text: win.rainbow ? "🌈 You found the secret code! Ollie Gold is in Settings now. ✨" : "What do you want to do first?"; color: "#ccfbf1"; font.pixelSize: 18 }
             }
         }
 
@@ -109,4 +127,5 @@ ApplicationWindow {
             Button { text: "Close"; onClicked: Qt.quit() }
         }
     }
+    Confetti { id: confetti }
 }

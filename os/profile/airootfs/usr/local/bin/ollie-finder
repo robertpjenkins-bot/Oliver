@@ -3,7 +3,8 @@
 # them in its name shows up at once; Enter (or a click) opens it. It looks
 # through the apps menu and the home folder (not hidden folders) when it
 # opens; the window is finder.qml, which says on its console what to open
-# (OLLIE-ACTION open app|file PATH).
+# (OLLIE-ACTION open app|file PATH). Its secrets: "ollie" unlocks the Ollie
+# Gold colours (OLLIE-ACTION secret gold), and Ollie says things (say TEXT).
 set -uo pipefail
 export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
 export QML_XHR_ALLOW_FILE_READ=1
@@ -31,6 +32,14 @@ while IFS= read -r line; do
         (setsid gio launch "$f" >/dev/null 2>&1 || setsid kioclient exec "$f" >/dev/null 2>&1 &)
         ;;
     *"OLLIE-ACTION open file "*) (setsid xdg-open "${line#*OLLIE-ACTION open file }" >/dev/null 2>&1 &) ;;
+    *"OLLIE-ACTION secret gold"*)
+        cfg="$HOME/.config/ollie"
+        mkdir -p "$cfg" && touch "$cfg/gold-unlocked"
+        mode="$(sed -n 's/^MODE=//p' "$cfg/colours" 2>/dev/null | tail -n 1)"
+        (/usr/local/bin/ollie-colours "${mode:-dark}" gold --background &)
+        (/usr/local/bin/ollie-say "You found a secret! Ollie Gold!" &)
+        ;;
+    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
     *"OLLIE-ACTION show "*) (setsid xdg-open "$(dirname "${line#*OLLIE-ACTION show }")" >/dev/null 2>&1 &) ;;
     esac
 done < <(qml6 /usr/local/share/ollie/finder.qml -- "index=$index" "home=$HOME" 2>&1)

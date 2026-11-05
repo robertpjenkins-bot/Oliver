@@ -18,7 +18,10 @@ while :; do
     again="" adds=() covers=""
     while IFS= read -r line; do
         case "$line" in
-        *"OLLIE-ACTION play "*) (setsid python3 -I "$helper" launch "${line#*OLLIE-ACTION play }" >/dev/null 2>&1 &) ;;
+        *"OLLIE-ACTION play "*)
+            (setsid python3 -I "$helper" launch "${line#*OLLIE-ACTION play }" >/dev/null 2>&1 &)
+            (/usr/local/bin/ollie-say "Let's play!" &)
+            ;;
         *"OLLIE-ACTION add "*) adds+=("${line#*OLLIE-ACTION add }") ;;
         *"OLLIE-ACTION refresh"*) again=1 ;;
         *"OLLIE-ACTION covers"*) again=1 covers=1 ;;

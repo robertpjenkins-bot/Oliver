@@ -4,6 +4,7 @@
 // bored and sleepy as time goes by, even while its window is shut, and it
 // grows up: a baby, a kid, then a grown-up with a crown. It can walk along
 // the bottom of the screen too (Pet on the desktop).
+// Secret: call it Ollie and it is golden.
 // Says on the console: OLLIE-ACTION say TEXT (Ollie's voice), desktop on|off.
 // Arguments: config=FILE (where the pet is kept), mood=FILE (one line, for
 // the Game Overlay), desktop=on|off.
@@ -158,6 +159,7 @@ ApplicationWindow {
         y: scene.height * 0.69 - height + 8
         mood: win.mood
         stage: win.stage
+        golden: saved.name.toLowerCase() === "ollie"
         visible: !games.playing || games.which === "catch" || games.which === "dance"
         MouseArea {
             anchors.fill: parent
@@ -472,7 +474,10 @@ ApplicationWindow {
                 Button { id: done; text: "Hello!"; font.pixelSize: 18; enabled: nameField.text.trim() !== ""; Layout.alignment: Qt.AlignHCenter; highlighted: true
                     onClicked: {
                         saved.name = nameField.text.trim(); saved.born = Date.now(); saved.stageSeen = 0;
-                        win.say("Hi! I'm " + saved.name + "! 💖"); win.voice("Hi! I'm " + saved.name + "!"); win.hearts(4); win.writeMood();
+                        if (saved.name.toLowerCase() === "ollie") {   // a secret
+                            win.say("✨ A golden Ollie! You found a secret! ✨"); win.voice("Wow! I'm Ollie, the golden one! You found a secret!"); win.hearts(10);
+                        } else { win.say("Hi! I'm " + saved.name + "! 💖"); win.voice("Hi! I'm " + saved.name + "!"); win.hearts(4); }
+                        win.writeMood();
                     } }
             }
         }

@@ -16,7 +16,7 @@ fps=on
 grep -qx 'no_display' "$mango" 2>/dev/null && fps=off
 args=(
     "steam=$(flag steam-in-window)" "fps=$fps" "overlay=$(/usr/local/bin/ollie-overlay --which)" "voice=$(flag no-voice)" "boost=$(flag no-speed-boost)" "sound=$(flag no-startup-sound)"
-    "mode=$(setting MODE "$cfg/colours")" "colour=$(setting COLOUR "$cfg/colours")"
+    "mode=$(setting MODE "$cfg/colours")" "colour=$(setting COLOUR "$cfg/colours")" "gold=$([[ -e $cfg/gold-unlocked ]] && echo on || echo off)"
     "screentime=$(setting SCREEN_TIME /etc/ollie/parent.conf)" "scanner=$(setting SCANNER /etc/ollie/parent.conf)"
     "pin=$(setting PIN_MD5 /etc/ollie/parent.conf)" "left=$(/usr/local/bin/ollie-parent left)"
     "updates=$(cat /etc/ollie/update-checker 2>/dev/null || echo off)"

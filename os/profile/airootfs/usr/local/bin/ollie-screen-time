@@ -25,7 +25,10 @@ as_user() { # as_user NAME COMMAND...: in their desktop
     shift
     systemd-run --user --machine="$user@.host" --quiet --collect "$@" >/dev/null 2>&1
 }
-tell() { as_user "$1" kdialog --title "Screen Time" --passivepopup "$2" 15; }
+tell() { # tell NAME TEXT [SPOKEN]: a note on their screen, and Ollie says it
+    as_user "$1" kdialog --title "Screen Time" --passivepopup "$2" 15
+    [[ -n ${3:-} ]] && as_user "$1" /usr/local/bin/ollie-say "$3"
+}
 close_games() {
     local user=$1 pid
     for pid in $(pgrep -u "$user" -f 'reaper.*SteamLaunch'); do
@@ -43,8 +46,8 @@ while sleep 60; do
         echo $(($(cat "$STATE/used-$day" 2>/dev/null || echo 0) + 1)) >"$STATE/used-$day"
         left=$((left - 1))
         case $left in
-        10 | 5) tell "$user" "⏰ $left minutes of screen time left today. Time to save your game!" ;;
-        1) tell "$user" "⏰ 1 minute of screen time left today! Save your game now." ;;
+        10 | 5) tell "$user" "⏰ $left minutes of screen time left today. Time to save your game!" "$left minutes left! Time to save your game!" ;;
+        1) tell "$user" "⏰ 1 minute of screen time left today! Save your game now." "One minute left! Save your game now!" ;;
         0) close_games "$user" ;;
         esac
     fi
