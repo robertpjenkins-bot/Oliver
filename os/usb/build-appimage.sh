@@ -271,11 +271,11 @@ build_tracker_updater
 # next to get the packages they use.
 build_game_pack_updater() {
     local f files=() air="$os/profile/airootfs"
-    for f in usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox,update-checker,say,overlay} \
-        usr/local/lib/ollie/{speed-boost-hook,boot-splash} usr/local/share/ollie/{welcome.qml,Confetti.qml,settings.qml,timesup.qml,updates.qml,scanner-words.txt} \
-        usr/local/share/applications/{steam,firefox}.desktop usr/share/applications/ollie-{minecraft,os-update,welcome,settings,scanner-notes,update-checker}.desktop \
+    for f in usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox,update-checker,say,overlay,recovery} \
+        usr/local/lib/ollie/{speed-boost-hook,boot-splash,recovery-helper,recovery-cleanup} usr/local/share/ollie/{welcome.qml,Confetti.qml,settings.qml,timesup.qml,updates.qml,recovery.qml,scanner-words.txt} \
+        usr/local/share/applications/{steam,firefox}.desktop usr/share/applications/ollie-{minecraft,os-update,welcome,settings,scanner-notes,update-checker,recovery}.desktop \
         usr/share/icons/hicolor/scalable/apps/ollie-minecraft.svg etc/xdg/autostart/ollie-{welcome,startup-sound}.desktop \
-        etc/systemd/user/ollie-speed-boost.service etc/systemd/user/ollie-update-checker.{service,timer} etc/systemd/system/ollie-{screen-time,typing-scanner}.service \
+        etc/systemd/user/ollie-speed-boost.service etc/systemd/user/ollie-update-checker.{service,timer} etc/systemd/system/ollie-recovery-cleanup.{service,timer} etc/systemd/system/ollie-{screen-time,typing-scanner}.service \
         etc/systemd/system/multi-user.target.wants/ollie-{screen-time,typing-scanner}.service \
         etc/gamemode.ini etc/environment.d/20-ollie-games.conf etc/udev/rules.d/71-ollie-controllers.rules etc/udev/rules.d/72-ollie-typing-scanner.rules \
         etc/plymouth/plymouthd.conf etc/mkinitcpio.conf.d/ollie-splash.conf usr/share/sounds/ollie/startup.ogg; do
@@ -290,7 +290,7 @@ build_game_pack_updater() {
         return 0
     }
     build_apps_updater Ollie-OS-Game-Pack-Updater-x86_64.AppImage "Ollie OS Game Pack Updater" \
-        "the Game Pack (Game Mode, Speed Boost, FPS counter, Minecraft, Welcome, Settings, Screen Time, Typing Scanner, Firefox password)" \
+        "the Game Pack (Game Mode, Speed Boost, FPS counter, Minecraft, Welcome, Settings, Screen Time, Typing Scanner, Firefox password, Recovery Mode)" \
         /usr/local/bin/ollie-os-update ollie-game-pack.after-install "${files[@]}"
 }
 build_game_pack_updater

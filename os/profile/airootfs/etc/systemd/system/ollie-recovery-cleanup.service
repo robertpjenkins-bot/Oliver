@@ -1,0 +1,8 @@
+# Removes the old Ollie OS after Recovery Mode put a newer one on (switched
+# on by Recovery Mode in the new one only).
+[Unit]
+Description=Ollie OS: remove the old version after Recovery Mode
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ollie/recovery-cleanup

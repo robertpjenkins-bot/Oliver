@@ -185,6 +185,9 @@ file_permissions=(
   ["/usr/local/bin/ollie-spelling"]="0:0:755"
   ["/usr/local/bin/ollie-world"]="0:0:755"
   ["/usr/local/lib/ollie/pads.py"]="0:0:755"
+  ["/usr/local/bin/ollie-recovery"]="0:0:755"
+  ["/usr/local/lib/ollie/recovery-helper"]="0:0:755"
+  ["/usr/local/lib/ollie/recovery-cleanup"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true

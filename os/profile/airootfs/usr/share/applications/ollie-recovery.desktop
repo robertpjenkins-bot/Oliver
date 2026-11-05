@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Recovery Mode
+GenericName=Put a newer Ollie OS on
+Comment=Write an Ollie OS ISO over this one, keeping your files, passwords and logins
+Exec=/usr/local/bin/ollie-recovery
+Icon=system-reboot
+Categories=System;
+Keywords=recovery;update;upgrade;iso;reinstall;restore;
+Terminal=false

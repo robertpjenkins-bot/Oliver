@@ -60,5 +60,6 @@ while IFS= read -r line; do
         fi
         ;;
     notes) /usr/local/bin/ollie-scanner-notes --unlocked & ;; # Settings asked for the PIN already
+    recovery) (setsid env -u QT_FORCE_STDERR_LOGGING -u QT_MESSAGE_PATTERN -u QT_LOGGING_RULES /usr/local/bin/ollie-recovery >/dev/null 2>&1 &) ;;
     esac
 done < <(qml6 /usr/local/share/ollie/settings.qml -- "${args[@]}" 2>&1)

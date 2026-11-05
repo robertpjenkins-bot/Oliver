@@ -43,6 +43,12 @@ Made by an awesome 8 year old. Great for gaming: comes with Steam, Wine and more
 - **Latest updates** – see a list of every update and install them in one click
 - **Update Ollie OS** – one click updates everything
 
+**🛟 Recovery Mode**
+- Get newer versions from an ISO file: open **Recovery Mode** (in the apps menu, or Ollie OS Settings), pick the Ollie OS .iso and press **Write**
+- It asks if it's an Ollie OS version. If yes, it asks if you want to **keep your files, username and password, Wi-Fi passwords and website logins**: everything comes with you to the new version except the OS itself
+- Safe: the new version is built next to the old one and only swapped in at the end. If anything goes wrong, nothing changes. For 10 minutes after, "Ollie OS (before the update)" is on the start-up menu in case you need to go back
+- Not an Ollie OS ISO? It can write it over the whole drive instead (it warns you first, and asks for the parent PIN if there is one)
+
 **👪 For grown-ups (in Ollie OS Settings, locked with a parent PIN)**
 - **Screen Time** – a daily limit with warnings, then "come back tomorrow" 🌙
 - **Inappropriate Typing Scanner** – asked about on the first start. It only notes bad words (even misspelled ones), and the notes open only with the parent PIN

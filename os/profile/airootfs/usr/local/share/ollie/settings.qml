@@ -1,7 +1,7 @@
 // Ollie OS Settings (ollie-settings). Each change is said on the console as
 // OLLIE-ACTION ... for ollie-settings to make:
 //   steam|fps|boost|sound on|off     colours dark|light teal|purple|red|gold [bg]
-//   screen-time MINUTES   extra MINUTES   scanner on|off   pin NEWPIN   notes
+//   screen-time MINUTES   extra MINUTES   scanner on|off   pin NEWPIN   notes   recovery
 // Arguments (what is on now): steam= fps= boost= sound= mode= colour=
 // screentime= scanner= pin= (the PIN's check sum) left= (minutes left today)
 // gold=on|off (the secret Ollie Gold colour, once found in Ollie Finder)
@@ -94,6 +94,10 @@ ApplicationWindow {
                         text: "Start-up sound"
                         checked: win.arg("sound") !== "off"
                         onToggled: win.act("sound " + (checked ? "on" : "off"))
+                    }
+                    Button {
+                        text: "🛟  Recovery Mode: put a newer Ollie OS on from an ISO file"
+                        onClicked: win.act("recovery")
                     }
                 }
             }

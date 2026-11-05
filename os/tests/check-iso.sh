@@ -163,6 +163,10 @@ check "World Explorer's map" python3 -c "import json,sys; assert len(json.load(o
 check "Ollie's voice" bash -c "test -x '$r/usr/local/bin/ollie-say' && test -x '$r/usr/bin/espeak-ng'"
 check "the in-game overlay switch" test -x "$r/usr/local/bin/ollie-overlay"
 check "ffmpeg for the Animator and the Sound Board" test -x "$r/usr/bin/ffmpeg"
+check "Recovery Mode in the menu" test -f "$r/usr/share/applications/ollie-recovery.desktop"
+check "Recovery Mode's window and helper" bash -c "test -s '$r/usr/local/share/ollie/recovery.qml' && test -x '$r/usr/local/lib/ollie/recovery-helper' && test -x '$r/usr/local/lib/ollie/recovery-cleanup' && test -x '$r/usr/local/bin/ollie-recovery'"
+check "Recovery Mode's tools (btrfs, rsync, arch-chroot)" bash -c "test -x '$r/usr/bin/btrfs' && test -x '$r/usr/bin/rsync' && test -x '$r/usr/bin/arch-chroot'"
+check "the old-version cleanup is off until Recovery Mode switches it on" bash -c "test -f '$r/etc/systemd/system/ollie-recovery-cleanup.timer' && ! test -e '$r/etc/systemd/system/timers.target.wants/ollie-recovery-cleanup.timer'"
 check "the secret Ollie Gold background" test -s "$r/usr/share/wallpapers/OllieOS-Gold/contents/images/1920x1080.png"
 check "live USB starts without the start-up animation" grep -rq 'plymouth.enable=0' "$work/iso/loader/entries"
 

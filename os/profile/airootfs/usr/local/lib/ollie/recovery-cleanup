@@ -1,0 +1,25 @@
+#!/bin/bash
+# After Recovery Mode put a newer Ollie OS on this drive (recovery-helper):
+# once the new one has run for 10 minutes (ollie-recovery-cleanup.timer),
+# the old one is removed to free the space: its subvolume (@old-DATE, or an
+# old home after starting fresh), its kernel and its start-up menu entry
+# "Ollie OS (before the update)". Then this switches itself off.
+set -uo pipefail
+readonly TOP=/run/ollie-recovery-cleanup
+# Only from the new Ollie OS itself (not the old one started from the menu).
+[[ "$(findmnt -no FSROOT /)" == /@ && "$(findmnt -no FSTYPE /)" == btrfs ]] || exit 0
+mkdir -p "$TOP"
+mount -o subvolid=5 "$(findmnt -no SOURCE / | sed 's/\[.*//')" "$TOP" || exit 1
+for old in "$TOP"/@old-* "$TOP"/@broken-* "$TOP"/@home-old-*; do
+    [[ -d $old ]] || continue
+    # The subvolumes inside it first (systemd's /var/lib/machines and portables).
+    btrfs subvolume list -o "$old" 2>/dev/null | awk '{print $NF}' | sed 's|^<FS_TREE>/||' | sort -r |
+        while read -r sub; do btrfs subvolume delete "$TOP/$sub" >/dev/null 2>&1; done
+    btrfs subvolume delete "$old" >/dev/null && echo "Removed the old Ollie OS ($(basename "$old"))."
+done
+umount "$TOP"
+rm -rf /boot/ollie-before-update
+rm -f /boot/loader/entries/ollie-before-update.conf
+rm -f /etc/systemd/system/timers.target.wants/ollie-recovery-cleanup.timer
+systemctl daemon-reload 2>/dev/null
+exit 0
