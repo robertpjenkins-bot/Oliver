@@ -1,0 +1,24 @@
+#!/bin/bash
+# Couch Co-op: which controller is which player (coop.qml, fed live by
+# /usr/local/lib/ollie/pads.py), then playing together.
+set -uo pipefail
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+export QML_XHR_ALLOW_FILE_READ=1
+pads="${XDG_RUNTIME_DIR:-/tmp}/ollie-pads-$$.json"
+echo '{"players": []}' >"$pads"
+python3 -I /usr/local/lib/ollie/pads.py "$pads" &
+watcher=$!
+trap 'kill "$watcher" 2>/dev/null; rm -f -- "$pads" "$pads.new"' EXIT
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
+    *"OLLIE-ACTION steam"*) (setsid /usr/local/bin/ollie-steam --game-mode >/dev/null 2>&1 &) ;;
+    *"OLLIE-ACTION supertuxkart"*)
+        if command -v supertuxkart >/dev/null; then
+            (setsid supertuxkart >/dev/null 2>&1 &)
+        else
+            (setsid konsole -e bash -c 'printf "\n\e[1m  Getting SuperTuxKart (free, only this once)\e[0m\n\n"; sudo -n pacman -S --needed --noconfirm supertuxkart || sudo -n pacman -Syu --needed --noconfirm supertuxkart; command -v supertuxkart >/dev/null && (setsid supertuxkart >/dev/null 2>&1 &); sleep 2' >/dev/null 2>&1 &)
+        fi
+        ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/coop.qml -- "pads=$pads" 2>&1)

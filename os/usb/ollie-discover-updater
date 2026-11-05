@@ -1,0 +1,71 @@
+#!/bin/bash
+# Discover Updater: adds Discover, KDE's app store, to the Ollie OS this
+# computer runs (an installed one, or a USB drive that keeps its changes),
+# with Flathub's apps in it, then opens it. No password: Ollie OS's admin
+# rights need none. Discover and Flatpak come from the Arch Linux servers, so
+# Ollie OS's programs are brought up to date along with them (as Arch
+# Linux needs: a program from today next to ones from last month may not
+# start). Running it again only brings everything up to date.
+#
+#   ollie-discover-updater
+set -uo pipefail
+
+readonly TITLE="Discover Updater"
+readonly PACKAGES=(discover flatpak packagekit-qt6)
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
+say() { printf '\n%s==>%s %s%s%s\n' "$teal$bold" "$reset" "$bold" "$*" "$reset"; }
+die() {
+    printf '\n%sError:%s %s\n\nPress Enter to close.' "$red$bold" "$reset" "$*" >&2
+    read -r _ || true
+    exit 1
+}
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# --- A terminal to talk in -----------------------------------------------------------
+if [[ ! -t 0 && -z "${OLLIE_DISCOVER_IN_TERMINAL:-}" ]]; then
+    export OLLIE_DISCOVER_IN_TERMINAL=1
+    self="${APPIMAGE:-$(realpath -- "$0")}"
+    for term in konsole gnome-terminal kgx xfce4-terminal xterm; do
+        have "$term" || continue
+        case "$term" in
+        konsole) exec konsole --hold -e "$self" "$@" ;;
+        gnome-terminal | kgx) exec "$term" -- "$self" "$@" ;;
+        *) exec "$term" -hold -e "$self" "$@" ;;
+        esac
+    done
+    have kdialog && kdialog --title "$TITLE" --error "No terminal program found. Run this from a terminal instead."
+    exit 1
+fi
+
+printf '\n%s  %s%s  (adds Discover, the app store, to Ollie OS)\n' "$bold" "$TITLE" "$reset"
+[[ -x /usr/local/bin/ollie-first-setup ]] || die "this is not Ollie OS. $TITLE adds Discover to Ollie OS: run it there."
+sudo -n true 2>/dev/null ||
+    die "this Ollie OS asks for a password for admin tasks, and $TITLE never asks for one. Bring Ollie OS up to date with the Ollie OS Updater, then try again."
+if [[ -d /run/archiso ]] && ! grep -qE 'cow_label=|cow_device=' /proc/cmdline; then
+    echo "  Ollie OS is running from its USB drive without keeping changes: Discover will be gone when this computer restarts."
+fi
+
+# --- 1. The packages ------------------------------------------------------------------
+say "Getting Discover and Flatpak from the Arch Linux servers (and bringing Ollie OS up to date)"
+# The signing keys first (a fresh Ollie OS sets them up at its first start),
+# then the newest keyring, so packages signed since are trusted.
+sudo -n systemctl start ollie-keyring.service 2>/dev/null
+[[ -n "$(sudo -n ls /etc/pacman.d/gnupg 2>/dev/null)" ]] ||
+    { sudo -n pacman-key --init && sudo -n pacman-key --populate; } >/dev/null 2>&1
+sudo -n pacman -Sy --needed --noconfirm archlinux-keyring ||
+    die "could not reach the Arch Linux servers. Is the internet connected? Run this again to retry."
+sudo -n pacman -Su --needed --noconfirm "${PACKAGES[@]}" ||
+    die "installing Discover did not finish (see above). Run this again to retry."
+
+# --- 2. Flathub, the apps Discover shows ----------------------------------------------------
+say "Adding Flathub's apps to Discover"
+sudo -n flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo ||
+    echo "  (Could not add Flathub now; Discover still shows Arch Linux's apps. Running this again adds it.)"
+
+# The apps menu learns about it.
+have kbuildsycoca6 && kbuildsycoca6 >/dev/null 2>&1
+printf '\n%s  Done: Discover is in the apps menu (System > Discover). It opens now.%s\n' "$green$bold" "$reset"
+have plasma-discover && (setsid plasma-discover >/dev/null 2>&1 &)
+echo
+echo "Press Enter to close."
+read -r _ || true

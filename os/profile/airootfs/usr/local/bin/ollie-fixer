@@ -1,0 +1,154 @@
+#!/bin/bash
+# The Fixer: finds what is wrong and fixes it: Ollie OS out of room, Steam
+# that does not open, and broken system programs (good copies put back).
+# Opened from the app menu. It checks, shows what it found, and asks before
+# fixing anything. The work is done by ollie-fixer-helper (as root, through
+# Ollie OS's password-less sudo).
+set -uo pipefail
+
+readonly TITLE="The Fixer"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+list="$work/broken.txt"
+
+# Runs the helper with a progress bar.
+with_progress() { # with_progress TEXT scan|fix LIST
+    local bar total cur
+    bar="$(kdialog --title "$TITLE" --progressbar "$1" 100)"
+    sudo -n /usr/local/bin/ollie-fixer-helper "$2" "$3" 2>&1 | tee "$work/$2.log" |
+        while read -r word cur total _; do
+            [[ "$word" == PROGRESS && "$total" -gt 0 ]] &&
+                qdbus6 $bar Set "" value $((cur * 100 / total)) >/dev/null 2>&1
+        done
+    qdbus6 $bar close >/dev/null 2>&1
+}
+
+gb() { awk -v b="${1:-0}" 'BEGIN { printf "%.1f GB", b / 1e9 }'; }
+room() { df -B1 --output=avail "$1" 2>/dev/null | tail -n 1 | tr -d ' '; }
+readonly LOW=$((3 * 1000 * 1000 * 1000))
+
+# Out of room, apps fail in odd ways (Steam does not open at all): that first.
+out_of_room() {
+    kdialog --title "$TITLE" --yes-label "Choose a drive" --no-label "Not now" --warningyesno \
+        "Ollie OS is almost out of room: only $(gb "$1") is free for what you save.
+That is why apps like Steam stop opening.
+
+Ollie OS Storage keeps everything you save (Steam and its games, downloads,
+settings) on a drive with room instead, or in a folder on one." &&
+        exec /usr/local/bin/ollie-storage
+}
+
+# Steam that does not open: its own program files (not the games) are put
+# back fresh, then it is started and watched.
+fix_steam() {
+    local dir="$HOME/.local/share/Steam" item log="$HOME/Desktop/Steam-problem.txt" spid
+    (($(room "$HOME") >= LOW)) || { out_of_room "$(room "$HOME")"; exit 0; }
+    kdialog --title "$TITLE" --yes-label "Reset Steam" --no-label "Cancel" --yesno \
+        "Steam's own program files are downloaded again (about 500 MB), as when it was
+first started. Your games, saves, logins and Proton versions stay." || exit 0
+    if pgrep -x steam >/dev/null; then
+        steam -shutdown >/dev/null 2>&1
+        for _ in $(seq 1 20); do pgrep -x steam >/dev/null || break; sleep 1; done
+        pkill -x steam 2>/dev/null
+        sleep 2
+    fi
+    if [[ -d $dir && ! -L $dir ]]; then
+        while IFS= read -r -d '' item; do
+            case "${item##*/}" in
+            steamapps | userdata | config | compatibilitytools.d) continue ;;
+            esac
+            rm -rf --one-file-system -- "${item:?}"
+        done < <(find "$dir" -mindepth 1 -maxdepth 1 -print0)
+    fi
+    rm -f "$HOME/.steam/steam" "$HOME/.steam/root" "$HOME/.steampid" "$HOME/.steampath"
+    steam >"$work/steam.log" 2>&1 &
+    spid=$!
+    # Up, once its window process runs; or gone, with what it said. (The
+    # launcher keeps running as long as Steam does.)
+    for _ in $(seq 1 120); do
+        pgrep -x steamwebhelper >/dev/null && {
+            kdialog --title "$TITLE" --msgbox "Steam is starting fresh. The first time, it downloads its own files before its window opens."
+            exit 0
+        }
+        kill -0 "$spid" 2>/dev/null || break
+        sleep 2
+    done
+    if kill -0 "$spid" 2>/dev/null; then
+        kdialog --title "$TITLE" --msgbox "Steam is still downloading its own files. Give it a few minutes; its window opens when it is done."
+        exit 0
+    fi
+    cp "$work/steam.log" "$log" 2>/dev/null
+    kdialog --title "$TITLE" --error "Steam stopped again. What it said last:
+
+$(tail -n 12 "$work/steam.log")
+
+All of it is on the desktop (Steam-problem.txt): DC - Debug Computer can help, or send it."
+    exit 1
+}
+
+home_room="$(room "$HOME")"
+((home_room >= LOW)) || out_of_room "$home_room"
+
+choice="$(kdialog --title "$TITLE" --menu "What is wrong?" \
+    steam "Steam does not open" \
+    room "Ollie OS is out of room" \
+    programs "A program is broken: check every system program")" || exit 0
+case "$choice" in
+steam) fix_steam ;;
+room) exec /usr/local/bin/ollie-storage ;;
+esac
+
+kdialog --title "$TITLE" --yes-label "Check" --no-label "Close" --yesno \
+    "The Fixer checks every system program for missing or damaged files,
+and puts good copies back from Ollie OS's own copy of the system.
+
+Your files and settings are never touched.
+
+Checking takes a few minutes." || exit 0
+
+with_progress "Checking every system program..." scan "$list"
+
+if [[ ! -s "$list" ]]; then
+    kdialog --title "$TITLE" --msgbox "Nothing is broken. All system programs are complete."
+    exit 0
+fi
+
+copies="$(grep -c '^copy' "$list")"
+downloads="$(grep -c '^download' "$list")"
+programs="$(cut -f2 "$list" | sort -u | tr '\n' ' ')"
+{
+    echo "The Fixer found $((copies + downloads)) damaged or missing file(s) in:"
+    echo
+    echo "  $programs"
+    echo
+    echo "Files:"
+    cut -f3 "$list" | sed 's/^/  /'
+} >"$work/report.txt"
+
+msg="Found $((copies + downloads)) damaged or missing file(s) in:
+$programs
+
+Fix them now?"
+if ((downloads > 0)); then
+    msg="$msg
+
+$downloads of them belong to programs updated since Ollie OS was made, so
+good copies are downloaded from the internet (it needs to be connected)."
+fi
+kdialog --title "$TITLE" --textbox "$work/report.txt" 700 400
+kdialog --title "$TITLE" --yes-label "Fix" --no-label "Not now" --yesno "$msg" || exit 0
+
+with_progress "Fixing..." fix "$list"
+
+fixed="$(grep -c '^fixed' "$work/fix.log")"
+failed="$(grep -c '^NOT FIXED' "$work/fix.log")"
+cp "$work/fix.log" "$HOME/Desktop/The-Fixer-report.txt" 2>/dev/null || true
+if ((failed == 0)); then
+    kdialog --title "$TITLE" --msgbox "All fixed. Restart the computer if a program still misbehaves.
+
+A report is on the desktop (The-Fixer-report.txt)."
+else
+    kdialog --title "$TITLE" --sorry "Fixed $fixed, but $failed could not be fixed (is the internet connected?).
+
+A report is on the desktop (The-Fixer-report.txt). DC - Debug Computer can help find out more."
+fi

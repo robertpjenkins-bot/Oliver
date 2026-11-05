@@ -1,0 +1,11 @@
+# Switched on when the first-start question (or Ollie OS Settings) says so:
+# ollie-update-checker --enable.
+[Unit]
+Description=Check for new Ollie OS updates a few minutes after the desktop starts, then every 4 hours
+
+[Timer]
+OnStartupSec=3min
+OnUnitActiveSec=4h
+
+[Install]
+WantedBy=timers.target

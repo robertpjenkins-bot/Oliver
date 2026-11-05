@@ -1,0 +1,747 @@
+#!/bin/bash
+# Ollie OS Drive Doctor: pick a drive with Ollie OS on it, check that it is
+# all good, and fix what is not, so it starts on any computer:
+#
+#   - new computers, Dells, Macs and the Steam Machine (UEFI);
+#   - older computers, including older Dells (BIOS, "Legacy" boot);
+#   - and its shared part opens on Windows, macOS and Linux.
+#
+# It works on both kinds of Ollie OS drive:
+#   - a USB drive made by Ollie OS USB Maker (or with Ollie OS copied onto it);
+#   - a drive Ollie OS was installed onto with "Install Ollie OS".
+#
+# Nothing is changed without asking first. Most fixes need no password (they
+# go through udisks, like the file manager); writing the start-up code for
+# older computers, and repairing an installed system, ask for it.
+#
+#   ollie-doctor [DRIVE]
+set -uo pipefail
+
+readonly MIB=$((1024 * 1024))
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' yellow=$'\e[33m' reset=$'\e[0m'
+say() { printf '\n%s==>%s %s%s%s\n' "$teal$bold" "$reset" "$bold" "$*" "$reset"; }
+ok() { printf '  %sok%s     %s\n' "$green" "$reset" "$*"; }
+found() { printf '  %sFOUND%s  %s\n' "$yellow$bold" "$reset" "$*"; problems=$((problems + 1)); }
+fixed() { printf '  %sfixed%s  %s\n' "$green$bold" "$reset" "$*"; fixes=$((fixes + 1)); }
+note() { printf '         %s\n' "$*"; }
+die() {
+    printf '\n%sError:%s %s\n' "$red$bold" "$reset" "$*" >&2
+    exit 1
+}
+have() { command -v "$1" >/dev/null 2>&1; }
+ask() { # ask VAR "question" [default]
+    local reply
+    read -rp "$2${3:+ [$3]} " reply || die "no answer, stopped."
+    printf -v "$1" '%s' "${reply:-${3:-}}"
+}
+confirm() { # confirm "question": Enter or y means yes
+    local a
+    ask a "  $1 [Y/n]"
+    [[ "$a" != [nN]* ]]
+}
+
+here="$(dirname "$(readlink -f "$0")")"
+# Start-up code for older computers, carried inside the AppImage.
+syslinux_dir="${OLLIE_DOCTOR_SYSLINUX:-$here/../lib/ollie-doctor/syslinux}"
+problems=0 fixes=0 pick=""
+
+# --- A terminal to talk in -------------------------------------------------------
+if [[ ! -t 0 && -z "${OLLIE_DOCTOR_IN_TERMINAL:-}" ]]; then
+    export OLLIE_DOCTOR_IN_TERMINAL=1
+    self="${APPIMAGE:-$(realpath -- "$0")}"
+    for term in konsole gnome-terminal kgx xfce4-terminal xterm; do
+        have "$term" || continue
+        case "$term" in
+        konsole) exec konsole --hold -e "$self" "$@" ;;
+        gnome-terminal | kgx) exec "$term" -- "$self" "$@" ;;
+        *) exec "$term" -hold -e "$self" "$@" ;;
+        esac
+    done
+    msg="No terminal program found. Run this from a terminal instead."
+    have kdialog && kdialog --error "$msg"
+    have zenity && zenity --error --text="$msg"
+    die "$msg"
+fi
+
+printf '\n%s  Ollie OS Drive Doctor%s  (checks a drive with Ollie OS on it and fixes it)\n' "$bold" "$reset"
+
+# --- Doing things to drives: udisks without a password, or directly as root ------------
+readonly UD=org.freedesktop.UDisks2
+use_udisks=false
+if [[ $EUID -ne 0 && -z "${OLLIE_DOCTOR_NO_UDISKS:-}" ]] && have busctl && have udisksctl &&
+    busctl --system status "$UD" >/dev/null 2>&1; then
+    use_udisks=true
+fi
+ud() { # ud OBJECT INTERFACE METHOD SIGNATURE ARGS...
+    busctl --system --timeout=900 --allow-interactive-authorization=no call \
+        "$UD" "$1" "$UD.$2" "$3" "${@:4}"
+}
+ud_obj() { echo "/org/freedesktop/UDisks2/block_devices/$(basename -- "$1")"; }
+
+# Root, for the few fixes udisks cannot do. Asks for the password once.
+as_root() {
+    if [[ $EUID -eq 0 ]]; then
+        "$@"
+    elif have sudo; then
+        sudo "$@"
+    elif have pkexec; then
+        pkexec "$@"
+    else
+        echo "  (no sudo or pkexec to run: $*)" >&2
+        return 1
+    fi
+}
+root_ready=false
+get_root() {
+    $root_ready && return 0
+    [[ $EUID -eq 0 ]] && { root_ready=true; return 0; }
+    echo "  This fix needs the administrator password (on SteamOS, set one with  passwd  in Konsole)."
+    if have sudo && sudo -v; then
+        root_ready=true
+        return 0
+    fi
+    echo "  Without the password this fix is skipped."
+    return 1
+}
+
+mounted_at() { findmnt -no TARGET "$1" 2>/dev/null | head -n1; }
+mount_part() { # mount_part PART -> prints where it is mounted
+    local m
+    m="$(mounted_at "$1")"
+    if [[ -z "$m" ]]; then
+        if $use_udisks; then
+            udisksctl mount --no-user-interaction -b "$1" >/dev/null 2>&1 || true
+        elif [[ $EUID -eq 0 ]]; then
+            m="$(mktemp -d /tmp/ollie-doctor.XXXXXX)"
+            mount "$1" "$m" 2>/dev/null || { rmdir "$m"; m=""; }
+        fi
+        [[ -n "$m" ]] || m="$(mounted_at "$1")"
+    fi
+    [[ -n "$m" ]] && echo "$m"
+}
+unmount_part() { # unmount_part PART
+    local m
+    m="$(mounted_at "$1")"
+    [[ -n "$m" ]] || return 0
+    sync
+    if $use_udisks; then
+        udisksctl unmount --no-user-interaction -b "$1" >/dev/null 2>&1
+    else
+        as_root umount "$1" 2>/dev/null
+        [[ "$m" == /tmp/ollie-doctor.* ]] && rmdir "$m" 2>/dev/null
+    fi
+    [[ -z "$(mounted_at "$1")" ]]
+}
+fs_check() { # fs_check PART FSTYPE -> 0 when healthy, 1 when damaged, 2 when it cannot tell
+    local out
+    if $use_udisks; then
+        out="$(ud "$(ud_obj "$1")" Filesystem Check 'a{sv}' 0 2>/dev/null)" || return 2
+        [[ "$out" == "b true" ]] && return 0 || return 1
+    elif [[ $EUID -eq 0 ]]; then
+        case "$2" in
+        vfat) fsck.vfat -n "$1" >/dev/null 2>&1 ;;
+        ext4) e2fsck -fn "$1" >/dev/null 2>&1 ;;
+        exfat) fsck.exfat -n "$1" >/dev/null 2>&1 ;;
+        *) return 2 ;;
+        esac
+        case $? in 0) return 0 ;; 1 | 4) return 1 ;; *) return 2 ;; esac
+    fi
+    return 2
+}
+fs_repair() { # fs_repair PART FSTYPE
+    if $use_udisks; then
+        [[ "$(ud "$(ud_obj "$1")" Filesystem Repair 'a{sv}' 0 2>/dev/null)" == "b true" ]]
+    else
+        case "$2" in
+        vfat) as_root fsck.vfat -a "$1" >/dev/null 2>&1 ;;
+        ext4) as_root e2fsck -fy "$1" >/dev/null 2>&1; (($? < 4)) ;;
+        exfat) as_root fsck.exfat -y "$1" >/dev/null 2>&1 ;;
+        *) return 1 ;;
+        esac
+    fi
+}
+part_type() { lsblk -dno PARTTYPE "$1" 2>/dev/null | tr 'A-Z' 'a-z' | tr -d ' '; }
+part_flags() { # GPT attribute bits (or the MBR bootable flag) as a number
+    local f
+    if $use_udisks; then
+        f="$(busctl --system get-property "$UD" "$(ud_obj "$1")" "$UD.Partition" Flags 2>/dev/null | awk '{print $2}')"
+    else
+        f="$(lsblk -dno PARTFLAGS "$1" 2>/dev/null | tr -d ' ')"
+    fi
+    echo "$((${f:-0}))"
+}
+set_part_type() { # set_part_type PART GUID-OR-MBR-TYPE
+    if $use_udisks; then
+        ud "$(ud_obj "$1")" Partition SetType 'sa{sv}' "$2" 0 >/dev/null 2>&1
+    else
+        local disk num
+        disk="/dev/$(lsblk -dno PKNAME "$1")" num="$(cat "/sys/class/block/$(basename -- "$1")/partition")"
+        as_root sfdisk --part-type "$disk" "$num" "$2" >/dev/null 2>&1
+    fi
+}
+set_part_flags() { # set_part_flags PART FLAGS
+    if $use_udisks; then
+        ud "$(ud_obj "$1")" Partition SetFlags 'ta{sv}' "$2" 0 >/dev/null 2>&1
+    else
+        local disk num
+        disk="/dev/$(lsblk -dno PKNAME "$1")" num="$(cat "/sys/class/block/$(basename -- "$1")/partition")"
+        if [[ "$(lsblk -dno PTTYPE "$disk")" == gpt ]]; then
+            as_root sfdisk --part-attrs "$disk" "$num" LegacyBIOSBootable >/dev/null 2>&1
+        else
+            as_root sfdisk --activate "$disk" "$num" >/dev/null 2>&1
+        fi
+    fi
+}
+
+# --- How far it has got: the steps, and CPR on a giant micro SD card --------------------
+# Each step is a share of the whole scan. While something slow runs, a little
+# person gives the drive (a huge micro SD card) CPR, with the percentage.
+pct_from=0 pct_to=100
+step() { # step N OF "title"
+    pct_from=$(((($1 - 1) * 100) / $2)) pct_to=$((($1 * 100) / $2))
+    say "$1. $3  ($pct_from%)"
+}
+readonly CPR_UP=(
+    '          \O/                              '
+    '           |        __________________     '
+    '          / \      /                  |    '
+    '         /   \    |    MICRO SD       |    '
+    '                  |     256 TB        |    '
+    '                  |      (x_x)        |    '
+    '                  |___________________|    '
+)
+# shellcheck disable=SC2034 # used through a nameref in cpr_draw
+readonly CPR_DOWN=(
+    '                                           '
+    '           O__      __________________     '
+    '          /|  \___ /    \  |  /       |    '
+    '         / \      |    MICRO SD       |    '
+    '                  |     256 TB        |    '
+    '                  |      (>_<)        |    '
+    '                  |___________________|    '
+)
+# shellcheck disable=SC2034 # used through a nameref in cpr_draw
+readonly CPR_ALIVE=(
+    '          \O/   yay!                       '
+    '           |        __________________     '
+    '          / \      /                  |    '
+    '         /   \    |    MICRO SD       |    '
+    '                  |     256 TB    <3  |    '
+    '                  |      (^_^)        |    '
+    '                  |___________________|    '
+)
+cpr_lines=$((${#CPR_UP[@]} + 1))
+animate=false
+[[ -t 1 && -z "${OLLIE_DOCTOR_NO_ANIM:-}" ]] && animate=true
+cpr_draw() { # cpr_draw FRAME-NAME PCT TEXT [redraw]
+    local -n frame="$1"
+    local pct="$2" bar l filled
+    filled=$((pct / 5))
+    printf -v bar '%*s' "$filled" ''
+    bar="${bar// /#}"
+    printf -v l '%*s' $((20 - filled)) ''
+    bar="$bar${l// /-}"
+    [[ "${4:-}" == redraw ]] && printf '\e[%dA' "$cpr_lines"
+    for l in "${frame[@]}"; do printf '\e[2K%s%s%s\n' "$teal" "$l" "$reset"; done
+    printf '\e[2K  CPR in progress [%s] %s%3d%%%s  %s\n' "$bar" "$bold" "$pct" "$reset" "$3"
+}
+cpr_erase() {
+    local i
+    printf '\e[%dA' "$cpr_lines"
+    for ((i = 0; i < cpr_lines; i++)); do printf '\e[2K\n'; done
+    printf '\e[%dA' "$cpr_lines"
+}
+file_pos() { # file_pos PID FILE: how far the process (or a child) has read FILE
+    local p fd
+    for p in "$1" $(pgrep -P "$1" 2>/dev/null); do
+        for fd in /proc/"$p"/fd/*; do
+            [[ "$(readlink "$fd" 2>/dev/null)" == "$2" ]] || continue
+            awk '$1 == "pos:" {print $2; exit}' "/proc/$p/fdinfo/${fd##*/}" 2>/dev/null && return
+        done
+    done
+}
+CPR_OUT=""
+cpr() { # cpr "what it is doing" FILE-TO-FOLLOW|"" COMMAND... ; output in CPR_OUT
+    local text="$1" track="$2" out pid rc t=0 i=0 pct size pos shown=0
+    shift 2
+    out="$(mktemp)"
+    "$@" >"$out" 2>/dev/null &
+    pid=$!
+    if $animate; then
+        size=0
+        [[ -n "$track" ]] && size="$(stat -c %s "$track" 2>/dev/null || echo 0)"
+        shown=$pct_from
+        cpr_draw CPR_UP "$pct_from" "$text"
+        while kill -0 "$pid" 2>/dev/null; do
+            sleep 0.4
+            t=$((t + 4)) i=$((i + 1))
+            pos="$( ((size > 0)) && file_pos "$pid" "$track")"
+            if [[ -n "$pos" ]] && ((size > 0)); then
+                pct=$((pct_from + (pct_to - pct_from) * pos / size))
+            else
+                # No way to know: creep towards the end of this step.
+                pct=$((pct_from + (pct_to - pct_from) * t / (t + 200) * 95 / 100))
+            fi
+            ((pct > pct_to)) && pct=$pct_to
+            # Never go backwards.
+            ((pct < shown)) && pct=$shown
+            shown=$pct
+            if ((i % 2)); then cpr_draw CPR_DOWN "$pct" "$text" redraw; else cpr_draw CPR_UP "$pct" "$text" redraw; fi
+        done
+    fi
+    wait "$pid"
+    rc=$?
+    if $animate; then
+        ((rc == 0)) && { cpr_draw CPR_ALIVE "$pct_to" "$text" redraw; sleep 0.8; }
+        cpr_erase
+    fi
+    CPR_OUT="$(cat "$out")"
+    rm -f "$out"
+    return "$rc"
+}
+
+readonly ESP_TYPE=c12a7328-f81f-11d2-ba4b-00a0c93ec93b
+readonly LINUX_TYPE=0fc63daf-8483-4772-8e79-3d69d8477de4
+readonly WINDATA_TYPE=ebd0a0a2-b9e5-4433-87c0-68b6b72699c7
+
+# --- Which drive -----------------------------------------------------------------------
+disks_of() { # the disk(s) a mounted path lives on
+    local src
+    src="$(findmnt -no SOURCE --target "$1" 2>/dev/null)" || return 0
+    src="${src%%\[*}"
+    [[ -b "$src" ]] || return 0
+    lsblk -sno NAME,TYPE "$src" | awk '$2 == "disk" {gsub(/[^A-Za-z0-9]/, "", $1); print $1}'
+}
+protected=()
+for m in / /home /boot /boot/efi /var; do
+    while read -r d; do [[ -n "$d" ]] && protected+=("$d"); done < <(disks_of "$m")
+done
+is_protected() {
+    local p
+    for p in "${protected[@]}"; do [[ "$p" == "$1" ]] && return 0; done
+    return 1
+}
+# What is on a drive, in a few words.
+describe() { # describe DISK
+    local labels
+    labels="$(lsblk -lno LABEL,PARTLABEL,FSTYPE "$1" 2>/dev/null | tr '\n' ' ')"
+    case "$labels" in
+    *OLLIE_ROOT* | *"OLLIE_BOOT"*btrfs*) echo "Installed Ollie OS" ;;
+    *OLLIE_DATA*) echo "Ollie OS USB (USB Maker)" ;;
+    *OLLIE_* | *ARCH_*) echo "Ollie OS" ;;
+    *) echo "" ;;
+    esac
+}
+
+dev="${1:-}"
+if [[ -z "$dev" ]]; then
+    say "Drives you can check"
+    echo
+    disks=()
+    while read -r name type; do
+        [[ "$type" == disk ]] || continue
+        case "$name" in loop* | zram* | sr* | ram*) continue ;; esac
+        is_protected "$name" && continue
+        disks+=("$name")
+        what="$(describe "/dev/$name")"
+        printf '  %d) /dev/%-9s %7s  %-24s %s\n' "${#disks[@]}" "$name" \
+            "$(lsblk -dno SIZE "/dev/$name" | tr -d ' ')" "$(lsblk -dno MODEL "/dev/$name" | cut -c1-24)" \
+            "${what:+${bold}$what${reset}}"
+    done < <(lsblk -dnro NAME,TYPE)
+    ((${#disks[@]} > 0)) || die "no drive found. Plug in the drive and run this again (the drive this computer runs from is not listed)."
+    echo
+    ask pick "Which drive? [1-${#disks[@]}]"
+    [[ "$pick" =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#disks[@]})) || die "no such drive."
+    dev="/dev/${disks[pick - 1]}"
+fi
+[[ -b "$dev" && "$(lsblk -dno TYPE "$dev")" == disk ]] || die "$dev is not a drive."
+is_protected "${dev#/dev/}" && die "$dev holds the system this computer is running; check it from the Ollie OS USB instead."
+pttype="$(lsblk -dno PTTYPE "$dev" | tr -d ' ')"
+
+# The partitions, by what they hold.
+part_by_label() { # part_by_label LABEL -> the partition on $dev with that filesystem or partition name
+    lsblk -lnpo NAME,LABEL,PARTLABEL "$dev" | awk -v l="$1" '$2 == l || $3 == l {print $1; exit}'
+}
+fstype_of() { lsblk -dno FSTYPE "$1" 2>/dev/null | tr -d ' '; }
+
+installed=false
+if [[ -n "$(lsblk -lnpo NAME,FSTYPE,PARTLABEL "$dev" | awk '$2 == "btrfs" || $3 == "OLLIE_ROOT"')" &&
+    -n "$(part_by_label OLLIE_BOOT)" ]]; then
+    installed=true
+fi
+
+# --- Checks shared by both kinds -----------------------------------------------------------
+check_fs() { # check_fs PART NAME: is the filesystem healthy? offer to repair
+    local part="$1" name="$2" fs r
+    fs="$(fstype_of "$part")"
+    [[ -n "$fs" ]] || { found "$name ($part) has no readable filesystem"; return; }
+    if ! unmount_part "$part"; then
+        note "$name is in use, so its filesystem was not checked (close what uses it and run this again)"
+        return
+    fi
+    cpr "checking the $name filesystem" "" fs_check "$part" "$fs"
+    r=$?
+    case $r in
+    0) ok "$name filesystem ($fs) is healthy" ;;
+    1)
+        found "$name filesystem ($fs) has errors"
+        if confirm "Repair it?"; then
+            if cpr "repairing $name" "" fs_repair "$part" "$fs"; then fixed "repaired $name"; else note "could not repair it on this computer"; fi
+        fi
+        ;;
+    *) note "$name filesystem ($fs) could not be checked on this computer" ;;
+    esac
+}
+
+# The removable-drive start-up file every UEFI computer looks for (Dells, Macs,
+# the Steam Machine): \EFI\BOOT\BOOTX64.EFI. FAT does not care about case.
+efi_file() { # efi_file DIR -> the path, whatever its case
+    find "$1" -maxdepth 3 -ipath "$1/efi/boot/bootx64.efi" 2>/dev/null | head -n1
+}
+
+write_read_test() { # write_read_test DIR NAME
+    local t="$1/.ollie-doctor-$$"
+    if head -c $((4 * MIB)) /dev/urandom >"$t" 2>/dev/null && sync && [[ "$(stat -c %s "$t")" == $((4 * MIB)) ]]; then
+        ok "$2 saves and reads files correctly"
+    else
+        found "$2 could not save a test file: the drive may be read-only, full, worn out or failing"
+    fi
+    rm -f -- "$t"
+}
+
+# --- An Ollie OS USB drive --------------------------------------------------------------
+check_usb() {
+    local boot data share mnt uuid f want got cfg bad_menu=false flags
+    # The FAT32 partition holding arch/ (USB Maker names it OLLIE_BOOT).
+    boot="$(part_by_label OLLIE_BOOT)"
+    if [[ -z "$boot" ]]; then
+        while read -r p fs; do
+            [[ "$fs" == vfat ]] || continue
+            mnt="$(mount_part "$p")"
+            if [[ -n "$mnt" && -d "$mnt/arch" ]]; then boot="$p"; break; fi
+        done < <(lsblk -lnpo NAME,FSTYPE "$dev" | tail -n +2)
+    fi
+    [[ -n "$boot" ]] || die "no Ollie OS start-up files found on $dev. If an ISO was written straight onto it with another tool, there is nothing to fix here; otherwise make it again with Ollie OS USB Maker."
+    data="$(part_by_label OLLIE_DATA)"
+    share="$(part_by_label OLLIE_SHARE)"
+
+    step 1 6 "Filesystems"
+    check_fs "$boot" "OLLIE_BOOT (start-up files)"
+    [[ -n "$data" ]] && check_fs "$data" "OLLIE_DATA (your files and settings)"
+    [[ -n "$share" ]] && check_fs "$share" "OLLIE_SHARE (shared with other computers)"
+
+    mnt="$(mount_part "$boot")"
+    [[ -n "$mnt" && -w "$mnt" ]] || die "could not open $boot. Click it once in the file manager to open it, then run this again."
+    uuid="$(lsblk -dno UUID "$boot" | tr -d ' ')"
+
+    step 2 6 "Ollie OS files"
+    local missing=()
+    for f in arch/boot/x86_64/vmlinuz-linux arch/boot/x86_64/initramfs-linux.img arch/x86_64/airootfs.sfs; do
+        [[ -s "$mnt/$f" ]] || missing+=("$f")
+    done
+    if ((${#missing[@]} > 0)); then
+        found "missing or empty: ${missing[*]}"
+        offer_recopy "$mnt" "$boot" "${missing[@]}"
+    else
+        ok "Ollie OS's files are all there"
+        if [[ -f "$mnt/arch/x86_64/airootfs.sha512" ]] && have sha512sum; then
+            $animate || echo "         checking the system image is undamaged (a minute or two)..."
+            want="$(awk '{print $1}' "$mnt/arch/x86_64/airootfs.sha512")"
+            cpr "checking every byte of the system image" "$mnt/arch/x86_64/airootfs.sfs" \
+                sha512sum "$mnt/arch/x86_64/airootfs.sfs"
+            got="${CPR_OUT%% *}"
+            if [[ "$want" == "$got" ]]; then
+                ok "the system image is undamaged"
+            else
+                found "the system image (airootfs.sfs) is damaged"
+                offer_recopy "$mnt" "$boot" arch/x86_64/airootfs.sfs
+            fi
+        fi
+    fi
+
+    step 3 6 "Starting on new computers, Dells, Macs and the Steam Machine (UEFI)"
+    f="$(efi_file "$mnt")"
+    if [[ -n "$f" && -s "$f" ]]; then
+        ok "the UEFI start-up file is there (EFI/BOOT/BOOTx64.EFI)"
+    else
+        found "the UEFI start-up file EFI/BOOT/BOOTx64.EFI is missing"
+        offer_recopy "$mnt" "$boot" EFI/BOOT/BOOTx64.EFI
+    fi
+    if [[ "$pttype" == gpt ]]; then
+        if [[ "$(part_type "$boot")" == "$ESP_TYPE" ]]; then
+            ok "the start-up part is marked as an EFI system partition"
+        else
+            found "the start-up part is not marked as an EFI system partition (some Dells and Macs skip it)"
+            if confirm "Mark it?"; then
+                if set_part_type "$boot" "$ESP_TYPE"; then fixed "marked it"; else note "could not mark it"; fi
+                mnt="$(mount_part "$boot")"
+            fi
+        fi
+    fi
+    # The boot menus must look for Ollie OS on this drive.
+    for cfg in "$mnt"/loader/entries/*.conf "$mnt"/boot/syslinux/archiso_sys-linux.cfg; do
+        [[ -f "$cfg" ]] || continue
+        grep -q "archisodevice=UUID=$uuid" "$cfg" || bad_menu=true
+        [[ -n "$data" ]] && ! grep -q 'cow_label=OLLIE_DATA' "$cfg" && bad_menu=true
+    done
+    if $bad_menu; then
+        found "the start menu does not point at this drive (it would stop at 'device did not show up')"
+        if confirm "Point it at this drive?"; then
+            point_menu "$mnt" "$uuid" "$data" && fixed "the start menu now starts Ollie OS from this drive"
+        fi
+    else
+        ok "the start menu starts Ollie OS from this drive"
+    fi
+
+    step 4 6 "Starting on older computers and older Dells (BIOS / Legacy)"
+    flags="$(part_flags "$boot")"
+    local bios_ok=true
+    [[ -f "$mnt/boot/syslinux/ldlinux.sys" ]] || bios_ok=false
+    if [[ "$pttype" == gpt ]]; then (((flags >> 2) & 1)) || bios_ok=false; else ((flags & 0x80)) || bios_ok=false; fi
+    if $bios_ok; then
+        ok "it can start on older computers too"
+    else
+        found "it cannot start on older computers set to BIOS / Legacy (older Dells say 'no boot device')"
+        if [[ ! -x "$syslinux_dir/syslinux" ]]; then
+            note "this copy of Drive Doctor cannot fix that (the AppImage can)"
+        elif confirm "Add the start-up code for older computers? (needs the administrator password)"; then
+            add_bios_boot "$boot" "$mnt" && fixed "it now starts on older computers too"
+            mnt="$(mount_part "$boot")"
+        fi
+    fi
+
+    step 5 6 "Windows, macOS and Linux"
+    if [[ -n "$data" && "$pttype" == gpt ]]; then
+        if [[ "$(part_type "$data")" == "$WINDATA_TYPE" ]]; then
+            found "Windows sees OLLIE_DATA and offers to format it (which would erase your Ollie OS files)"
+            if confirm "Hide it from Windows? (nothing on it changes)"; then
+                if set_part_type "$data" "$LINUX_TYPE"; then fixed "Windows no longer offers to format it"; else note "could not change it"; fi
+            fi
+        else
+            ok "Windows leaves OLLIE_DATA alone"
+        fi
+    fi
+    if [[ -n "$share" ]]; then
+        case "$(fstype_of "$share")" in
+        exfat | vfat) ok "OLLIE_SHARE ($(fstype_of "$share")) opens on Windows, macOS, Linux and SteamOS" ;;
+        *) found "OLLIE_SHARE is $(fstype_of "$share"), which Windows and macOS cannot open"; note "copy its files off, then make the drive again with USB Maker" ;;
+        esac
+    else
+        note "no OLLIE_SHARE part (only USB Maker drives of 32 GB or more have one)"
+    fi
+    for f in "$mnt"/autorun.inf "$mnt"/.disk/info; do
+        [[ -e "$f" ]] || continue
+        found "a leftover file from another system confuses some computers: ${f#"$mnt"/}"
+        if confirm "Remove it?"; then rm -f -- "$f" && fixed "removed it"; fi
+    done
+
+    step 6 6 "The drive itself"
+    write_read_test "$mnt" "the drive"
+    if [[ -f "$mnt/ollie-user.conf" || -f "$mnt/ollie-account.conf" ]]; then
+        found "an old username and password file from an older USB Maker"
+        if confirm "Remove it? (Ollie OS then asks for a new one when it starts)"; then
+            rm -f -- "$mnt/ollie-user.conf" "$mnt/ollie-account.conf" && fixed "removed it"
+        fi
+    fi
+    unmount_part "$boot" || true
+}
+
+# Point the boot menus at this drive (as USB Maker does).
+point_menu() { # point_menu DIR UUID DATA-PART
+    local dir="$1" uuid="$2" extra="" cfg n=0
+    [[ -n "$3" ]] && extra=" cow_label=OLLIE_DATA"
+    while IFS= read -r -d '' cfg; do
+        grep -qE 'archisosearchuuid=|archisolabel=|archisodevice=' "$cfg" || continue
+        sed -i -E -e 's/ cow_label=[^ ]*//g' \
+            -e 's/(archisosearchuuid|archisolabel|archisodevice)=[^ ]*/archisodevice=UUID='"$uuid$extra"'/' "$cfg" && n=$((n + 1))
+    done < <(find "$dir/loader" "$dir/boot" -type f \( -name '*.conf' -o -name '*.cfg' \) -print0 2>/dev/null)
+    ((n > 0))
+}
+
+# Copy files back from an Ollie OS ISO found on this computer.
+find_iso() {
+    local d f
+    for d in "$HOME/Downloads" "$HOME/Desktop" "$HOME" "$(dirname "${APPIMAGE:-$0}")"; do
+        f="$(ls -t "$d"/ollie-os-*.iso 2>/dev/null | head -n1)"
+        [[ -n "$f" ]] && { echo "$f"; return 0; }
+    done
+    return 1
+}
+offer_recopy() { # offer_recopy DIR PART FILE...
+    local dir="$1" part="$2" iso f
+    shift 2
+    if ! iso="$(find_iso)"; then
+        note "to fix it, put the Ollie OS ISO in Downloads and run this again (or make the drive again with USB Maker)"
+        return
+    fi
+    confirm "Copy $(printf '%s ' "$@")back from $(basename -- "$iso")?" || return
+    for f in "$@"; do
+        if have bsdtar; then
+            bsdtar -x --no-same-owner --no-same-permissions -f "$iso" -C "$dir" "$f" 2>/dev/null
+        elif have xorriso; then
+            xorriso -osirrox on -indev "$iso" -extract "/$f" "$dir/$f" >/dev/null 2>&1
+        fi
+    done
+    sync
+    local all=true
+    for f in "$@"; do [[ -s "$dir/$f" ]] || all=false; done
+    if $all; then
+        fixed "copied them back"
+        # A freshly copied boot menu looks for the ISO, not this drive.
+        point_menu "$dir" "$(lsblk -dno UUID "$part" | tr -d ' ')" "$(part_by_label OLLIE_DATA)" >/dev/null || true
+    else
+        note "could not copy them (bsdtar or xorriso is needed)"
+    fi
+}
+
+# Start-up code for BIOS computers: SYSLINUX on the FAT32 part, the matching
+# menu modules, the boot code in the drive's first sector, and the
+# "legacy BIOS bootable" mark on the part.
+add_bios_boot() { # add_bios_boot PART DIR
+    local part="$1" dir="$2" disk mbr flags
+    disk="/dev/$(lsblk -dno PKNAME "$part")"
+    get_root || return 1
+    # The menu modules must match the SYSLINUX version written below.
+    install -d "$dir/boot/syslinux"
+    cp -f "$syslinux_dir"/modules/*.c32 "$dir/boot/syslinux/" || { note "could not copy the start-up menu"; return 1; }
+    [[ -f "$dir/boot/syslinux/syslinux.cfg" ]] || { note "the Ollie OS start-up menu for older computers is missing; make the drive again with USB Maker"; return 1; }
+    unmount_part "$part" || { note "the drive is in use; close what uses it and run this again"; return 1; }
+    # syslinux (mtools edition) writes into the unmounted FAT32 part directly.
+    if ! as_root env PATH="$syslinux_dir:$PATH" MTOOLS_SKIP_CHECK=1 "$syslinux_dir/syslinux" --directory /boot/syslinux --install "$part"; then
+        note "could not write the start-up code"
+        return 1
+    fi
+    if [[ "$pttype" == gpt ]]; then mbr=gptmbr.bin; else mbr=mbr.bin; fi
+    as_root dd if="$syslinux_dir/$mbr" of="$disk" bs=440 count=1 conv=notrunc status=none || { note "could not write the drive's first sector"; return 1; }
+    flags="$(part_flags "$part")"
+    if [[ "$pttype" == gpt ]]; then
+        set_part_flags "$part" $((flags | 4))
+    else
+        set_part_flags "$part" $((flags | 0x80))
+    fi
+    sync
+    (( ($(part_flags "$part") >> 2) & 1 )) || [[ "$pttype" != gpt ]] || note "(could not set the 'legacy BIOS bootable' mark; most computers start it anyway)"
+    return 0
+}
+
+# --- A drive Ollie OS was installed onto -------------------------------------------------------
+check_installed() {
+    local boot root mnt rmnt f preset portable=true
+    boot="$(part_by_label OLLIE_BOOT)"
+    root="$(lsblk -lnpo NAME,FSTYPE "$dev" | awk '$2 == "btrfs" {print $1; exit}')"
+
+    step 1 4 "Filesystems"
+    check_fs "$boot" "OLLIE_BOOT (start-up files)"
+    [[ -n "$root" ]] && ok "the Ollie OS system part ($root, btrfs) is there" || found "the Ollie OS system part (btrfs) is missing"
+
+    mnt="$(mount_part "$boot")"
+    [[ -n "$mnt" && -w "$mnt" ]] || die "could not open $boot. Click it once in the file manager to open it, then run this again."
+
+    step 2 4 "Starting on any computer, Dells and Macs too (UEFI)"
+    for f in vmlinuz-linux initramfs-linux.img loader/entries/ollie.conf; do
+        [[ -s "$mnt/$f" ]] || found "the start-up file $f is missing (reinstall Ollie OS from the USB)"
+    done
+    f="$(efi_file "$mnt")"
+    if [[ -n "$f" && -s "$f" ]]; then
+        ok "the start-up file any computer looks for is there (EFI/BOOT/BOOTX64.EFI)"
+    else
+        found "EFI/BOOT/BOOTX64.EFI is missing: only the computer it was installed on knows how to start it"
+        local sd
+        sd="$(find "$mnt" -maxdepth 3 -ipath "$mnt/efi/systemd/systemd-bootx64.efi" | head -n1)"
+        if [[ -n "$sd" ]] && confirm "Add it?"; then
+            install -D -m 0644 "$sd" "$mnt/EFI/BOOT/BOOTX64.EFI" && fixed "added it"
+        fi
+    fi
+    if [[ "$(part_type "$boot")" == "$ESP_TYPE" ]]; then
+        ok "the start-up part is marked as an EFI system partition"
+    else
+        found "the start-up part is not marked as an EFI system partition"
+        if confirm "Mark it?"; then set_part_type "$boot" "$ESP_TYPE" && fixed "marked it"; fi
+        mnt="$(mount_part "$boot")"
+    fi
+
+    step 3 4 "Drivers for every computer"
+    # Installed by an older installer: the start-up image only has the drivers of
+    # the computer it was installed on ("Failed to mount /sysroot" elsewhere).
+    rmnt="$(mount_part "$root")"
+    preset=""
+    for f in "$rmnt/@/etc/mkinitcpio.d/linux.preset" "$rmnt/etc/mkinitcpio.d/linux.preset"; do
+        [[ -f "$f" ]] && { preset="$f"; break; }
+    done
+    if [[ -z "$preset" ]]; then
+        note "could not read the installed system's settings to check this"
+    else
+        grep -qE "^default_options=.*-S autodetect" "$preset" || portable=false
+        if $portable; then
+            ok "it has drivers for every computer, so it starts when moved to another one"
+        else
+            found "it only has drivers for the computer it was installed on (another computer stops at 'Failed to mount /sysroot')"
+            if ! have arch-chroot; then
+                note "to fix it, start a computer from the Ollie OS USB and run Drive Doctor there"
+            elif confirm "Rebuild it with drivers for every computer? (needs the administrator password, a few minutes)"; then
+                rebuild_initramfs "$root" "$boot" && fixed "it now starts on any computer"
+            fi
+        fi
+    fi
+    unmount_part "$root" || true
+
+    step 4 4 "The drive itself"
+    mnt="$(mount_part "$boot")"
+    [[ -n "$mnt" ]] && write_read_test "$mnt" "the drive"
+    unmount_part "$boot" || true
+}
+
+rebuild_initramfs() { # rebuild_initramfs ROOT-PART BOOT-PART
+    local t
+    get_root || return 1
+    unmount_part "$1"
+    unmount_part "$2"
+    t="$(mktemp -d /tmp/ollie-doctor-root.XXXXXX)"
+    as_root mount -o subvol=@ "$1" "$t" || { note "could not open the system part"; return 1; }
+    as_root mount "$2" "$t/boot" || { as_root umount "$t"; note "could not open the start-up part"; return 1; }
+    # As the current installer does: one image with every driver.
+    as_root tee "$t/etc/mkinitcpio.d/linux.preset" >/dev/null <<'EOF'
+ALL_kver="/boot/vmlinuz-linux"
+PRESETS=('default')
+default_image="/boot/initramfs-linux.img"
+default_options="-S autodetect"
+EOF
+    local ok_build=true
+    cpr "adding drivers for every computer" "" as_root arch-chroot "$t" mkinitcpio -P || ok_build=false
+    if [[ -f "$t/boot/loader/entries/ollie-fallback.conf" ]]; then
+        as_root sed -i -e 's|initramfs-linux-fallback.img|initramfs-linux.img|' \
+            -e 's|^title.*|title   Ollie OS (show start-up messages)|' "$t/boot/loader/entries/ollie-fallback.conf"
+    fi
+    as_root rm -f "$t/boot/initramfs-linux-fallback.img"
+    sync
+    as_root umount "$t/boot" "$t"
+    rmdir "$t"
+    $ok_build
+}
+
+# --- Go ---------------------------------------------------------------------------------
+echo
+echo "Drive: $dev  $(lsblk -dno SIZE "$dev" | tr -d ' ')  $(lsblk -dno MODEL "$dev")  ($(describe "$dev"))"
+if $installed; then
+    check_installed
+else
+    check_usb
+fi
+
+echo
+if ((problems == 0)); then
+    say "All good: no problems found. It starts on new and old computers, Dells, Macs and the Steam Machine."
+else
+    say "Done: $problems problem(s) found, $fixes fixed."
+    ((fixes < problems)) && echo "  Run Drive Doctor again after fixing what it could not, or ask for help with the lines above."
+fi
+cat <<EOF
+
+  To start Ollie OS from this drive, plug it in, turn the computer on and pick it:
+    Dell:                tap F12 at the Dell logo
+    Mac (Intel):         hold Option (alt) while it starts, pick "EFI Boot"
+    Steam Machine / PC:  tap Esc, F12, F11 or F8 while it starts
+    Steam Deck:          hold Volume Down, press Power
+  If a Dell says "Secure Boot violation", turn off Secure Boot (F2 at the Dell logo).
+EOF
+echo

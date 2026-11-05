@@ -1,0 +1,411 @@
+name: Ollie OS ISO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths:
+      - "os/**"
+      - "cmd/**"
+      - "internal/**"
+      - "packaging/**"
+      - ".github/workflows/os-iso.yml"
+    tags: ["os-v*"]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # When a push changes only the tests, the README or the USB Maker (none of
+  # them part of the ISO), test the newest ISO already built for this branch
+  # instead of spending an hour building an identical one.
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      reuse_run: ${{ steps.plan.outputs.reuse_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Each ISO is about 3 GB and the account's artifact storage is limited:
+      # keep only the newest ISO, USB Maker and boot test, delete the rest.
+      - name: Delete old builds to make room
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Old ISOs are all deleted (this build makes a new one); of the
+          # small ones the newest is kept.
+          for name in ollie-os-iso ollie-os-usb-maker ollie-os-boot-test ollie-os-virtualbox-test oliver-appimage js-academy-appimage; do
+            keep=1
+            [[ "$name" == ollie-os-iso ]] && keep=0
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$name&per_page=100" \
+              --jq "[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | reverse | .[$keep:][] | .id" |
+              while read -r id; do
+                echo "deleting old $name artifact $id"
+                gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" || true
+              done
+          done
+      # Every build makes a fresh ISO: reusing an older one once tested an
+      # ISO that did not have the changes being tested.
+      - id: plan
+        run: echo "reuse_run=" >>"$GITHUB_OUTPUT"
+
+  usb-maker:
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The updaters list what changed since an older commit (UPDATE_BASE).
+          fetch-depth: 0
+      - name: Build Ollie OS USB Maker
+        run: |
+          # The updater apps carry xorriso and squashfs-tools from this computer;
+          # rsvg-convert draws the Game Pack Updater's coloured backgrounds.
+          sudo apt-get update -q && sudo apt-get install -y -q xorriso squashfs-tools zip librsvg2-bin
+          bash os/usb/build-appimage.sh
+      - uses: actions/upload-artifact@v4
+        # The ISO release below carries it too, so a full artifact storage
+        # does not stop the build.
+        continue-on-error: true
+        with:
+          name: ollie-os-usb-maker
+          path: os/out/Ollie-OS-USB-Maker*-x86_64.AppImage
+
+  iso:
+    needs: plan
+    if: needs.plan.outputs.reuse_run == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make room on the runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost
+          sudo docker image prune -af
+          df -h /
+
+      - name: Build the ISO in an Arch Linux container
+        run: |
+          docker run --rm --privileged -v "$PWD:/src" -w /src archlinux:latest bash os/build.sh
+
+      - name: Upload the ISO
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          # Just the one ISO file.
+          name: ollie-os-iso
+          path: os/out/*.iso
+          compression-level: 0
+          retention-days: 7
+
+      - name: Build Ollie OS USB Maker for the release
+        run: |
+          # The updater apps carry xorriso and squashfs-tools from this computer;
+          # rsvg-convert draws the Game Pack Updater's coloured backgrounds.
+          sudo apt-get update -q && sudo apt-get install -y -q xorriso squashfs-tools zip librsvg2-bin
+          sudo bash os/usb/build-appimage.sh
+
+      # (Go comes back: "Make room" removed the runner's tool cache.)
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Build the Windows (.exe) and Mac (.dmg) installers
+        run: |
+          # The USB Maker step above ran as root: its folder becomes this user's.
+          sudo chown -R "$(id -u)" os/out
+          # Ollie OS Builder for Windows: builds the ISO on a PC, in WSL.
+          OUTDIR="$PWD/os/out" bash os/windows/builder/build.sh
+          # The Installers are the Builders: they download the Arch Linux ISO
+          # and turn it into Ollie OS (no GitHub). The Mac one comes from
+          # build-appimage.sh above.
+          cp -f os/out/Ollie-OS-Builder-Windows.exe os/out/Ollie-OS-Installer-Windows.exe
+          # Ollie OS Demo: a pretend Ollie OS desktop to try, as .exe, .dmg and AppImage.
+          # (appimagetool unpacks itself into TMPDIR; the one in /tmp is root's
+          # from the USB Maker step.)
+          mkdir -p "$RUNNER_TEMP/appimage"
+          TMPDIR="$RUNNER_TEMP/appimage" APPIMAGETOOL=os/out/appimagetool-x86_64.AppImage bash os/demo/build.sh
+
+      # Release files do not count against the artifact storage, which can
+      # fill up. A release file may be at most 2 GB, so the ISO goes up in
+      # two parts; the USB Maker joins them by itself.
+      - name: Publish the newest build as the "Ollie OS (newest)" release
+        # When started by hand, and for every push to the branch Ollie OS is
+        # made on (claude/fervent-gates-cs7smv): the newest build is the
+        # download. Other branches' pushes build and test only.
+        if: "!startsWith(github.ref, 'refs/tags/os-v') && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/claude/fervent-gates-cs7smv')"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd os/out
+          iso="$(ls ollie-os-*.iso | head -n1)"
+          # One file when it fits under the 2 GB limit for a release file,
+          # otherwise two parts that the USB Maker joins.
+          if (($(stat -c %s "$iso") < 2047 * 1024 * 1024)); then
+            files=("$iso")
+            what="**$iso** (the whole ISO, one file)"
+          else
+            sudo split -b 1900M -d -a 1 "$iso" "$iso.part"
+            files=("$iso".part*)
+            what="**$iso.part0** and **$iso.part1** (the ISO in two parts; the USB Maker joins them)"
+          fi
+          gh release delete ollie-os-newest --yes --cleanup-tag 2>/dev/null || true
+          gh release create ollie-os-newest --latest --target "$GITHUB_SHA" \
+            --title "Ollie OS ($(date -u '+%Y-%m-%d'))" \
+            --notes "A great custom version of Arch Linux: comes with Steam, Wine and more, plus a debugger and a driver installer.
+
+          **Put Ollie OS on a drive** (download into Downloads):
+          - **Ollie-OS-Installer-Windows.exe** (Windows), **Ollie-OS-Installer-Mac.dmg** (Mac) or **Ollie-OS-Installer-x86_64.AppImage** (Linux, SteamOS): downloads the official Arch Linux ISO, turns it into Ollie OS on your computer (1 to 2 hours), then puts it on a USB drive. No GitHub, no sign-in.
+          - $what: write it to a USB drive with **Ollie-OS-USB-Maker** (Linux, SteamOS) or any ISO writer (balenaEtcher, Rufus), then start the computer from it.
+          - **Ollie-OS-Drive-Writer-x86_64.AppImage** (SteamOS, Linux): pick a drive and it installs Ollie OS onto it, no password. Its first start unpacks it (5 to 15 minutes, once).
+          - **Ollie-OS-Builder-x86_64.AppImage** (SteamOS, Linux): builds a brand-new Ollie OS ISO on your computer, no password (1 to 2 hours, about 20 GB free). **Ollie-OS-Builder-Windows.exe** does it on Windows, **Ollie-OS-Builder-Mac.dmg** (or .zip) on a Mac.
+
+          **Try it first:** **Ollie OS Demo** (Windows .exe, Mac .dmg, Linux AppImage) opens a pretend Ollie OS desktop in your browser. Everything works except Steam.
+
+          **Add to an Ollie OS you have** (no password):
+          - **Game Pack Updater**: Steam in Game Mode, Speed Boost, FPS counter, Minecraft, start-up animation, Welcome, Ollie OS Settings (colours, Screen Time, Typing Scanner, Firefox password), Update Ollie OS
+          - **Wallpaper Maker Updater**: a background with your name on it, or draw one
+          - **Download Tracker Updater**: see how many times each file here was downloaded
+          - **Discover Updater**: Discover, the app store, with Flathub
+          - **Windows Boot Updater**: Windows on the start-up menu
+          - **Storage Updater**, **Stuff Saver Updater**, **Drive Installer**
+
+          Starting from the drive: Steam Machine and Steam Deck, hold Volume Down; Dell, tap F12; Mac, hold Option.
+
+          Built from ${GITHUB_SHA::7} on $(date -u '+%Y-%m-%d %H:%M UTC')." \
+            "${files[@]}" *.sha256 Ollie-OS-USB-Maker-x86_64.AppImage Ollie-OS-Drive-Writer-x86_64.AppImage \
+            Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage Ollie-OS-Discover-Updater-x86_64.AppImage \
+            Ollie-OS-Download-Tracker-Updater-x86_64.AppImage \
+            Ollie-OS-Windows-Boot-Updater-x86_64.AppImage Ollie-OS-Storage-Updater-x86_64.AppImage \
+            Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage Ollie-OS-Drive-Installer-x86_64.AppImage \
+            Ollie-OS-Game-Pack-Updater-x86_64.AppImage \
+            Ollie-OS-Builder-x86_64.AppImage Ollie-OS-Builder-Mac.zip Ollie-OS-Builder-Mac.dmg Ollie-OS-Builder-Windows.exe \
+            Ollie-OS-Installer-Windows.exe Ollie-OS-Installer-Mac.dmg Ollie-OS-Installer-x86_64.AppImage \
+            Ollie-OS-Demo-Windows.exe Ollie-OS-Demo-Mac.dmg Ollie-OS-Demo-x86_64.AppImage
+
+      - name: Publish a release for os-v* tags
+        if: startsWith(github.ref, 'refs/tags/os-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            os/out/*.iso
+            os/out/Ollie-OS-USB-Maker*.AppImage
+            os/out/*.sha256
+            os/ollie-write
+
+  test:
+    needs: [plan, iso]
+    if: always() && (needs.iso.result == 'success' || needs.plan.outputs.reuse_run != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        id: artifact
+        continue-on-error: true
+        with:
+          name: ollie-os-iso
+          path: iso
+          run-id: ${{ needs.plan.outputs.reuse_run || github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Get the ISO from the release instead
+        if: steps.artifact.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p iso
+          gh release download ollie-os-newest -D iso -p '*.iso*'
+          if compgen -G 'iso/*.part0' >/dev/null; then
+            first="$(ls iso/*.part0)"
+            cat iso/*.part[0-9] >"${first%.part0}"
+            rm iso/*.part[0-9]
+          fi
+          rm -f iso/*.sha256
+          ls -la iso
+
+      - name: Make room on the runner
+        run: |
+          # Unpacking the system image needs about 10 GB.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost
+          sudo docker image prune -af
+          df -h / /mnt
+
+      - name: Install test tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xorriso squashfs-tools qemu-system-x86 socat imagemagick tesseract-ocr
+          # Let the test use hardware virtualisation.
+          sudo chmod 666 /dev/kvm || true
+
+      - name: Check what is inside the ISO
+        run: |
+          # Unpack on whichever disk has more room.
+          tmp=/mnt/ollie-check
+          sudo mkdir -p "$tmp"
+          sudo TMPDIR="$tmp" bash os/tests/check-iso.sh "$(find iso -name '*.iso' | head -n1)"
+
+      - name: Boot the ISO
+        if: always()
+        run: bash os/tests/boot-iso.sh "$(find iso -name '*.iso' | head -n1)" boot 15
+
+      - name: "First start: create a username and password, then log in (QEMU)"
+        if: always()
+        run: bash os/tests/account-flow.sh qemu "$(find iso -name '*.iso' | head -n1)" account
+
+      - name: "First start the way GNOME Boxes runs it: older PC, QXL graphics, 30 GB disk"
+        if: always()
+        run: bash os/tests/account-flow.sh boxes "$(find iso -name '*.iso' | head -n1)" boxes
+
+      - name: "The Fixer: break a program on purpose and let The Fixer repair it"
+        if: always()
+        run: bash os/tests/fixer-test.sh "$(find iso -name '*.iso' | head -n1)" fixer
+
+      - name: Show the first-start screenshots
+        if: always()
+        run: |
+          for f in account/step-*.png boxes/step-*.png; do
+            [[ -f "$f" ]] || continue
+            convert "$f" -resize 800x -quality 55 "${f%.png}.jpg"
+            echo "=== SCREENSHOT $(basename "$(dirname "$f")")-$(basename "${f%.png}") BEGIN"
+            base64 -w 0 "${f%.png}.jpg"
+            echo
+            echo "=== SCREENSHOT END"
+          done
+
+      - name: Show the last screenshots
+        if: always()
+        run: |
+          # Printed into the log as base64 so they can be read without
+          # downloading the artifact.
+          for f in $(ls boot/screen-*.png 2>/dev/null | tail -n 3); do
+            convert "$f" -resize 960x -quality 60 "${f%.png}.jpg"
+            echo "=== SCREENSHOT $(basename "${f%.png}") BEGIN"
+            base64 -w 0 "${f%.png}.jpg"
+            echo
+            echo "=== SCREENSHOT END"
+          done
+
+      - name: Save the screenshots for Ollie OS's web page (the ollie-os-screenshots branch)
+        # Pictures of the real desktop for the README and the website, kept
+        # on a branch of their own (one commit, replaced each time).
+        if: always() && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/claude/fervent-gates-cs7smv')
+        continue-on-error: true
+        run: |
+          shots="$RUNNER_TEMP/shots"
+          rm -rf "$shots" && mkdir -p "$shots/live" "$shots/installed" "$shots/boxes"
+          for f in $(ls boot/screen-*.png 2>/dev/null | tail -n 3); do cp "$f" "$shots/live/"; done
+          cp account/step-*.png "$shots/installed/" 2>/dev/null || true
+          cp boxes/step-*.png "$shots/boxes/" 2>/dev/null || true
+          cd "$shots"
+          printf 'Screenshots of Ollie OS from its tests (%s, %s).\n' "$(date -u +%Y-%m-%d)" "${GITHUB_SHA::7}" >README.md
+          git init -q -b ollie-os-screenshots
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "Ollie OS screenshots (${GITHUB_SHA::7})"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ollie-os-screenshots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: ollie-os-boot-test
+          path: |
+            boot/*.png
+            boot/serial.log
+            boot/summary.txt
+            account/step-*.png
+            account/ocr-*.txt
+            account/serial.log
+            account/summary.txt
+            boxes/step-*.png
+            boxes/serial.log
+            boxes/summary.txt
+          retention-days: 7
+
+  # The same first start in VirtualBox, booting the ISO through its own UEFI
+  # boot menu like a real computer.
+  virtualbox:
+    needs: iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        id: artifact
+        continue-on-error: true
+        with:
+          name: ollie-os-iso
+          path: iso
+
+      - name: Get the ISO from the release instead
+        if: steps.artifact.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p iso
+          gh release download ollie-os-newest -D iso -p '*.iso*'
+          if compgen -G 'iso/*.part0' >/dev/null; then
+            first="$(ls iso/*.part0)"
+            cat iso/*.part[0-9] >"${first%.part0}"
+            rm iso/*.part[0-9]
+          fi
+          rm -f iso/*.sha256
+
+      - name: Install VirtualBox
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+            virtualbox virtualbox-dkms "linux-headers-$(uname -r)" xorriso imagemagick tesseract-ocr
+          # VirtualBox needs the processor's virtualisation to itself.
+          sudo modprobe -r kvm_amd kvm_intel kvm 2>/dev/null || true
+          sudo modprobe vboxdrv
+          VBoxManage --version
+
+      - name: "First start: create a username and password, then log in (VirtualBox)"
+        run: bash os/tests/account-flow.sh vbox "$(find iso -name '*.iso' | head -n1)" vbox
+
+      - name: Show the VirtualBox screenshots
+        if: always()
+        run: |
+          for f in vbox/step-*.png; do
+            [[ -f "$f" ]] || continue
+            convert "$f" -resize 800x -quality 55 "${f%.png}.jpg"
+            echo "=== SCREENSHOT vbox-$(basename "${f%.png}") BEGIN"
+            base64 -w 0 "${f%.png}.jpg"
+            echo
+            echo "=== SCREENSHOT END"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: ollie-os-virtualbox-test
+          path: |
+            vbox/step-*.png
+            vbox/ocr-*.txt
+            vbox/VBox.log
+            vbox/vbox-serial.log
+            vbox/summary.txt
+          retention-days: 7

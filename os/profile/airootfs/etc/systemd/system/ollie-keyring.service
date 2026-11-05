@@ -1,0 +1,15 @@
+[Unit]
+Description=Set up the package signing keys
+ConditionDirectoryNotEmpty=!/etc/pacman.d/gnupg
+Wants=time-sync.target
+After=time-sync.target
+Before=archlinux-keyring-wkd-sync.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/pacman-key --init
+ExecStart=/usr/bin/pacman-key --populate
+
+[Install]
+WantedBy=multi-user.target

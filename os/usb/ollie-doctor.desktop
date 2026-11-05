@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS Drive Doctor
+Comment=Check a drive with Ollie OS on it and fix it, so it starts on any computer
+Exec=ollie-doctor
+Icon=ollie-os
+Terminal=false
+Categories=System;

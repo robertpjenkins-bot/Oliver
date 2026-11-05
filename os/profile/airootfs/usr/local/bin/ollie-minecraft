@@ -1,0 +1,48 @@
+#!/bin/bash
+# Minecraft: the first time, gets the official Minecraft Launcher (Mojang's,
+# packaged on Flathub), then opens it. No password: it goes in your own
+# account's apps. If Flathub cannot be reached, it takes the launcher from
+# Mojang's site instead. You need a Minecraft account that owns the game
+# (Java Edition) to play.
+set -uo pipefail
+readonly TITLE="Minecraft" APP=com.mojang.Minecraft
+readonly OWN="$HOME/.local/share/ollie-minecraft"
+have() { command -v "$1" >/dev/null 2>&1; }
+
+run_it() {
+    if have flatpak && flatpak info --user "$APP" >/dev/null 2>&1; then
+        # Its own menu entry would be a second "Minecraft": hidden.
+        mkdir -p "$HOME/.local/share/applications"
+        printf '[Desktop Entry]\nType=Application\nName=Minecraft\nNoDisplay=true\nExec=flatpak run %s\n' "$APP" \
+            >"$HOME/.local/share/applications/$APP.desktop"
+        exec flatpak run --user "$APP"
+    fi
+    [[ -x "$OWN/minecraft-launcher/minecraft-launcher" ]] && exec "$OWN/minecraft-launcher/minecraft-launcher"
+    return 1
+}
+run_it
+
+# --- Getting it (in a window that shows how far it is) ---------------------------
+if [[ ! -t 0 && -z "${OLLIE_MINECRAFT_IN_TERMINAL:-}" ]]; then
+    export OLLIE_MINECRAFT_IN_TERMINAL=1
+    have konsole && exec konsole -e "$0"
+    have kdialog && kdialog --title "$TITLE" --error "No terminal program found to show the download."
+    exit 1
+fi
+printf '\n\e[1m  Getting the Minecraft Launcher (only this once)\e[0m\n\n'
+if have flatpak; then
+    flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo &&
+        flatpak install --user -y --noninteractive flathub "$APP" && run_it
+fi
+echo
+echo "  Flathub did not work: getting the launcher from Mojang's site instead."
+mkdir -p "$OWN"
+if curl -fL --progress-bar -o "$OWN/Minecraft.tar.gz" https://launcher.mojang.com/download/Minecraft.tar.gz &&
+    tar -xzf "$OWN/Minecraft.tar.gz" -C "$OWN"; then
+    rm -f "$OWN/Minecraft.tar.gz"
+    (setsid "$OWN/minecraft-launcher/minecraft-launcher" >/dev/null 2>&1 &)
+    exit 0
+fi
+printf '\n\e[31;1m  Could not get the Minecraft Launcher.\e[0m Is the internet connected? Open Minecraft again to retry.\n\nPress Enter to close.'
+read -r _ || true
+exit 1

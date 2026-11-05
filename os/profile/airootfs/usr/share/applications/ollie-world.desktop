@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=World Explorer
+Comment=Spin the globe and click countries to learn about them
+Exec=/usr/local/bin/ollie-world
+Icon=ollie-world
+Terminal=false
+Categories=Education;

@@ -1,0 +1,34 @@
+#!/bin/bash
+# Ollie OS's colours: dark or light, and the colour of buttons, highlights
+# and the background, for the whole desktop and its apps.
+#   ollie-colours dark|light teal|purple|red|gold [--background]
+# (gold is a secret: Ollie Gold, which Ollie Finder unlocks.)
+# --background also puts on Ollie OS's background in that colour.
+set -uo pipefail
+mode=${1:-dark} colour=${2:-teal}
+case $colour in
+teal) hex="#14b8a6" rgb="20,184,166" wall=OllieOS ;;
+purple) hex="#a855f7" rgb="168,85,247" wall=OllieOS-Purple ;;
+red) hex="#f43f5e" rgb="244,63,94" wall=OllieOS-Red ;;
+gold) hex="#f59e0b" rgb="245,158,11" wall=OllieOS-Gold ;;
+*) echo "teal, purple, red or gold" >&2; exit 2 ;;
+esac
+case $mode in
+dark) scheme=BreezeDark plasma=breeze-dark icons=breeze-dark ;;
+light) scheme=BreezeLight plasma=breeze-light icons=breeze ;;
+*) echo "dark or light" >&2; exit 2 ;;
+esac
+kwriteconfig6 --file kdeglobals --group General --key AccentColor "$rgb" 2>/dev/null
+# The colour scheme, with the colour mixed in. (If it is already on, Plasma
+# would skip it: then once more by way of another.)
+plasma-apply-colorscheme --accent-color "$hex" "$scheme" >/dev/null 2>&1 ||
+    { plasma-apply-colorscheme BreezeClassic >/dev/null 2>&1; plasma-apply-colorscheme "$scheme" >/dev/null 2>&1; }
+plasma-apply-desktoptheme "$plasma" >/dev/null 2>&1
+for changeicons in /usr/lib/plasma-changeicons /usr/libexec/plasma-changeicons; do
+    [[ -x $changeicons ]] && { "$changeicons" "$icons" >/dev/null 2>&1; break; }
+done
+if [[ ${3:-} == --background && -d /usr/share/wallpapers/$wall/contents/images ]]; then
+    plasma-apply-wallpaperimage "/usr/share/wallpapers/$wall" >/dev/null 2>&1
+fi
+mkdir -p "$HOME/.config/ollie"
+printf 'MODE=%s\nCOLOUR=%s\n' "$mode" "$colour" >"$HOME/.config/ollie/colours"

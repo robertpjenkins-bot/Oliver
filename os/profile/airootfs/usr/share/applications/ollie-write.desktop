@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Write ISO to Drive
+Comment=Write an Ollie OS ISO (or any ISO) onto a USB stick or drive
+Exec=konsole --hold -e sudo /usr/local/bin/ollie-write %f
+Icon=ollie-write
+Terminal=false
+Categories=System;
+MimeType=application/x-cd-image;application/x-iso9660-image;

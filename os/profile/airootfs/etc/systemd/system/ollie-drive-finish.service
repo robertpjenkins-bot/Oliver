@@ -1,0 +1,13 @@
+# Switched on only on a drive the Drive Writer made without admin rights
+# (build-drive-files.sh): see /usr/local/lib/ollie/drive-finish.
+[Unit]
+Description=Ollie OS first start: finish setting up the drive
+ConditionPathExists=!/var/lib/ollie/drive-finished
+RequiresMountsFor=/boot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ollie/drive-finish
+
+[Install]
+WantedBy=multi-user.target

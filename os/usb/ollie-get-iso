@@ -1,0 +1,237 @@
+#!/bin/bash
+# Ollie OS Get ISO: download the newest Ollie OS ISO into the folder Ollie OS
+# USB Maker is in (or Downloads), so USB Maker finds it by itself.
+#
+# The ISO is on the project's GitHub release, which is private, so the first
+# time it signs in to GitHub: it shows a short code to type in at
+# github.com/login/device (on a phone is fine). The sign-in is kept for next
+# time in ~/.config/ollie-os/github-token, readable only by you.
+#
+#   ollie-get-iso [FOLDER]
+#
+# In the Ollie OS Installer AppImage, OLLIE_USB_MAKER names the USB Maker
+# carried inside it: the ISO then goes in Downloads and USB Maker starts
+# straight away, at choosing the drive.
+set -uo pipefail
+
+readonly REPO="${OLLIE_REPO:-robertpjenkins-bot/Oliver}"
+readonly TAG="${OLLIE_RELEASE:-ollie-os-newest}"
+# GitHub CLI's public sign-in id (device sign-in needs no secret).
+readonly CLIENT_ID=178c6fc778ccc68e1d6a
+readonly TOKEN_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/ollie-os/github-token"
+readonly MIB=$((1024 * 1024))
+
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
+say() { printf '\n%s==>%s %s%s%s\n' "$teal$bold" "$reset" "$bold" "$*" "$reset"; }
+die() {
+    printf '\n%sError:%s %s\n\nPress Enter to close.' "$red$bold" "$reset" "$*" >&2
+    read -r _ || true
+    exit 1
+}
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# --- A terminal to talk in -------------------------------------------------------
+if [[ ! -t 0 && -z "${OLLIE_GET_IN_TERMINAL:-}" ]]; then
+    export OLLIE_GET_IN_TERMINAL=1
+    self="${APPIMAGE:-$(realpath -- "$0")}"
+    for term in konsole gnome-terminal kgx xfce4-terminal xterm; do
+        have "$term" || continue
+        case "$term" in
+        konsole) exec konsole --hold -e "$self" "$@" ;;
+        gnome-terminal | kgx) exec "$term" -- "$self" "$@" ;;
+        *) exec "$term" -hold -e "$self" "$@" ;;
+        esac
+    done
+    msg="No terminal program found. Run this from a terminal instead."
+    have kdialog && kdialog --error "$msg"
+    have zenity && zenity --error --text="$msg"
+    exit 1
+fi
+
+if [[ -n "${OLLIE_USB_MAKER:-}" ]]; then
+    printf '\n%s  Ollie OS Installer%s  (downloads Ollie OS, then puts it on a drive)\n' "$bold" "$reset"
+else
+    printf '\n%s  Ollie OS Get ISO%s  (downloads Ollie OS for USB Maker)\n' "$bold" "$reset"
+fi
+have curl || die "curl is missing on this computer."
+have python3 || die "python3 is missing on this computer."
+
+# JSON field from stdin: json KEY [KEY...] (nested), empty when missing.
+json() {
+    python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    for k in sys.argv[1:]:
+        d = d[int(k)] if isinstance(d, list) else d.get(k)
+    print("" if d is None else d)
+except Exception:
+    print("")' "$@"
+}
+
+# --- 1. Where to put it: next to USB Maker ------------------------------------------
+dest="${1:-}"
+bundled_maker="${OLLIE_USB_MAKER:-}"
+[[ -n "$bundled_maker" && -z "$dest" ]] && dest="$HOME/Downloads"
+if [[ -z "$dest" ]]; then
+    maker="$(find "$HOME/Downloads" "$HOME/Desktop" "$HOME" "$(dirname "${APPIMAGE:-$0}")" \
+        -maxdepth 3 -type f -iname 'Ollie-OS-USB-Maker*.AppImage' -printf '%T@ %p\n' 2>/dev/null |
+        sort -rn | head -n1 | cut -d' ' -f2-)"
+    if [[ -n "$maker" ]]; then
+        dest="$(dirname -- "$maker")"
+        say "Found USB Maker in $dest"
+    else
+        dest="$HOME/Downloads"
+        say "USB Maker not found; the ISO goes in $dest (USB Maker looks there too)"
+    fi
+fi
+mkdir -p -- "$dest" || die "could not make the folder $dest."
+[[ -w "$dest" ]] || die "cannot save into $dest."
+
+# --- 2. Sign in to GitHub (once) ----------------------------------------------------
+token="${OLLIE_GITHUB_TOKEN:-}"
+[[ -z "$token" && -s "$TOKEN_FILE" ]] && token="$(cat -- "$TOKEN_FILE")"
+api() { # api PATH -> JSON; fails when the sign-in does not work
+    curl -fsSL --max-time 60 -H "Accept: application/vnd.github+json" \
+        ${token:+-H "Authorization: Bearer $token"} "https://api.github.com/$1"
+}
+release=""
+[[ -n "$token" ]] && release="$(api "repos/$REPO/releases/tags/$TAG" 2>/dev/null)"
+if [[ -z "$release" ]]; then
+    say "Signing in to GitHub"
+    reply="$(curl -fsS --max-time 30 -H 'Accept: application/json' \
+        -d "client_id=$CLIENT_ID" -d "scope=repo" https://github.com/login/device/code)" ||
+        die "could not reach GitHub. Check the internet connection and try again."
+    device_code="$(json device_code <<<"$reply")"
+    user_code="$(json user_code <<<"$reply")"
+    interval="$(json interval <<<"$reply")"
+    [[ -n "$device_code" && -n "$user_code" ]] || die "GitHub did not give a sign-in code. Try again in a minute."
+    echo
+    echo "  1. On your phone or any computer, open:   ${bold}github.com/login/device${reset}"
+    echo "  2. Sign in to GitHub and type this code:  ${bold}${green}$user_code${reset}"
+    echo "  3. Press Authorize. This window carries on by itself."
+    echo
+    # Copy the code and open the page, so it is only paste and Authorize.
+    copied=false
+    if have qdbus && qdbus org.kde.klipper /klipper setClipboardContents "$user_code" >/dev/null 2>&1; then
+        copied=true
+    elif have qdbus6 && qdbus6 org.kde.klipper /klipper setClipboardContents "$user_code" >/dev/null 2>&1; then
+        copied=true
+    elif have wl-copy && printf '%s' "$user_code" | wl-copy 2>/dev/null; then
+        copied=true
+    elif have xclip && printf '%s' "$user_code" | xclip -selection clipboard 2>/dev/null; then
+        copied=true
+    fi
+    if $copied; then
+        echo "  The code is copied: in the page that opens, paste it (Ctrl+V) and press Continue, then Authorize."
+    fi
+    if have xdg-open; then
+        xdg-open "https://github.com/login/device" >/dev/null 2>&1 &
+        echo "  Opening github.com/login/device in your browser..."
+    fi
+    echo
+    have kdialog && kdialog --title "Ollie OS" --passivepopup \
+        "GitHub sign-in code: $user_code$($copied && echo ' (copied, just paste it)')" 120 >/dev/null 2>&1 &
+    token=""
+    for ((i = 0; i < 180; i++)); do
+        sleep "${interval:-5}"
+        reply="$(curl -fsS --max-time 30 -H 'Accept: application/json' -d "client_id=$CLIENT_ID" \
+            -d "device_code=$device_code" -d "grant_type=urn:ietf:params:oauth:grant-type:device_code" \
+            https://github.com/login/oauth/access_token)" || continue
+        token="$(json access_token <<<"$reply")"
+        [[ -n "$token" ]] && break
+        case "$(json error <<<"$reply")" in
+        slow_down) interval=$((${interval:-5} + 5)) ;;
+        expired_token) die "the code expired. Run this again for a new one." ;;
+        access_denied) die "sign-in was cancelled on GitHub." ;;
+        esac
+    done
+    [[ -n "$token" ]] || die "no sign-in after 15 minutes. Run this again for a new code."
+    install -D -m 0600 /dev/null "$TOKEN_FILE" && printf '%s' "$token" >"$TOKEN_FILE"
+    printf '  %sSigned in.%s\n' "$green" "$reset"
+    release="$(api "repos/$REPO/releases/tags/$TAG")" ||
+        die "signed in, but this GitHub account cannot see $REPO. Sign in with the account that owns it (delete $TOKEN_FILE and run this again)."
+fi
+
+# --- 3. Download the ISO ------------------------------------------------------------
+read -r iso_id iso_name iso_size sum_id < <(python3 -c '
+import json, sys
+a = json.load(sys.stdin).get("assets", [])
+iso = [x for x in a if x["name"].endswith(".iso")]
+s = [x for x in a if x["name"].endswith(".iso.sha256")]
+if iso:
+    i = iso[0]
+    print(i["id"], i["name"], i["size"], s[0]["id"] if s else "-")' <<<"$release")
+[[ -n "${iso_id:-}" ]] || die "the GitHub release has no ISO on it right now. Try again later."
+out="$dest/$iso_name"
+
+asset() { # asset ID OUT [extra curl options]
+    curl -fL --retry 3 --retry-delay 5 -H "Accept: application/octet-stream" \
+        -H "Authorization: Bearer $token" "${@:3}" -o "$2" \
+        "https://api.github.com/repos/$REPO/releases/assets/$1"
+}
+
+want=""
+if [[ "$sum_id" != - ]]; then
+    want="$(asset "$sum_id" - -s | awk '{print $1}')"
+fi
+if [[ -f "$out" && -n "$want" ]] && (($(stat -c %s "$out") == iso_size)); then
+    say "Checking the copy already in $dest"
+    if [[ "$(sha256sum "$out" | awk '{print $1}')" == "$want" ]]; then
+        printf '\n  %sYou already have the newest Ollie OS:%s %s\n' "$green$bold" "$reset" "$out"
+        done_iso=true
+    fi
+fi
+if [[ -z "${done_iso:-}" ]]; then
+    free="$(df --output=avail -B1 "$dest" | tail -n1 | tr -d ' ')"
+    ((free > iso_size + 100 * MIB)) || die "not enough room in $dest: Ollie OS needs $((iso_size / MIB)) MB, only $((free / MIB)) MB is free."
+    say "Downloading $iso_name ($((iso_size / MIB)) MB) into $dest"
+    # .part until it is complete; an interrupted download carries on next time.
+    asset "$iso_id" "$out.part" -C - -# || die "the download stopped. Run this again; it carries on where it stopped."
+    (($(stat -c %s "$out.part") == iso_size)) || die "the download is incomplete. Run this again; it carries on where it stopped."
+    if [[ -n "$want" ]]; then
+        say "Checking the download"
+        if [[ "$(sha256sum "$out.part" | awk '{print $1}')" != "$want" ]]; then
+            rm -f -- "$out.part"
+            die "the download is damaged. Run this again to download it fresh."
+        fi
+    fi
+    mv -f -- "$out.part" "$out"
+    printf '\n  %sDone:%s %s\n' "$green$bold" "$reset" "$out"
+fi
+
+# --- 3b. Make it the newest Ollie OS -------------------------------------------------------
+# With the Updater inside (Get ISO and Installer AppImages): the ISO on the
+# release becomes the newest Ollie OS right away, the Dell fix included.
+if [[ -n "${OLLIE_UPDATER:-}" && -x "$OLLIE_UPDATER" && -s "${out%.iso}-updated.iso" &&
+    "${out%.iso}-updated.iso" -nt "$out" ]]; then
+    out="${out%.iso}-updated.iso"
+    printf '\n  %sThe newest Ollie OS is already made:%s %s\n' "$green$bold" "$reset" "$out"
+elif [[ -n "${OLLIE_UPDATER:-}" && -x "$OLLIE_UPDATER" ]]; then
+    say "Making it the newest Ollie OS"
+    OLLIE_UPDATE_YES=1 OLLIE_UPDATE_IN_TERMINAL=1 "$OLLIE_UPDATER" "$out" ||
+        die "could not update the ISO (see above). The ISO from GitHub is still in $dest."
+    if [[ -f "${out%.iso}-updated.iso" ]]; then
+        out="${out%.iso}-updated.iso"
+        printf '\n  %sThe newest Ollie OS is:%s %s\n' "$green$bold" "$reset" "$out"
+    fi
+fi
+
+# --- 4. Straight on to USB Maker -----------------------------------------------------
+export OLLIE_USB_IN_TERMINAL=1
+if [[ -n "$bundled_maker" && -x "$bundled_maker" ]]; then
+    say "Choosing the drive to put Ollie OS on"
+    exec "$bundled_maker" "$out"
+fi
+maker="$(find "$dest" -maxdepth 1 -type f -iname 'Ollie-OS-USB-Maker*.AppImage' ! -iname '*Zip*' | head -n1)"
+if [[ -n "$maker" ]]; then
+    echo
+    read -rp "Start USB Maker now to put Ollie OS on a drive? [Y/n] " a || a=n
+    if [[ "$a" != [nN]* ]]; then
+        chmod +x -- "$maker" 2>/dev/null || true
+        exec "$maker" "$out"
+    fi
+fi
+echo
+echo "Open Ollie OS USB Maker to put it on a drive; it finds the ISO by itself."
+echo

@@ -1,0 +1,9 @@
+[General]
+ColorScheme=BreezeDark
+AccentColor=20,184,166
+
+[KDE]
+LookAndFeelPackage=org.ollieos.desktop
+
+[Icons]
+Theme=breeze-dark

@@ -1,0 +1,38 @@
+#!/bin/bash
+# Ollie Pet: a little cube pet to feed, play with and put to bed (pet.qml),
+# and, when it says so, walking along the bottom of the screen too
+# (ollie-pet --desktop: pet-desktop.qml, started with the desktop).
+# The pet is kept in ~/.config/ollie/pet.ini; its mood, for the Game
+# Overlay, in ~/.cache/ollie-pet-mood.
+set -uo pipefail
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+export QML_XHR_ALLOW_FILE_READ=1 QML_XHR_ALLOW_FILE_WRITE=1
+cfg="$HOME/.config/ollie" mood="$HOME/.cache/ollie-pet-mood" auto="$HOME/.config/autostart/ollie-pet-desktop.desktop"
+mkdir -p "$cfg" "$HOME/.cache"
+
+desktop_pet() {
+    pgrep -u "$UID" -f 'pet-desktop.qml' >/dev/null && return 0
+    (setsid qml6 /usr/local/share/ollie/pet-desktop.qml -- "config=$cfg/pet.ini" "mood=$mood" >"${XDG_RUNTIME_DIR:-/tmp}/ollie-pet-desktop.log" 2>&1 &)
+    # (It needs Plasma's layer shell: say so if it could not start.)
+    sleep 3
+    pgrep -u "$UID" -f 'pet-desktop.qml' >/dev/null ||
+        kdialog --title "Ollie Pet" --passivepopup "Your pet cannot walk on this desktop (it needs Plasma 6)." 6 2>/dev/null
+}
+if [[ ${1:-} == --desktop ]]; then
+    desktop_pet
+    exit 0
+fi
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
+    *"OLLIE-ACTION desktop on"*)
+        mkdir -p "${auto%/*}"
+        printf '[Desktop Entry]\nType=Application\nName=Ollie Pet on the desktop\nExec=/usr/local/bin/ollie-pet --desktop\nIcon=ollie-os\nNoDisplay=true\n' >"$auto"
+        desktop_pet
+        ;;
+    *"OLLIE-ACTION desktop off"*)
+        rm -f "$auto"
+        pkill -u "$UID" -f 'pet-desktop.qml'
+        ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/pet.qml -- "config=$cfg/pet.ini" "mood=$mood" "desktop=$([[ -f $auto ]] && echo on || echo off)" 2>&1)

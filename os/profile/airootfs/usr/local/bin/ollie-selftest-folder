@@ -1,0 +1,84 @@
+#!/bin/bash
+# Self-test of installing Ollie OS into a drive or a folder on one, run at
+# start-up only when the kernel command line has ollie.selftest=folder (the
+# build's tests do that, in a virtual machine whose disk has an OLLIE_BOOT
+# start-up part and an OLLIE_SHARE part, exFAT or NTFS). It installs Ollie OS
+# into "My Games/Linux" on the share, the way the Install Ollie OS window
+# runs it, with this kernel's own drivers for the share. Then it makes the
+# installed system report how it starts, twice: the first start writes a
+# file and restarts, the second checks that file and the file system check,
+# then switches off. Last, this machine switches off.
+set -uo pipefail
+say() { echo "OLLIE-FOLDER-TEST: $*" | tee /dev/console /dev/ttyS0 2>/dev/null; }
+
+boot_part="$(blkid -L OLLIE_BOOT)" share_part="$(blkid -L OLLIE_SHARE)"
+say "start-up part: $boot_part, share: $share_part ($(blkid -s TYPE -o value "$share_part"))"
+mkdir -p /mnt/ob
+mount "$boot_part" /mnt/ob || say "FAILED: the start-up part could not be mounted"
+
+# A home with things in it, as after using Ollie OS for a while.
+mkdir -p /home/ollie/Downloads
+head -c 50M /dev/urandom >/home/ollie/Downloads/big.bin
+echo "my download" >/home/ollie/Downloads/saved.txt
+chown -R ollie:ollie /home/ollie/Downloads
+
+start=$(date +%s)
+OLLIE_INSTALL_BOOT=/mnt/ob OLLIE_INSTALL_BOOT_UUID="$(blkid -s UUID -o value "$boot_part")" \
+    OLLIE_INSTALL_UUID="$(blkid -s UUID -o value "$share_part")" OLLIE_INSTALL_FOLDER="My Games/Linux" \
+    OLLIE_INSTALL_GB=16 OLLIE_INSTALL_USER=ollie OLLIE_INSTALL_OPTIONS="console=ttyS0,115200" \
+    /usr/local/bin/ollie-install-folder </dev/null >/tmp/folder.log 2>&1
+if grep -q '^DONE' /tmp/folder.log; then
+    say "installer finished in $((($(date +%s) - start) / 60)) minutes"
+else
+    say "installer FAILED: $(grep -v '^PROGRESS' /tmp/folder.log | tail -n 5 | tr '\n' ' ')"
+fi
+say "progress lines: $(grep -c '^PROGRESS' /tmp/folder.log), last: $(grep '^PROGRESS' /tmp/folder.log | tail -n 1)"
+say "start-up menu: $(cat /mnt/ob/loader/loader.conf | tr '\n' ' ') | $(ls /mnt/ob/loader/entries | tr '\n' ' ')"
+
+# The report the installed system gives at each start.
+fs="$(blkid -s TYPE -o value "$share_part")"
+[[ $fs == ntfs ]] && fs=ntfs3
+mkdir -p /mnt/share /mnt/sys
+if mount -t "$fs" "$share_part" /mnt/share && mount -o loop "/mnt/share/My Games/Linux/Ollie OS/ollie-os-system.img" /mnt/sys; then
+    cat >/mnt/sys/etc/systemd/system/ollie-folder-report.service <<'EOF'
+[Unit]
+Description=Self-test report of an Ollie OS installed into a folder
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ollie-folder-report
+EOF
+    cat >/mnt/sys/usr/local/bin/ollie-folder-report <<'EOF'
+#!/bin/bash
+say() { echo "OLLIE-FOLDER-BOOT: $*" >/dev/ttyS0; }
+n=$(($(cat /var/lib/ollie-folder-test 2>/dev/null || echo 0) + 1))
+echo "$n" >/var/lib/ollie-folder-test
+say "start $n: root $(findmnt -no SOURCE,FSTYPE /), drive $(findmnt -no SOURCE,FSTYPE /run/ollie-host)"
+say "start $n: file system check: $(journalctl -b -u systemd-fsck-root --no-pager -o cat | tail -n 2 | tr '\n' ' ')"
+say "start $n: home: $(ls /home/ollie/Downloads | tr '\n' ' ')"
+say "start $n: failed units: $(systemctl --failed --no-legend --plain | awk '{print $1}' | tr '\n' ' ')"
+if ((n == 1)); then
+    head -c 200M /dev/urandom >/home/ollie/written.bin
+    sha256sum /home/ollie/written.bin >/home/ollie/written.sha256
+    sync
+    say "start 1: wrote 200 MB, restarting"
+    systemctl reboot
+else
+    say "start $n: the 200 MB file: $(sha256sum -c /home/ollie/written.sha256 2>&1 | tail -n 1)"
+    say "start $n: DONE"
+    systemctl poweroff
+fi
+EOF
+    chmod 0755 /mnt/sys/usr/local/bin/ollie-folder-report
+    ln -sf /etc/systemd/system/ollie-folder-report.service /mnt/sys/etc/systemd/system/multi-user.target.wants/
+    umount /mnt/sys
+    umount /mnt/share
+    say "report added"
+else
+    say "FAILED: the installed system could not be opened to add the report"
+fi
+umount /mnt/ob
+say DONE
+sync
+systemctl poweroff

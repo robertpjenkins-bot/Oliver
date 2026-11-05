@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS start-up sound
+Exec=/usr/local/bin/ollie-startup-sound
+NoDisplay=true
+X-KDE-autostart-phase=2

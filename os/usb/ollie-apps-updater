@@ -1,0 +1,142 @@
+#!/bin/bash
+# Ollie OS app updater: adds apps to the Ollie OS this computer runs (an
+# installed one, or a USB drive that keeps its changes, made with an OLLIE_DATA
+# part), then opens one of them. No password: Ollie OS's admin rights need
+# none. It looks first: what is already there and the same is left alone,
+# what is missing is added, what is old, changed or cannot run is replaced;
+# then its checks test that each part works and fix what does not, and a
+# report says what it found.
+#
+# What it adds comes with it (share/ollie-apps):
+#   airootfs/   the files, where they are in Ollie OS's own system image;
+#               a service linked in etc/systemd/system/*.wants is switched on
+#   app.conf    TITLE= (its window title), NAME= (what it adds, for
+#               messages), OPEN= (the program opened afterwards)
+#   after-install (if there) run as root afterwards, from the folder it is in
+#   check       (if there) run as root last: tests that each part works and
+#               fixes what does not, printing OK/FIXED/LATER/PROBLEM lines
+set -uo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+share="${OLLIE_APPS_SHARE:-$here/../share/ollie-apps}"
+setting() { sed -n "s/^$1=//p" "$share/app.conf" 2>/dev/null | head -n 1; }
+TITLE="$(setting TITLE)" NAME="$(setting NAME)" OPEN="$(setting OPEN)"
+TITLE="${TITLE:-Ollie OS Updater}"
+
+tell() { # tell msgbox|error TEXT
+    if command -v kdialog >/dev/null && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+        kdialog --title "$TITLE" "--$1" "$2"
+    else
+        printf '%s\n' "$2"
+    fi
+}
+
+[[ -d "$share/airootfs" ]] || { tell error "This copy of $TITLE has nothing inside to add."; exit 1; }
+if [[ ! -x /usr/local/bin/ollie-first-setup ]]; then
+    tell error "This is not Ollie OS. $TITLE adds $NAME to Ollie OS: run it there."
+    exit 1
+fi
+if ! sudo -n true 2>/dev/null; then
+    tell error "This Ollie OS asks for a password for admin tasks, and $TITLE never asks for one. Bring Ollie OS up to date with the Ollie OS Updater (a new USB from it), then try again."
+    exit 1
+fi
+if [[ -d /run/archiso ]] && ! grep -qE 'cow_label=|cow_device=' /proc/cmdline; then
+    command -v kdialog >/dev/null && ! kdialog --title "$TITLE" --warningcontinuecancel \
+        "Ollie OS is running from its USB drive without keeping changes, so $NAME will be gone when this computer restarts.
+
+The Ollie OS Updater makes a new Ollie OS that has it for good; a USB drive made
+with an OLLIE_DATA part (USB Maker) keeps it too." && exit 0
+fi
+
+# Inside this app (an AppImage) only this user can read; root copies from a
+# copy outside it.
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp:?}"' EXIT
+cp -a "$share/." "$tmp/" || { tell error "Could not unpack $TITLE (is the disk full?)."; exit 1; }
+
+# Each file: already there and the same as this one (left alone, but a
+# program that cannot run is made runnable), missing (added), or old or
+# changed (replaced).
+same=0 added=() replaced=() runnable=() units=() failed=""
+while IFS= read -r -d '' path; do
+    rel="${path#"$tmp/airootfs/"}"
+    case "$rel" in
+    etc/systemd/system/*.wants/*)
+        units+=("${rel##*/}")
+        continue
+        ;;
+    *) mode=0644 ;;
+    esac
+    # Programs (in usr/local/bin, or Ollie OS's helpers in usr/local/lib/ollie).
+    [[ -f $path && -x $path ]] && mode=0755
+    if [[ -f "/$rel" ]] && cmp -s "$path" "/$rel"; then
+        if [[ $mode == 0755 && ! -x "/$rel" ]]; then
+            sudo -n chmod 0755 "/$rel" && runnable+=("/$rel") || failed+=" /$rel"
+        else
+            same=$((same + 1))
+        fi
+        continue
+    fi
+    if [[ -e "/$rel" ]]; then replaced+=("/$rel"); else added+=("/$rel"); fi
+    sudo -n install -D -m "$mode" "$path" "/$rel" || failed+=" /$rel"
+done < <(find "$tmp/airootfs" \( -type f -o -type l \) -print0)
+if [[ -n $failed ]]; then
+    tell error "Could not add$failed to Ollie OS (is the disk full?)."
+    exit 1
+fi
+# Its services: switched on (and those that were off, switched on now).
+turned_on=()
+if ((${#units[@]})); then
+    sudo -n systemctl daemon-reload 2>/dev/null
+    for u in "${units[@]}"; do
+        systemctl is-enabled -q "$u" 2>/dev/null && continue
+        sudo -n systemctl enable "$u" >/dev/null 2>&1 && turned_on+=("$u")
+    done
+fi
+[[ -f "$tmp/after-install" ]] && (cd "$tmp" && sudo -n bash ./after-install)
+# Its own checks that each part works (and fixes for what does not): lines
+# "OK what", "FIXED what", "LATER what" (done by the program that opens
+# next) or "PROBLEM what".
+checks=""
+[[ -f "$tmp/check" ]] && checks="$(cd "$tmp" && sudo -n bash ./check 2>/dev/null)"
+# The apps menu learns about it.
+command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1
+
+# --- The report ---------------------------------------------------------------------
+report="$tmp/report.txt"
+{
+    echo "$NAME"
+    echo
+    echo "Already there and working: $same files"
+    if ((${#added[@]})); then
+        echo "Added (were missing): ${#added[@]}"
+        printf '   + %s\n' "${added[@]}"
+    fi
+    if ((${#replaced[@]} + ${#runnable[@]})); then
+        echo "Replaced or repaired (were old, changed or could not run): $((${#replaced[@]} + ${#runnable[@]}))"
+        printf '   ~ %s\n' "${replaced[@]}" "${runnable[@]}" | grep -v '^   ~ $'
+    fi
+    if ((${#turned_on[@]})); then
+        echo "Switched on (were off): ${#turned_on[@]}"
+        printf '   ~ %s\n' "${turned_on[@]}"
+    fi
+    if [[ -n $checks ]]; then
+        echo
+        echo "Does everything work?"
+        sed -e 's/^OK /   ✔  /' -e 's/^FIXED /   🔧 fixed: /' -e 's/^LATER /   ⏳ next: /' -e 's/^PROBLEM /   ✖  /' <<<"$checks"
+    fi
+    echo
+    if ((${#added[@]} + ${#replaced[@]} + ${#runnable[@]} + ${#turned_on[@]} == 0)) && ! grep -q '^\(FIXED\|LATER\|PROBLEM\) ' <<<"$checks"; then
+        echo "Everything was already there and working: nothing needed changing."
+    else
+        echo "Done: everything is there now."
+    fi
+    [[ -n $OPEN ]] && echo "${OPEN##*/} opens now."
+} >"$report"
+if command -v kdialog >/dev/null && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+    kdialog --title "$TITLE" --textbox "$report" 720 560
+else
+    cat "$report"
+fi
+[[ -n $OPEN && -x $OPEN ]] && exec "$OPEN"
+exit 0

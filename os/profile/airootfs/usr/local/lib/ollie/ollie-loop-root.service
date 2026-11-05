@@ -1,0 +1,13 @@
+# In the start-up image (initramfs) of an Ollie OS installed into a system
+# file: opens the file before the system starts from it (loop-root).
+[Unit]
+Description=Open Ollie OS's system file
+DefaultDependencies=no
+ConditionKernelCommandLine=ollie.loop
+After=systemd-udevd.service systemd-udev-trigger.service systemd-modules-load.service
+Before=initrd-root-device.target sysroot.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/ollie/loop-root

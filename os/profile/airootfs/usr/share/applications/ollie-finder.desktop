@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie Finder
+Comment=Type to find any app or file at once
+Exec=/usr/local/bin/ollie-finder
+Icon=ollie-finder
+Terminal=false
+Categories=Utility;
+Keywords=search;find;files;

@@ -1,0 +1,3 @@
+# Ollie OS never asks for a password: admin tasks (DC, the Driver Installer,
+# updates) just run.
+%wheel ALL=(ALL:ALL) NOPASSWD: ALL

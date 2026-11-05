@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Driver Installer
+GenericName=Install Drivers
+Comment=Find the hardware in this computer and install the drivers it needs
+Exec=konsole --hold -e /usr/local/bin/ollie-drivers
+Icon=ollie-drivers
+Terminal=false
+Categories=System;Settings;HardwareSettings;
+Keywords=driver;drivers;nvidia;amd;graphics;printer;wifi;hardware;

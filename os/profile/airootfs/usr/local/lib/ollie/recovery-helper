@@ -1,0 +1,306 @@
+#!/bin/bash
+# Recovery Mode's root helper (ollie-recovery runs it with sudo): puts the
+# Ollie OS in an ISO file over this Ollie OS, for getting newer versions.
+#
+#   recovery-helper keep  ISO PROGRESS   newer Ollie OS; files, accounts and
+#                                        passwords, Wi-Fi, website logins and
+#                                        settings all come along
+#   recovery-helper fresh ISO PROGRESS   newer Ollie OS, starting over (new
+#                                        empty home; the old one is removed)
+#   recovery-helper erase ISO PROGRESS   any other ISO: written over the whole
+#                                        drive (everything on it is erased),
+#                                        then the computer restarts from it
+#
+# keep and fresh never touch the running system until the very end: the new
+# Ollie OS is built next to it (a btrfs subvolume, @new), then swapped in
+# (@ becomes @old-DATE, @new becomes @). Until the new one has run for 10
+# minutes, the old one stays on the start-up menu as "Ollie OS (before the
+# update)"; then ollie-recovery-cleanup removes it.
+#
+# PROGRESS gets one line per step: "P PERCENT TEXT", then "DONE", or
+# "ERROR TEXT", or "ISOLLIE" (erase was asked, but it is an Ollie OS ISO)
+# or "NOTOLLIE" (keep or fresh was asked, but it is not). Erasing also
+# says "SIZE BYTES" (the ISO's), then dd's own progress. For an Ollie OS
+# ISO, "VERSION X" says which version it is (its /etc/ollie-version).
+set -uo pipefail
+mode=${1:-} iso=${2:-} progress=${3:-/dev/null}
+readonly R=/run/ollie-recovery
+stamp="$(date +%Y%m%d-%H%M%S)"
+
+say() { echo "$*" >>"$progress"; }
+p() { say "P $1 $2"; }
+cleanup() {
+    for m in "$R/sfs" "$R/iso" "$R/top"; do
+        mountpoint -q "$m" && umount -l "$m" 2>/dev/null
+    done
+}
+trap cleanup EXIT
+fail() {
+    say "ERROR $*"
+    # A half-made new Ollie OS goes; the running one was never touched.
+    [[ -d "$R/top/@new" ]] && delete_subvol "$R/top/@new" 2>/dev/null
+    [[ -d "$R/top/@old-$stamp" ]] || rm -f /boot/loader/entries/ollie-before-update.conf /boot/vmlinuz-linux.new /boot/initramfs-linux.img.new
+    exit 1
+}
+# delete_subvol PATH: a btrfs subvolume, with the ones inside it (systemd
+# makes /var/lib/machines and /var/lib/portables subvolumes).
+delete_subvol() {
+    local top=$R/top rel=${1#"$R/top/"} sub
+    btrfs subvolume list -o "$1" 2>/dev/null | awk '{print $NF}' | sed "s|^<FS_TREE>/||" | sort -r |
+        while read -r sub; do btrfs subvolume delete "$top/$sub" >/dev/null 2>&1; done
+    btrfs subvolume delete "$1" >/dev/null 2>&1 || btrfs subvolume delete "$top/$rel" >/dev/null
+}
+
+[[ $EUID -eq 0 ]] || { echo "run as root (sudo)" >&2; exit 1; }
+case $mode in keep | fresh | erase) ;; *) echo "usage: recovery-helper keep|fresh|erase ISO PROGRESS" >&2; exit 2 ;; esac
+: >"$progress"
+# What the tools say goes to the log, for when something goes wrong.
+readonly LOG=/var/log/ollie-recovery.log
+mkdir -p /var/log && echo "== Recovery Mode $mode $iso, $(date)" >>"$LOG"
+[[ -f $iso && -r $iso ]] || fail "The ISO file could not be opened."
+[[ -d /run/archiso ]] && fail "This is the live USB. Recovery Mode works on Ollie OS installed on a drive."
+mkdir -p "$R/iso" "$R/sfs" "$R/top"
+cleanup
+
+p 1 "Opening the ISO file"
+mount -o loop,ro "$iso" "$R/iso" 2>/dev/null || fail "That file is not an ISO that can be opened."
+sfs="$R/iso/arch/x86_64/airootfs.sfs"
+is_ollie=0
+if [[ -f $sfs ]] && mount -o loop,ro "$sfs" "$R/sfs" 2>/dev/null; then
+    [[ -x "$R/sfs/usr/local/bin/ollie-welcome" && -d "$R/sfs/usr/local/share/ollie" ]] && is_ollie=1
+fi
+
+((is_ollie)) && [[ -s "$R/sfs/etc/ollie-version" ]] && say "VERSION $(head -n 1 "$R/sfs/etc/ollie-version" | tr -cd '0-9A-Za-z. -')"
+
+# --- Any other ISO: written over the whole drive -----------------------------------------------
+if [[ $mode == erase ]]; then
+    ((is_ollie)) && { say ISOLLIE; exit 0; }
+    cleanup
+    rootdev="$(findmnt -no SOURCE / | sed 's/\[.*//')"
+    disk="/dev/$(lsblk -no PKNAME "$rootdev" 2>/dev/null | head -n 1)"
+    [[ -b $disk && $disk != /dev/ ]] || fail "The drive Ollie OS is on could not be found."
+    size=$(stat -c %s "$iso")
+    say "SIZE $size"
+    (($(lsblk -bdno SIZE "$disk") > size)) || fail "The ISO is bigger than the drive."
+    avail=$(awk '/^MemAvailable:/ {print $2 * 1024}' /proc/meminfo)
+    ((avail > size + 1024 * 1024 * 1024)) || fail "Not enough memory: the ISO is copied into memory first, and needs $(((size >> 30) + 2)) GB free."
+    p 5 "Copying the ISO into memory"
+    ram=$R/ram
+    mkdir -p "$ram"
+    mount -t tmpfs -o size=$((size + 256 * 1024 * 1024)) ollie-recovery "$ram" || fail "Could not make room in memory."
+    cp "$iso" "$ram/os.iso" || fail "Could not copy the ISO into memory."
+    # What runs while the drive is being overwritten comes from memory too:
+    # bash, dd and fsfreeze, with their libraries.
+    mkdir -p "$ram/lib"
+    for b in bash dd fsfreeze swapoff; do
+        cp "$(command -v "$b")" "$ram/$b"
+        ldd "$(command -v "$b")" | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^\//) print $i}' | xargs -r cp -fL -t "$ram/lib/"
+    done
+    ld="$(ls "$ram"/lib/ld-linux-x86-64.so.* | head -n 1)"
+    p 15 "Writing the ISO over the drive. The screen may stop moving: don't turn the computer off! It restarts by itself."
+    sync
+    umount /boot 2>/dev/null || umount -l /boot 2>/dev/null
+    # From here on nothing of the old system is read or written: the file
+    # system is frozen, and the in-memory dd writes the drive, then the
+    # kernel restarts the computer.
+    exec "$ld" --library-path "$ram/lib" "$ram/bash" -c '
+        ram=$1 ld=$2 disk=$3 progress=$4
+        run() { "$ld" --library-path "$ram/lib" "$@"; }
+        run "$ram/swapoff" -a 2>/dev/null
+        run "$ram/fsfreeze" -f / 2>/dev/null
+        run "$ram/dd" if="$ram/os.iso" of="$disk" bs=4M oflag=direct conv=fsync status=progress 2>>"$progress" &&
+            echo "DONE" >>"$progress" || echo "ERROR Writing the drive failed." >>"$progress"
+        echo s >/proc/sysrq-trigger
+        echo b >/proc/sysrq-trigger' ollie-recovery "$ram" "$ld" "$disk" "$progress"
+fi
+
+# --- Newer Ollie OS --------------------------------------------------------------------------
+((is_ollie)) || { say NOTOLLIE; exit 0; }
+[[ "$(findmnt -no FSTYPE /)" == btrfs ]] || fail "Recovery Mode works on Ollie OS installed on its own drive (this one is in a system file: use the Installer)."
+rootdev="$(findmnt -no SOURCE / | sed 's/\[.*//')"
+current="$(findmnt -no FSROOT /)"
+current=${current#/}
+mount -o subvolid=5 "$rootdev" "$R/top" || fail "The drive could not be opened."
+[[ -d "$R/top/@" && -d "$R/top/@home" ]] || fail "This drive is not set up the way Ollie OS installs itself."
+
+# Room for it: the new system (about 2.5 times the ISO's system file, with
+# btrfs' compression) and the Fixer's copy of it.
+need=$(($(stat -c %s "$sfs") * 7 / 2 + 2 * 1024 * 1024 * 1024))
+free=$(df -B1 --output=avail / | tail -n 1)
+((free > need)) || fail "Not enough free space: it needs $((need >> 30)) GB, there is $((free >> 30)) GB. Delete some big files or games first."
+
+[[ -d "$R/top/@new" ]] && delete_subvol "$R/top/@new"
+btrfs subvolume create "$R/top/@new" >/dev/null || fail "Could not make room for the new Ollie OS."
+new=$R/top/@new
+
+p 3 "Copying the new Ollie OS (this takes a few minutes)"
+rsync -aAXH --info=progress2 --no-inc-recursive --exclude=/boot/ "$R/sfs/" "$new/" 2>>/var/log/ollie-recovery.log |
+    stdbuf -o0 tr '\r' '\n' | awk -v f="$progress" '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) {p = int(3 + $i * 67 / 100); if (p != last) {print "P " p " Copying the new Ollie OS" >>f; fflush(f); last = p}}}'
+((PIPESTATUS[0] == 0)) || fail "Copying the new Ollie OS failed (is the drive full?)."
+mkdir -p "$new/boot"
+
+p 72 "Keeping a good copy for The Fixer"
+install -D -m 0644 "$sfs" "$new/var/lib/ollie/fixer/airootfs.sfs" || fail "Could not copy the Fixer's copy (is the drive full?)."
+
+p 76 "Setting up the new Ollie OS"
+# What makes the ISO a live USB goes, as the installer does.
+rm -f "$new/etc/mkinitcpio.conf.d/archiso.conf" \
+    "$new/etc/systemd/system/multi-user.target.wants/ollie-live-setup.service" \
+    "$new/usr/share/applications/ollie-install.desktop"
+# Starting from this drive stays the same: its drives list, its start-up
+# image settings, its start-up shells.
+copy() { # copy PATH...: from the running system into the new one, if there
+    local f
+    for f in "$@"; do
+        [[ -e $f || -L $f ]] || continue
+        mkdir -p "$new$(dirname "$f")"
+        rm -rf "${new:?}$f"
+        cp -a --reflink=auto "$f" "$new$f"
+    done
+}
+copy /etc/fstab /etc/mkinitcpio.d/linux.preset /etc/systemd/system/emergency.service.d /etc/systemd/system/rescue.service.d
+for f in /etc/mkinitcpio.conf.d/*; do [[ $f == */archiso.conf ]] || copy "$f"; done
+# The computer's name, time zone, language and keyboard.
+copy /etc/hostname /etc/localtime /etc/locale.conf /etc/locale.gen /etc/vconsole.conf /etc/adjtime /etc/X11/xorg.conf.d/00-keyboard.conf
+# Windows on the start-up menu.
+copy /etc/systemd/system/multi-user.target.wants/ollie-windows-boot.service
+
+# merge_accounts: the new system's own accounts, plus every person's account
+# (user IDs 1000 and up) from this one, with their passwords and groups.
+merge_accounts() {
+    local o=/etc n=$new/etc t
+    t="$(mktemp -d)"
+    awk -F: -v OFS=: 'FNR == NR { if ($3 >= 1000 && $3 < 60000) { keep[$1] = $0; order[++k] = $1 } next }
+        { if ($1 in keep) { print keep[$1]; done[$1] = 1 } else print }
+        END { for (i = 1; i <= k; i++) if (!(order[i] in done)) print keep[order[i]] }' "$o/passwd" "$n/passwd" >"$t/passwd" &&
+    awk -F: -v OFS=: 'FNR == 1 { f++ }
+        f == 1 { if ($3 >= 1000 && $3 < 60000) person[$1] = 1; next }
+        f == 2 { if ($1 in person) { keep[$1] = $0; order[++k] = $1 } next }
+        { if ($1 in keep) { print keep[$1]; done[$1] = 1 } else print }
+        END { for (i = 1; i <= k; i++) if (!(order[i] in done)) print keep[order[i]] }' "$o/passwd" "$o/shadow" "$n/shadow" >"$t/shadow" &&
+    for g in group gshadow; do
+        # group: name:x:gid:members   gshadow: name:password:admins:members
+        awk -F: -v OFS=: '
+            FNR == 1 { f++ }
+            f == 1 { if ($3 >= 1000 && $3 < 60000) person[$1] = 1; next }
+            f == 2 { gid[$1] = $3; next }
+            f == 3 {
+                if (gid[$1] >= 1000 && gid[$1] < 60000) { keep[$1] = $0; order[++k] = $1 }
+                else { n = split($4, m, ","); s = ""; for (i = 1; i <= n; i++) if (m[i] in person) s = s (s ? "," : "") m[i]; extra[$1] = s }
+                next }
+            {
+                if ($1 in keep) { print keep[$1]; done[$1] = 1; next }
+                if (extra[$1] != "") {
+                    n = split($4, m, ","); delete have; for (i = 1; i <= n; i++) have[m[i]] = 1
+                    n = split(extra[$1], m, ","); for (i = 1; i <= n; i++) if (!(m[i] in have)) $4 = $4 ($4 ? "," : "") m[i]
+                }
+                print }
+            END { for (i = 1; i <= k; i++) if (!(order[i] in done)) print keep[order[i]] }' \
+            "$o/passwd" "$o/group" "$o/$g" "$n/$g" >"$t/$g" || return 1
+    done || return 1
+    install -m 0644 "$t/passwd" "$n/passwd" && install -m 0644 "$t/group" "$n/group" &&
+        install -m 0600 "$t/shadow" "$n/shadow" && install -m 0600 "$t/gshadow" "$n/gshadow"
+    local rc=$?
+    rm -rf "$t"
+    return $rc
+}
+
+if [[ $mode == keep ]]; then
+    p 80 "Bringing your username, passwords and settings along"
+    merge_accounts || fail "Could not bring the accounts along."
+    copy /etc/subuid /etc/subgid /etc/machine-id
+    # Logging in: who logs in, and how (the first-start account setup stays done).
+    rm -rf "$new/etc/sddm.conf.d"
+    copy /etc/sddm.conf.d /var/lib/sddm/state.conf
+    # Wi-Fi passwords, Bluetooth devices, printers, the fastest download servers.
+    copy /etc/NetworkManager/system-connections /var/lib/bluetooth /etc/cups /etc/pacman.d/mirrorlist
+    # Ollie OS's settings: Screen Time, the Typing Scanner, the parent PIN,
+    # the Firefox password, the Update Checker; and its notes and records.
+    copy /etc/ollie
+    for f in /var/lib/ollie/*; do [[ $f == */fixer ]] || copy "$f"; done
+    # Apps from the app store (Flathub) for everyone.
+    copy /var/lib/flatpak
+    # What was switched on or off (Screen Time, the Typing Scanner, the Update Checker...).
+    for w in /etc/systemd/system/*.wants /etc/systemd/user/*.wants; do
+        # (Off here and known here: off there too. New ones stay as the new version has them.)
+        for f in "$new$w"/ollie-*; do
+            [[ -L $f && ! -L ${f#"$new"} && -e "$(dirname "$w")/$(basename "$f")" ]] && rm -f "$f"
+        done
+        for f in "$w"/ollie-*; do copy "$f"; done
+    done
+    # (Files, Steam games, website logins and passwords saved in Firefox are
+    # all in the home folders, which stay just as they are.)
+fi
+
+# The old Ollie OS is cleaned away once the new one has run for 10 minutes.
+mkdir -p "$new/etc/systemd/system/timers.target.wants"
+for f in /usr/local/lib/ollie/recovery-cleanup /etc/systemd/system/ollie-recovery-cleanup.service /etc/systemd/system/ollie-recovery-cleanup.timer; do
+    [[ -e "$new$f" ]] || copy "$f"
+done
+chmod 0755 "$new/usr/local/lib/ollie/recovery-cleanup"
+ln -sfn /etc/systemd/system/ollie-recovery-cleanup.timer "$new/etc/systemd/system/timers.target.wants/ollie-recovery-cleanup.timer"
+
+p 84 "Making the new start-up image"
+kver="$(ls "$new/usr/lib/modules" | head -n 1)"
+[[ -n $kver ]] || fail "The new Ollie OS has no kernel."
+if [[ -f "$R/iso/arch/boot/x86_64/vmlinuz-linux" ]]; then
+    cp "$R/iso/arch/boot/x86_64/vmlinuz-linux" "$new/var/tmp/vmlinuz-linux"
+else
+    cp "$new/usr/lib/modules/$kver/vmlinuz" "$new/var/tmp/vmlinuz-linux"
+fi
+arch-chroot "$new" /bin/bash -uo pipefail -s "$mode" "$kver" >>"$LOG" 2>&1 <<'CHROOT'
+locale-gen
+passwd -l root
+if [[ $1 == fresh ]] && ! grep -q '^ollie:' /etc/passwd; then
+    useradd -m -G wheel,video,audio,input,storage -s /bin/bash -c "Ollie" ollie
+    passwd -d ollie
+fi
+mkinitcpio -k "$2" -g /var/tmp/initramfs-linux.img -S autodetect
+CHROOT
+[[ -s "$new/var/tmp/initramfs-linux.img" ]] || fail "The new start-up image could not be made."
+
+# Starting the old one, until the new one has proven itself: its kernel and
+# start-up image kept on the start-up partition, and a start-up menu entry
+# (systemd-boot; when there is room).
+bootfs="$(findmnt -no TARGET /boot)"
+if [[ $bootfs == /boot && $current == @ && -f /boot/loader/entries/ollie.conf ]]; then
+    want=$(stat -c %s /boot/vmlinuz-linux /boot/initramfs-linux.img "$new/var/tmp/vmlinuz-linux" "$new/var/tmp/initramfs-linux.img" 2>/dev/null |
+        awk '{s += $1} END {print s + 8 * 1024 * 1024}')
+    have=$(df -B1 --output=avail /boot | tail -n 1)
+    if ((want > 8 * 1024 * 1024 && have > want)); then
+        mkdir -p /boot/ollie-before-update
+        cp -f /boot/vmlinuz-linux /boot/initramfs-linux.img /boot/ollie-before-update/
+        sed -E -e "s|^title .*|title   Ollie OS (before the update)|" \
+            -e 's|/vmlinuz-linux|/ollie-before-update/vmlinuz-linux|' -e 's|/initramfs-linux.img|/ollie-before-update/initramfs-linux.img|' \
+            -e "s#subvol=@( |\$)#subvol=@old-$stamp\1#" /boot/loader/entries/ollie.conf >/boot/loader/entries/ollie-before-update.conf
+    fi
+fi
+
+p 94 "Swapping in the new Ollie OS"
+if [[ $bootfs == /boot ]]; then
+    cp -f "$new/var/tmp/vmlinuz-linux" /boot/vmlinuz-linux.new && cp -f "$new/var/tmp/initramfs-linux.img" /boot/initramfs-linux.img.new ||
+        fail "The start-up partition is full."
+    sync
+fi
+rm -f "$new/var/tmp/vmlinuz-linux" "$new/var/tmp/initramfs-linux.img"
+# The running Ollie OS's name moves aside (@old-DATE, or @broken-DATE when
+# this is the old one started from the menu and @ is a new one that broke).
+[[ $current == @ ]] && aside="@old-$stamp" || aside="@broken-$stamp"
+mv "$R/top/@" "$R/top/$aside" || fail "Could not swap in the new Ollie OS."
+if ! mv "$R/top/@new" "$R/top/@"; then
+    mv "$R/top/$aside" "$R/top/@"
+    fail "Could not swap in the new Ollie OS."
+fi
+if [[ $bootfs == /boot ]]; then
+    mv -f /boot/vmlinuz-linux.new /boot/vmlinuz-linux && mv -f /boot/initramfs-linux.img.new /boot/initramfs-linux.img
+fi
+if [[ $mode == fresh ]]; then
+    # A new, empty home (with the setup account's folder); the old one is
+    # removed with the old Ollie OS.
+    mv "$R/top/@home" "$R/top/@home-old-$stamp" && btrfs subvolume create "$R/top/@home" >/dev/null &&
+        cp -a "$R/top/@/home/." "$R/top/@home/" 2>/dev/null
+    find "$R/top/@/home" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
+fi
+sync
+p 100 "Done"
+say DONE

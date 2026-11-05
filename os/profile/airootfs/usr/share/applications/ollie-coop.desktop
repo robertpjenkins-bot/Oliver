@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Couch Co-op
+Comment=Plug in 2-4 controllers, see which player is which, and play together
+Exec=/usr/local/bin/ollie-coop
+Icon=ollie-coop
+Terminal=false
+Categories=Game;

@@ -1,0 +1,23 @@
+#!/bin/bash
+# Steam, the Ollie OS way: it opens in Game Mode (Steam's big-screen mode,
+# like a Steam Machine or Steam Deck) unless Ollie OS Settings says to open
+# it in a window. The Steam button in the apps menu and on the taskbar runs
+# this (/usr/local/share/applications/steam.desktop).
+#   ollie-steam [--window|--game-mode] [steam://... link]
+set -uo pipefail
+mode=game
+[[ -e "$HOME/.config/ollie/steam-in-window" ]] && mode=window
+case "${1:-}" in
+--window) mode=window; shift ;;
+--game-mode) mode=game; shift ;;
+esac
+if [[ $mode == window ]]; then
+    exec /usr/bin/steam "$@"
+fi
+# Steam already open: switch it to Game Mode (and open the link given).
+if pgrep -u "$UID" -x steam >/dev/null 2>&1; then
+    /usr/bin/steam steam://open/bigpicture
+    [[ $# -gt 0 ]] && exec /usr/bin/steam "$@"
+    exit 0
+fi
+exec /usr/bin/steam -gamepadui "$@"

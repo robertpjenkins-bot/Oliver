@@ -1,0 +1,21 @@
+#!/bin/bash
+# GameMode's start and end (/etc/gamemode.ini): full power for a game, then
+# back to how it was, with a little message.
+#   speed-boost-hook start|end
+saved="${XDG_RUNTIME_DIR:-/tmp}/ollie-speed-boost-profile"
+case "${1:-}" in
+start)
+    if command -v powerprofilesctl >/dev/null; then
+        [[ -s $saved ]] || powerprofilesctl get >"$saved" 2>/dev/null
+        powerprofilesctl set performance 2>/dev/null
+    fi
+    kdialog --title "Speed Boost" --passivepopup "🚀 Speed Boost on: full power for your game" 4 2>/dev/null &
+    ;;
+end)
+    if command -v powerprofilesctl >/dev/null; then
+        powerprofilesctl set "$(cat "$saved" 2>/dev/null || echo balanced)" 2>/dev/null
+        rm -f "$saved"
+    fi
+    ;;
+esac
+exit 0

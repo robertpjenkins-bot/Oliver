@@ -1,0 +1,39 @@
+#!/bin/bash
+# The in-game overlay (MangoHud), in ~/.config/MangoHud/MangoHud.conf:
+#   ollie-overlay fps       the FPS counter, top right (Ollie OS's own start)
+#   ollie-overlay full      the Game Overlay: time, battery, FPS, temperatures
+#                           and how your Ollie Pet is
+#   ollie-overlay off       nothing
+#   ollie-overlay --ensure  the FPS counter, if there is no overlay setting yet
+#   ollie-overlay --which   prints fps, full or off
+# In a game, Right Shift + F12 hides and shows it. Games read it as they
+# start; one already running picks up the change by itself.
+set -uo pipefail
+conf="$HOME/.config/MangoHud/MangoHud.conf"
+which() {
+    if grep -qx 'no_display' "$conf" 2>/dev/null; then echo off
+    elif grep -q '^# ollie-overlay: full' "$conf" 2>/dev/null; then echo full
+    else echo fps; fi
+}
+write() { # write fps|full|off
+    mkdir -p "${conf%/*}"
+    {
+        echo "# ollie-overlay: $1 (Ollie OS Settings changes this; Right Shift + F12 hides it in a game)"
+        echo "legacy_layout=false"
+        echo "toggle_hud=Shift_R+F12"
+        echo "round_corners=10"
+        if [[ $1 == full ]]; then
+            printf '%s\n' position=top-left font_size=22 background_alpha=0.5 time 'time_format=%H:%M' fps frametime=0 \
+                cpu_temp gpu_temp battery battery_icon 'custom_text=Pet' 'exec=cat "$HOME/.cache/ollie-pet-mood" 2>/dev/null'
+        else
+            printf '%s\n' fps_only position=top-right font_size=28 background_alpha=0.45
+        fi
+        if [[ $1 == off ]]; then echo no_display; fi
+    } >"$conf"
+}
+case "${1:-}" in
+fps | full | off) write "$1" ;;
+--ensure) [[ -s $conf ]] || write fps ;;
+--which) which ;;
+*) sed -n '2,11s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+esac

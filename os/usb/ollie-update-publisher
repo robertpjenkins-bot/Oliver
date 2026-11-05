@@ -1,0 +1,101 @@
+#!/bin/bash
+# Ollie OS Update Publisher (for biobro): publish an Ollie OS update. Give it
+# a name, say what is new, and pick its files (updater AppImages such as the
+# Game Pack Updater, or any other files); everyone whose Ollie OS has the
+# Update Checker then gets a notification with an Install button.
+#
+# An update is a release of the Ollie OS repository whose tag starts with
+# "ollie-update-". Publishing it needs biobro's GitHub account, which the
+# web browser is already signed in to: the Publisher opens GitHub's "new
+# release" page with the name, the tag and what is new already filled in,
+# and the folder with the files next to it: drag them in, click Publish.
+# (Where the GitHub command, gh, is installed and signed in, it publishes it
+# all by itself.)
+set -uo pipefail
+readonly REPO=robertpjenkins-bot/Ollie-OS TITLE="Ollie OS Update Publisher"
+readonly MARK='<!-- ollie-update -->'
+have() { command -v "$1" >/dev/null 2>&1; }
+have kdialog || { echo "$TITLE needs kdialog (Ollie OS, SteamOS's desktop and KDE have it)."; exit 1; }
+
+# Text for a web address: letters stay, everything else as %XX (UTF-8 bytes).
+urlencode() {
+    local LC_ALL=C s=$1 i c out=""
+    for ((i = 0; i < ${#s}; i++)); do
+        c=${s:i:1}
+        case $c in
+        [a-zA-Z0-9.~_-]) out+=$c ;;
+        *) out+="$(printf '%%%02X' "'$c" | sed 's/^%FFFFFFFFFFFFFF/%/')" ;;
+        esac
+    done
+    printf '%s' "$out"
+}
+
+name="$(kdialog --title "$TITLE" --inputbox "What is the update called?
+(For example: Game Pack 2, or New backgrounds)" "")" || exit 0
+name="$(xargs <<<"$name" 2>/dev/null || echo "$name")"
+[[ -n $name ]] || { kdialog --title "$TITLE" --sorry "The update needs a name."; exit 0; }
+what="$(kdialog --title "$TITLE" --geometry 640x360 --textinputbox "What is new in \"$name\"?
+People see this in the notification, and before they install it." "")" || exit 0
+[[ -n $what ]] || { kdialog --title "$TITLE" --sorry "Say what is new, so people know what they get."; exit 0; }
+mapfile -t files < <(kdialog --title "$TITLE: pick the update's files" --multiple --separate-output \
+    --getopenfilename "$HOME/Downloads" "*.AppImage *.appimage|Updater apps (AppImage)
+*|All files")
+((${#files[@]})) || { kdialog --title "$TITLE" --sorry "Pick at least one file for the update (an updater AppImage, say)."; exit 0; }
+
+list="$(for f in "${files[@]}"; do printf '  %s\n' "${f##*/}"; done)"
+kdialog --title "$TITLE" --yes-label "Publish" --no-label "Cancel" --yesno \
+    "Publish this update?
+
+Name: $name
+
+What is new:
+$what
+
+Files:
+$list
+
+Everyone with the Update Checker gets a notification about it." || exit 0
+
+tag="ollie-update-$(date +%Y%m%d-%H%M)"
+body="$what
+
+$MARK
+*An Ollie OS update. Ollie OS's Update Checker tells you about it: install it from the notification, or from Ollie OS Updates in the apps menu.*"
+
+# The files, together in Downloads (to drag into the release page).
+dir="$HOME/Downloads/Ollie-OS-Update-$tag"
+mkdir -p "$dir"
+for f in "${files[@]}"; do cp -f "$f" "$dir/" || { kdialog --title "$TITLE" --error "Could not copy $f (is the disk full?)."; exit 1; }; done
+printf '%s\n\n%s\n' "$name" "$what" >"$dir/what-is-new.txt"
+
+# All by itself, where the GitHub command is signed in.
+if have gh && gh auth status >/dev/null 2>&1; then
+    if gh release create "$tag" --repo "$REPO" --title "$name" --notes "$body" --latest=false "${files[@]}" >/dev/null 2>&1; then
+        kdialog --title "$TITLE" --msgbox "Published! \"$name\" is out.
+
+Everyone with the Update Checker gets a notification about it within
+a few hours (or right away from Ollie OS Updates in the apps menu)."
+        exit 0
+    fi
+fi
+
+# In the web browser: the release page filled in, and the folder with the files.
+xdg-open "https://github.com/$REPO/releases/new?tag=$tag&title=$(urlencode "$name")&body=$(urlencode "$body")" >/dev/null 2>&1 &
+sleep 2
+xdg-open "$dir" >/dev/null 2>&1 &
+kdialog --title "$TITLE" --msgbox "Almost done! Your web browser opened GitHub's \"new release\" page,
+with the name and what is new already filled in, and a folder with the
+update's files opened next to it.
+
+  1. Drag the files from the folder onto \"Attach binaries\" on the page.
+  2. Untick \"Set as the latest release\" (so the Ollie OS ISO stays the
+     main download).
+  3. Click \"Publish release\".
+
+Then everyone with the Update Checker gets a notification about
+\"$name\".
+
+(Not signed in to GitHub in the browser? Sign in as robertpjenkins-bot
+first, then click the page's address again: it is in the folder too.)"
+printf '%s\n' "https://github.com/$REPO/releases/new?tag=$tag&title=$(urlencode "$name")&body=$(urlencode "$body")" >"$dir/release-page-address.txt"
+exit 0

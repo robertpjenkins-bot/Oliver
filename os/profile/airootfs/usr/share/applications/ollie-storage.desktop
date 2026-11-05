@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS Storage
+Comment=Keep everything you save in Ollie OS (Steam games, downloads, settings) on a drive with room
+Exec=/usr/local/bin/ollie-storage
+Icon=ollie-storage
+Terminal=false
+Categories=System;
+Keywords=storage;space;room;drive;steam;full;disk;

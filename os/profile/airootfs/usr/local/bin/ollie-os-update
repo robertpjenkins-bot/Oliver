@@ -1,0 +1,70 @@
+#!/bin/bash
+# Update Ollie OS: one click brings everything up to date — Ollie OS's
+# programs and drivers from the Arch Linux servers, the apps from Flathub —
+# and adds what newer Ollie OS has (Speed Boost, the FPS counter, the
+# start-up animation). No password.
+set -uo pipefail
+readonly TITLE="Update Ollie OS"
+# What newer Ollie OS has, added if missing (only those the servers carry).
+readonly EXTRAS=(gamemode lib32-gamemode mangohud lib32-mangohud plymouth libinput libinput-tools evtest libnotify python espeak-ng ffmpeg qt6-declarative layer-shell-qt)
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
+say() { printf '\n%s==>%s %s%s%s\n' "$teal$bold" "$reset" "$bold" "$*" "$reset"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+finish() { # finish TEXT
+    printf '\n%s\n\nPress Enter to close.' "$1"
+    read -r _ || true
+    exit 0
+}
+
+if [[ ! -t 0 && -z "${OLLIE_UPDATE_IN_TERMINAL:-}" ]]; then
+    export OLLIE_UPDATE_IN_TERMINAL=1
+    have konsole && exec konsole -e "$0" "$@"
+    have kdialog && kdialog --title "$TITLE" --error "No terminal program found to show the update."
+    exit 1
+fi
+printf '\n%s  %s%s\n' "$bold" "$TITLE" "$reset"
+sudo -n true 2>/dev/null ||
+    finish "${red}${bold}This Ollie OS asks for a password for admin tasks, and $TITLE never asks for one.$reset"
+if [[ -d /run/archiso ]] && ! grep -qE 'cow_label=|cow_device=' /proc/cmdline; then
+    echo "  Ollie OS is running from its USB drive without keeping changes: the update is gone when this computer restarts."
+fi
+kernel_before="$(pacman -Q linux 2>/dev/null)"
+
+say "Updating Ollie OS's programs and drivers"
+sudo -n systemctl start ollie-keyring.service 2>/dev/null
+[[ -n "$(sudo -n ls /etc/pacman.d/gnupg 2>/dev/null)" ]] ||
+    { sudo -n pacman-key --init && sudo -n pacman-key --populate; } >/dev/null 2>&1
+sudo -n pacman -Sy --needed --noconfirm archlinux-keyring ||
+    finish "${red}${bold}Could not reach the Arch Linux servers.$reset Is the internet connected? Open $TITLE again to retry."
+extras=()
+for p in "${EXTRAS[@]}"; do
+    pacman -Q "$p" >/dev/null 2>&1 || ! pacman -Si "$p" >/dev/null 2>&1 || extras+=("$p")
+done
+sudo -n pacman -Su --needed --noconfirm "${extras[@]}" ||
+    finish "${red}${bold}The update did not finish (see above).$reset Open $TITLE again to retry; the Fixer can help too."
+
+say "Ollie OS's start-up animation"
+sudo -n /usr/local/lib/ollie/boot-splash && echo "  On."
+
+if have flatpak; then
+    say "Updating apps from Flathub (Minecraft and others)"
+    sudo -n flatpak update -y --noninteractive --system 2>/dev/null
+    flatpak update -y --noninteractive --user 2>/dev/null
+fi
+have kbuildsycoca6 && kbuildsycoca6 >/dev/null 2>&1
+# Speed Boost runs from now on (it starts by itself at each start).
+systemctl --user daemon-reload 2>/dev/null
+systemctl --user start ollie-speed-boost.service 2>/dev/null
+
+msg="${green}${bold}  Ollie OS is up to date!$reset"
+if [[ "$(pacman -Q linux 2>/dev/null)" != "$kernel_before" ]]; then
+    msg+="
+
+  Restart the computer to finish (a new Linux kernel came with it)."
+fi
+msg+="
+
+  (The FPS counter shows in games after the next restart.)"
+# The first time: Ollie OS Welcome, to find everything new.
+[[ -e "$HOME/.config/ollie/welcome-seen" ]] || (setsid /usr/local/bin/ollie-welcome >/dev/null 2>&1 &)
+finish "$msg"

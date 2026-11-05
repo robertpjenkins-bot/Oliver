@@ -1,0 +1,106 @@
+#!/bin/bash
+# Write an ISO image (the Ollie OS ISO, or any other) onto a USB stick or drive.
+#
+#   sudo ./ollie-write [ISO] [DRIVE]
+#
+# Works on any Linux, including SteamOS desktop mode. Without arguments it
+# looks for ollie-os-*.iso in the current folder and in ~/Downloads, and lists
+# the drives you can write to. It never offers the drive the running system is
+# on, and makes you type the drive's name before erasing it.
+set -euo pipefail
+
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' reset=$'\e[0m'
+say() { printf '%s==>%s %s\n' "$teal$bold" "$reset" "$*"; }
+die() {
+    printf '%sError:%s %s\n' "$red$bold" "$reset" "$*" >&2
+    exit 1
+}
+
+if [[ $EUID -ne 0 ]]; then
+    # Resolve the ISO before sudo changes $HOME and the working directory.
+    args=()
+    [[ $# -ge 1 ]] && args+=("$(realpath -- "$1")")
+    [[ $# -ge 2 ]] && args+=("$2")
+    if [[ $# -lt 1 ]]; then
+        for f in ./ollie-os-*.iso "$HOME"/Downloads/ollie-os-*.iso; do
+            [[ -f "$f" ]] && args=("$(realpath -- "$f")")
+        done
+    fi
+    exec sudo "$(realpath -- "$0")" "${args[@]}"
+fi
+
+iso="${1:-}"
+if [[ -z "$iso" ]]; then
+    read -rp "Path to the ISO file: " iso
+fi
+[[ -f "$iso" ]] || die "no ISO file at '$iso'."
+iso_bytes="$(stat -c %s -- "$iso")"
+say "Image: $iso ($((iso_bytes / 1024 / 1024)) MB)"
+
+# The disk holding / (and /home, /boot) is never a valid target.
+protected=()
+for m in / /home /boot /boot/efi /var /run/archiso/bootmnt; do
+    src="$(findmnt -no SOURCE "$m" 2>/dev/null)" || continue
+    src="${src%%\[*}"
+    [[ -b "$src" ]] || continue
+    while read -r pk; do
+        [[ -n "$pk" ]] && protected+=("$pk")
+    done < <(lsblk -sno NAME,TYPE "$src" | awk '$2 == "disk" {gsub(/[^A-Za-z0-9]/, "", $1); print $1}')
+done
+is_protected() {
+    local p
+    for p in "${protected[@]}"; do [[ "$p" == "$1" ]] && return 0; done
+    return 1
+}
+
+dev="${2:-}"
+if [[ -z "$dev" ]]; then
+    echo
+    say "Drives you can write to:"
+    echo
+    declare -a disks=()
+    while read -r name type; do
+        [[ "$type" == disk ]] || continue
+        case "$name" in loop* | zram* | sr* | ram*) continue ;; esac
+        is_protected "$name" && continue
+        bytes="$(lsblk -bdno SIZE "/dev/$name")"
+        ((bytes >= iso_bytes)) || continue
+        disks+=("$name")
+        kind=fixed
+        [[ "$(lsblk -dno RM "/dev/$name" | tr -d ' ')" == 1 || "$(lsblk -dno TRAN "/dev/$name")" == usb ]] && kind=removable
+        printf '  %d) /dev/%-10s %8s  %-9s %s\n' "${#disks[@]}" "$name" \
+            "$(lsblk -dno SIZE "/dev/$name")" "$kind" "$(lsblk -dno MODEL "/dev/$name")"
+    done < <(lsblk -dnro NAME,TYPE)
+    ((${#disks[@]} > 0)) || die "no drive big enough found. Plug in a USB stick and try again."
+    echo
+    read -rp "Write to which drive? [1-${#disks[@]}] " pick
+    [[ "$pick" =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#disks[@]})) || die "no such drive."
+    dev="/dev/${disks[pick - 1]}"
+fi
+
+[[ -b "$dev" ]] || die "$dev is not a drive."
+[[ "$(lsblk -dno TYPE "$dev")" == disk ]] || die "$dev is a partition; give the whole drive (e.g. /dev/sdb)."
+is_protected "$(basename -- "$dev")" && die "$dev holds the system you are running; refusing to erase it."
+(($(lsblk -bdno SIZE "$dev") >= iso_bytes)) || die "$dev is smaller than the image."
+
+echo
+lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL,MOUNTPOINTS "$dev"
+echo
+printf '%sEVERYTHING on %s will be erased.%s\n' "$red$bold" "$dev" "$reset"
+read -rp "Type the drive name ($(basename -- "$dev")) to continue: " answer
+[[ "$answer" == "$(basename -- "$dev")" ]] || die "cancelled, nothing was changed."
+
+for part in $(lsblk -lnpo NAME "$dev"); do
+    umount "$part" 2>/dev/null || true
+done
+
+say "Writing (do not unplug the drive)"
+dd if="$iso" of="$dev" bs=4M conv=fsync oflag=direct status=progress
+sync
+
+say "Checking what was written"
+if cmp -n "$iso_bytes" -- "$iso" "$dev"; then
+    say "Done. $dev is ready; boot from it to try or install Ollie OS."
+else
+    die "the drive does not match the image. Try again, or try another USB stick."
+fi

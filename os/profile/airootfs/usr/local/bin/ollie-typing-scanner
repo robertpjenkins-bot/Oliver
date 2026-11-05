@@ -1,0 +1,131 @@
+#!/bin/bash
+# The Inappropriate Typing Scanner (a service, as root), on when Ollie OS
+# Settings (or the question at the first start) says so. It watches the
+# keyboard a word at a time: when a word is a bad word, it notes the time
+# and that word, for grown-ups to look at with the parent PIN ("Typing
+# Scanner notes" on the desktop). Nothing else that is typed is kept
+# anywhere, and nothing is sent anywhere.
+#
+# It also catches bad words spelled differently: letters typed many times
+# (baaad), and numbers or symbols for letters (0 for o, 3 for e, $ for s...).
+# The words are in /usr/local/share/ollie/scanner-words.txt, in ROT13 so
+# they are not there to read by accident; a * after one means longer words
+# starting with it count too.
+set -uo pipefail
+readonly CONF=/etc/ollie/parent.conf WORDS=/usr/local/share/ollie/scanner-words.txt
+[[ "$(sed -n 's/^SCANNER=//p' "$CONF" 2>/dev/null | tail -n 1)" == on ]] || exit 0
+
+# The same spelling for the word typed and the list: small letters, the
+# look-alikes as letters, and no letter twice in a row.
+plain() { tr '01345789@$!' 'oieastbgasi' <<<"$1" | tr -s 'a-z'; }
+declare -A exact=()
+starts=()
+while read -r w; do
+    [[ -z $w || $w == \#* ]] && continue
+    w="$(tr 'A-Za-z' 'N-ZA-Mn-za-m' <<<"$w")"
+    # (With its length: "as" is not "ass" with a letter typed twice.)
+    if [[ $w == *'*' ]]; then
+        w=${w%'*'}
+        starts+=("$(plain "$w") ${#w}")
+    else
+        exact[$(plain "$w")]=${#w}
+    fi
+done <"$WORDS"
+
+# The notes are kept where only an administrator can read them; the
+# person at the computer gets "Typing Scanner notes" on their desktop, which
+# opens them for a grown-up with the parent PIN (ollie-scanner-notes).
+readonly NOTES=/var/lib/ollie/typing-scanner/notes.txt
+note() { # note WORD
+    local id props user="" home desk
+    install -d -m 0700 "${NOTES%/*}"
+    if [[ ! -e $NOTES ]]; then
+        printf 'Ollie OS Inappropriate Typing Scanner\nWhen a bad word is typed, the time and the word are written here.\nNothing else that is typed is kept. Ollie OS Settings can switch it off.\n\n' >"$NOTES"
+    fi
+    chmod 0600 "$NOTES"
+    printf '%s  "%s" was typed\n' "$(date '+%Y-%m-%d %H:%M')" "$1" >>"$NOTES"
+    while read -r id _; do
+        props="$(loginctl show-session "$id" -p Active -p Class -p Name 2>/dev/null)"
+        grep -qx 'Active=yes' <<<"$props" && grep -qx 'Class=user' <<<"$props" &&
+            { user="$(sed -n 's/^Name=//p' <<<"$props")"; break; }
+    done < <(loginctl list-sessions --no-legend 2>/dev/null)
+    [[ -n $user ]] || return
+    home="$(getent passwd "$user" | cut -d: -f6)"
+    desk="$(runuser -u "$user" -- xdg-user-dir DESKTOP 2>/dev/null)"
+    [[ -n $desk && $desk != "$home" ]] || desk="$home/Desktop"
+    [[ -e "$desk/ollie-scanner-notes.desktop" ]] && return
+    runuser -u "$user" -- mkdir -p "$desk"
+    runuser -u "$user" -- install -m 0755 /usr/share/applications/ollie-scanner-notes.desktop "$desk/ollie-scanner-notes.desktop"
+}
+check() { # check WORD
+    local w p
+    w="$(plain "$1")"
+    [[ ${#w} -ge 2 ]] || return
+    if [[ -n ${exact[$w]:-} ]] && ((${#1} >= exact[$w])); then
+        note "$1"
+        return
+    fi
+    for p in "${starts[@]}"; do
+        [[ $w == "${p% *}"* ]] && ((${#1} >= ${p##* })) && { note "$1"; return; }
+    done
+}
+
+# The keyboard, a line per key: "KEY_A (30) pressed", as libinput says it.
+# libinput's command (in libinput-tools on newer Arch Linux) follows
+# keyboards plugged in later too; without it, each keyboard's own device is
+# read directly (od turns its events into numbers; a keyboard plugged in
+# later restarts this service: /etc/udev/rules.d/72-ollie-typing-scanner.rules).
+# Line by line, as each key is pressed: into a pipe, both would otherwise
+# keep their output back until 4 KB of it have piled up (dozens of keys).
+keyboards() { # the event devices of the keyboards (key and key-repeat events, the kbd handler)
+    awk '/^H: Handlers=/ { kbd = / kbd /; for (i = 1; i <= NF; i++) if ($i ~ /^event[0-9]+$/) ev = $i }
+         /^B: EV=/ { split($2, a, "="); evbits = a[2] }
+         /^$/ { if (kbd && ev != "" && length(evbits) >= 6 && substr(evbits, length(evbits) - 5, 1) ~ /[13579bdf]/) print ev; kbd = 0; ev = ""; evbits = "" }' /proc/bus/input/devices
+}
+keys() {
+    if command -v libinput >/dev/null && libinput debug-events --help >/dev/null 2>&1; then
+        stdbuf -oL libinput debug-events --show-keycodes 2>/dev/null
+        return
+    fi
+    local ev
+    for ev in $(keyboards); do
+        # struct input_event, 24 bytes: time (8 numbers), type, code, value (2).
+        stdbuf -i0 -oL od -An -v -w24 -tu2 "/dev/input/$ev" &
+    done | awk 'BEGIN {
+            split("ESC 1 2 3 4 5 6 7 8 9 0 MINUS EQUAL BACKSPACE TAB Q W E R T Y U I O P LEFTBRACE RIGHTBRACE ENTER LEFTCTRL A S D F G H J K L SEMICOLON APOSTROPHE GRAVE LEFTSHIFT BACKSLASH Z X C V B N M COMMA DOT SLASH RIGHTSHIFT KPASTERISK LEFTALT SPACE", n, " ")
+            for (i in n) name[i] = n[i]
+        }
+        $9 == 1 && ($11 == 0 || $11 == 1) {
+            k = ($10 in name) ? name[$10] : "OTHER"
+            printf "KEYBOARD_KEY KEY_%s (%d) %s\n", k, $10, ($11 == 1 ? "pressed" : "released")
+            fflush()
+        }'
+}
+
+word="" shift=""
+keys | while IFS= read -r line; do
+    [[ $line =~ (KEY_[A-Z0-9]+)\ \([0-9]+\)\ (pressed|released) ]] || continue
+    key=${BASH_REMATCH[1]} how=${BASH_REMATCH[2]}
+    if [[ $key == KEY_LEFTSHIFT || $key == KEY_RIGHTSHIFT ]]; then
+        [[ $how == pressed ]] && shift=1 || shift=""
+        continue
+    fi
+    [[ $how == pressed ]] || continue
+    case $key in
+    KEY_[A-Z]) word+="${key#KEY_}" ;;
+    KEY_[0-9])
+        d=${key#KEY_}
+        if [[ -n $shift ]]; then
+            case $d in 1) word+='!' ;; 2) word+='@' ;; 4) word+='$' ;; *) check "${word,,}"; word="" ;; esac
+        else
+            word+=$d
+        fi
+        ;;
+    KEY_BACKSPACE) word=${word%?} ;;
+    *)
+        [[ -n $word ]] && check "${word,,}"
+        word=""
+        ;;
+    esac
+    ((${#word} > 40)) && word=""
+done

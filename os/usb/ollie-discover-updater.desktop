@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Discover Updater
+Comment=Add Discover, the app store, to Ollie OS
+Exec=ollie-discover-updater
+Icon=ollie-os
+Terminal=false
+Categories=System;

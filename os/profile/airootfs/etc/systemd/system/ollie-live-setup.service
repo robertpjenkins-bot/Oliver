@@ -1,0 +1,17 @@
+[Unit]
+Description=Prepare the Ollie OS live session
+# Only on the live USB (archiso boots with archisobasedir=). Not "is the
+# boot medium mounted": archiso copies the system into memory on computers
+# with plenty of RAM and then lets go of the medium, and then the ollie
+# account was never made, so nobody could log in.
+ConditionKernelCommandLine=archisobasedir
+After=systemd-sysusers.service
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ollie-live-setup
+
+[Install]
+WantedBy=multi-user.target

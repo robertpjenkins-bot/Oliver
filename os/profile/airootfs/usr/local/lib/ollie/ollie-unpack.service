@@ -1,0 +1,17 @@
+# In the start-up image (initramfs) of an Ollie OS the Drive Writer made:
+# unpacks its system at the first start, before it starts from it
+# (unpack-root).
+[Unit]
+Description=Ollie OS first start: unpack Ollie OS onto this drive
+DefaultDependencies=no
+ConditionKernelCommandLine=ollie.unpack
+After=initrd-root-device.target
+Before=sysroot.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/ollie/unpack-root
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=infinity

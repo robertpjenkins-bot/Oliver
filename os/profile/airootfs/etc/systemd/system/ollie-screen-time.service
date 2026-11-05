@@ -1,0 +1,11 @@
+[Unit]
+Description=Ollie OS Screen Time (the daily limit from Ollie OS Settings)
+After=systemd-logind.service
+
+[Service]
+ExecStart=/usr/local/bin/ollie-screen-time
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

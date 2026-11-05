@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Sound Board
+Comment=Big buttons that play funny sounds, and sounds you record
+Exec=/usr/local/bin/ollie-soundboard
+Icon=ollie-soundboard
+Terminal=false
+Categories=AudioVideo;Audio;

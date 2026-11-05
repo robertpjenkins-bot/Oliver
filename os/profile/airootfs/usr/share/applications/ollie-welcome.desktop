@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS Welcome
+Comment=Install games, Minecraft, backgrounds, colours, fixing and updating
+Exec=/usr/local/bin/ollie-welcome
+Icon=ollie-os
+Terminal=false
+Categories=System;

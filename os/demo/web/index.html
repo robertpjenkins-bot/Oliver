@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ollie OS Demo</title>
+<style>
+/* A pretend Ollie OS desktop (KDE Plasma look): wallpaper, desktop icons, a
+   taskbar with the apps menu, and windows you can move. */
+:root {
+  --teal: #14b8a6; --teal-dark: #0f766e; --deep: #083c38; --glow: #5eead4;
+  --panel: rgba(20, 28, 30, 0.88); --panel-fg: #eef6f5; --win: #fbfcfc; --win-fg: #182321;
+  --muted: #5b6b68; --line: #d8e1df; --accent: #0d9488; --title: #eef3f2;
+  --font: "Noto Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "Hack", "DejaVu Sans Mono", "Menlo", "Consolas", monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; font: 14px/1.4 var(--font); color: var(--win-fg); background: var(--deep); }
+#desktop { position: absolute; inset: 0 0 46px 0; background-size: cover; background-position: center; }
+.icons { position: absolute; top: 14px; left: 14px; display: grid; grid-auto-flow: column; grid-template-rows: repeat(auto-fill, 96px); gap: 6px; height: calc(100% - 28px); }
+.icon { width: 88px; border: 0; background: none; color: #fff; text-align: center; padding: 6px 2px; border-radius: 8px; cursor: pointer; font: inherit; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.icon:hover, .icon:focus-visible { background: rgba(255,255,255,.16); outline: none; }
+.icon .glyph { font-size: 34px; line-height: 44px; display: block; text-shadow: none; }
+.icon.off { opacity: .55; }
+#taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 46px; background: var(--panel); color: var(--panel-fg); display: flex; align-items: center; gap: 6px; padding: 0 8px; backdrop-filter: blur(8px); }
+#start { width: 38px; height: 38px; border: 0; border-radius: 8px; background: none; cursor: pointer; display: grid; place-items: center; }
+#start:hover, #start[aria-expanded="true"] { background: rgba(255,255,255,.14); }
+#tasks { display: flex; gap: 4px; flex: 1; min-width: 0; overflow: hidden; }
+.task { max-width: 180px; border: 0; color: var(--panel-fg); background: rgba(255,255,255,.08); border-radius: 6px; padding: 7px 12px; cursor: pointer; font: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 2px solid transparent; }
+.task.active { border-bottom-color: var(--glow); background: rgba(255,255,255,.16); }
+#clock { font-variant-numeric: tabular-nums; padding: 0 8px; text-align: right; font-size: 13px; }
+#menu { position: absolute; left: 8px; bottom: 52px; width: 300px; background: var(--panel); color: var(--panel-fg); border-radius: 12px; padding: 10px; display: grid; gap: 2px; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+#menu h3 { margin: 6px 8px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; opacity: .7; }
+#menu button { display: flex; gap: 10px; align-items: center; border: 0; background: none; color: inherit; font: inherit; padding: 8px; border-radius: 6px; cursor: pointer; text-align: left; }
+#menu button:hover, #menu button:focus-visible { background: rgba(255,255,255,.14); outline: none; }
+#menu button .note { margin-left: auto; font-size: 11px; opacity: .65; }
+.win { position: absolute; background: var(--win); border-radius: 10px; box-shadow: 0 14px 40px rgba(0,0,0,.45); display: flex; flex-direction: column; overflow: hidden; min-width: 280px; min-height: 160px; resize: both; }
+.win .bar { height: 36px; background: var(--title); display: flex; align-items: center; gap: 8px; padding: 0 6px 0 12px; cursor: grab; user-select: none; border-bottom: 1px solid var(--line); flex: none; }
+.win .bar b { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.win .bar button { width: 26px; height: 26px; border: 0; border-radius: 50%; background: none; cursor: pointer; font-size: 15px; color: var(--muted); }
+.win .bar button:hover { background: var(--line); }
+.win .bar button.x:hover { background: #ef4444; color: #fff; }
+.win .body { flex: 1; overflow: auto; padding: 14px; min-height: 0; }
+.dialog .body { display: grid; gap: 12px; align-content: start; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; color: var(--win-fg); }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn.on { outline: 2px solid var(--accent); }
+input[type=text] { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; min-width: 0; }
+.muted { color: var(--muted); }
+.swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--line); cursor: pointer; }
+.swatch.on { box-shadow: 0 0 0 3px var(--accent); }
+canvas.art { width: 100%; height: auto; border-radius: 6px; display: block; cursor: crosshair; }
+.term { background: #0f1716; color: #d7f5ef; font: 13px/1.45 var(--mono); padding: 10px; height: 100%; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.term input { background: none; border: 0; color: inherit; font: inherit; outline: none; width: 70%; padding: 0; }
+.files { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.file { text-align: center; padding: 8px 4px; border-radius: 6px; font-size: 13px; word-break: break-word; }
+.file .glyph { font-size: 30px; display: block; }
+.file img { width: 80px; border-radius: 4px; }
+table.dl { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.dl td { padding: 4px 6px; border-bottom: 1px solid var(--line); }
+table.dl td.n { text-align: right; font-weight: 600; }
+.big { font-size: 34px; font-weight: 700; }
+.badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; background: #fff4d6; color: #7a5300; border: 1px solid #f3d27a; }
+#boot { position: fixed; inset: 0; background: var(--deep); display: grid; place-items: center; color: #fff; z-index: 9999; transition: opacity .5s; }
+#boot p { text-align: center; opacity: .85; }
+.bar-progress { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.bar-progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="boot"><div><svg width="120" height="120" viewBox="-110 -110 220 220" aria-hidden="true"><g stroke="#0b4f4a" stroke-width="5" stroke-linejoin="round"><polygon points="0,-100 86.6,-50 0,0 -86.6,-50" fill="#fff"/><polygon points="-86.6,-50 0,0 0,100 -86.6,50" fill="#9eeee4"/><polygon points="0,0 86.6,-50 86.6,50 0,100" fill="#2dd4bf"/></g></svg><p>Starting the Ollie OS demo…</p></div></div>
+<div id="desktop"><div class="icons" id="icons"></div></div>
+<div id="menu" hidden></div>
+<div id="taskbar">
+  <button id="start" aria-label="Apps menu" aria-expanded="false"><svg width="26" height="26" viewBox="-110 -110 220 220" aria-hidden="true"><g stroke="#0b4f4a" stroke-width="8" stroke-linejoin="round"><polygon points="0,-100 86.6,-50 0,0 -86.6,-50" fill="#fff"/><polygon points="-86.6,-50 0,0 0,100 -86.6,50" fill="#9eeee4"/><polygon points="0,0 86.6,-50 86.6,50 0,100" fill="#2dd4bf"/></g></svg></button>
+  <div id="tasks"></div>
+  <div id="clock"></div>
+</div>
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); for (const k of kids) e.append(k); return e; };
+const OWNER = "robertpjenkins-bot", OWNER_NAME = "biobro", REPO = "Ollie-OS";
+const THEMES = [
+  ["Teal", "#14b8a6", "#0f766e", "#083c38", "rgba(94,234,212,.55)", "#9eeee4", "#2dd4bf", "#0b4f4a"],
+  ["Purple", "#a855f7", "#7e22ce", "#2e1065", "rgba(216,180,254,.55)", "#e9d5ff", "#c084fc", "#3b0764"],
+  ["Blue", "#3b82f6", "#1d4ed8", "#172554", "rgba(147,197,253,.55)", "#dbeafe", "#60a5fa", "#172554"],
+  ["Red", "#f43f5e", "#be123c", "#4c0519", "rgba(253,164,175,.55)", "#ffe4e6", "#fb7185", "#4c0519"],
+  ["Green", "#22c55e", "#15803d", "#052e16", "rgba(134,239,172,.55)", "#dcfce7", "#4ade80", "#052e16"],
+  ["Night", "#4b5563", "#1f2937", "#030712", "rgba(156,163,175,.45)", "#e5e7eb", "#9ca3af", "#030712"],
+];
+const state = { osName: "Ollie OS", wallpapers: [] };
+
+// --- The background (the same picture as Ollie OS's wallpaper) -----------------------
+function paintWallpaper(ctx, theme, text, cube = true, showName = true) {
+  const [, c1, c2, c3, glow, left, right, line] = theme;
+  const g = ctx.createRadialGradient(960, 454, 0, 960, 454, 1100);
+  g.addColorStop(0, c1); g.addColorStop(.55, c2); g.addColorStop(1, c3);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 1920, 1080);
+  if (cube) {
+    const gl = ctx.createRadialGradient(960, 450, 0, 960, 450, 330);
+    gl.addColorStop(0, glow); gl.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = gl; ctx.fillRect(630, 120, 660, 660);
+    const face = (pts, colour) => {
+      ctx.beginPath(); ctx.moveTo(960 + pts[0] * 1.9, 450 + pts[1] * 1.9);
+      for (let i = 2; i < pts.length; i += 2) ctx.lineTo(960 + pts[i] * 1.9, 450 + pts[i + 1] * 1.9);
+      ctx.closePath(); ctx.fillStyle = colour; ctx.fill();
+      ctx.lineWidth = 5.7; ctx.lineJoin = "round"; ctx.strokeStyle = line; ctx.stroke();
+    };
+    face([0, -100, 86.6, -50, 0, 0, -86.6, -50], "#fff");
+    face([-86.6, -50, 0, 0, 0, 100, -86.6, 50], left);
+    face([0, 0, 86.6, -50, 86.6, 50, 0, 100], right);
+  }
+  if (showName) {
+    ctx.fillStyle = "#fff"; ctx.font = "bold 84px 'Noto Sans', 'Segoe UI', sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(text, 960, cube ? 760 : 570);
+  }
+}
+function setBackground(url) { $("#desktop").style.backgroundImage = `url(${url})`; }
+{
+  const c = el("canvas", { width: 1920, height: 1080 });
+  paintWallpaper(c.getContext("2d"), THEMES[0], "Ollie OS");
+  setBackground(c.toDataURL("image/jpeg", .9));
+}
+
+// --- Windows -----------------------------------------------------------------------------
+let z = 10, offset = 0;
+const wins = new Map();
+function openWindow(id, title, body, { w = 560, h = 420, dialog = false } = {}) {
+  if (wins.has(id)) { focusWin(wins.get(id)); return wins.get(id); }
+  const d = $("#desktop").getBoundingClientRect();
+  const x = Math.max(8, Math.min(d.width - w - 8, (d.width - w) / 2 + offset)), y = Math.max(8, Math.min(d.height - h - 8, (d.height - h) / 2 + offset - 20));
+  offset = (offset + 28) % 140;
+  const win = el("div", { className: "win" + (dialog ? " dialog" : "") });
+  win.style.cssText = `left:${x}px;top:${y}px;width:${Math.min(w, d.width - 16)}px;` + (dialog ? "height:auto;resize:none" : `height:${Math.min(h, d.height - 16)}px`);
+  const bar = el("div", { className: "bar" }, el("b", { textContent: title }));
+  const min = el("button", { textContent: "–", title: "Minimize", ariaLabel: "Minimize" });
+  const close = el("button", { className: "x", textContent: "×", title: "Close", ariaLabel: "Close" });
+  bar.append(min, close);
+  const content = el("div", { className: "body" }); content.append(body);
+  win.append(bar, content);
+  $("#desktop").append(win);
+  const task = el("button", { className: "task", textContent: title });
+  $("#tasks").append(task);
+  const rec = { id, win, task };
+  wins.set(id, rec);
+  task.onclick = () => (win.hidden || !win.classList.contains("top")) ? focusWin(rec) : (win.hidden = true, task.classList.remove("active"));
+  min.onclick = () => { win.hidden = true; task.classList.remove("active"); };
+  close.onclick = () => closeWin(id);
+  win.addEventListener("pointerdown", () => focusWin(rec));
+  bar.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button")) return;
+    const sx = e.clientX - win.offsetLeft, sy = e.clientY - win.offsetTop;
+    bar.setPointerCapture(e.pointerId);
+    const move = (m) => { win.style.left = Math.max(-200, m.clientX - sx) + "px"; win.style.top = Math.max(0, m.clientY - sy) + "px"; };
+    bar.onpointermove = move;
+    bar.onpointerup = () => { bar.onpointermove = null; };
+  });
+  focusWin(rec);
+  return rec;
+}
+function focusWin(rec) {
+  for (const r of wins.values()) { r.win.classList.remove("top"); r.task.classList.remove("active"); }
+  rec.win.hidden = false; rec.win.style.zIndex = ++z; rec.win.classList.add("top"); rec.task.classList.add("active");
+}
+function closeWin(id) { const r = wins.get(id); if (!r) return; r.win.remove(); r.task.remove(); wins.delete(id); }
+function message(id, title, text, extra) {
+  const body = el("div", {}, el("p", { textContent: text, style: "margin:0" }));
+  if (extra) body.append(extra);
+  const ok = el("button", { className: "btn primary", textContent: "OK" });
+  ok.onclick = () => closeWin(id);
+  body.append(el("div", { className: "row", style: "justify-content:flex-end" }, ok));
+  openWindow(id, title, body, { w: 440, h: 230, dialog: true });
+  ok.focus();
+}
+const OFF = (what) => () => message("off-" + what, what, `${what} needs a real computer, so it is turned off in the demo. Get Ollie OS with the Drive Writer (SteamOS, Linux), or the installer for Windows or Mac, from the Ollie OS releases on GitHub.`);
+
+// --- The apps ------------------------------------------------------------------------------
+const apps = [
+  { id: "steam", name: "Steam", glyph: "🎮", group: "Games", run: () => message("steam", "Steam", "Steam won't launch in the demo. On Ollie OS it opens right away, with Proton for Windows games, and the Fixer can repair it if it ever stops starting.") },
+  { id: "wallpaper", name: "Wallpaper Maker", glyph: "🎨", group: "Ollie OS", run: wallpaperMaker },
+  { id: "tracker", name: "Download Tracker", glyph: "📊", group: "Ollie OS", run: downloadTracker },
+  { id: "files", name: "Files", glyph: "📁", group: "System", run: files },
+  { id: "konsole", name: "Konsole", glyph: "⌨️", group: "System", run: konsole },
+  { id: "fixer", name: "Fixer", glyph: "🛠️", group: "Ollie OS", run: fixer },
+  { id: "install", name: "Install Ollie OS", glyph: "💾", group: "Ollie OS", off: true, run: OFF("Install Ollie OS") },
+  { id: "drivers", name: "Driver Installer", glyph: "🧩", group: "System", off: true, run: OFF("The Driver Installer") },
+  { id: "discover", name: "Discover", glyph: "🛍️", group: "System", off: true, run: OFF("Discover (the app store)") },
+  { id: "windows", name: "Restart into Windows", glyph: "🪟", group: "System", off: true, run: OFF("Restart into Windows") },
+];
+for (const a of apps) {
+  const b = el("button", { className: "icon" + (a.off ? " off" : ""), title: a.off ? a.name + " (off in the demo)" : a.name },
+    el("span", { className: "glyph", textContent: a.glyph }), a.name);
+  b.ondblclick = a.run;
+  b.onkeydown = (e) => { if (e.key === "Enter") a.run(); };
+  b.onclick = (e) => { if (matchMedia("(pointer: coarse)").matches) a.run(); };
+  $("#icons").append(b);
+}
+{
+  const m = $("#menu");
+  for (const g of ["Ollie OS", "Games", "System"]) {
+    m.append(el("h3", { textContent: g }));
+    for (const a of apps.filter((x) => x.group === g)) {
+      const b = el("button", {}, el("span", { textContent: a.glyph }), a.name);
+      if (a.off || a.id === "steam") b.append(el("span", { className: "note", textContent: a.off ? "off in demo" : "won't launch" }));
+      b.onclick = () => { toggleMenu(false); a.run(); };
+      m.append(b);
+    }
+  }
+}
+function toggleMenu(open) { $("#menu").hidden = !open; $("#start").setAttribute("aria-expanded", open); }
+$("#start").onclick = () => toggleMenu($("#menu").hidden);
+$("#desktop").addEventListener("pointerdown", () => toggleMenu(false));
+
+function wallpaperMaker() {
+  let theme = 0, cube = true, showName = true, ink = "#facc15", size = 14, strokes = [];
+  const name = el("input", { type: "text", value: state.osName.replace(/ OS$/, ""), maxLength: 20, ariaLabel: "Your name", id: "wm-name" });
+  const art = el("canvas", { className: "art", width: 1920, height: 1080 });
+  const ctx = art.getContext("2d");
+  const osName = () => (name.value.trim() || "Ollie") + " OS";
+  const draw = () => {
+    paintWallpaper(ctx, THEMES[theme], osName(), cube, showName);
+    ctx.lineCap = ctx.lineJoin = "round";
+    for (const s of strokes) { ctx.strokeStyle = s.c; ctx.lineWidth = s.w; ctx.beginPath(); s.p.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); if (s.p.length === 1) ctx.lineTo(s.p[0].x + .1, s.p[0].y); ctx.stroke(); }
+  };
+  const colours = el("div", { className: "row" });
+  THEMES.forEach((t, i) => { const b = el("button", { className: "btn" + (i === 0 ? " on" : ""), textContent: t[0] }); b.onclick = () => { theme = i; colours.querySelectorAll(".btn").forEach((x) => x.classList.toggle("on", x === b)); draw(); }; colours.append(b); });
+  const inks = el("div", { className: "row" });
+  ["#ffffff", "#111827", "#ef4444", "#f97316", "#facc15", "#22c55e", "#3b82f6", "#a855f7", "#ec4899"].forEach((c) => {
+    const s = el("button", { className: "swatch" + (c === ink ? " on" : ""), ariaLabel: "Brush colour " + c }); s.style.background = c;
+    s.onclick = () => { ink = c; inks.querySelectorAll(".swatch").forEach((x) => x.classList.toggle("on", x === s)); }; inks.append(s);
+  });
+  const sizes = el("div", { className: "row" });
+  [["Thin", 6], ["Medium", 14], ["Thick", 32], ["Huge", 70]].forEach(([n, w]) => { const b = el("button", { className: "btn" + (w === size ? " on" : ""), textContent: n }); b.onclick = () => { size = w; sizes.querySelectorAll(".btn").forEach((x) => x.classList.toggle("on", x === b)); }; sizes.append(b); });
+  const toggle = (label, get, set) => { const b = el("button", { className: "btn on", textContent: label }); b.onclick = () => { set(!get()); b.classList.toggle("on", get()); draw(); }; return b; };
+  const undo = el("button", { className: "btn", textContent: "Undo" }); undo.onclick = () => { strokes.pop(); draw(); };
+  const clear = el("button", { className: "btn", textContent: "Clear drawing" }); clear.onclick = () => { strokes = []; draw(); };
+  const rename = el("input", { type: "checkbox", id: "wm-rename" });
+  const make = el("button", { className: "btn primary", textContent: "Make it my background" });
+  const at = (e) => { const r = art.getBoundingClientRect(); return { x: (e.clientX - r.left) * 1920 / r.width, y: (e.clientY - r.top) * 1080 / r.height }; };
+  art.onpointerdown = (e) => { art.setPointerCapture(e.pointerId); strokes.push({ c: ink, w: size, p: [at(e)] }); draw(); };
+  art.onpointermove = (e) => { if (e.buttons && strokes.length) { strokes[strokes.length - 1].p.push(at(e)); draw(); } };
+  name.oninput = draw;
+  make.onclick = () => {
+    const url = art.toDataURL("image/jpeg", .92);
+    setBackground(url);
+    state.wallpapers.push({ name: `my-wallpaper-${state.wallpapers.length + 1}.jpg`, url });
+    let text = "Your new background is on. (It is in Files, Pictures, Wallpapers.)";
+    if (rename.checked) { state.osName = osName(); document.title = state.osName + " Demo"; text += ` This OS is now called ${state.osName}.`; }
+    message("wm-done", "Wallpaper Maker", text);
+  };
+  const body = el("div", { style: "display:grid;gap:10px" },
+    el("div", { className: "row" }, el("label", { htmlFor: "wm-name", textContent: "Your name:" }), name),
+    colours,
+    el("div", { className: "row" }, toggle("The cube", () => cube, (v) => cube = v), toggle("The name", () => showName, (v) => showName = v)),
+    art,
+    el("div", { className: "row" }, el("span", { className: "muted", textContent: "Draw on it:" }), inks),
+    el("div", { className: "row" }, sizes, undo, clear),
+    el("div", { className: "row", style: "justify-content:space-between" },
+      el("label", { className: "row", style: "gap:6px" }, rename, el("span", { textContent: "Also call this OS by my name" })), make));
+  draw();
+  openWindow("wallpaper", "Wallpaper Maker", body, { w: 720, h: 640 });
+}
+
+function downloadTracker() {
+  const repo = el("input", { type: "text", value: REPO, ariaLabel: "Project name", id: "dt-repo", style: "flex:1" });
+  const out = el("div", { style: "display:grid;gap:10px" });
+  const show = async () => {
+    out.replaceChildren(el("p", { className: "muted", textContent: `Looking at ${repo.value}…` }));
+    try {
+      const r = await fetch(`https://api.github.com/repos/${OWNER}/${encodeURIComponent(repo.value.trim())}/releases?per_page=100`);
+      if (r.status === 404) throw new Error(`There is no public project called "${repo.value}" on ${OWNER_NAME}'s GitHub.`);
+      if (r.status === 403) throw new Error("GitHub says to wait a little (it allows 60 looks an hour). Try again soon.");
+      if (!r.ok) throw new Error(`GitHub answered ${r.status}. Try again.`);
+      const rel = await r.json();
+      let total = 0; out.replaceChildren();
+      for (const x of rel) {
+        const files = [...x.assets].sort((a, b) => b.download_count - a.download_count);
+        const n = files.reduce((s, f) => s + f.download_count, 0); total += n;
+        const t = el("table", { className: "dl" });
+        for (const f of files) t.append(el("tr", {}, el("td", { textContent: f.name }), el("td", { className: "n", textContent: f.download_count })));
+        out.append(el("div", {}, el("b", { textContent: `${x.name || x.tag_name}  ·  ${n} downloads` }), files.length ? t : el("p", { className: "muted", textContent: "No files in it." })));
+      }
+      out.prepend(el("div", { className: "row" }, el("span", { className: "big", textContent: total.toLocaleString() }), el("span", { textContent: "downloads in all" })));
+    } catch (e) {
+      out.replaceChildren(el("p", { textContent: e.message.startsWith("There") || e.message.startsWith("GitHub") ? e.message : "Could not reach GitHub. Is the internet connected?" }));
+    }
+  };
+  const go = el("button", { className: "btn primary", textContent: "Show" }); go.onclick = show;
+  repo.onkeydown = (e) => { if (e.key === "Enter") show(); };
+  openWindow("tracker", "Download Tracker", el("div", { style: "display:grid;gap:12px" },
+    el("b", { textContent: `${OWNER_NAME}'s downloads`, style: "font-size:20px" }), el("div", { className: "row" }, repo, go), out), { w: 560, h: 480 });
+  show();
+}
+
+function files() {
+  const view = el("div");
+  const path = el("b");
+  const folders = { Home: ["Desktop", "Documents", "Downloads", "Games", "Music", "Pictures", "Videos"], Pictures: ["Wallpapers"] };
+  const open = (where) => {
+    path.textContent = where === "Home" ? "Home" : where === "Pictures" ? "Home › Pictures" : where === "Wallpapers" ? "Home › Pictures › Wallpapers" : "Home › " + where;
+    const grid = el("div", { className: "files" });
+    if (where !== "Home") { const up = el("button", { className: "file btn", textContent: "⬆ Back" }); up.onclick = () => open(where === "Wallpapers" ? "Pictures" : "Home"); grid.append(up); }
+    for (const f of folders[where] || []) { const b = el("button", { className: "file btn" }, el("span", { className: "glyph", textContent: "📁" }), f); b.ondblclick = b.onclick = () => open(f); grid.append(b); }
+    if (where === "Wallpapers") for (const w of state.wallpapers) grid.append(el("div", { className: "file" }, el("img", { src: w.url, alt: "" }), el("div", { textContent: w.name })));
+    if (!(folders[where] || []).length && !(where === "Wallpapers" && state.wallpapers.length)) grid.append(el("p", { className: "muted", textContent: where === "Wallpapers" ? "Make a background in Wallpaper Maker and it shows up here." : "This folder is empty in the demo." }));
+    view.replaceChildren(el("div", { style: "display:grid;gap:10px" }, path, grid));
+  };
+  open("Home");
+  openWindow("files", "Files", view, { w: 600, h: 400 });
+}
+
+function konsole() {
+  const term = el("div", { className: "term" });
+  const say = (t) => { term.insertBefore(el("div", { textContent: t }), line); };
+  const input = el("input", { ariaLabel: "Command", id: "konsole-in", autocomplete: "off", spellcheck: false });
+  const line = el("div", {}, el("span", { textContent: "ollie@ollie:~$ " }), input);
+  term.append(line);
+  const cmds = {
+    help: () => "Commands: help, about, ls, whoami, date, echo TEXT, steam, sudo, clear",
+    about: () => `${state.osName} (demo)\n  Based on: Arch Linux\n  Desktop:  KDE Plasma\n  Comes with: Steam, Wine, the Fixer, the Driver Installer, Wallpaper Maker\n  Made by: an awesome 8-year-old`,
+    ls: () => "Desktop  Documents  Downloads  Games  Music  Pictures  Videos",
+    whoami: () => "ollie",
+    date: () => new Date().toString(),
+    steam: () => "Steam won't launch in the demo. On Ollie OS it starts right away.",
+    sudo: () => "On Ollie OS admin tasks need no password. In the demo there is nothing to be admin of.",
+  };
+  input.onkeydown = (e) => {
+    if (e.key !== "Enter") return;
+    const text = input.value.trim(); input.value = "";
+    say("ollie@ollie:~$ " + text);
+    if (!text) return;
+    const [c, ...rest] = text.split(/\s+/);
+    if (c === "clear") { [...term.children].forEach((k) => k !== line && k.remove()); return; }
+    if (c === "echo") { say(rest.join(" ")); return; }
+    say(cmds[c] ? cmds[c]() : `${c}: not in the demo (try help)`);
+    term.scrollTop = term.scrollHeight;
+  };
+  say(`Welcome to ${state.osName}! Type help to see what you can try.`);
+  const rec = openWindow("konsole", "Konsole", term, { w: 600, h: 360 });
+  rec.win.querySelector(".body").style.padding = "0";
+  term.onclick = () => input.focus();
+  input.focus();
+}
+
+function fixer() {
+  const out = el("div", { style: "display:grid;gap:10px" });
+  const run = (what, steps, end) => {
+    const bar = el("div", { className: "bar-progress" }, el("i"));
+    const text = el("p", { style: "margin:0" });
+    out.replaceChildren(el("b", { textContent: what }), text, bar);
+    let i = 0;
+    const tick = () => {
+      if (i < steps.length) { text.textContent = steps[i]; bar.firstChild.style.width = ((i + 1) / steps.length * 100) + "%"; i++; setTimeout(tick, 700); }
+      else { text.textContent = end; const back = el("button", { className: "btn", textContent: "Back" }); back.onclick = menu; out.append(back); }
+    };
+    tick();
+  };
+  const menu = () => {
+    const b = (label, fn) => { const x = el("button", { className: "btn", textContent: label, style: "text-align:left" }); x.onclick = fn; return x; };
+    out.replaceChildren(el("b", { textContent: "What is wrong?", style: "font-size:18px" }),
+      b("Steam does not open", () => run("Steam does not open", ["Keeping your games and saves…", "Putting Steam's own files back…"], "In the demo Steam can't run at all. On Ollie OS this puts Steam back so it opens again, keeping your games.")),
+      b("I am running out of room", () => run("Out of room", ["Looking at your drives…", "Finding a drive with room…"], "Done (demo). On Ollie OS, Ollie OS Storage moves your games and files onto a drive with room.")),
+      b("A program will not start", () => run("Programs", ["Checking every program's files…", "Putting damaged files back…"], "All programs are fine (demo).")));
+  };
+  menu();
+  openWindow("fixer", "Fixer", out, { w: 440, h: 320 });
+}
+
+// --- Clock, start-up, and staying alive -----------------------------------------------------
+const tickClock = () => { const d = new Date(); $("#clock").innerHTML = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + "<br>" + d.toLocaleDateString(); };
+tickClock(); setInterval(tickClock, 15000);
+setTimeout(() => {
+  $("#boot").style.opacity = 0;
+  setTimeout(() => $("#boot").remove(), 500);
+  message("welcome", "Welcome to the Ollie OS demo",
+    "Try Ollie OS right here: open apps from the desktop (double-click) or the cube menu. Only Steam won't launch. Things that need a real computer, like installing Ollie OS, drivers or restarting into Windows, are turned off in the demo.",
+    el("p", { className: "muted", style: "margin:0", textContent: "Tip: Wallpaper Maker can put your own name on the background." }));
+}, 1400);
+// The demo app (ollie-os-demo) stops by itself a minute after this page closes.
+if (location.protocol.startsWith("http")) setInterval(() => fetch("/alive").catch(() => {}), 10000);
+</script>
+</body>
+</html>

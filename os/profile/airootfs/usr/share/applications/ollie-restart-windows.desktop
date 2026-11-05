@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Restart into Windows
+Comment=Restart this computer into Windows 10
+Exec=/usr/local/bin/ollie-restart-windows
+Icon=ollie-restart-windows
+Terminal=false
+Categories=System;

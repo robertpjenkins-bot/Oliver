@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Install Ollie OS
+Comment=Install Ollie OS onto a drive of this computer (like Batocera's Install on a new disk)
+Exec=/usr/local/bin/ollie-install-gui
+Icon=ollie-os
+Terminal=false
+Categories=System;

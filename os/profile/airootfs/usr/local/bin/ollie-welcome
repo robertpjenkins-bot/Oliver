@@ -1,0 +1,94 @@
+#!/bin/bash
+# Ollie OS Welcome: big buttons for what you'd do first — install games,
+# Minecraft, change the background, colours and settings, fix a problem,
+# update. It opens by itself the first time Ollie OS starts (and every time
+# if its tick box says so). The window is welcome.qml.
+#   ollie-welcome [--at-login]
+# --at-login (Ollie OS's own start, /etc/xdg/autostart): first waits for the
+# first-start questions (ollie-first-setup), asks once whether to switch on
+# the Inappropriate Typing Scanner, whether Firefox should have a password
+# and whether to install the Update Checker, then opens the window if it is
+# time.
+set -uo pipefail
+# The window says what to do in its console messages (console.log). Qt sends
+# those to the system journal when its output is not a terminal (always,
+# started from the desktop): here they must come, plain.
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+cfg="$HOME/.config/ollie"
+mkdir -p "$cfg"
+readonly CONF=/etc/ollie/parent.conf
+
+if [[ ${1:-} == --at-login ]]; then
+    # The in-game overlay's setting (the FPS counter), if there is none yet.
+    /usr/local/bin/ollie-overlay --ensure
+    # A Steam icon Steam put on the desktop opens Steam the Ollie OS way too.
+    desk="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
+    [[ -f "$desk/steam.desktop" ]] && sed -i 's|^Exec=/usr/bin/steam |Exec=/usr/local/bin/ollie-steam |' "$desk/steam.desktop"
+    for _ in $(seq 360); do
+        pgrep -u "$UID" -f ollie-first-setup >/dev/null || break
+        sleep 5
+    done
+    if [[ "$(sed -n 's/^ASKED=//p' "$CONF" 2>/dev/null | tail -n 1)" != yes ]] && sudo -n true 2>/dev/null; then
+        kdialog --title "Inappropriate Typing Scanner" --icon ollie-os --yes-label "Yes, turn it on" --no-label "No thanks" --yesno \
+            "Do you want the Inappropriate Typing Scanner on?
+
+It watches what you type. If a bad word is typed, it makes a note
+(Typing Scanner notes, on the desktop) that parents can look at
+whenever they want: it opens only with the parent PIN. Only the bad
+word and the time are written down: nothing else you type is kept,
+and nothing is sent anywhere.
+
+You can change this later in Ollie OS Settings."
+        case $? in
+        0)
+            sudo -n /usr/local/bin/ollie-parent scanner on
+            # The notes open only with the parent PIN: a grown-up makes one now if there is none.
+            [[ -n "$(sed -n 's/^PIN_MD5=//p' "$CONF" 2>/dev/null | tail -n 1)" ]] || /usr/local/bin/ollie-scanner-notes --new-pin
+            ;;
+        1) sudo -n /usr/local/bin/ollie-parent scanner off ;;
+        esac
+    fi
+    if [[ "$(sed -n 's/^FIREFOX_ASKED=//p' "$CONF" 2>/dev/null | tail -n 1)" != yes ]] && sudo -n true 2>/dev/null; then
+        /usr/local/bin/ollie-firefox --set --first
+    fi
+    if [[ ! -e /etc/ollie/update-checker ]] && sudo -n true 2>/dev/null; then
+        kdialog --title "Update Checker" --icon system-software-update --yes-label "Yes, install it" --no-label "No thanks" --yesno \
+            "Do you want the Update Checker?
+
+When biobro makes a new Ollie OS update, you get a notification
+saying what is new, with an Install button. (You can change this
+later in Ollie OS Settings.)"
+        case $? in
+        0) /usr/local/bin/ollie-update-checker --enable && systemctl --user start ollie-update-checker.timer 2>/dev/null ;;
+        1) /usr/local/bin/ollie-update-checker --disable ;;
+        esac
+    fi
+    [[ -e "$cfg/welcome-seen" && ! -e "$cfg/welcome-at-start" ]] && exit 0
+fi
+touch "$cfg/welcome-seen"
+at_start=off
+[[ -e "$cfg/welcome-at-start" ]] && at_start=on
+# Ollie says hello.
+(/usr/local/bin/ollie-say "Hi! I'm Ollie! Welcome to Ollie OS! What do you want to do first?" &)
+open() { (setsid env -u QT_FORCE_STDERR_LOGGING -u QT_MESSAGE_PATTERN -u QT_LOGGING_RULES "$@" >/dev/null 2>&1 &); }
+while IFS= read -r line; do
+    [[ $line == *"OLLIE-ACTION "* ]] || continue
+    read -r -a a <<<"${line#*OLLIE-ACTION }"
+    case "${a[0]} ${a[1]:-}" in
+    "open games") open /usr/local/bin/ollie-steam steam://store ;;
+    "open library") open /usr/local/bin/ollie-games ;;
+    "open minecraft") open /usr/local/bin/ollie-minecraft ;;
+    "open background") open /usr/local/bin/ollie-wallpaper-maker ;;
+    "open settings") open /usr/local/bin/ollie-settings ;;
+    "open fixer") open /usr/local/bin/ollie-fixer ;;
+    "open update") open /usr/local/bin/ollie-os-update ;;
+    "open updates") open /usr/local/bin/ollie-update-checker --now ;;
+    "open store") open plasma-discover ;;
+    "secret konami")
+        touch "$cfg/gold-unlocked"
+        (/usr/local/bin/ollie-say "You found the secret code! Ollie Gold is yours!" &)
+        ;;
+    "at-start on") touch "$cfg/welcome-at-start" ;;
+    "at-start off") rm -f "$cfg/welcome-at-start" ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/welcome.qml -- "atstart=$at_start" "version=$(head -n 1 /etc/ollie-version 2>/dev/null)" "store=$(command -v plasma-discover >/dev/null && echo on || echo off)" 2>&1)

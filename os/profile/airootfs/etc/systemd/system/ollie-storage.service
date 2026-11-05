@@ -1,0 +1,16 @@
+[Unit]
+Description=Ollie OS Storage: keep everything saved in Ollie OS on a drive with room
+# After the live session's account is made and the boot partition (which
+# holds the settings on a USB drive) is found; before anyone logs in.
+After=local-fs.target systemd-udev-settle.service ollie-live-setup.service
+Before=display-manager.service systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ollie-storage-helper boot
+ExecStop=/usr/local/bin/ollie-storage-helper stop
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=multi-user.target

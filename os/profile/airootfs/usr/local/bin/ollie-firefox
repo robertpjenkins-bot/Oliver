@@ -1,0 +1,61 @@
+#!/bin/bash
+# Firefox, with its password if it has one (asked at the first start, or set
+# in Ollie OS Settings): Firefox opens only once it is typed. While Firefox
+# is open, links open in it without asking again.
+#   ollie-firefox [Firefox's own options and links]
+#   ollie-firefox --set [--first]  asks whether Firefox should have a password, and which
+set -uo pipefail
+readonly TITLE="Firefox password" CONF=/etc/ollie/parent.conf
+pw_sum() { sed -n 's/^FIREFOX_SHA256=//p' "$CONF" 2>/dev/null | tail -n 1; }
+sum() { printf 'ollie-firefox:%s' "$1" | sha256sum | cut -d' ' -f1; }
+
+if [[ ${1:-} == --set ]]; then
+    first=${2:-}
+    kdialog --title "$TITLE" --icon firefox --yes-label "Yes, give it a password" --no-label "No" --yesno \
+        "Should Firefox (the web browser) have a password?
+
+Then Firefox opens only when the password is typed."
+    case $? in
+    0) ;;
+    1)
+        if [[ $first == --first ]]; then
+            sudo -n /usr/local/bin/ollie-parent firefox-asked
+        else
+            printf '\n' | sudo -n /usr/local/bin/ollie-parent firefox-password
+        fi
+        exit 0
+        ;;
+    *) exit 0 ;; # the window broke: asked again next time
+    esac
+    while :; do
+        a="$(kdialog --title "$TITLE" --password "What should Firefox's password be?")" || exit 0
+        b="$(kdialog --title "$TITLE" --password "Type the same password again")" || exit 0
+        if [[ -z $a ]]; then
+            kdialog --title "$TITLE" --sorry "The password cannot be empty."
+        elif [[ $a != "$b" ]]; then
+            kdialog --title "$TITLE" --sorry "The two passwords were not the same. Try again."
+        else
+            break
+        fi
+    done
+    if printf '%s\n' "$a" | sudo -n /usr/local/bin/ollie-parent firefox-password; then
+        kdialog --title "$TITLE" --msgbox "Done! Firefox now asks for its password when it opens."
+    else
+        kdialog --title "$TITLE" --error "Could not save the password."
+    fi
+    exit 0
+fi
+
+want="$(pw_sum)"
+if [[ -n $want ]] && ! pgrep -u "$UID" -x firefox >/dev/null 2>&1; then
+    for try in 1 2 3; do
+        pw="$(kdialog --title "Firefox" --icon firefox --password "Firefox has a password. Type it to open Firefox.")" || exit 0
+        [[ "$(sum "$pw")" == "$want" ]] && break
+        if ((try == 3)); then
+            kdialog --title "Firefox" --sorry "That is not Firefox's password."
+            exit 1
+        fi
+        kdialog --title "Firefox" --sorry "That is not Firefox's password. Try again."
+    done
+fi
+exec /usr/bin/firefox "$@"

@@ -1,0 +1,20 @@
+#!/bin/bash
+# Speed Boost: while a game runs, GameMode puts the computer on full power;
+# when the game closes it goes back to quiet. It watches for games Steam
+# starts (each runs under Steam's "reaper ... SteamLaunch") and Windows
+# programs (wineserver), and asks GameMode for each. Runs in every desktop
+# session (systemd user service ollie-speed-boost.service).
+# Ollie OS Settings switches it off with ~/.config/ollie/no-speed-boost.
+command -v gamemoded >/dev/null 2>&1 || exit 0
+declare -A boosted=()
+while sleep 3; do
+    [[ -e "$HOME/.config/ollie/no-speed-boost" ]] && continue
+    for pid in $(pgrep -u "$UID" -f 'reaper.*SteamLaunch'; pgrep -u "$UID" -x wineserver); do
+        [[ -n ${boosted[$pid]:-} ]] && continue
+        gamemoded -r"$pid" >/dev/null 2>&1
+        boosted[$pid]=1
+    done
+    for pid in "${!boosted[@]}"; do
+        [[ -d /proc/$pid ]] || unset "boosted[$pid]"
+    done
+done

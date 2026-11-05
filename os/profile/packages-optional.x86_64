@@ -1,0 +1,22 @@
+# Added to the image only when the repositories carry them, so a package
+# being renamed or dropped upstream doesn't break the whole build.
+umu-launcher
+winetricks
+gamemode
+lib32-gamemode
+# Ollie OS 2: Speed Boost, the FPS counter, the start-up animation
+mangohud
+lib32-mangohud
+plymouth
+libinput
+libinput-tools
+evtest
+# The Update Checker: its notification with an Install button, and reading GitHub's list
+libnotify
+python
+# Ollie OS 3: Ollie's voice, the Animator's GIFs and the Sound Board's
+# sounds, the apps' windows (qml6) and the pet walking on the desktop
+espeak-ng
+ffmpeg
+qt6-declarative
+layer-shell-qt

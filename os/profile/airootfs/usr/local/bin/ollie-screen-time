@@ -1,0 +1,58 @@
+#!/bin/bash
+# Screen Time (a service, as root): counts the minutes someone uses the
+# computer each day (an unlocked desktop), warns 10, 5 and 1 minutes before
+# the day's limit (Ollie OS Settings), and at the limit closes games and
+# covers the screen until tomorrow, or until a grown-up types the PIN for
+# more time (ollie-timesup).
+set -uo pipefail
+readonly STATE=/var/lib/ollie/screen-time
+mkdir -p "$STATE"
+chmod 0755 "$STATE"
+
+# The person at the computer now: their name, if their desktop is unlocked.
+at_computer() {
+    local id props
+    while read -r id _; do
+        props="$(loginctl show-session "$id" -p Active -p Type -p LockedHint -p Class -p Name 2>/dev/null)"
+        grep -qx 'Active=yes' <<<"$props" && grep -qx 'Class=user' <<<"$props" &&
+            grep -qxE 'Type=(wayland|x11)' <<<"$props" && grep -qx 'LockedHint=no' <<<"$props" &&
+            { sed -n 's/^Name=//p' <<<"$props"; return 0; }
+    done < <(loginctl list-sessions --no-legend 2>/dev/null)
+    return 1
+}
+as_user() { # as_user NAME COMMAND...: in their desktop
+    local user=$1
+    shift
+    systemd-run --user --machine="$user@.host" --quiet --collect "$@" >/dev/null 2>&1
+}
+tell() { # tell NAME TEXT [SPOKEN]: a note on their screen, and Ollie says it
+    as_user "$1" kdialog --title "Screen Time" --passivepopup "$2" 15
+    [[ -n ${3:-} ]] && as_user "$1" /usr/local/bin/ollie-say "$3"
+}
+close_games() {
+    local user=$1 pid
+    for pid in $(pgrep -u "$user" -f 'reaper.*SteamLaunch'); do
+        pkill -TERM -P "$pid"
+    done
+    pkill -TERM -u "$user" -x wineserver
+}
+
+while sleep 60; do
+    left="$(/usr/local/bin/ollie-parent left)"
+    [[ $left == off ]] && continue
+    user="$(at_computer)" || continue
+    day="$(date +%F)"
+    if ((left > 0)); then
+        echo $(($(cat "$STATE/used-$day" 2>/dev/null || echo 0) + 1)) >"$STATE/used-$day"
+        left=$((left - 1))
+        case $left in
+        10 | 5) tell "$user" "⏰ $left minutes of screen time left today. Time to save your game!" "$left minutes left! Time to save your game!" ;;
+        1) tell "$user" "⏰ 1 minute of screen time left today! Save your game now." "One minute left! Save your game now!" ;;
+        0) close_games "$user" ;;
+        esac
+    fi
+    if ((left == 0)) && ! pgrep -u "$user" -f ollie-timesup >/dev/null; then
+        as_user "$user" /usr/local/bin/ollie-timesup
+    fi
+    find "$STATE" -type f -mtime +40 -delete 2>/dev/null
+done

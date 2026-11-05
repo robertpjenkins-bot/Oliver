@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie Animator
+Comment=Draw a cartoon frame by frame, and save it as a GIF
+Exec=/usr/local/bin/ollie-animator
+Icon=ollie-animator
+Terminal=false
+Categories=Graphics;

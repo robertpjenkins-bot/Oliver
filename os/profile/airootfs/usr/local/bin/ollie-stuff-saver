@@ -1,0 +1,337 @@
+#!/bin/bash
+# Stuff Saver: keeps your folders on another drive, so everything put in them
+# is saved there: Desktop, Downloads, Documents, Pictures, Music, Videos,
+# Steam games, Minecraft worlds, Windows programs and more. Pick the drive,
+# tick the folders, done. It keeps working after a restart and whenever the
+# drive is plugged back in. The work is done by ollie-stuff-saver-helper (as
+# root, through Ollie OS's password-less sudo).
+set -uo pipefail
+
+readonly TITLE="Stuff Saver"
+readonly ETC=/etc/ollie-stuff-saver
+readonly HELPER=/usr/local/bin/ollie-stuff-saver-helper
+readonly STUFF="Ollie OS Stuff"
+me="$(id -un)"
+log="$(mktemp /tmp/ollie-stuff-saver.XXXXXX.log)"
+
+size() {
+    awk -v b="${1:-0}" 'BEGIN {
+        if (b >= 1e12) printf "%.1f TB", b / 1e12
+        else if (b >= 1e9) printf "%.1f GB", b / 1e9
+        else if (b >= 1e6) printf "%d MB", b / 1e6
+        else printf "under 1 MB" }'
+}
+# A folder of the desktop's own (Desktop, Downloads...), wherever it is set to be.
+xdg() { # xdg NAME DEFAULT
+    local d
+    d="$(xdg-user-dir "$1" 2>/dev/null)"
+    if [[ -n $d && ${d%/} != "${HOME%/}" ]]; then echo "$d"; else echo "$HOME/$2"; fi
+}
+
+# The folders it offers: NAME ON THE DRIVE|FOLDER HERE|WHAT IT IS
+folders=(
+    "Desktop|$(xdg DESKTOP Desktop)|Desktop"
+    "Downloads|$(xdg DOWNLOAD Downloads)|Downloads"
+    "Documents|$(xdg DOCUMENTS Documents)|Documents"
+    "Pictures|$(xdg PICTURES Pictures)|Pictures and screenshots"
+    "Music|$(xdg MUSIC Music)|Music"
+    "Videos|$(xdg VIDEOS Videos)|Videos"
+    "Templates|$(xdg TEMPLATES Templates)|Templates (for \"Create New\" in the file manager)"
+    "Public|$(xdg PUBLICSHARE Public)|Public (shared with others)"
+    "Games|$HOME/Games|Games (not from Steam)"
+    "Steam games|$HOME/.local/share/Steam/steamapps|Steam games"
+    "Minecraft|$HOME/.minecraft|Minecraft worlds, mods and resource packs"
+    "Windows programs|$HOME/.wine|Windows programs (Wine)"
+    "ROMs|$HOME/ROMs|ROMs (games for emulators)"
+    "Projects|$HOME/Projects|Projects and code"
+    "Books|$HOME/Books|Books and comics"
+    "Wallpapers|$HOME/.local/share/wallpapers|Wallpapers you added"
+    "Fonts|$HOME/.local/share/fonts|Fonts you added"
+    "Firefox|$HOME/.mozilla|Firefox bookmarks, passwords and history"
+)
+ticked_at_first=" Desktop Downloads Documents Pictures Music Videos "
+field() { # field N ENTRY
+    local IFS='|' parts
+    read -r -a parts <<<"$2"
+    echo "${parts[$1]}"
+}
+# What a folder needs links for, which Windows' FAT and exFAT drives cannot hold.
+needs_links() { case "$1" in "Steam games" | "Windows programs" | Firefox) return 0 ;; esac; return 1; }
+# The program that must be closed before a folder moves, if it is open.
+open_program() { # open_program NAME
+    case "$1" in
+    "Steam games") pgrep -x steam >/dev/null && echo "Steam (Steam menu > Exit)" ;;
+    Firefox) pgrep -x firefox >/dev/null && echo "Firefox" ;;
+    Minecraft) pgrep -f '^[^ ]*(java .*[Mm]inecraft|minecraft-launcher)' >/dev/null && echo "Minecraft and its launcher" ;;
+    "Windows programs") pgrep -x wineserver >/dev/null && echo "every Windows program" ;;
+    esac
+}
+label_of() { # label_of FOLDER_HERE: what it is, for messages
+    local e
+    for e in "${folders[@]}"; do
+        [[ "$(field 1 "$e")" == "$1" ]] && { field 2 "$e"; return; }
+    done
+    echo "${1/#$HOME/\~}"
+}
+
+# Runs the helper with a progress bar; its output is in $log.
+with_progress() { # with_progress TEXT ARGS... (stdin goes to the helper)
+    local bar text=$1
+    shift
+    bar="$(kdialog --title "$TITLE" --progressbar "$text" 100)"
+    qdbus6 $bar showCancelButton false >/dev/null 2>&1
+    sudo -n "$HELPER" "$@" 2>&1 | tee "$log" |
+        while read -r word pct rest; do
+            [[ "$word" == PROGRESS ]] || continue
+            qdbus6 $bar Set "" value "$pct" >/dev/null 2>&1
+            qdbus6 $bar setLabelText "$rest... ($pct%)" >/dev/null 2>&1
+        done
+    qdbus6 $bar close >/dev/null 2>&1
+}
+# What the helper said, for people.
+report() { # report HEADING_SAVED HEADING_NOT
+    local saved="" nots="" word path why
+    while IFS= read -r line; do
+        case "$line" in
+        "SAVED "* | "BACK "*) saved+="  $(label_of "${line#* }")"$'\n' ;;
+        "NOT "*)
+            path="${line#NOT }" why="${path#*$'\t'}" path="${path%%$'\t'*}"
+            [[ "$path" == all ]] && nots+="  $why"$'\n' || nots+="  $(label_of "$path"): $why"$'\n'
+            ;;
+        esac
+    done <"$log"
+    [[ -n $saved ]] && printf '%s\n%s\n' "$1" "$saved"
+    [[ -n $nots ]] && printf '%s\n%s\n' "$2" "$nots"
+    # Something else went wrong: its words.
+    [[ -z $saved$nots ]] && grep -v '^PROGRESS' "$log" | tail -n 3
+}
+
+if ! sudo -n true 2>/dev/null; then
+    kdialog --title "$TITLE" --error "Stuff Saver needs Ollie OS's admin rights, which here ask for a password. Bring Ollie OS up to date with the Ollie OS Updater, then try again."
+    exit 1
+fi
+
+# --- The drive ---------------------------------------------------------------------
+declare -A f
+parse() { # parse 'KEY="value" ...' (lsblk -P) into f
+    local rest=$1
+    f=()
+    while [[ $rest =~ ^[[:space:]]*([A-Z:-]+)=\"([^\"]*)\"(.*)$ ]]; do
+        f[${BASH_REMATCH[1]}]="$(printf '%b' "${BASH_REMATCH[2]}")"
+        rest=${BASH_REMATCH[3]}
+    done
+}
+nice_fs() {
+    case "$1" in
+    ntfs) echo "Windows (NTFS)" ;; exfat) echo "exFAT" ;; vfat) echo "FAT32" ;;
+    *) echo "Linux ($1)" ;;
+    esac
+}
+drive_name() { # drive_name UUID: its label and size, for messages
+    local dev
+    dev="$(readlink -f "/dev/disk/by-uuid/$1" 2>/dev/null)"
+    [[ -b "$dev" ]] || { echo "the drive (not plugged in now)"; return; }
+    parse "$(lsblk -Pbdno LABEL,SIZE "$dev")"
+    echo "${f[LABEL]:-the drive} ($(size "${f[SIZE]}"))"
+}
+
+pick_drive() {
+    local system="" m s line items=() n=0 model tran kind text free
+    for m in / /boot /efi /boot/efi /home /var /run/archiso/bootmnt /run/archiso/cowspace; do
+        s="$(findmnt -no SOURCE --mountpoint "$m" 2>/dev/null | sed 's/\[.*//')"
+        [[ -n $s ]] && system+=" $(readlink -f "$s") "
+    done
+    while IFS= read -r line; do
+        parse "$line"
+        case "${f[TYPE]}" in part | disk) ;; *) continue ;; esac
+        case "${f[FSTYPE]}" in ntfs | exfat | vfat | ext2 | ext3 | ext4 | btrfs | xfs | f2fs) ;; *) continue ;; esac
+        [[ -n "${f[UUID]}" && "$system" != *" ${f[PATH]} "* ]] || continue
+        case "${f[LABEL]}" in OLLIE_BOOT | OLLIE_ROOT | OLLIE_DATA) continue ;; esac
+        ((${f[SIZE]:-0} >= 1000000000)) || continue
+        model="" tran=""
+        if [[ -n "${f[PKNAME]}" ]]; then
+            model="$(lsblk -dno MODEL "/dev/${f[PKNAME]}" 2>/dev/null | xargs)"
+            tran="$(lsblk -dno TRAN "/dev/${f[PKNAME]}" 2>/dev/null | xargs)"
+        fi
+        case "$tran" in usb) kind="USB" ;; nvme) kind="internal NVMe" ;; sata | ata) kind="internal" ;; *) kind="" ;; esac
+        free=""
+        [[ -n "${f[FSAVAIL]}" ]] && free="  ($(size "${f[FSAVAIL]}") free)"
+        text="$(size "${f[SIZE]}")  $(nice_fs "${f[FSTYPE]}")${f[LABEL]:+  \"${f[LABEL]}\"}${model:+  $model}${kind:+, $kind}$free"
+        items+=("${f[UUID]}" "$text" off)
+        n=$((n + 1))
+    done < <(lsblk -Pbno NAME,PATH,TYPE,FSTYPE,UUID,SIZE,FSAVAIL,LABEL,PKNAME)
+    if ((n == 0)); then
+        kdialog --title "$TITLE" --sorry "No drive to save onto was found.
+
+Plug in a drive, or make a partition for your stuff on one (in KDE Partition
+Manager), then open Stuff Saver again. Drives in Windows' formats (NTFS, exFAT)
+and Linux formats work."
+        return 1
+    fi
+    kdialog --title "$TITLE" --geometry 760x340 --radiolist "Save your stuff onto which drive? Nothing on it is erased: your stuff goes in a folder called \"$STUFF\" on it." "${items[@]}"
+}
+
+# --- The folders -----------------------------------------------------------------------
+# Ticks folders; prints the chosen entries, one per line.
+pick_folders() { # pick_folders FSTYPE
+    local fs=$1 e name here what items=() bytes note="" bar i=0 already=""
+    [[ -f $ETC/folders ]] && already="$(cut -f1 "$ETC/folders")"
+    bar="$(kdialog --title "$TITLE" --progressbar "Looking at your folders..." "${#folders[@]}")"
+    for e in "${folders[@]}"; do
+        i=$((i + 1))
+        qdbus6 $bar Set "" value "$i" >/dev/null 2>&1
+        name="$(field 0 "$e")" here="$(field 1 "$e")" what="$(field 2 "$e")"
+        grep -qxF -- "$here" <<<"$already" && continue
+        if [[ "$fs" == vfat || "$fs" == exfat ]] && needs_links "$name"; then
+            note+="  $what"$'\n'
+            continue
+        fi
+        if [[ -z "$(find "$here" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+            what+="   (empty now)"
+        else
+            bytes="$(timeout 30 du -sb -- "$here" 2>/dev/null | cut -f1)"
+            what+="   (${bytes:+$(size "$bytes") }here now)"
+        fi
+        [[ "$name" == "Steam games" && "$fs" == ntfs ]] && what+="   - some games need a Linux drive"
+        if [[ "$ticked_at_first" == *" $name "* ]]; then
+            items+=("$i" "$what" on)
+        else
+            items+=("$i" "$what" off)
+        fi
+    done
+    qdbus6 $bar close >/dev/null 2>&1
+    ((${#items[@]} > 0)) || { kdialog --title "$TITLE" --msgbox "Every folder Stuff Saver knows is saved on the drive already."; exit 0; }
+    [[ -n $note ]] && note=$'\n\n'"Not offered, as this drive's format cannot hold them (a Linux or NTFS drive can):"$'\n'"$note"
+    local picked
+    picked="$(kdialog --title "$TITLE" --geometry 760x620 --separate-output --checklist \
+        "Which folders should be saved on the drive? Everything in them now moves onto it, and from now on everything put in them is saved there.$note" \
+        "${items[@]}")" || exit 0
+    [[ -n $picked ]] || { kdialog --title "$TITLE" --msgbox "Nothing was changed: no folder was ticked."; exit 0; }
+    for i in $picked; do echo "${folders[i - 1]}"; done
+}
+
+# Asks for the programs that use the chosen folders to be closed.
+close_programs() { # close_programs ENTRIES
+    local e open
+    while :; do
+        open=""
+        while IFS= read -r e; do
+            [[ -n $e ]] || continue
+            p="$(open_program "$(field 0 "$e")")"
+            [[ -n $p ]] && open+="  $p"$'\n'
+        done <<<"$1"
+        [[ -z $open ]] && return 0
+        kdialog --title "$TITLE" --yes-label "They are closed" --no-label "Cancel" --yesno \
+            "Please close these first, so their files can move:
+
+$open" || exit 0
+    done
+}
+
+# --- Setting up -----------------------------------------------------------------------------
+set_up() { # set_up UUID (empty: pick a drive)
+    local uuid=${1:-} dev fs chosen e total=0 bytes lines="" where
+    if [[ -d /run/archiso ]] && ! grep -qE 'cow_label=|cow_device=' /proc/cmdline; then
+        kdialog --title "$TITLE" --warningcontinuecancel "Ollie OS is running from its USB drive without keeping changes, so Stuff Saver works only until this computer restarts.
+
+Installed Ollie OS (or a USB drive made with an OLLIE_DATA part) keeps it." || exit 0
+    fi
+    if [[ -z $uuid ]]; then
+        kdialog --title "$TITLE" --yes-label "Choose a drive" --no-label "Cancel" --yesno \
+            "Stuff Saver keeps your folders on another drive: Downloads, Documents,
+Pictures, Steam games, Minecraft worlds and more. Everything you put in them
+is saved on that drive, also after a restart.
+
+Your stuff goes in a folder called \"$STUFF\" on the drive; nothing on the
+drive is erased. While the drive is unplugged, the folders are empty here,
+and what you save in them meanwhile moves onto the drive when it is back." || exit 0
+        uuid="$(pick_drive)" || exit 0
+        [[ -n $uuid ]] || { kdialog --title "$TITLE" --msgbox "Nothing was changed: no drive was picked."; exit 0; }
+    fi
+    dev="$(readlink -f "/dev/disk/by-uuid/$uuid")"
+    fs="$(lsblk -no FSTYPE "$dev" 2>/dev/null | head -n 1)"
+    chosen="$(pick_folders "$fs")" || exit 0
+    [[ -n $chosen ]] || exit 0
+    while IFS= read -r e; do
+        bytes="$(timeout 30 du -sb -- "$(field 1 "$e")" 2>/dev/null | cut -f1)"
+        total=$((total + ${bytes:-0}))
+        lines+="$(field 1 "$e")"$'\t'"$(field 0 "$e")"$'\n'
+    done <<<"$chosen"
+    where="$(drive_name "$uuid")"
+    kdialog --title "$TITLE" --yes-label "Save onto the drive" --no-label "Cancel" --yesno \
+        "$(wc -l <<<"$chosen") folder(s), with $(size "$total") in them now, move onto $where, into \"$STUFF\".
+
+From now on, everything you put in them is saved there. Nothing on the drive is
+erased or replaced." || exit 0
+    close_programs "$chosen"
+    printf '%s' "$lines" | with_progress "Moving your stuff onto the drive..." set "$me" "$uuid"
+    if grep -q '^SAVED ' "$log"; then
+        kdialog --title "$TITLE" --msgbox "$(report "Saved on $where:" "Not saved (left as they were):")
+Restart (or log out and back in), so the desktop and every app see the folders
+in their new place. Open Stuff Saver again to save more folders or to stop."
+    else
+        kdialog --title "$TITLE" --error "Nothing could be saved on the drive:
+
+$(report "" "Not saved (left as they were):")"
+    fi
+}
+
+# --- Already set up ---------------------------------------------------------------------------
+manage() {
+    local uuid where dev mnt status first choice
+    uuid="$(sed -n 's/^UUID=//p' "$ETC/drive")"
+    where="$(drive_name "$uuid")"
+    first="$(head -n 1 "$ETC/folders" | cut -f1)"
+    if mountpoint -q -- "$first" 2>/dev/null; then
+        status="It is working: the drive is plugged in."
+    else
+        status="The drive is not plugged in now, so these folders are empty here. What you save in them meanwhile moves onto the drive when it is back."
+    fi
+    choice="$(kdialog --title "$TITLE" --geometry 640x360 --menu "Stuff Saver saves these folders on $where:
+$(cut -f1 "$ETC/folders" | while IFS= read -r p; do echo "  $(label_of "$p")"; done)
+
+$status" \
+        open "Open \"$STUFF\" on the drive" \
+        more "Save more folders onto the drive" \
+        stop "Stop saving onto the drive")" || exit 0
+    case "$choice" in
+    open)
+        dev="$(readlink -f "/dev/disk/by-uuid/$uuid" 2>/dev/null)"
+        mnt="$(findmnt -nfo TARGET -S "$dev" 2>/dev/null)"
+        if [[ -n $mnt ]]; then
+            xdg-open "$mnt/$STUFF" >/dev/null 2>&1 &
+        else
+            kdialog --title "$TITLE" --sorry "The drive is not plugged in."
+        fi
+        ;;
+    more) set_up "$uuid" ;;
+    stop)
+        kdialog --title "$TITLE" --yes-label "Bring them back" --no-label "Leave them on the drive" --cancel-label "Cancel" \
+            --warningyesnocancel "Stop saving onto $where?
+
+Bring the files in these folders back onto this computer (if it has room), or
+leave them on the drive in \"$STUFF\"?"
+        case $? in
+        0)
+            close_programs "$(cut -f1 "$ETC/folders" | while IFS= read -r p; do
+                for e in "${folders[@]}"; do [[ "$(field 1 "$e")" == "$p" ]] && echo "$e"; done
+            done)"
+            with_progress "Bringing your stuff back..." off back </dev/null
+            kdialog --title "$TITLE" --msgbox "Stuff Saver has stopped.
+
+$(report "Back on this computer:" "Still on the drive:")"
+            ;;
+        1)
+            with_progress "Stopping..." off </dev/null
+            kdialog --title "$TITLE" --msgbox "Stuff Saver has stopped. Your files are still on the drive, in \"$STUFF\"; the folders here start empty."
+            ;;
+        esac
+        ;;
+    esac
+}
+
+if [[ -f $ETC/drive ]]; then
+    manage
+else
+    set_up ""
+fi

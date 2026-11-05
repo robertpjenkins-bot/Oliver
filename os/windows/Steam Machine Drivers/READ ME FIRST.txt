@@ -1,0 +1,13 @@
+Steam Machine drivers for Windows
+
+1. On the Steam Machine, in Windows, download each driver from Valve's
+   Steam Machine Windows drivers page (search "Steam Machine Windows drivers"
+   on help.steampowered.com).
+2. Put every download in THIS folder, next to "Install All Drivers.bat".
+   Leave the zips zipped.
+3. Double-click "Install All Drivers.bat" and click Yes when Windows asks.
+   It unpacks the zips, runs each installer (click through any that open),
+   and adds the drivers that have no installer.
+4. Restart the Steam Machine.
+
+What happened is saved in install-log.txt in this folder.

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS Builder
+Comment=Build a brand-new Ollie OS ISO on this computer
+Exec=ollie-build
+Icon=ollie-os
+Terminal=false
+Categories=System;

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS Settings
+Comment=Game Mode, FPS counter, Speed Boost, colours, Screen Time and the Typing Scanner
+Exec=/usr/local/bin/ollie-settings
+Icon=ollie-settings
+Terminal=false
+Categories=Settings;System;
+Keywords=screen time;parents;colours;colors;dark mode;fps;game mode;typing scanner;

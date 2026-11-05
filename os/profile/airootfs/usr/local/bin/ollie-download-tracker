@@ -1,0 +1,4 @@
+#!/bin/sh
+# Download Tracker: how many times each file of biobro's GitHub releases
+# was downloaded (download-tracker.qml).
+exec qml6 /usr/local/share/ollie/download-tracker.qml -- "$@"

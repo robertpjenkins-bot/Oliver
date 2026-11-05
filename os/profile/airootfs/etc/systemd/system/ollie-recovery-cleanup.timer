@@ -1,0 +1,9 @@
+# Once the new Ollie OS has run for 10 minutes, the old one goes.
+[Unit]
+Description=Ollie OS: remove the old version once the new one runs well
+
+[Timer]
+OnBootSec=10min
+
+[Install]
+WantedBy=timers.target

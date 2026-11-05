@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Typing Scanner notes
+Comment=For grown-ups: the bad words the Typing Scanner noted (opens with the parent PIN)
+Exec=/usr/local/bin/ollie-scanner-notes
+Icon=ollie-scanner-notes
+Terminal=false
+Categories=Settings;

@@ -1,0 +1,52 @@
+#!/bin/bash
+# Call this computer's Ollie OS by another name, such as "Bobby OS": on the
+# start-up menu (systemd-boot's and SYSLINUX's) and in About This System
+# (/etc/os-release). A pacman hook puts it back after an update replaces
+# os-release. As root, with no password (Ollie OS's admin rights).
+#
+#   ollie-rename NAME       (--again: the name it has, once more)
+set -uo pipefail
+[[ $EUID -eq 0 ]] || exec sudo -n "$0" "$@"
+
+old="$(cat /etc/ollie-name 2>/dev/null)"
+old="${old:-Ollie OS}"
+name="${1:-}"
+[[ $name == --again ]] && name=$old
+if ! [[ $name =~ ^[A-Za-z0-9][A-Za-z0-9\ ._!-]{0,29}$ ]]; then
+    echo "Error: a name of letters, digits and spaces, up to 30 of them." >&2
+    exit 1
+fi
+echo "$name" >/etc/ollie-name
+
+rm -f /etc/os-release
+cat >/etc/os-release <<OSR
+NAME="$name"
+PRETTY_NAME="$name"
+ID=arch
+BUILD_ID=rolling
+ANSI_COLOR="38;2;20;184;166"
+HOME_URL="https://archlinux.org/"
+LOGO=ollie-os
+OSR
+
+# The start-up menus: what said the old name says the new one.
+old_re="$(sed 's/[.]/\\./g' <<<"$old")"
+for f in /boot/loader/entries/*.conf; do
+    [[ -f $f ]] && sed -i -E "s/^(title +)$old_re/\1$name/" "$f"
+done
+[[ -f /boot/syslinux/syslinux.cfg ]] && sed -i -E "s/^( *MENU (TITLE|LABEL) )$old_re/\1$name/" /boot/syslinux/syslinux.cfg
+
+mkdir -p /etc/pacman.d/hooks
+cat >/etc/pacman.d/hooks/90-ollie-name.hook <<'HOOK'
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Path
+Target = usr/lib/os-release
+
+[Action]
+Description = Keeping this computer's own name for Ollie OS...
+When = PostTransaction
+Exec = /usr/local/bin/ollie-rename --again
+HOOK
+echo "This computer's OS is now called $name."

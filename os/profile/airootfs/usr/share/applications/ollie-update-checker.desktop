@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS Updates
+Comment=See new updates from biobro, and install them
+Exec=/usr/local/bin/ollie-update-checker --now
+Icon=ollie-update-checker
+Terminal=false
+Categories=System;

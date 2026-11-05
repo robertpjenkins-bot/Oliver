@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Sticker Maker
+Comment=Make stickers from pictures, drawings or emoji, and stick them on your desktop
+Exec=/usr/local/bin/ollie-sticker
+Icon=ollie-sticker
+Terminal=false
+Categories=Graphics;

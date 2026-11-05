@@ -1,0 +1,27 @@
+#!/bin/bash
+# Recovery Mode: put the Ollie OS in an ISO file over this one, for getting
+# newer versions (keeping your files, username and passwords, Wi-Fi and
+# website logins if you want), or write any other ISO over the whole drive.
+# The window is recovery.qml; the work is done as root by recovery-helper.
+set -uo pipefail
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+export QML_XHR_ALLOW_FILE_READ=1
+progress="${XDG_RUNTIME_DIR:-/tmp}/ollie-recovery-$$.progress"
+: >"$progress"
+trap 'rm -f -- "$progress"' EXIT
+pin="$(sed -n 's/^PIN_MD5=//p' /etc/ollie/parent.conf 2>/dev/null | tail -n 1)"
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION start "*)
+        read -r mode iso <<<"${line#*OLLIE-ACTION start }"
+        case $mode in keep | fresh | erase) ;; *) continue ;; esac
+        : >"$progress"
+        if sudo -n true 2>/dev/null; then
+            (sudo -n /usr/local/lib/ollie/recovery-helper "$mode" "$iso" "$progress" >>"$progress" 2>&1 &)
+        else
+            echo "ERROR Recovery Mode needs an administrator account." >>"$progress"
+        fi
+        ;;
+    *"OLLIE-ACTION restart"*) systemctl reboot ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/recovery.qml -- "progress=$progress" "pin=$pin" "home=$HOME" 2>&1)

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Wallpaper Maker
+Comment=Make a background with your name on it, or draw one
+Exec=/usr/local/bin/ollie-wallpaper-maker
+Icon=ollie-wallpaper-maker
+Terminal=false
+Categories=Graphics;Utility;

@@ -1,0 +1,11 @@
+[Unit]
+Description=Ollie OS Inappropriate Typing Scanner (when switched on in Ollie OS Settings)
+After=systemd-logind.service systemd-udevd.service
+
+[Service]
+ExecStart=/usr/local/bin/ollie-typing-scanner
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

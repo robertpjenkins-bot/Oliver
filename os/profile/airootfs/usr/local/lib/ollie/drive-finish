@@ -1,0 +1,21 @@
+#!/bin/bash
+# First start of an Ollie OS the Drive Writer made without admin rights
+# (ollie-drive-finish.service, after ollie-unpack unpacked it): what the
+# Drive Writer could not do as a normal user, done once as root. The start-up
+# code for older computers set to BIOS / Legacy (SYSLINUX, as Ollie OS's
+# installer puts it), and the first-start option off the start-up menu.
+set -uo pipefail
+
+boot="$(findmnt -no SOURCE /boot)"
+disk="/dev/$(lsblk -no PKNAME "$boot" 2>/dev/null | head -n 1)"
+if [[ -b $disk && -f /boot/syslinux/syslinux.cfg && -d /usr/lib/syslinux/bios ]]; then
+    if extlinux --install /boot/syslinux >/dev/null 2>&1; then
+        dd if=/usr/lib/syslinux/bios/gptmbr.bin of="$disk" bs=440 count=1 conv=notrunc status=none
+        sgdisk --attributes=1:set:2 "$disk" >/dev/null
+    else
+        echo "Could not add the start-up code for older computers; new computers are not affected."
+    fi
+fi
+sed -i 's/ ollie\.unpack//' /boot/loader/entries/*.conf 2>/dev/null
+mkdir -p /var/lib/ollie
+touch /var/lib/ollie/drive-finished

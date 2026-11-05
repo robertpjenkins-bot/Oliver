@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Update Ollie OS
+Comment=One click: bring Ollie OS, its drivers and apps up to date
+Exec=/usr/local/bin/ollie-os-update
+Icon=ollie-os-update
+Terminal=false
+Categories=System;

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS Welcome
+Exec=/usr/local/bin/ollie-welcome --at-login
+Icon=ollie-os
+NoDisplay=true
+X-KDE-autostart-after=panel

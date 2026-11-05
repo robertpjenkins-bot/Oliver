@@ -1,0 +1,27 @@
+#!/bin/bash
+# Ollie Animator: cartoons drawn frame by frame (animator.qml), saved as
+# GIFs in Pictures/Animations (ffmpeg makes them from the frames).
+set -uo pipefail
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+out="$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")/Animations"
+frames="$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/ollie-frames.XXXXXX")"
+trap 'rm -rf -- "${frames:?}"' EXIT
+mkdir -p "$out"
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION gif "*)
+        read -r _ dir fps <<<"${line#*OLLIE-ACTION }"
+        gif="$out/animation-$(date +%Y%m%d-%H%M%S).gif"
+        # A palette made from the frames themselves: clean colours.
+        if ffmpeg -loglevel error -y -framerate "$fps" -i "$dir/frame-%03d.png" \
+            -vf "scale=640:-1:flags=lanczos,split[a][b];[a]palettegen=reserve_transparent=0[p];[b][p]paletteuse" -loop 0 "$gif"; then
+            (/usr/local/bin/ollie-say "Your cartoon is ready!" &)
+            (setsid xdg-open "$gif" >/dev/null 2>&1 &)
+        else
+            kdialog --title "Ollie Animator" --error "Could not make the GIF (is ffmpeg installed?)." &
+        fi
+        rm -f "$dir"/frame-*.png
+        ;;
+    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/animator.qml -- "frames=$frames" 2>&1)

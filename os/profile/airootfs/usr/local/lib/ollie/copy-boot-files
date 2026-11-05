@@ -1,0 +1,33 @@
+#!/bin/bash
+# An Ollie OS installed into a system file starts from the kernel and start-up
+# image on the drive's start-up part (OLLIE_BOOT), which cannot look inside
+# the file. After every kernel or start-up image update (a pacman hook), the
+# new ones are copied there.
+set -uo pipefail
+
+conf=/etc/ollie-loop-root.conf
+[[ -f $conf ]] || exit 0
+boot_uuid="$(sed -n 's/^BOOT_UUID=//p' "$conf" | head -n 1)"
+[[ -n $boot_uuid ]] || exit 0
+dev="/dev/disk/by-uuid/$boot_uuid"
+[[ -e $dev ]] || { echo "Ollie OS's start-up part is not plugged in: the new kernel is copied there next time." >&2; exit 0; }
+
+mnt="$(findmnt -nfo TARGET -S "$(readlink -f "$dev")")"
+we=""
+if [[ -z $mnt ]]; then
+    mnt=/run/ollie-boot-files
+    mkdir -p "$mnt"
+    mount "$dev" "$mnt" || exit 1
+    we=1
+else
+    mount -o remount,rw "$mnt" 2>/dev/null
+fi
+mkdir -p "$mnt/ollie-installed"
+rc=0
+for f in vmlinuz-linux initramfs-linux.img; do
+    [[ -f /boot/$f ]] || continue
+    cp -f "/boot/$f" "$mnt/ollie-installed/$f.new" && mv -f "$mnt/ollie-installed/$f.new" "$mnt/ollie-installed/$f" || rc=1
+done
+sync
+[[ -n $we ]] && umount "$mnt"
+exit $rc

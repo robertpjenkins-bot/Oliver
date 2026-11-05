@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS first start
+Comment=Create your username and password
+Exec=/usr/local/bin/ollie-first-setup
+Icon=ollie-os
+NoDisplay=true
+X-KDE-autostart-after=panel

@@ -1,0 +1,33 @@
+#!/bin/bash
+# Ollie OS 1.4 Updater's checks, run as root after its files are in place:
+# the Game Pack's checks (check-game-pack, next to this), then the Fun
+# Pack's apps, Recovery Mode, Ollie's voice and the new app icons. Prints
+# a line each: "OK what", "FIXED what", "LATER what" or "PROBLEM what".
+here="$(dirname "$(readlink -f "$0")")"
+[[ -f $here/check-game-pack ]] && bash "$here/check-game-pack"
+ok() { echo "OK $*"; }
+
+bad=""
+for a in games finder typing pet coop sticker comic animator soundboard codequest space spelling world recovery say overlay; do
+    f=/usr/local/bin/ollie-$a
+    [[ -x $f ]] && bash -n "$f" 2>/dev/null || bad+=" ollie-$a"
+done
+for f in /usr/local/lib/ollie/{recovery-helper,recovery-cleanup}; do [[ -x $f ]] && bash -n "$f" 2>/dev/null || bad+=" ${f##*/}"; done
+if [[ -z $bad ]]; then ok "All the new apps are there and can run (Games, Pet, Co-op, Sticker, Comic, Animator, Sound Board, Coding Quest, Space, Spelling, World, Recovery Mode)"; else echo "PROBLEM These programs have mistakes:$bad"; fi
+for f in PetBody pet-desktop Confetti recovery world; do
+    [[ -s /usr/local/share/ollie/$f.qml ]] || echo "PROBLEM The $f window is missing"
+done
+[[ -s /usr/local/share/ollie/world.json ]] && ok "World Explorer's map" || echo "PROBLEM World Explorer's map is missing"
+python3 -c 'import sys' 2>/dev/null && [[ -x /usr/local/lib/ollie/games.py ]] && ok "Games can add ROMs and ISOs"
+# The new icons show in the apps menu, for every Ollie OS app this computer has.
+for d in /usr/share/applications/ollie-*.desktop; do
+    n="$(basename "$d" .desktop)"
+    [[ -s /usr/share/icons/hicolor/256x256/apps/$n.png ]] && sed -i "s/^Icon=.*/Icon=$n/" "$d"
+done
+gtk-update-icon-cache -q -f /usr/share/icons/hicolor 2>/dev/null
+[[ -s /usr/share/icons/hicolor/256x256/apps/ollie-games.png ]] && ok "The new app icons"
+missing=""
+for p in espeak-ng ffmpeg btrfs-progs rsync arch-install-scripts; do pacman -Q "$p" >/dev/null 2>&1 || missing+=" $p"; done
+if [[ -z $missing ]]; then ok "Ollie's voice, GIF and sound making, and Recovery Mode's tools are installed"; else echo "LATER Update Ollie OS adds:$missing"; fi
+[[ "$(cat /etc/ollie-version 2>/dev/null)" == 1.4 ]] && ok "This is Ollie OS 1.4"
+exit 0

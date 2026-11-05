@@ -1,0 +1,77 @@
+#!/bin/bash
+# Root helper for ollie-first-setup.
+#
+#   ollie-set-account NAME    create NAME with the password read from stdin,
+#                             then turn off logging in by itself
+#   ollie-set-account --skip  keep going straight to the desktop, stop asking
+#   ollie-set-account --relogin  restart the login screen
+#
+# On a USB drive the choice is also written to the drive's boot partition
+# (ollie-account.conf holds only the scrambled password), so a drive that
+# starts fresh every time still remembers it; ollie-live-setup reads it.
+set -euo pipefail
+
+BOOTMNT="$(readlink -f /run/ollie-bootdir 2>/dev/null || true)" # set up by ollie-live-setup
+readonly BOOTMNT
+[[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
+
+# Write a file onto the USB drive's FAT32 boot partition, if there is one.
+write_to_drive() { # write_to_drive NAME CONTENT
+    [[ -n "$BOOTMNT" ]] && mountpoint -q "$BOOTMNT" || return 0
+    [[ "$(findmnt -no FSTYPE "$BOOTMNT")" == vfat ]] || return 0
+    mount -o remount,rw "$BOOTMNT" || return 0
+    printf '%s' "$2" >"$BOOTMNT/$1" || true
+    sync
+    mount -o remount,ro "$BOOTMNT" || true
+}
+
+login_screen_for() { # login_screen_for NAME
+    if [[ "$1" != ollie ]]; then
+        printf '[Users]\nHideUsers=ollie\n' >/etc/sddm.conf.d/30-ollie-hide-setup-user.conf
+    fi
+    mkdir -p /var/lib/sddm
+    printf '[Last]\nUser=%s\nSession=/usr/share/wayland-sessions/plasma.desktop\n' "$1" >/var/lib/sddm/state.conf
+    chown -R sddm:sddm /var/lib/sddm 2>/dev/null || true
+}
+
+mark_done() {
+    mkdir -p /var/lib/ollie
+    touch /var/lib/ollie/setup-done
+}
+
+case "${1:-}" in
+--skip)
+    mark_done
+    write_to_drive ollie-setup-skipped "skipped
+"
+    exit 0
+    ;;
+--relogin)
+    # Leave the desktop for the login screen, a moment after this returns.
+    systemd-run --quiet --on-active=2 --unit="ollie-relogin-$$" systemctl restart display-manager
+    exit 0
+    ;;
+esac
+
+name="${1:-}"
+[[ "$name" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$name" != root ]] || { echo "bad username" >&2; exit 1; }
+IFS= read -r pw
+[[ -n "$pw" ]] || { echo "empty password" >&2; exit 1; }
+
+if ! id "$name" &>/dev/null; then
+    useradd -m -G wheel,video,audio,input,storage -s /bin/bash -c "$name" "$name"
+fi
+printf '%s:%s\n' "$name" "$pw" | chpasswd
+unset pw
+hash="$(getent shadow "$name" | cut -d: -f2)"
+
+# No more logging in by itself, and the password-less "ollie" can no longer log in.
+rm -f /etc/sddm.conf.d/20-autologin.conf
+[[ "$name" == ollie ]] || passwd -l ollie >/dev/null 2>&1 || true
+# The login screen shows only the new account, already picked, so typing the
+# password and pressing Enter is all it takes.
+login_screen_for "$name"
+mark_done
+write_to_drive ollie-account.conf "USERNAME=$name
+PASSWORD_HASH=$hash
+"

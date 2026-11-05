@@ -1,0 +1,10 @@
+#!/bin/bash
+# Comic Maker: comic strips of 1-4 panels (comic.qml), saved in Pictures/Comics.
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+out="$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")/Comics"
+mkdir -p "$out"
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/comic.qml -- "out=$out" 2>&1)

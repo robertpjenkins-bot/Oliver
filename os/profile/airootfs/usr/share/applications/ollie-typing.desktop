@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Typing Game
+Comment=Pop the falling words by typing them: get faster at typing
+Exec=/usr/local/bin/ollie-typing
+Icon=ollie-typing
+Terminal=false
+Categories=Game;Education;
