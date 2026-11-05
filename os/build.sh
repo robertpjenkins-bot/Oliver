@@ -199,6 +199,11 @@ file_permissions=(
   ["/usr/local/bin/ollie-music"]="0:0:755"
   ["/usr/local/bin/ollie-photobooth"]="0:0:755"
   ["/usr/local/bin/ollie-seasons"]="0:0:755"
+  ["/usr/local/bin/ollie-tour"]="0:0:755"
+  ["/usr/local/bin/ollie-screensaver"]="0:0:755"
+  ["/usr/local/bin/ollie-easyread"]="0:0:755"
+  ["/usr/local/bin/ollie-readaloud"]="0:0:755"
+  ["/usr/local/bin/ollie-language"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true

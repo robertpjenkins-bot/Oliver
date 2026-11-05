@@ -1,0 +1,14 @@
+#!/bin/bash
+# Read it out loud: copy some text (Ctrl+C), then press Meta+Alt+R (or open
+# "Read aloud" from the apps menu), and it is read out, slowly and clearly.
+# Pressing it again while it reads stops it.
+set -uo pipefail
+if pkill -u "$UID" -f '^espeak-ng -v en-us -s 135'; then exit 0; fi
+text="$(busctl --user call org.kde.klipper /klipper org.kde.klipper.klipper getClipboardContents 2>/dev/null |
+    python3 -I -c 'import sys, shlex; t = sys.stdin.read().strip(); print((shlex.split(t[2:])[0] if t.startswith("s ") else "").replace(chr(92) + "n", " ").replace(chr(92) + "t", " "))' 2>/dev/null)"
+if [[ -z ${text// /} ]]; then
+    notify-send -a "Read aloud" -i ollie-readaloud "📖 Read aloud" "Copy some text first (select it, then Ctrl+C), then press Meta+Alt+R." 2>/dev/null
+    exit 0
+fi
+command -v espeak-ng >/dev/null || exit 0
+exec espeak-ng -v en-us -s 135 -- "${text:0:20000}" >/dev/null 2>&1

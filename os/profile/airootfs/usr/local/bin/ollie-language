@@ -1,0 +1,34 @@
+#!/bin/bash
+# Ollie OS's language (Ollie OS Settings).
+#   ollie-language CODE    as the person: the desktop and its apps in that
+#                          language (and its dates and numbers), from the next
+#                          login; the system part is done with sudo
+#   ollie-language --system CODE   (root) makes the language available
+#                          (locale-gen) and gets Firefox in it
+# CODE: en es fr de pt it nl pl sv ja zh. Ollie OS's own apps stay in English.
+set -uo pipefail
+declare -A LOCALE=([en]=en_US [es]=es_ES [fr]=fr_FR [de]=de_DE [pt]=pt_BR [it]=it_IT [nl]=nl_NL [pl]=pl_PL [sv]=sv_SE [ja]=ja_JP [zh]=zh_CN)
+declare -A FIREFOX=([en]="" [es]=es-es [fr]=fr [de]=de [pt]=pt-br [it]=it [nl]=nl [pl]=pl [sv]=sv-se [ja]=ja [zh]=zh-cn)
+if [[ ${1:-} == --system ]]; then
+    code=${2:-}
+    [[ -n ${LOCALE[$code]:-} && $EUID -eq 0 ]] || exit 2
+    loc="${LOCALE[$code]}.UTF-8"
+    sed -i "s/^#\\s*\\($loc UTF-8\\)/\\1/" /etc/locale.gen
+    grep -q "^$loc UTF-8" /etc/locale.gen || echo "$loc UTF-8" >>/etc/locale.gen
+    locale-gen >/dev/null 2>&1
+    mkdir -p /etc/ollie && echo "$code" >/etc/ollie/language
+    # Firefox in the language (Update Ollie OS gets it later if this cannot now).
+    [[ -n ${FIREFOX[$code]} ]] && pacman -S --needed --noconfirm "firefox-i18n-${FIREFOX[$code]}" >/dev/null 2>&1
+    exit 0
+fi
+code=${1:-}
+[[ -n ${LOCALE[$code]:-} ]] || { echo "usage: ollie-language en|es|fr|de|pt|it|nl|pl|sv|ja|zh" >&2; exit 2; }
+sudo -n /usr/local/bin/ollie-language --system "$code"
+if [[ $code == en ]]; then
+    kwriteconfig6 --file plasma-localerc --group Translations --key LANGUAGE --delete
+    kwriteconfig6 --file plasma-localerc --group Formats --key LANG --delete
+else
+    kwriteconfig6 --file plasma-localerc --group Translations --key LANGUAGE "${LOCALE[$code]%_*}"
+    kwriteconfig6 --file plasma-localerc --group Formats --key LANG "${LOCALE[$code]}.UTF-8"
+fi
+mkdir -p "$HOME/.config/ollie" && echo "$code" >"$HOME/.config/ollie/language"

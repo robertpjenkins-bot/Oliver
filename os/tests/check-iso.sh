@@ -150,7 +150,7 @@ check "Update Checker in the menu" test -f "$r/usr/share/applications/ollie-upda
 check "the list of the latest updates" test -s "$r/usr/local/share/ollie/updates.qml"
 check "Update Checker is asked about at the first start (off until then)" bash -c "! test -e '$r/etc/systemd/user/timers.target.wants/ollie-update-checker.timer' && grep -q update-checker '$r/usr/local/bin/ollie-welcome'"
 check "python for the Update Checker" test -x "$r/usr/bin/python3"
-for f in games finder typing pet coop sticker comic animator soundboard codequest space spelling world mathquest appcenter trophies gamehub quickmenu playtime music photobooth; do
+for f in games finder typing pet coop sticker comic animator soundboard codequest space spelling world mathquest appcenter trophies gamehub quickmenu playtime music photobooth tour screensaver; do
     check "/usr/local/bin/ollie-$f is executable" test -x "$r/usr/local/bin/ollie-$f"
     check "$f window" test -s "$r/usr/local/share/ollie/$f.qml"
 done
@@ -169,6 +169,11 @@ check "the controller helper and Play Time start with the desktop" bash -c "test
 check "the controller as a mouse may make its mouse (uinput)" bash -c "grep -q uinput '$r/etc/udev/rules.d/71-ollie-controllers.rules' && test -s '$r/etc/modules-load.d/ollie-uinput.conf'"
 check "seasonal themes start with the desktop" bash -c "test -x '$r/usr/local/bin/ollie-seasons' && test -f '$r/etc/xdg/autostart/ollie-seasons.desktop' && test -s '$r/usr/local/share/ollie/birthday.qml'"
 check "the seasonal backgrounds" bash -c "for s in Halloween Winter Birthday; do test -s '$r/usr/share/wallpapers/OllieOS-'\$s'/contents/images/1920x1080.png' || exit 1; done"
+check "Ollie's Tour opens at the first start" grep -q ollie-tour "$r/usr/local/bin/ollie-welcome"
+check "the Ollie login screen" bash -c "grep -q login-background '$r/usr/share/sddm/themes/breeze/theme.conf.user' && test -s '$r/usr/local/share/ollie/login-background.png' && test -s '$r/usr/local/share/ollie/avatar.png'"
+check "the screensaver starts with the desktop" test -f "$r/etc/xdg/autostart/ollie-screensaver.desktop"
+check "Bedtime" bash -c "grep -q bedtime-left '$r/usr/local/bin/ollie-parent' && grep -q 'ollie-parent bedtime-left' '$r/usr/local/bin/ollie-screen-time'"
+check "Easy reading, Read aloud and languages" bash -c "test -x '$r/usr/local/bin/ollie-easyread' && test -x '$r/usr/local/bin/ollie-readaloud' && test -x '$r/usr/local/bin/ollie-language' && test -f '$r/usr/share/kglobalaccel/ollie-readaloud.desktop'"
 check "Trophies can be earned" test -x "$r/usr/local/bin/ollie-trophy"
 check "Fun Fact of the Day on the desktop" bash -c "test -s '$r/usr/share/plasma/plasmoids/org.ollieos.funfact/contents/ui/facts.js' && grep -q org.ollieos.funfact '$r/usr/share/plasma/look-and-feel/org.ollieos.desktop/contents/layouts/org.kde.plasma.desktop-layout.js'"
 check "Recovery Mode in the menu" test -f "$r/usr/share/applications/ollie-recovery.desktop"

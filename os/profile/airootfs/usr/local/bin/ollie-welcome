@@ -63,6 +63,8 @@ later in Ollie OS Settings.)"
         1) /usr/local/bin/ollie-update-checker --disable ;;
         esac
     fi
+    # The first time: Ollie's Tour, then Welcome.
+    [[ -e "$cfg/tour-done" ]] || /usr/local/bin/ollie-tour
     [[ -e "$cfg/welcome-seen" && ! -e "$cfg/welcome-at-start" ]] && exit 0
 fi
 touch "$cfg/welcome-seen"

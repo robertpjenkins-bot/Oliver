@@ -1,7 +1,7 @@
 // Screen Time is over (ollie-timesup): covers the whole screen until
 // tomorrow, or until a grown-up types the parent PIN and picks more time
 // (said on the console: OLLIE-ACTION extra MINUTES). It cannot be closed.
-// Argument: pin= (the PIN's check sum).
+// Arguments: pin= (the PIN's check sum), mode=bedtime (it's bedtime instead).
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -46,15 +46,15 @@ ApplicationWindow {
         anchors.centerIn: parent
         spacing: 18
         Label { text: "🌙"; font.pixelSize: 110; Layout.alignment: Qt.AlignHCenter }
-        Label { text: "Screen time is over for today"; color: "white"; font.pixelSize: 44; font.bold: true; Layout.alignment: Qt.AlignHCenter }
-        Label { text: "Great playing! Come back tomorrow."; color: "#c7d2fe"; font.pixelSize: 24; Layout.alignment: Qt.AlignHCenter }
+        Label { text: win.arg("mode") === "bedtime" ? "Goodnight! It's bedtime" : "Screen time is over for today"; color: "white"; font.pixelSize: 44; font.bold: true; Layout.alignment: Qt.AlignHCenter }
+        Label { text: win.arg("mode") === "bedtime" ? "Sleep tight! See you in the morning. ⭐" : "Great playing! Come back tomorrow."; color: "#c7d2fe"; font.pixelSize: 24; Layout.alignment: Qt.AlignHCenter }
 
         ColumnLayout {
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: 40
             spacing: 10
             visible: win.pinSum !== ""
-            Label { text: "Grown-up: type the parent PIN for more time"; color: "#a5b4fc"; font.pixelSize: 16; Layout.alignment: Qt.AlignHCenter }
+            Label { text: win.arg("mode") === "bedtime" ? "Grown-up: type the parent PIN for a later bedtime tonight" : "Grown-up: type the parent PIN for more time"; color: "#a5b4fc"; font.pixelSize: 16; Layout.alignment: Qt.AlignHCenter }
             TextField {
                 id: pin
                 Layout.alignment: Qt.AlignHCenter

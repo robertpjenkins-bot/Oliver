@@ -12,6 +12,12 @@
 #   ollie-parent pin                     a new PIN, from the input (empty: none)
 #   ollie-parent firefox-password        Firefox's password, from the input (empty: none)
 #   ollie-parent firefox-asked           someone was asked about Firefox's password
+#   ollie-parent bedtime school|weekend HH:MM|off   bedtime on school nights
+#                                        (Sunday to Thursday) or weekends
+#   ollie-parent wake HH:MM              when bedtime ends in the morning (07:00)
+#   ollie-parent bedtime-left            minutes until bedtime tonight, "bed" when
+#                                        it is bedtime, or "off"
+#   ollie-parent later MINUTES           a later bedtime, tonight only
 set -uo pipefail
 readonly CONF=/etc/ollie/parent.conf STATE=/var/lib/ollie/screen-time
 setting() { sed -n "s/^$1=//p" "$CONF" 2>/dev/null | tail -n 1; }
@@ -70,5 +76,41 @@ firefox-password)
     put FIREFOX_ASKED yes
     ;;
 firefox-asked) put FIREFOX_ASKED yes ;;
-*) sed -n '2,17s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+bedtime)
+    [[ ${2:-} =~ ^(school|weekend)$ && ${3:-} =~ ^(off|([01][0-9]|2[0-3]):[0-5][0-9])$ ]] || { echo "school|weekend HH:MM|off" >&2; exit 2; }
+    key=BEDTIME_SCHOOL
+    [[ $2 == weekend ]] && key=BEDTIME_WEEKEND
+    put "$key" "${3/off/}"
+    ;;
+wake) [[ ${2:-} =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || exit 2; put WAKE "$2" ;;
+later)
+    number "${2:-}"
+    mkdir -p "$STATE"
+    # (Tonight: the evening's date, also after midnight.)
+    night="$(date +%F)"
+    (($(date +%-H) < 12)) && night="$(date -d yesterday +%F)"
+    echo $(($(cat "$STATE/later-$night" 2>/dev/null || echo 0) + $2)) >"$STATE/later-$night"
+    ;;
+bedtime-left)
+    # A night's bedtime: school nights are Sunday to Thursday evenings.
+    bedtime_of() { # bedtime_of DATE: HH:MM or nothing
+        case "$(date -d "$1" +%u)" in 5 | 6) setting BEDTIME_WEEKEND ;; *) setting BEDTIME_SCHOOL ;; esac
+    }
+    mins() { echo $((10#${1%%:*} * 60 + 10#${1##*:})); }
+    wake="$(setting WAKE)"
+    wake=$(mins "${wake:-07:00}")
+    now=$(mins "$(date +%H:%M)")
+    if ((now < wake)); then
+        # Early morning: still last night.
+        night="$(date -d yesterday +%F)"
+        [[ -n "$(bedtime_of "$night")" ]] && echo bed || echo off
+        exit 0
+    fi
+    night="$(date +%F)"
+    bed="$(bedtime_of "$night")"
+    [[ -n $bed ]] || { echo off; exit 0; }
+    left=$(($(mins "$bed") + $(cat "$STATE/later-$night" 2>/dev/null || echo 0) - now))
+    if ((left <= 0)); then echo bed; else echo "$left"; fi
+    ;;
+*) sed -n '2,23s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
 esac

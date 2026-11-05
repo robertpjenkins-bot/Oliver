@@ -1,0 +1,42 @@
+#!/bin/bash
+# Ollie screensaver: after some minutes with nobody using the computer, the
+# Ollie Pet plays on the screen (screensaver.qml) until someone comes back.
+#   ollie-screensaver --watch   (at login, /etc/xdg/autostart) every 15 seconds:
+#                               how long nobody has used the computer
+#   ollie-screensaver           show it now
+# Not while a game is running, a video plays (something asked the computer
+# to stay awake), or the screen is locked. Ollie OS Settings: after how many
+# minutes, or off (~/.config/ollie/screensaver: MINUTES=3|5|10|off).
+set -uo pipefail
+export QML_XHR_ALLOW_FILE_READ=1
+run="${XDG_RUNTIME_DIR:-/tmp}" cfg="$HOME/.config/ollie"
+me='share/ollie/screensaver.qml'
+show() {
+    pgrep -u "$UID" -f "$me" >/dev/null && return
+    local name
+    name="$(sed -n 's/^name=//p' "$cfg/pet.ini" 2>/dev/null | head -n 1)"
+    [[ -f $run/ollie-pad-events ]] || echo '{"events": []}' >"$run/ollie-pad-events"
+    qml6 /usr/local/share/ollie/screensaver.qml -- "name=$name" "events=$run/ollie-pad-events" >/dev/null 2>&1
+}
+[[ ${1:-} == --watch ]] || { show; exit 0; }
+
+idle_seconds() {
+    local v
+    v="$(busctl --user call org.freedesktop.ScreenSaver /ScreenSaver org.freedesktop.ScreenSaver GetSessionIdleTime 2>/dev/null | awk '{print $2}')"
+    [[ $v =~ ^[0-9]+$ ]] || { echo 0; return; }
+    ((v > 86400)) && v=$((v / 1000)) # (milliseconds on some)
+    echo "$v"
+}
+busy() {
+    [[ -s $run/ollie-current-game ]] && return 0
+    busctl --user call org.freedesktop.PowerManagement /org/freedesktop/PowerManagement/Inhibit \
+        org.freedesktop.PowerManagement.Inhibit HasInhibit 2>/dev/null | grep -q 'true' && return 0
+    [[ "$(loginctl show-session "${XDG_SESSION_ID:-self}" -p LockedHint --value 2>/dev/null)" == yes ]] && return 0
+    return 1
+}
+while sleep 15; do
+    minutes="$(sed -n 's/^MINUTES=//p' "$cfg/screensaver" 2>/dev/null | tail -n 1)"
+    minutes=${minutes:-5}
+    [[ $minutes =~ ^[0-9]+$ ]] || continue
+    (($(idle_seconds) >= minutes * 60)) && ! busy && show
+done

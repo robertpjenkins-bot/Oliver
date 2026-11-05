@@ -7,6 +7,11 @@ set -uo pipefail
 readonly TITLE="Update Ollie OS"
 # What newer Ollie OS has, added if missing (only those the servers carry).
 readonly EXTRAS=(gamemode lib32-gamemode mangohud lib32-mangohud plymouth libinput libinput-tools evtest libnotify python espeak-ng ffmpeg qt6-declarative layer-shell-qt brightnessctl qt6-multimedia qt6-multimedia-ffmpeg)
+# Firefox in the language chosen in Ollie OS Settings (ollie-language).
+declare -A _ff=([es]=es-es [fr]=fr [de]=de [pt]=pt-br [it]=it [nl]=nl [pl]=pl [sv]=sv-se [ja]=ja [zh]=zh-cn)
+_lang="$(cat /etc/ollie/language 2>/dev/null)"
+LANG_EXTRAS=()
+[[ -n ${_ff[$_lang]:-} ]] && LANG_EXTRAS=("firefox-i18n-${_ff[$_lang]}")
 bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
 say() { printf '\n%s==>%s %s%s%s\n' "$teal$bold" "$reset" "$bold" "$*" "$reset"; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -37,7 +42,7 @@ sudo -n systemctl start ollie-keyring.service 2>/dev/null
 sudo -n pacman -Sy --needed --noconfirm archlinux-keyring ||
     finish "${red}${bold}Could not reach the Arch Linux servers.$reset Is the internet connected? Open $TITLE again to retry."
 extras=()
-for p in "${EXTRAS[@]}"; do
+for p in "${EXTRAS[@]}" "${LANG_EXTRAS[@]}"; do
     pacman -Q "$p" >/dev/null 2>&1 || ! pacman -Si "$p" >/dev/null 2>&1 || extras+=("$p")
 done
 sudo -n pacman -Su --needed --noconfirm "${extras[@]}" ||

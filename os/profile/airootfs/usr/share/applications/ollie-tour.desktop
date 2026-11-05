@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie's Tour
+Comment=Ollie shows you around the screen
+Exec=/usr/local/bin/ollie-tour
+Icon=ollie-tour
+Terminal=false
+Categories=Education;Utility;

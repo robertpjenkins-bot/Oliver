@@ -1,0 +1,20 @@
+#!/bin/bash
+# Ollie's Tour (tour.qml): Ollie shows you around the screen. Opened once by
+# itself at the first start (ollie-welcome), and from the apps menu.
+set -uo pipefail
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+export QML_XHR_ALLOW_FILE_READ=1
+run="${XDG_RUNTIME_DIR:-/tmp}"
+pgrep -u "$UID" -f 'share/ollie/tour.qml' >/dev/null && exit 0
+mkdir -p "$HOME/.config/ollie"
+touch "$HOME/.config/ollie/tour-done"
+[[ -f $run/ollie-pad-events ]] || echo '{"events": []}' >"$run/ollie-pad-events"
+name="$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
+# (The pad-events file: while the tour is open, ollie-padd sends it the controller's buttons.)
+touch "$run/ollie-hub-open"
+trap 'rm -f -- "$run/ollie-hub-open"' EXIT
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/tour.qml -- "name=$name" "events=$run/ollie-pad-events" 2>&1)

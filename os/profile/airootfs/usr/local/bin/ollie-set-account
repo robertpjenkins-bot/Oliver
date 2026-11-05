@@ -62,6 +62,12 @@ if ! id "$name" &>/dev/null; then
     useradd -m -G wheel,video,audio,input,storage -s /bin/bash -c "$name" "$name"
 fi
 printf '%s:%s\n' "$name" "$pw" | chpasswd
+# Their picture on the login screen: the Ollie Pet (unless they have one).
+if [[ -s /usr/local/share/ollie/avatar.png && ! -e /var/lib/AccountsService/icons/$name ]]; then
+    install -D -m 0644 /usr/local/share/ollie/avatar.png "/var/lib/AccountsService/icons/$name"
+    mkdir -p /var/lib/AccountsService/users
+    [[ -f /var/lib/AccountsService/users/$name ]] || printf '[User]\nIcon=/var/lib/AccountsService/icons/%s\n' "$name" >"/var/lib/AccountsService/users/$name"
+fi
 unset pw
 hash="$(getent shadow "$name" | cut -d: -f2)"
 

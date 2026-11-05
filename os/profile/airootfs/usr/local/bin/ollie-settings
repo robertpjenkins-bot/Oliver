@@ -17,7 +17,9 @@ grep -qx 'no_display' "$mango" 2>/dev/null && fps=off
 args=(
     "steam=$(flag steam-in-window)" "fps=$fps" "overlay=$(/usr/local/bin/ollie-overlay --which)" "voice=$(flag no-voice)" "boost=$(flag no-speed-boost)" "sound=$(flag no-startup-sound)"
     "mode=$(setting MODE "$cfg/colours")" "colour=$(setting COLOUR "$cfg/colours")" "gold=$([[ -e $cfg/gold-unlocked ]] && echo on || echo off)"
+    "easyread=$(cat "$cfg/easyread" 2>/dev/null)" "language=$(cat "$cfg/language" 2>/dev/null)" "screensaver=$(setting MINUTES "$cfg/screensaver")"
     "padmouse=$(setting MOUSE "$cfg/controller.conf")" "seasons=$(setting SEASONS "$cfg/seasons")" "birthday=$(setting BIRTHDAY "$cfg/seasons")"
+    "bedschool=$(setting BEDTIME_SCHOOL /etc/ollie/parent.conf)" "bedweekend=$(setting BEDTIME_WEEKEND /etc/ollie/parent.conf)" "wake=$(setting WAKE /etc/ollie/parent.conf)"
     "screentime=$(setting SCREEN_TIME /etc/ollie/parent.conf)" "scanner=$(setting SCANNER /etc/ollie/parent.conf)"
     "pin=$(setting PIN_MD5 /etc/ollie/parent.conf)" "left=$(/usr/local/bin/ollie-parent left)"
     "updates=$(cat /etc/ollie/update-checker 2>/dev/null || echo off)"
@@ -51,6 +53,8 @@ while IFS= read -r line; do
     colours) /usr/local/bin/ollie-colours "${a[1]}" "${a[2]}" ${a[3]:+--background} ;;
     screen-time) sudo -n /usr/local/bin/ollie-parent screen-time "${a[1]}" ;;
     extra) sudo -n /usr/local/bin/ollie-parent extra "${a[1]}" ;;
+    bedtime) sudo -n /usr/local/bin/ollie-parent bedtime "${a[1]:-}" "${a[2]:-}" ;;
+    wake) sudo -n /usr/local/bin/ollie-parent wake "${a[1]:-}" ;;
     scanner) sudo -n /usr/local/bin/ollie-parent scanner "${a[1]}" ;;
     pin) printf '%s\n' "${a[1]:-}" | sudo -n /usr/local/bin/ollie-parent pin ;;
     firefox-password)
@@ -77,6 +81,9 @@ while IFS= read -r line; do
             (/usr/local/bin/ollie-seasons >/dev/null 2>&1 &)
         fi
         ;;
+    easyread) [[ ${a[1]:-} =~ ^(on|off)$ ]] && /usr/local/bin/ollie-easyread "${a[1]}" ;;
+    language) [[ ${a[1]:-} =~ ^[a-z]{2}$ ]] && /usr/local/bin/ollie-language "${a[1]}" ;;
+    screensaver) [[ ${a[1]:-} =~ ^([0-9]{1,2}|off)$ ]] && printf 'MINUTES=%s\n' "${a[1]}" >"$cfg/screensaver" ;;
     pad-setup) (setsid env -u QT_FORCE_STDERR_LOGGING -u QT_MESSAGE_PATTERN -u QT_LOGGING_RULES /usr/local/bin/ollie-gamehub --setup >/dev/null 2>&1 &) ;;
     recovery) (setsid env -u QT_FORCE_STDERR_LOGGING -u QT_MESSAGE_PATTERN -u QT_LOGGING_RULES /usr/local/bin/ollie-recovery >/dev/null 2>&1 &) ;;
     esac

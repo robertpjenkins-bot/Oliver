@@ -2,13 +2,27 @@
 # Screen Time is over for today: a window over the whole screen (timesup.qml)
 # until tomorrow, or until a grown-up types the PIN for more time. Started
 # by ollie-screen-time; closing it only brings it back.
+#   ollie-timesup --bedtime   it's bedtime: goodnight until the morning (or
+#                             the PIN, for a later bedtime tonight)
 set -uo pipefail
 # The window says what to do in its console messages (console.log). Qt sends
 # those to the system journal when its output is not a terminal (always,
 # started from the desktop): here they must come, plain.
 export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
-/usr/local/bin/ollie-say "Screen time is over for today. See you tomorrow!" &
 pin="$(sed -n 's/^PIN_MD5=//p' /etc/ollie/parent.conf 2>/dev/null | tail -n 1)"
+if [[ ${1:-} == --bedtime ]]; then
+    /usr/local/bin/ollie-say "It's bedtime! Good night. Sleep tight!" &
+    while [[ "$(/usr/local/bin/ollie-parent bedtime-left)" == bed ]]; do
+        while IFS= read -r line; do
+            case "$line" in
+            *"OLLIE-ACTION extra "*) sudo -n /usr/local/bin/ollie-parent later "${line##* }" ;;
+            esac
+        done < <(qml6 /usr/local/share/ollie/timesup.qml -- "pin=$pin" "mode=bedtime" 2>&1)
+        sleep 1
+    done
+    exit 0
+fi
+/usr/local/bin/ollie-say "Screen time is over for today. See you tomorrow!" &
 while [[ "$(/usr/local/bin/ollie-parent left)" == 0 ]]; do
     while IFS= read -r line; do
         case "$line" in

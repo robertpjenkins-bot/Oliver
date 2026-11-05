@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie screensaver
+Comment=The Ollie Pet plays on the screen when nobody is using the computer
+Exec=/usr/local/bin/ollie-screensaver --watch
+Icon=ollie-pet
+Terminal=false
+NoDisplay=true
+X-KDE-autostart-phase=2

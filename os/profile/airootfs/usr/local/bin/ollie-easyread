@@ -1,0 +1,44 @@
+#!/bin/bash
+# Easy reading mode (Ollie OS Settings): bigger text in an easy-to-read font
+# (Atkinson Hyperlegible or Lexend when installed, else Noto Sans) and a
+# bigger mouse pointer, all over the desktop; off puts back what was there.
+#   ollie-easyread on|off
+# (Some apps show it after they are opened again.) Reading text out loud:
+# ollie-readaloud (Meta+Alt+R).
+set -uo pipefail
+cfg="$HOME/.config/ollie" before="$HOME/.config/ollie/easyread-before"
+mkdir -p "$cfg"
+get() { kreadconfig6 --file "$1" --group "$2" --key "$3" 2>/dev/null; }
+set_() { if [[ -n $4 ]]; then kwriteconfig6 --file "$1" --group "$2" --key "$3" "$4"; else kwriteconfig6 --file "$1" --group "$2" --key "$3" --delete; fi; }
+keys=("kdeglobals General font" "kdeglobals General menuFont" "kdeglobals General toolBarFont" "kdeglobals General smallestReadableFont" "kdeglobals WM activeFont" "kcminputrc Mouse cursorSize")
+case "${1:-}" in
+on)
+    if [[ ! -f $before ]]; then
+        for k in "${keys[@]}"; do read -r f g key <<<"$k"; printf '%s\t%s\t%s\t%s\n' "$f" "$g" "$key" "$(get "$f" "$g" "$key")"; done >"$before"
+    fi
+    family="Noto Sans"
+    for f in "Atkinson Hyperlegible Next" "Atkinson Hyperlegible" "Lexend"; do
+        fc-list : family | grep -qxF "$f" && { family=$f; break; }
+    done
+    font() { printf '%s,%s,-1,5,%s,0,0,0,0,0,0,0,0,0,0,1' "$family" "$1" "${2:-400}"; }
+    set_ kdeglobals General font "$(font 13)"
+    set_ kdeglobals General menuFont "$(font 13)"
+    set_ kdeglobals General toolBarFont "$(font 12)"
+    set_ kdeglobals General smallestReadableFont "$(font 11)"
+    set_ kdeglobals WM activeFont "$(font 13 600)"
+    set_ kcminputrc Mouse cursorSize 36
+    echo on >"$cfg/easyread"
+    ;;
+off)
+    if [[ -f $before ]]; then
+        while IFS=$'\t' read -r f g key v; do set_ "$f" "$g" "$key" "$v"; done <"$before"
+        rm -f "$before"
+    fi
+    echo off >"$cfg/easyread"
+    ;;
+*) echo "usage: ollie-easyread on|off" >&2; exit 2 ;;
+esac
+# Tell the desktop the fonts changed (KGlobalSettings: fonts, then the cursor).
+busctl --user emit /KGlobalSettings org.kde.KGlobalSettings notifyChange ii 1 0 2>/dev/null
+busctl --user emit /KGlobalSettings org.kde.KGlobalSettings notifyChange ii 5 0 2>/dev/null
+exit 0

@@ -52,6 +52,8 @@ ICONS = {
     "ollie-playtime": ("⏱️", "#5eead4", "#115e59"),
     "ollie-music": ("🎹", "#c084fc", "#6b21a8"),
     "ollie-photobooth": ("📸", "#fb7185", "#9f1239"),
+    "ollie-tour": ("🗺️", "#86efac", "#166534"),
+    "ollie-readaloud": ("📖", "#fca5a5", "#b91c1c"),
 }
 
 here = os.path.dirname(os.path.abspath(__file__))

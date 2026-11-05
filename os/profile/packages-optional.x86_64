@@ -25,3 +25,7 @@ brightnessctl
 # Photo Booth: the webcam (Qt Multimedia, with FFmpeg)
 qt6-multimedia
 qt6-multimedia-ffmpeg
+# Easy reading mode: easy-to-read fonts
+ttf-atkinson-hyperlegible
+otf-atkinson-hyperlegible-next
+ttf-lexend

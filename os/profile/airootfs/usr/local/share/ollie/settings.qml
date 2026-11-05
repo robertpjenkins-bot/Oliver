@@ -3,6 +3,7 @@
 //   steam|fps|boost|sound on|off     colours dark|light teal|purple|red|gold [bg]
 //   screen-time MINUTES   extra MINUTES   scanner on|off   pin NEWPIN   notes   recovery
 //   pad-mouse on|off   pad-setup   seasons on|off   birthday MM-DD
+//   bedtime school|weekend HH:MM|off   wake HH:MM   easyread on|off   language CODE   screensaver MINUTES|off
 // Arguments (what is on now): steam= fps= boost= sound= mode= colour=
 // screentime= scanner= pin= (the PIN's check sum) left= (minutes left today)
 // gold=on|off (the secret Ollie Gold colour, once found in Ollie Finder)
@@ -41,6 +42,10 @@ ApplicationWindow {
         { text: "1 hour 30 minutes a day", min: 90 }, { text: "2 hours a day", min: 120 },
         { text: "3 hours a day", min: 180 }, { text: "4 hours a day", min: 240 }
     ]
+    readonly property var languages: [["en", "English"], ["es", "Español"], ["fr", "Français"], ["de", "Deutsch"], ["pt", "Português"], ["it", "Italiano"],
+                                      ["nl", "Nederlands"], ["pl", "Polski"], ["sv", "Svenska"], ["ja", "日本語"], ["zh", "中文"]]
+    readonly property var bedtimes: ["Off", "19:00", "19:30", "20:00", "20:30", "21:00", "21:30", "22:00", "22:30", "23:00"]
+    readonly property var wakes: ["06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00"]
     function setBirthday() {
         if (bMonth.currentIndex > 0 && bDay.currentIndex > 0)
             act("birthday " + String(bMonth.currentIndex).padStart(2, "0") + "-" + String(bDay.currentIndex).padStart(2, "0"));
@@ -186,6 +191,45 @@ ApplicationWindow {
             }
 
             GroupBox {
+                title: "🌍  Language, reading and the screensaver"
+                Layout.fillWidth: true
+                Layout.leftMargin: 18
+                Layout.rightMargin: 18
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+                    Switch {
+                        text: "📖  Easy reading: bigger text, an easy-to-read font and a bigger mouse pointer"
+                        checked: win.arg("easyread") === "on"
+                        onToggled: win.act("easyread " + (checked ? "on" : "off"))
+                    }
+                    Label { text: "🔊  Read aloud: copy some text (Ctrl+C), then press Meta + Alt + R."; opacity: 0.8 }
+                    RowLayout {
+                        spacing: 8
+                        Label { text: "Language:" }
+                        ComboBox {
+                            Layout.preferredWidth: 220
+                            model: win.languages.map(l => l[1])
+                            currentIndex: Math.max(0, win.languages.findIndex(l => l[0] === (win.arg("language") || "en")))
+                            onActivated: index => { win.act("language " + win.languages[index][0]); langNote.visible = true; }
+                        }
+                        Label { id: langNote; visible: false; text: "✅ From the next time you log in."; opacity: 0.8 }
+                    }
+                    Label { text: "(The desktop, Firefox and most apps change; Ollie OS's own apps stay in English for now.)"; opacity: 0.7; font.pixelSize: 12 }
+                    RowLayout {
+                        spacing: 8
+                        Label { text: "🐾  Ollie screensaver:" }
+                        ComboBox {
+                            Layout.preferredWidth: 220
+                            model: ["After 3 minutes", "After 5 minutes", "After 10 minutes", "Off"]
+                            currentIndex: ({ "3": 0, "5": 1, "10": 2, "off": 3 })[win.arg("screensaver") || "5"] ?? 1
+                            onActivated: index => win.act("screensaver " + ["3", "5", "10", "off"][index])
+                        }
+                    }
+                }
+            }
+
+            GroupBox {
                 title: "👪  For grown-ups"
                 Layout.fillWidth: true
                 Layout.leftMargin: 18
@@ -275,6 +319,36 @@ ApplicationWindow {
                         }
                         Label {
                             text: "When the time is up, games close (with warnings 10, 5 and 1 minutes before) and the screen says to come back tomorrow, unless a grown-up types the PIN for more time."
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                            opacity: 0.8
+                        }
+
+                        Label { text: "🌙  Bedtime"; font.bold: true; Layout.topMargin: 8 }
+                        GridLayout {
+                            columns: 2
+                            columnSpacing: 10
+                            Label { text: "School nights (Sunday to Thursday):" }
+                            ComboBox {
+                                model: win.bedtimes
+                                currentIndex: Math.max(0, win.bedtimes.indexOf(win.arg("bedschool") || "Off"))
+                                onActivated: index => win.act("bedtime school " + (index === 0 ? "off" : win.bedtimes[index]))
+                            }
+                            Label { text: "Weekends (Friday and Saturday):" }
+                            ComboBox {
+                                model: win.bedtimes
+                                currentIndex: Math.max(0, win.bedtimes.indexOf(win.arg("bedweekend") || "Off"))
+                                onActivated: index => win.act("bedtime weekend " + (index === 0 ? "off" : win.bedtimes[index]))
+                            }
+                            Label { text: "Wake-up time (bedtime ends):" }
+                            ComboBox {
+                                model: win.wakes
+                                currentIndex: Math.max(0, win.wakes.indexOf(win.arg("wake") || "07:00"))
+                                onActivated: index => win.act("wake " + win.wakes[index])
+                            }
+                        }
+                        Label {
+                            text: "At bedtime, games close (with warnings 10, 5 and 1 minutes before) and the screen says goodnight until the morning, unless a grown-up types the PIN for a later bedtime tonight."
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                             opacity: 0.8

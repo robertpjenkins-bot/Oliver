@@ -317,7 +317,7 @@ build_publisher
 # Space Explorer, Spelling Bee, World Explorer, Ollie's voice, the Game
 # Overlay and the secrets. Update Ollie OS opens next to get the packages
 # they use (espeak-ng for the voice, ffmpeg for GIFs and sounds).
-fun_apps=(games finder typing pet coop sticker comic animator soundboard codequest space spelling world mathquest appcenter trophies gamehub quickmenu playtime music photobooth)
+fun_apps=(games finder typing pet coop sticker comic animator soundboard codequest space spelling world mathquest appcenter trophies gamehub quickmenu playtime music photobooth tour)
 fun_pack_files() { # fun_pack_files: its files, into files=()
     local a
     for a in "${fun_apps[@]}"; do
@@ -330,6 +330,9 @@ fun_pack_files() { # fun_pack_files: its files, into files=()
         etc/systemd/user/ollie-{padd,playtime}.service etc/systemd/user/default.target.wants/ollie-{padd,playtime}.service
         etc/udev/rules.d/71-ollie-controllers.rules
         usr/local/bin/ollie-seasons usr/local/share/ollie/birthday.qml etc/xdg/autostart/ollie-seasons.desktop
+        usr/local/bin/ollie-{easyread,language,parent,timesup,screen-time} usr/local/share/ollie/{timesup.qml,login-background.png,avatar.png}
+        usr/share/sddm/themes/breeze/theme.conf.user usr/share/kglobalaccel/ollie-readaloud.desktop etc/xdg/autostart/ollie-screensaver.desktop
+        usr/local/bin/ollie-{screensaver,readaloud} usr/local/share/ollie/screensaver.qml usr/share/applications/ollie-readaloud.desktop
         usr/share/plasma/plasmoids/org.ollieos.funfact/contents/ui/{main.qml,facts.js})
 }
 build_fun_pack_updater() {

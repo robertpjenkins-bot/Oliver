@@ -3,7 +3,9 @@
 # computer each day (an unlocked desktop), warns 10, 5 and 1 minutes before
 # the day's limit (Ollie OS Settings), and at the limit closes games and
 # covers the screen until tomorrow, or until a grown-up types the PIN for
-# more time (ollie-timesup).
+# more time (ollie-timesup). Bedtime too (Ollie OS Settings): warnings 10, 5
+# and 1 minutes before, then games close and the screen says goodnight until
+# the morning (ollie-timesup --bedtime), unless a grown-up types the PIN.
 set -uo pipefail
 readonly STATE=/var/lib/ollie/screen-time
 mkdir -p "$STATE"
@@ -39,8 +41,20 @@ close_games() {
 
 while sleep 60; do
     left="$(/usr/local/bin/ollie-parent left)"
-    [[ $left == off ]] && continue
+    bed="$(/usr/local/bin/ollie-parent bedtime-left)"
+    [[ $left == off && $bed == off ]] && continue
     user="$(at_computer)" || continue
+    case $bed in
+    10 | 5) tell "$user" "🌙 Bedtime in $bed minutes. Time to save your game!" "Bedtime in $bed minutes! Time to save your game." ;;
+    1) tell "$user" "🌙 Bedtime in 1 minute! Save your game now." "Bedtime in one minute!" ;;
+    bed)
+        if ! pgrep -u "$user" -f 'ollie-timesup --bedtime' >/dev/null; then
+            close_games "$user"
+            as_user "$user" /usr/local/bin/ollie-timesup --bedtime
+        fi
+        ;;
+    esac
+    [[ $left == off ]] && continue
     day="$(date +%F)"
     if ((left > 0)); then
         echo $(($(cat "$STATE/used-$day" 2>/dev/null || echo 0) + 1)) >"$STATE/used-$day"
