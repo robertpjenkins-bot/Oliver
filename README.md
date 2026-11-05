@@ -3,3 +3,4 @@ Ollie OS was dreamed up, designed and tested by an 8-year-old, built with help f
 <img width="3840" height="2160" alt="desktop" src="https://github.com/user-attachments/assets/8be2fca1-2326-47d3-b7bb-0ab0e0dc5587" />
 
 IF mac says will not let you open go to settings privacy gatekepper press lock and go to allow
+<img width="1600" height="520" alt="image-1793888644930" src="https://github.com/user-attachments/assets/a233df66-32a0-46fd-aecb-8cbe7632bc3f" />
