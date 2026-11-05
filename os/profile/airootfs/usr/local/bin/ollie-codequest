@@ -1,0 +1,11 @@
+#!/bin/bash
+# Coding Quest (codequest.qml). What it keeps is in ~/.config/ollie/codequest.ini;
+# Ollie's voice (ollie-say) cheers and reads out loud.
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+export QML_XHR_ALLOW_FILE_READ=1
+mkdir -p "$HOME/.config/ollie"
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/codequest.qml -- "config=$HOME/.config/ollie/codequest.ini" 2>&1)

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Coding Quest
+Comment=Learn coding by guiding the Ollie cube to the star with code blocks
+Exec=/usr/local/bin/ollie-codequest
+Icon=applications-education
+Terminal=false
+Categories=Education;Game;

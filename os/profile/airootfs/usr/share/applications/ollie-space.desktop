@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Space Explorer
+Comment=Tour the Sun, the planets, the Moon and Pluto, with facts
+Exec=/usr/local/bin/ollie-space
+Icon=applications-science
+Terminal=false
+Categories=Education;
