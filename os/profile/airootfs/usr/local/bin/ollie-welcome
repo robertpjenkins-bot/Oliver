@@ -6,8 +6,9 @@
 #   ollie-welcome [--at-login]
 # --at-login (Ollie OS's own start, /etc/xdg/autostart): first waits for the
 # first-start questions (ollie-first-setup), asks once whether to switch on
-# the Inappropriate Typing Scanner and whether Firefox should have a
-# password, then opens the window if it is time.
+# the Inappropriate Typing Scanner, whether Firefox should have a password
+# and whether to install the Update Checker, then opens the window if it is
+# time.
 set -uo pipefail
 # The window says what to do in its console messages (console.log). Qt sends
 # those to the system journal when its output is not a terminal (always,
@@ -48,6 +49,18 @@ You can change this later in Ollie OS Settings."
     if [[ "$(sed -n 's/^FIREFOX_ASKED=//p' "$CONF" 2>/dev/null | tail -n 1)" != yes ]] && sudo -n true 2>/dev/null; then
         /usr/local/bin/ollie-firefox --set --first
     fi
+    if [[ ! -e /etc/ollie/update-checker ]] && sudo -n true 2>/dev/null; then
+        kdialog --title "Update Checker" --icon system-software-update --yes-label "Yes, install it" --no-label "No thanks" --yesno \
+            "Do you want the Update Checker?
+
+When biobro makes a new Ollie OS update, you get a notification
+saying what is new, with an Install button. (You can change this
+later in Ollie OS Settings.)"
+        case $? in
+        0) /usr/local/bin/ollie-update-checker --enable && systemctl --user start ollie-update-checker.timer 2>/dev/null ;;
+        1) /usr/local/bin/ollie-update-checker --disable ;;
+        esac
+    fi
     [[ -e "$cfg/welcome-seen" && ! -e "$cfg/welcome-at-start" ]] && exit 0
 fi
 touch "$cfg/welcome-seen"
@@ -64,6 +77,7 @@ while IFS= read -r line; do
     "open settings") open /usr/local/bin/ollie-settings ;;
     "open fixer") open /usr/local/bin/ollie-fixer ;;
     "open update") open /usr/local/bin/ollie-os-update ;;
+    "open updates") open /usr/local/bin/ollie-update-checker --now ;;
     "open store") open plasma-discover ;;
     "at-start on") touch "$cfg/welcome-at-start" ;;
     "at-start off") rm -f "$cfg/welcome-at-start" ;;

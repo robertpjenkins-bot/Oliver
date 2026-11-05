@@ -15,6 +15,7 @@
 #   Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage adds Wallpaper Maker (your name, or a drawing)
 #   Ollie-OS-Download-Tracker-Updater-x86_64.AppImage adds Download Tracker (biobro's GitHub downloads)
 #   Ollie-OS-Game-Pack-Updater-x86_64.AppImage   adds the Game Pack: Game Mode, Speed Boost, FPS, Minecraft, Settings...
+#   Ollie-OS-Update-Publisher-x86_64.AppImage    for biobro: publishes an update the Update Checker tells everyone about
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
 #   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup); and as .dmg
 # (Ollie-OS-Builder-Windows.exe, for Windows: os/windows/builder/build.sh.)
@@ -269,11 +270,11 @@ build_tracker_updater
 # next to get the packages they use.
 build_game_pack_updater() {
     local f files=() air="$os/profile/airootfs"
-    for f in usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox} \
+    for f in usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox,update-checker} \
         usr/local/lib/ollie/{speed-boost-hook,boot-splash} usr/local/share/ollie/{welcome.qml,settings.qml,timesup.qml,scanner-words.txt} \
-        usr/local/share/applications/{steam,firefox}.desktop usr/share/applications/ollie-{minecraft,os-update,welcome,settings,scanner-notes}.desktop \
+        usr/local/share/applications/{steam,firefox}.desktop usr/share/applications/ollie-{minecraft,os-update,welcome,settings,scanner-notes,update-checker}.desktop \
         usr/share/icons/hicolor/scalable/apps/ollie-minecraft.svg etc/xdg/autostart/ollie-{welcome,startup-sound}.desktop \
-        etc/systemd/user/ollie-speed-boost.service etc/systemd/system/ollie-{screen-time,typing-scanner}.service \
+        etc/systemd/user/ollie-speed-boost.service etc/systemd/user/ollie-update-checker.{service,timer} etc/systemd/system/ollie-{screen-time,typing-scanner}.service \
         etc/systemd/system/multi-user.target.wants/ollie-{screen-time,typing-scanner}.service \
         etc/gamemode.ini etc/environment.d/20-ollie-games.conf etc/udev/rules.d/71-ollie-controllers.rules etc/udev/rules.d/72-ollie-typing-scanner.rules \
         etc/plymouth/plymouthd.conf etc/mkinitcpio.conf.d/ollie-splash.conf usr/share/sounds/ollie/startup.ogg; do
@@ -292,6 +293,19 @@ build_game_pack_updater() {
         /usr/local/bin/ollie-os-update ollie-game-pack.after-install "${files[@]}"
 }
 build_game_pack_updater
+# For biobro: publish an Ollie OS update that the Update Checker tells everyone about.
+build_publisher() {
+    local appdir="$out/OlliePublisher.AppDir"
+    rm -rf "$appdir"
+    install -D -m 0755 "$here/ollie-update-publisher" "$appdir/usr/bin/ollie-update-publisher"
+    printf '#!/bin/sh\n# AppImage entry point: publish an Ollie OS update.\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/ollie-update-publisher" "$@"\n' >"$appdir/AppRun"
+    chmod 0755 "$appdir/AppRun"
+    install -m 0644 "$here/ollie-update-publisher.desktop" "$appdir/ollie-update-publisher.desktop"
+    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
+    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Update-Publisher-x86_64.AppImage"
+    rm -rf "$appdir"
+}
+build_publisher
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz

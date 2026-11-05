@@ -128,7 +128,7 @@ for p in gamemode lib32-gamemode mangohud lib32-mangohud plymouth libinput; do
     check "package $p" pkg "$p"
 done
 for f in steam speed-boost minecraft startup-sound os-update colours settings welcome parent screen-time \
-    timesup typing-scanner scanner-notes firefox; do
+    timesup typing-scanner scanner-notes firefox update-checker; do
     check "/usr/local/bin/ollie-$f is executable" test -x "$r/usr/local/bin/ollie-$f"
 done
 check "Steam opens the Ollie OS way" grep -q 'ollie-steam' "$r/usr/local/share/applications/steam.desktop"
@@ -146,6 +146,9 @@ check "grown-up settings start empty" grep -q '^PIN_MD5=$' "$r/etc/ollie/parent.
 check "Welcome opens at the first start" test -f "$r/etc/xdg/autostart/ollie-welcome.desktop"
 check "qml6 for Welcome and Settings" test -x "$r/usr/bin/qml6"
 check "a keyboard reader for the Typing Scanner (libinput, or od and stdbuf)" bash -c "test -x '$r/usr/bin/libinput' || { test -x '$r/usr/bin/od' && test -x '$r/usr/bin/stdbuf'; }"
+check "Update Checker in the menu" test -f "$r/usr/share/applications/ollie-update-checker.desktop"
+check "Update Checker is asked about at the first start (off until then)" bash -c "! test -e '$r/etc/systemd/user/timers.target.wants/ollie-update-checker.timer' && grep -q update-checker '$r/usr/local/bin/ollie-welcome'"
+check "python for the Update Checker" test -x "$r/usr/bin/python3"
 check "live USB starts without the start-up animation" grep -rq 'plymouth.enable=0' "$work/iso/loader/entries"
 
 echo

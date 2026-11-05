@@ -8,7 +8,7 @@ fixed() { echo "FIXED $*"; }
 
 # The programs: there, runnable, and bash finds no mistakes in them.
 bad=""
-for f in /usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox} \
+for f in /usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox,update-checker} \
     /usr/local/lib/ollie/{speed-boost-hook,boot-splash}; do
     [[ -x $f ]] && bash -n "$f" 2>/dev/null || bad+=" ${f##*/}"
 done
@@ -77,4 +77,15 @@ grep -q '^MANGOHUD=1' /etc/environment.d/20-ollie-games.conf 2>/dev/null && ok "
 grep -q ollie-steam /usr/local/share/applications/steam.desktop 2>/dev/null && ok "Steam opens in Game Mode"
 grep -q ollie-firefox /usr/local/share/applications/firefox.desktop 2>/dev/null && ok "Firefox asks for its password (if it has one)"
 [[ -s /usr/share/sounds/ollie/startup.ogg ]] && ok "Start-up sound"
+case "$(cat /etc/ollie/update-checker 2>/dev/null)" in
+on)
+    if [[ -L /etc/systemd/user/timers.target.wants/ollie-update-checker.timer ]]; then
+        ok "The Update Checker is on"
+    else
+        systemctl --global enable ollie-update-checker.timer >/dev/null 2>&1 && fixed "The Update Checker is on"
+    fi
+    ;;
+off) ok "The Update Checker is ready (switched off; Ollie OS Settings switches it on)" ;;
+*) ok "The Update Checker is ready (the next start asks whether to switch it on)" ;;
+esac
 exit 0

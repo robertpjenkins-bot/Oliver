@@ -29,7 +29,8 @@ ApplicationWindow {
         { icon: "🖼️", label: "Change background", hint: "Your name, or draw one", act: "background" },
         { icon: "🎨", label: "Colours & settings", hint: "Dark mode, colours, Screen Time", act: "settings" },
         { icon: "🔧", label: "Fix a problem", hint: "The Ollie OS Fixer", act: "fixer" },
-        { icon: "⬆️", label: "Update Ollie OS", hint: "One click: everything new", act: "update" }
+        { icon: "⬆️", label: "Update Ollie OS", hint: "One click: everything new", act: "update" },
+        { icon: "🔔", label: "New from biobro", hint: "Updates to install", act: "updates" }
     ].concat(arg("store") === "on" ? [{ icon: "🛍️", label: "App store", hint: "More apps (Discover)", act: "store" }] : [])
 
     Rectangle {

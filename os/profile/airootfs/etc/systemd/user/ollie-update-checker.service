@@ -1,0 +1,7 @@
+[Unit]
+Description=Ollie OS Update Checker (new updates from biobro)
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ollie-update-checker

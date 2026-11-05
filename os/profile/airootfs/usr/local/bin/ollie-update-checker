@@ -1,0 +1,154 @@
+#!/bin/bash
+# Ollie OS Update Checker: when biobro publishes an Ollie OS update (with the
+# Update Publisher: a release of the Ollie OS repository whose tag starts
+# with "ollie-update-"), a notification says what is new, with an Install
+# button. Installing downloads the update's files into Downloads/Ollie OS
+# Updates and runs its apps (AppImages, such as the Game Pack Updater); other
+# files are shown in their folder. Checking needs no account and no
+# password; it is GitHub's public list of releases.
+#
+#   ollie-update-checker               check (every few hours: ollie-update-checker.timer)
+#   ollie-update-checker --now         check now, and say so when there is nothing new
+#                                      (Ollie OS Updates in the apps menu)
+#   ollie-update-checker --install TAG install that update (in a window that shows it)
+#   ollie-update-checker --enable|--disable   switch the checker on or off for everyone
+#                                      (the first-start question, Ollie OS Settings)
+set -uo pipefail
+readonly REPO=robertpjenkins-bot/Ollie-OS PREFIX=ollie-update- TITLE="Ollie OS Updates"
+readonly MARK='<!-- ollie-update -->'
+cfg="$HOME/.config/ollie"
+seen="$cfg/updates-seen" installed="$cfg/updates-installed"
+have() { command -v "$1" >/dev/null 2>&1; }
+
+case "${1:-}" in
+--enable | --disable)
+    [[ $EUID -eq 0 ]] || exec sudo -n "$0" "$@"
+    mkdir -p /etc/ollie
+    if [[ $1 == --enable ]]; then
+        systemctl --global enable ollie-update-checker.timer >/dev/null 2>&1
+        echo on >/etc/ollie/update-checker
+    else
+        systemctl --global disable ollie-update-checker.timer >/dev/null 2>&1
+        echo off >/etc/ollie/update-checker
+    fi
+    chmod 0644 /etc/ollie/update-checker
+    exit 0
+    ;;
+esac
+mkdir -p "$cfg"
+touch "$seen" "$installed"
+
+# The updates, oldest first: one JSON line each (tag, title, what is new, files).
+updates() {
+    curl -fsSL --max-time 30 -H 'Accept: application/vnd.github+json' \
+        "${OLLIE_UPDATES_API:-https://api.github.com/repos/$REPO/releases?per_page=50}" 2>/dev/null |
+        python3 -I -c '
+import json, sys
+prefix, mark = sys.argv[1], sys.argv[2]
+for r in reversed(json.load(sys.stdin)):
+    tag = r.get("tag_name") or ""
+    if not tag.startswith(prefix) or r.get("draft"):
+        continue
+    body = (r.get("body") or "").replace("\r", "").split(mark)[0].strip()
+    files = [{"name": a["name"], "url": a["browser_download_url"], "digest": a.get("digest") or ""} for a in r.get("assets", [])]
+    print(json.dumps({"tag": tag, "title": r.get("name") or tag, "body": body, "files": files}))
+' "$PREFIX" "$MARK"
+}
+field() { python3 -I -c 'import json, sys; print(json.loads(sys.argv[1])[sys.argv[2]])' "$1" "$2"; }
+
+# --- Installing one ----------------------------------------------------------------------
+if [[ ${1:-} == --install ]]; then
+    tag=${2:?}
+    if [[ ! -t 0 && -z "${OLLIE_UPDATE_IN_TERMINAL:-}" ]]; then
+        export OLLIE_UPDATE_IN_TERMINAL=1
+        have konsole && exec konsole -e "$0" "$@"
+    fi
+    finish() { printf '\n%s\n\nPress Enter to close.' "$1"; read -r _ || true; exit 0; }
+    line="$(updates | grep -F "\"tag\": \"$tag\"" | head -n 1)"
+    [[ -n $line ]] || finish "Could not find the update $tag. Is the internet connected?"
+    printf '\n\e[1m  Installing the Ollie OS update: %s\e[0m\n\n' "$(field "$line" title)"
+    dir="$(xdg-user-dir DOWNLOAD 2>/dev/null || echo "$HOME/Downloads")/Ollie OS Updates/$tag"
+    mkdir -p "$dir"
+    others=0
+    while IFS=$'\t' read -r name url digest; do
+        [[ -n $name ]] || continue
+        echo "==> Downloading $name"
+        curl -fL --retry 3 -o "$dir/$name.part" "$url" || finish "The download stopped. Is the internet connected? Install it again to retry."
+        # GitHub's own checksum of the file, where it gives one: the download is whole.
+        if [[ $digest == sha256:* && "$(sha256sum "$dir/$name.part" | cut -d ' ' -f 1)" != "${digest#sha256:}" ]]; then
+            rm -f "$dir/$name.part"
+            finish "$name was damaged on the way. Install it again to retry."
+        fi
+        mv -f "$dir/$name.part" "$dir/$name"
+    done < <(python3 -I -c 'import json, sys
+for f in json.loads(sys.argv[1])["files"]:
+    print(f["name"], f["url"], f["digest"], sep="\t")' "$line")
+    for f in "$dir"/*; do
+        [[ -f $f ]] || continue
+        case "$f" in
+        *.AppImage | *.appimage)
+            echo "==> Running ${f##*/}"
+            chmod +x "$f" && "$f"
+            ;;
+        *) others=$((others + 1)) ;;
+        esac
+    done
+    grep -qxF "$tag" "$installed" || echo "$tag" >>"$installed"
+    grep -qxF "$tag" "$seen" || echo "$tag" >>"$seen"
+    ((others > 0)) && (xdg-open "$dir" >/dev/null 2>&1 &)
+    finish "$(printf '\e[32;1m  Done: the update "%s" is installed.\e[0m%s' "$(field "$line" title)" \
+        "$( ((others > 0)) && printf '\n  Its other files are in Downloads, Ollie OS Updates (the folder opened).')")"
+fi
+
+# --- Checking ----------------------------------------------------------------------------
+if ! all="$(updates)"; then
+    [[ ${1:-} == --now ]] && kdialog --title "$TITLE" --sorry "Could not check for updates. Is the internet connected?"
+    exit 0
+fi
+new=()
+while IFS= read -r line; do
+    [[ -n $line ]] || continue
+    tag="$(field "$line" tag)"
+    grep -qxF "$tag" "$installed" && continue
+    # (The timer tells about each update once; Ollie OS Updates shows all not installed.)
+    [[ ${1:-} != --now ]] && grep -qxF "$tag" "$seen" && continue
+    new+=("$line")
+done <<<"$all"
+
+if ((${#new[@]} == 0)); then
+    [[ ${1:-} == --now ]] && kdialog --title "$TITLE" --msgbox "Ollie OS is up to date: there are no new updates."
+    exit 0
+fi
+
+if [[ ${1:-} == --now ]]; then
+    items=()
+    for line in "${new[@]}"; do items+=("$(field "$line" tag)" "$(field "$line" title)"); done
+    pick="$(kdialog --title "$TITLE" --menu "New Ollie OS updates. Pick one to see what is new and install it:" "${items[@]}")" || exit 0
+    for line in "${new[@]}"; do
+        [[ "$(field "$line" tag)" == "$pick" ]] || continue
+        kdialog --title "$TITLE" --yes-label "Install" --no-label "Not now" --yesno \
+            "$(field "$line" title)
+
+$(field "$line" body)" && exec "$0" --install "$pick"
+    done
+    exit 0
+fi
+
+for line in "${new[@]}"; do
+    tag="$(field "$line" tag)" title="$(field "$line" title)" body="$(field "$line" body)"
+    echo "$tag" >>"$seen"
+    short="${body:0:300}"
+    [[ ${#body} -gt 300 ]] && short+="…"
+    act=""
+    if have notify-send && notify-send --help 2>&1 | grep -q -- '--action'; then
+        act="$(notify-send -a "Ollie OS" -i system-software-update -A install=Install -A later="Not now" -w \
+            "New Ollie OS update: $title" "$short" 2>/dev/null)"
+    elif kdialog --title "$TITLE" --icon system-software-update --yes-label "Install" --no-label "Not now" --yesno \
+        "New Ollie OS update: $title
+
+$body"; then
+        act=install
+    fi
+    [[ $act == install ]] && "$0" --install "$tag"
+done
+exit 0

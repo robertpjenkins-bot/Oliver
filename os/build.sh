@@ -167,6 +167,7 @@ file_permissions=(
   ["/usr/local/bin/ollie-typing-scanner"]="0:0:755"
   ["/usr/local/bin/ollie-scanner-notes"]="0:0:755"
   ["/usr/local/bin/ollie-firefox"]="0:0:755"
+  ["/usr/local/bin/ollie-update-checker"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true

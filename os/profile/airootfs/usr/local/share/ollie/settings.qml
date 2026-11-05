@@ -75,6 +75,11 @@ ApplicationWindow {
                         onToggled: win.act("boost " + (checked ? "on" : "off"))
                     }
                     Switch {
+                        text: "Update Checker: tells me about new Ollie OS updates"
+                        checked: win.arg("updates") === "on"
+                        onToggled: win.act("updates " + (checked ? "on" : "off"))
+                    }
+                    Switch {
                         text: "Start-up sound"
                         checked: win.arg("sound") !== "off"
                         onToggled: win.act("sound " + (checked ? "on" : "off"))

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS Update Publisher
+Comment=Publish an Ollie OS update: everyone with the Update Checker gets a notification
+Exec=ollie-update-publisher
+Icon=ollie-os
+Terminal=false
+Categories=Development;

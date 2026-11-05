@@ -6,7 +6,7 @@
 set -uo pipefail
 readonly TITLE="Update Ollie OS"
 # What newer Ollie OS has, added if missing (only those the servers carry).
-readonly EXTRAS=(gamemode lib32-gamemode mangohud lib32-mangohud plymouth libinput libinput-tools)
+readonly EXTRAS=(gamemode lib32-gamemode mangohud lib32-mangohud plymouth libinput libinput-tools libnotify python)
 bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
 say() { printf '\n%s==>%s %s%s%s\n' "$teal$bold" "$reset" "$bold" "$*" "$reset"; }
 have() { command -v "$1" >/dev/null 2>&1; }

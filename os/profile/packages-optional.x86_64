@@ -11,3 +11,6 @@ plymouth
 libinput
 libinput-tools
 evtest
+# The Update Checker: its notification with an Install button, and reading GitHub's list
+libnotify
+python
