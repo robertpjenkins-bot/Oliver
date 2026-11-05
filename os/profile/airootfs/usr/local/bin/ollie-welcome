@@ -19,6 +19,8 @@ mkdir -p "$cfg"
 readonly CONF=/etc/ollie/parent.conf
 
 if [[ ${1:-} == --at-login ]]; then
+    # The in-game overlay's setting (the FPS counter), if there is none yet.
+    /usr/local/bin/ollie-overlay --ensure
     # A Steam icon Steam put on the desktop opens Steam the Ollie OS way too.
     desk="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
     [[ -f "$desk/steam.desktop" ]] && sed -i 's|^Exec=/usr/bin/steam |Exec=/usr/local/bin/ollie-steam |' "$desk/steam.desktop"

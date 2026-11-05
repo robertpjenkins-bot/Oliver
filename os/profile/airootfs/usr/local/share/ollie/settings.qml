@@ -64,10 +64,20 @@ ApplicationWindow {
                         checked: win.arg("steam") !== "off"
                         onToggled: win.act("steam " + (checked ? "on" : "off"))
                     }
+                    RowLayout {
+                        Label { text: "In games, show:" }
+                        ComboBox {
+                            Layout.preferredWidth: 330
+                            model: ["Nothing", "FPS counter", "Game Overlay (time, battery, FPS, temperatures, your pet)"]
+                            currentIndex: ["off", "fps", "full"].indexOf(win.arg("overlay") || "fps")
+                            onActivated: i => win.act("overlay " + ["off", "fps", "full"][i])
+                        }
+                    }
+                    Label { text: "    (Right Shift + F12 hides and shows it in a game)"; opacity: 0.7 }
                     Switch {
-                        text: "FPS counter in games (Right Shift + F12 hides it)"
-                        checked: win.arg("fps") !== "off"
-                        onToggled: win.act("fps " + (checked ? "on" : "off"))
+                        text: "Ollie's voice: Ollie says hi and cheers when you win"
+                        checked: win.arg("voice") !== "off"
+                        onToggled: win.act("voice " + (checked ? "on" : "off"))
                     }
                     Switch {
                         text: "Speed Boost: full power while a game runs"

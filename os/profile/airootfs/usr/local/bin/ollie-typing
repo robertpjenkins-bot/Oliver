@@ -1,5 +1,10 @@
 #!/bin/bash
 # Typing Game: words fall from the sky; type them before they land (typing.qml).
-# What it keeps (best score, or the pet) is in ~/.config/ollie/typing.ini.
+# Its best score is kept in ~/.config/ollie/typing.ini; Ollie cheers (ollie-say).
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
 mkdir -p "$HOME/.config/ollie"
-exec qml6 /usr/local/share/ollie/typing.qml -- "config=$HOME/.config/ollie/typing.ini"
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/typing.qml -- "config=$HOME/.config/ollie/typing.ini" 2>&1)

@@ -15,7 +15,7 @@ setting() { sed -n "s/^$1=//p" "$2" 2>/dev/null | tail -n 1; }
 fps=on
 grep -qx 'no_display' "$mango" 2>/dev/null && fps=off
 args=(
-    "steam=$(flag steam-in-window)" "fps=$fps" "boost=$(flag no-speed-boost)" "sound=$(flag no-startup-sound)"
+    "steam=$(flag steam-in-window)" "fps=$fps" "overlay=$(/usr/local/bin/ollie-overlay --which)" "voice=$(flag no-voice)" "boost=$(flag no-speed-boost)" "sound=$(flag no-startup-sound)"
     "mode=$(setting MODE "$cfg/colours")" "colour=$(setting COLOUR "$cfg/colours")"
     "screentime=$(setting SCREEN_TIME /etc/ollie/parent.conf)" "scanner=$(setting SCANNER /etc/ollie/parent.conf)"
     "pin=$(setting PIN_MD5 /etc/ollie/parent.conf)" "left=$(/usr/local/bin/ollie-parent left)"
@@ -32,6 +32,8 @@ while IFS= read -r line; do
     steam) onoff steam-in-window "${a[1]}" ;;
     boost) onoff no-speed-boost "${a[1]}" ;;
     sound) onoff no-startup-sound "${a[1]}" ;;
+    voice) onoff no-voice "${a[1]}" ;;
+    overlay) /usr/local/bin/ollie-overlay "${a[1]}" ;;
     updates)
         if [[ ${a[1]} == on ]]; then
             /usr/local/bin/ollie-update-checker --enable && systemctl --user start ollie-update-checker.timer 2>/dev/null

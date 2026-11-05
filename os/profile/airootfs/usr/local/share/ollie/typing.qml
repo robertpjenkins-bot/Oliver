@@ -79,14 +79,21 @@ ApplicationWindow {
             score += t.length * 10 * level;
             typedChars += t.length + 1;
             popped++;
-            if (popped % 10 === 0) level++;
+            if (popped % 10 === 0) { level++; say("Level " + level + "! Awesome!"); }
+        } else if (t === "ollie") {
+            // A secret: Ollie's own name is worth 100.
+            score += 100;
+            pops.model.append({ px: sky.width / 2 - 100, py: sky.height / 2, txt: "🥚 Secret bonus +100!" });
+            say("You found my secret! Yay!");
         } else {
             miss.restart();
         }
     }
+    function say(t) { console.log("OLLIE-ACTION say " + t) }
     function gameOver() {
         mode = "over";
-        if (score > saved.best) { saved.best = score; saved.bestLevel = level; newBest.visible = true; } else newBest.visible = false;
+        if (score > saved.best) { saved.best = score; saved.bestLevel = level; newBest.visible = true; say("New best score! You are a typing champion!"); }
+        else { newBest.visible = false; say("Great typing! Try again!"); }
     }
     readonly property int wpm: mode === "start" || Date.now() - startTime < 1000 ? 0 : Math.round(typedChars / 5 / ((Date.now() - startTime) / 60000))
 
