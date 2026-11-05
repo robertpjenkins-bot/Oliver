@@ -39,7 +39,7 @@ Window {
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: v.width + 36; height: 64; radius: 32; color: "#facc15"
-                Text { id: v; anchors.centerIn: parent; text: "1.4"; font.pixelSize: 40; font.bold: true; color: "#422006" }
+                Text { id: v; anchors.centerIn: parent; text: "1.5"; font.pixelSize: 40; font.bold: true; color: "#422006" }
             }
         }
         Text { text: "The fun gaming computer, made by biobro 🎮"; color: "#ccfbf1"; font.pixelSize: 40 }

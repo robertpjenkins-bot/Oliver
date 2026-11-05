@@ -16,6 +16,13 @@ permissions:
   contents: read
   actions: read
 
+# One build per branch at a time: a newer push stops the older build, so two
+# builds never fight over the "Ollie OS (newest)" release (one deleted it
+# while the other was making it, and the download was gone).
+concurrency:
+  group: os-iso-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # When a push changes only the tests, the README or the USB Maker (none of
   # them part of the ISO), test the newest ISO already built for this branch
@@ -163,7 +170,7 @@ jobs:
             what="**$iso.part0** and **$iso.part1** (the ISO in two parts; the USB Maker joins them)"
           fi
           gh release delete ollie-os-newest --yes --cleanup-tag 2>/dev/null || true
-          gh release create ollie-os-newest --latest --target "$GITHUB_SHA" \
+          gh release create ollie-os-newest --latest=false --target "$GITHUB_SHA" \
             --title "Ollie OS ($(date -u '+%Y-%m-%d'))" \
             --notes "A great custom version of Arch Linux: comes with Steam, Wine and more, plus a debugger and a driver installer.
 
