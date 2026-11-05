@@ -37,6 +37,7 @@ ApplicationWindow {
             try { x.send(); win.players = JSON.parse(x.responseText).players; } catch (e) {}
             if (win.players.length > win.lastCount && win.lastCount >= 0)
                 win.act("say " + win.names[Math.min(3, win.players.length - 1)] + " is here!");
+            if (win.players.length > win.lastCount && win.players.length >= 2) win.act("trophy max coop-players " + win.players.length);
             win.lastCount = win.players.length;
         }
     }

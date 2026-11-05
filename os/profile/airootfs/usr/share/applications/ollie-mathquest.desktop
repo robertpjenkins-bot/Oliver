@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Math Quest
+Comment=Sums with levels and stars: adding, taking away, times tables and sharing
+Exec=/usr/local/bin/ollie-mathquest
+Icon=ollie-mathquest
+Terminal=false
+Categories=Education;Game;

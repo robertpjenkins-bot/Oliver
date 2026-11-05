@@ -18,11 +18,19 @@ while :; do
     again="" adds=() covers=""
     while IFS= read -r line; do
         case "$line" in
+        *"OLLIE-ACTION trophy "*) # a trophy event (ollie-trophy count|max|add ...)
+            read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
+            (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
+            ;;
         *"OLLIE-ACTION play "*)
             (setsid python3 -I "$helper" launch "${line#*OLLIE-ACTION play }" >/dev/null 2>&1 &)
             (/usr/local/bin/ollie-say "Let's play!" &)
+            (/usr/local/bin/ollie-trophy count game-play >/dev/null 2>&1 &)
             ;;
-        *"OLLIE-ACTION add "*) adds+=("${line#*OLLIE-ACTION add }") ;;
+        *"OLLIE-ACTION add "*)
+            adds+=("${line#*OLLIE-ACTION add }")
+            (/usr/local/bin/ollie-trophy count game-add >/dev/null 2>&1 &)
+            ;;
         *"OLLIE-ACTION refresh"*) again=1 ;;
         *"OLLIE-ACTION covers"*) again=1 covers=1 ;;
         *"OLLIE-ACTION folder"*) (xdg-open "$HOME/Games" >/dev/null 2>&1 &) ;;

@@ -27,6 +27,7 @@ ApplicationWindow {
     }
     function speak(t) { console.log("OLLIE-ACTION speak " + t) }
     function cheer(t) { console.log("OLLIE-ACTION say " + t) }
+    function trophy(w) { console.log("OLLIE-ACTION trophy " + w) }
 
     // [word, a sentence with it]
     readonly property var levels: [
@@ -72,7 +73,7 @@ ApplicationWindow {
     function check() {
         if (state2 !== "ask" || answer.text.trim() === "") return;
         if (answer.text.trim().toLowerCase() === word[0]) {
-            right++; state2 = "right";
+            right++; state2 = "right"; trophy("count spell-right");
             cheer(["Correct!", "Great spelling!", "You got it!", "Awesome!", "Yes!"][Math.floor(Math.random() * 5)]);
         } else { state2 = "wrong"; speak(word[0].split("").join(" ")); }
     }
@@ -82,6 +83,8 @@ ApplicationWindow {
             state2 = "done";
             const got = right === 10 ? 3 : right >= 8 ? 2 : right >= 6 ? 1 : 0;
             const s = stars.slice(); s[level] = Math.max(s[level] || 0, got); saved.stars = JSON.stringify(s); stars = s;
+            if (got === 3) trophy("count spelling-3stars");
+            trophy("max spelling-level " + (unlocked + 1));
             cheer(got === 3 ? "Perfect! You are a spelling champion!" : got > 0 ? "Well done! Next level open!" : "Good try! Practice makes perfect!");
             return;
         }

@@ -9,6 +9,10 @@ trap 'rm -rf -- "${frames:?}"' EXIT
 mkdir -p "$out"
 while IFS= read -r line; do
     case "$line" in
+    *"OLLIE-ACTION trophy "*) # a trophy event (ollie-trophy count|max|add ...)
+        read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
+        (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
+        ;;
     *"OLLIE-ACTION gif "*)
         read -r _ dir fps <<<"${line#*OLLIE-ACTION }"
         gif="$out/animation-$(date +%Y%m%d-%H%M%S).gif"

@@ -1,6 +1,6 @@
 // The Ollie OS desktop, applied the first time a user logs in.
 //
-// One bar along the bottom:
+// Fun Fact of the Day on the desktop, top right; one bar along the bottom:
 //   [cube menu] [Google search ...........] [pinned apps] [tray] [clock]
 
 var wallpaper = "/usr/share/wallpapers/OllieOS/";
@@ -11,6 +11,9 @@ for (var i = 0; i < desktopsArray.length; i++) {
     d.wallpaperPlugin = "org.kde.image";
     d.currentConfigGroup = ["Wallpaper", "org.kde.image", "General"];
     d.writeConfig("Image", wallpaper);
+    // Fun Fact of the Day, in the top right corner.
+    var g = screenGeometry(d.screen);
+    d.addWidget("org.ollieos.funfact", g.width - 440, 40, 400, 210);
 }
 
 var panel = new Panel;

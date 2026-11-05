@@ -27,6 +27,10 @@ trap 'rm -f -- "$index"' EXIT
 } >"$index"
 while IFS= read -r line; do
     case "$line" in
+    *"OLLIE-ACTION trophy "*) # a trophy event (ollie-trophy count|max|add ...)
+        read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
+        (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
+        ;;
     *"OLLIE-ACTION open app "*)
         f="${line#*OLLIE-ACTION open app }"
         (setsid gio launch "$f" >/dev/null 2>&1 || setsid kioclient exec "$f" >/dev/null 2>&1 &)
@@ -35,6 +39,7 @@ while IFS= read -r line; do
     *"OLLIE-ACTION secret gold"*)
         cfg="$HOME/.config/ollie"
         mkdir -p "$cfg" && touch "$cfg/gold-unlocked"
+        (/usr/local/bin/ollie-trophy count secret >/dev/null 2>&1 &)
         mode="$(sed -n 's/^MODE=//p' "$cfg/colours" 2>/dev/null | tail -n 1)"
         (/usr/local/bin/ollie-colours "${mode:-dark}" gold --background &)
         (/usr/local/bin/ollie-say "You found a secret! Ollie Gold!" &)

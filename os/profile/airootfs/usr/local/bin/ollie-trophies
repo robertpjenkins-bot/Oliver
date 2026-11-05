@@ -1,0 +1,11 @@
+#!/bin/bash
+# Trophies: your profile and every trophy (trophies.qml), from what the apps
+# told ollie-trophy.
+set -uo pipefail
+export QML_XHR_ALLOW_FILE_READ=1
+data="${XDG_RUNTIME_DIR:-/tmp}/ollie-trophies-$$.json"
+trap 'rm -f -- "$data"' EXIT
+/usr/local/bin/ollie-trophy json >"$data"
+name="$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
+pet="$(sed -n "s/^name=//p" "$HOME/.config/ollie/pet.ini" 2>/dev/null | head -n 1)"
+exec qml6 /usr/local/share/ollie/trophies.qml -- "data=$data" "name=${name:-$USER}" "pet=$pet"

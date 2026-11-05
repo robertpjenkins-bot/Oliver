@@ -86,6 +86,7 @@ while IFS= read -r line; do
     "open store") open plasma-discover ;;
     "secret konami")
         touch "$cfg/gold-unlocked"
+        (/usr/local/bin/ollie-trophy count secret >/dev/null 2>&1 &)
         (/usr/local/bin/ollie-say "You found the secret code! Ollie Gold is yours!" &)
         ;;
     "at-start on") touch "$cfg/welcome-at-start" ;;

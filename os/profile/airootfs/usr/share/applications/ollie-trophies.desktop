@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Trophies
+Comment=Your profile and the trophies you have earned in Ollie OS apps
+Exec=/usr/local/bin/ollie-trophies
+Icon=ollie-trophies
+Terminal=false
+Categories=Game;

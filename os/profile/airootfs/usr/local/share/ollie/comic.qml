@@ -144,7 +144,7 @@ ApplicationWindow {
                     win.selected = -1;
                     Qt.callLater(() => strip.grabToImage(r => {
                         const f = win.arg("out") + "/comic-" + Date.now() + ".png";
-                        if (r.saveToFile(f)) { win.act("saved " + f); win.act("say What a great comic!"); savedNote.text = "Saved in Pictures, Comics!"; }
+                        if (r.saveToFile(f)) { win.act("trophy count comic"); win.act("saved " + f); win.act("say What a great comic!"); savedNote.text = "Saved in Pictures, Comics!"; }
                     }));
                 }
             }

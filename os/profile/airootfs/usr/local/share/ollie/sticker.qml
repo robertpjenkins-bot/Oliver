@@ -298,7 +298,7 @@ ApplicationWindow {
                     newOne.visible = false;
                     Qt.callLater(() => place.grabToImage(r => {
                         const f = win.arg("data") + "/wallpaper-" + Date.now() + ".png";
-                        if (r.saveToFile(f)) { win.act("wallpaper " + f); win.act("say Your sticker is on the desktop!"); }
+                        if (r.saveToFile(f)) { win.act("trophy count sticker"); win.act("wallpaper " + f); win.act("say Your sticker is on the desktop!"); }
                         newOne.visible = true;
                         win.mode = "make";
                     }, Qt.size(win.screenW, win.screenH)));

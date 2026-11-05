@@ -8,7 +8,7 @@ here="$(dirname "$(readlink -f "$0")")"
 ok() { echo "OK $*"; }
 
 bad=""
-for a in games finder typing pet coop sticker comic animator soundboard codequest space spelling world recovery say overlay; do
+for a in games finder typing pet coop sticker comic animator soundboard codequest space spelling world recovery say overlay mathquest appcenter trophies trophy; do
     f=/usr/local/bin/ollie-$a
     [[ -x $f ]] && bash -n "$f" 2>/dev/null || bad+=" ollie-$a"
 done
@@ -17,6 +17,7 @@ if [[ -z $bad ]]; then ok "All the new apps are there and can run (Games, Pet, C
 for f in PetBody pet-desktop Confetti recovery world; do
     [[ -s /usr/local/share/ollie/$f.qml ]] || echo "PROBLEM The $f window is missing"
 done
+[[ -s /usr/share/plasma/plasmoids/org.ollieos.funfact/contents/ui/facts.js ]] && ok "Fun Fact of the Day (right-click the desktop, Add Widgets, to put it on)"
 [[ -s /usr/local/share/ollie/world.json ]] && ok "World Explorer's map" || echo "PROBLEM World Explorer's map is missing"
 python3 -c 'import sys' 2>/dev/null && [[ -x /usr/local/lib/ollie/games.py ]] && ok "Games can add ROMs and ISOs"
 # The new icons show in the apps menu, for every Ollie OS app this computer has.

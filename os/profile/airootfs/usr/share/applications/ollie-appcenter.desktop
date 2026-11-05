@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie App Center
+GenericName=Free games and apps
+Comment=Free games and apps picked for Ollie OS, one click each
+Exec=/usr/local/bin/ollie-appcenter
+Icon=ollie-appcenter
+Terminal=false
+Categories=Game;System;PackageManager;
+Keywords=store;games;apps;install;flathub;

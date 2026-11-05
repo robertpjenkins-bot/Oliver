@@ -55,7 +55,7 @@ ApplicationWindow {
         const f = arg("mine") + "/sound-" + Date.now() + ".wav";
         recording = i; recordTime = 0;
         const p = pads.slice(); p[i] = Object.assign({}, p[i], { file: f, name: p[i].name === "Record me!" ? "My sound" : p[i].name }); savePads(p);
-        act("record " + f);
+        act("record " + f); act("trophy count sound-record");
     }
     function stopRecord() { if (recording < 0) return; act("stop"); recording = -1; }
     Timer { interval: 1000; running: win.recording >= 0; repeat: true

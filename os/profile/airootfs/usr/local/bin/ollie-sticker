@@ -17,6 +17,10 @@ fi
 [[ -f $wall ]] || wall="$(ls -S /usr/share/wallpapers/OllieOS/contents/images/*.png 2>/dev/null | head -n 1)"
 while IFS= read -r line; do
     case "$line" in
+    *"OLLIE-ACTION trophy "*) # a trophy event (ollie-trophy count|max|add ...)
+        read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
+        (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
+        ;;
     *"OLLIE-ACTION wallpaper "*) plasma-apply-wallpaperimage "${line#*OLLIE-ACTION wallpaper }" >/dev/null 2>&1 ;;
     *"OLLIE-ACTION restore "*) plasma-apply-wallpaperimage "${line#*OLLIE-ACTION restore }" >/dev/null 2>&1 ;;
     *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;

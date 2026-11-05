@@ -22,6 +22,10 @@ rec=""
 play() { pw-play "$1" 2>/dev/null || paplay "$1" 2>/dev/null; }
 while IFS= read -r line; do
     case "$line" in
+    *"OLLIE-ACTION trophy "*) # a trophy event (ollie-trophy count|max|add ...)
+        read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
+        (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
+        ;;
     *"OLLIE-ACTION play "*) (play "${line#*OLLIE-ACTION play }" &) ;;
     *"OLLIE-ACTION record "*)
         [[ -n $rec ]] && kill "$rec" 2>/dev/null

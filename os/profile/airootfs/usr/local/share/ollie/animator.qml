@@ -68,7 +68,7 @@ ApplicationWindow {
             r.saveToFile(arg("frames") + "/frame-" + ("00" + exportAt).slice(-3) + ".png");
             exportAt++;
             if (exportAt < frames.length) { cur = exportAt; canvas.requestPaint(); }
-            else { exporting = false; cur = 0; canvas.requestPaint(); act("gif " + arg("frames") + " " + fps); note.text = "Saved in Pictures, Animations!"; }
+            else { exporting = false; cur = 0; canvas.requestPaint(); act("gif " + arg("frames") + " " + fps); act("trophy count gif"); note.text = "Saved in Pictures, Animations!"; }
         });
     }
 

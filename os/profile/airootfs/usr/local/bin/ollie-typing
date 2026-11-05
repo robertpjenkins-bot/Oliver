@@ -5,6 +5,10 @@ export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULE
 mkdir -p "$HOME/.config/ollie"
 while IFS= read -r line; do
     case "$line" in
+    *"OLLIE-ACTION trophy "*) # a trophy event (ollie-trophy count|max|add ...)
+        read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
+        (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
+        ;;
     *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
     esac
 done < <(qml6 /usr/local/share/ollie/typing.qml -- "config=$HOME/.config/ollie/typing.ini" 2>&1)

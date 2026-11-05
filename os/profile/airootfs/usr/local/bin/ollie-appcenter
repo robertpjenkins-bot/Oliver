@@ -1,0 +1,49 @@
+#!/bin/bash
+# Ollie App Center (appcenter.qml): free games and apps picked for Ollie OS,
+# one click each, from Flathub (for this person: flatpak --user, no password).
+set -uo pipefail
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+export QML_XHR_ALLOW_FILE_READ=1
+run="${XDG_RUNTIME_DIR:-/tmp}"
+installed="$run/ollie-appcenter-$$.installed" status="$run/ollie-appcenter-$$.status"
+trap 'rm -f -- "$installed" "$status"' EXIT
+flatpak list --app --columns=application 2>/dev/null >"$installed"
+: >"$status"
+say() { echo "$*" >>"$status"; }
+valid() { [[ $1 =~ ^[A-Za-z0-9_.-]{3,100}$ ]]; }
+get() { # get ID [ID...]: the first one Flathub has
+    local id
+    say "$1 installing"
+    flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo >/dev/null 2>&1
+    for id in "$@"; do
+        valid "$id" || continue
+        if flatpak install --user -y --noninteractive flathub "$id" >>"$run/ollie-appcenter.log" 2>&1; then
+            say "$id done"
+            [[ $id != "$1" ]] && say "$1 done"
+            /usr/local/bin/ollie-trophy count appcenter-install >/dev/null 2>&1
+            /usr/local/bin/ollie-say "Your new game is ready!" >/dev/null 2>&1
+            return 0
+        fi
+    done
+    say "$1 failed"
+    notify-send -a "Ollie App Center" -i ollie-appcenter "Could not get it" "Is the internet on? Try again in a minute." 2>/dev/null
+}
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION install "*)
+        read -r -a ids <<<"${line#*OLLIE-ACTION install }"
+        get "${ids[@]}" &
+        ;;
+    *"OLLIE-ACTION play "*)
+        id="${line#*OLLIE-ACTION play }"
+        valid "$id" && (setsid flatpak run "$id" >/dev/null 2>&1 &)
+        ;;
+    *"OLLIE-ACTION remove "*)
+        id="${line#*OLLIE-ACTION remove }"
+        if valid "$id"; then
+            (flatpak uninstall --user -y --noninteractive "$id" >/dev/null 2>&1 || flatpak uninstall -y --noninteractive "$id" >/dev/null 2>&1) && say "$id removed" &
+        fi
+        ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/appcenter.qml -- "installed=$installed" "status=$status" 2>&1)
+wait

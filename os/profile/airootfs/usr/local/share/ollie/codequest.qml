@@ -27,6 +27,7 @@ ApplicationWindow {
         return "";
     }
     function say(t) { console.log("OLLIE-ACTION say " + t) }
+    function trophy(w) { console.log("OLLIE-ACTION trophy " + w) }
 
     readonly property var levels: [{"name": "Walk to the star", "repeat": false, "rows": ["........", "........", "S..*....", "........", "........", "........"], "par": 3}, {"name": "Turn the corner", "repeat": false, "rows": ["S.##....", "........", ".*......", "........", "........", "........"], "par": 4}, {"name": "Zig zag", "repeat": false, "rows": ["S.......", "..#.....", "....*...", "........", "........", "........"], "par": 7}, {"name": "Repeat!", "repeat": true, "rows": ["........", "........", "........", "S......*", "........", "........"], "par": 2}, {"name": "Big L", "repeat": true, "rows": ["S.......", "........", "........", "........", ".....*..", "........"], "par": 5}, {"name": "Around the rocks", "repeat": true, "rows": ["S..#....", "...#....", "...#..*.", "........", "........", "........"], "par": 8}, {"name": "The stairs", "repeat": true, "rows": ["S#######", ".......#", "######.#", "#......#", "#.######", "#......*"], "par": 17}, {"name": "Snake", "repeat": true, "rows": ["S......#", "######.#", "#......#", "#.######", "#......*", "########"], "par": 14}, {"name": "Spiral", "repeat": true, "rows": ["S.......", "#######.", "#.....#.", "#.#*..#.", "#.####..", "#......."], "par": 16}, {"name": "The big maze", "repeat": true, "rows": ["S#......", ".#.####.", ".#.#..#.", ".#.#*.#.", "...#..#.", "#......."], "par": 13}]
     Settings {
@@ -106,6 +107,7 @@ ApplicationWindow {
         const n = program.length, got = n <= lv.par ? 3 : n <= lv.par + 3 ? 2 : 1;
         const s = stars.slice(); s[level] = Math.max(s[level] || 0, got);
         saved.stars = JSON.stringify(s); stars = s;
+        trophy("max codequest-level " + s.filter(x => x > 0).length);
         message = "🎉 You did it with " + n + " blocks! " + "⭐".repeat(got) + (got < 3 ? "  (Can you do it with " + lv.par + "?)" : "");
         say(got === 3 ? "Perfect! Three stars!" : "You did it!");
         cheer.start();

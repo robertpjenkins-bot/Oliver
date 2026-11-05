@@ -29,6 +29,7 @@ ApplicationWindow {
         return "";
     }
     function act(w) { console.log("OLLIE-ACTION " + w) }
+    function trophy(w) { console.log("OLLIE-ACTION trophy " + w) }
 
     Settings {
         id: saved
@@ -83,6 +84,7 @@ ApplicationWindow {
     onMoodChanged: writeMood()
 
     function checkGrowth() {
+        trophy("max pet-stage " + stage);
         if (stage > saved.stageSeen) {
             saved.stageSeen = stage;
             say(stage === 1 ? "🎉 I grew up! I'm a kid now!" : "🎉 I'm all grown up! Look, a crown! 👑");
@@ -131,6 +133,7 @@ ApplicationWindow {
         if (!saved.asleep) voice("Good morning!");
     }
     function reward(fun, full, text) {
+        trophy("count pet-game");
         saved.fun = Math.min(100, saved.fun + fun);
         saved.full = Math.min(100, saved.full + full);
         saved.energy = Math.max(0, saved.energy - 5);
@@ -203,7 +206,7 @@ ApplicationWindow {
         NumberAnimation { target: food; property: "y"; to: pet.y + 20; duration: 700; easing.type: Easing.InQuad }
         ScriptAction { script: {
             food.visible = false;
-            saved.full = Math.min(100, saved.full + 25);
+            saved.full = Math.min(100, saved.full + 25); win.trophy("count pet-feed");
             win.hearts(2); hop.start();
             win.say(["Yum! 😋", "Delicious!", "Munch munch!", "Thank you!"][Math.floor(Math.random() * 4)]);
         } }

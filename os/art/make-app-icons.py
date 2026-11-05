@@ -44,6 +44,9 @@ ICONS = {
     "ollie-download-tracker": ("📥", "#67e8f9", "#0e7490"),
     "ollie-write": ("💿", "#a5b4fc", "#4338ca"),
     "ollie-restart-windows": ("🪟", "#7dd3fc", "#0369a1"),
+    "ollie-appcenter": ("🛍️", "#f472b6", "#9d174d"),
+    "ollie-mathquest": ("🧮", "#67e8f9", "#0e7490"),
+    "ollie-trophies": ("🏆", "#fde047", "#b45309"),
 }
 
 here = os.path.dirname(os.path.abspath(__file__))

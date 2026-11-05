@@ -26,6 +26,7 @@ ApplicationWindow {
         return "";
     }
     function say(t) { console.log("OLLIE-ACTION say " + t) }
+    function trophy(w) { console.log("OLLIE-ACTION trophy " + w) }
     Settings {
         id: saved
         location: win.arg("config") ? "file://" + win.arg("config") : ""
@@ -107,6 +108,7 @@ ApplicationWindow {
     Timer { interval: 1000; running: win.quiz; repeat: true
         onTriggered: { win.timeLeft--; if (win.timeLeft <= 0) { win.quiz = false;
             if (win.score > saved.best) saved.best = win.score;
+            win.trophy("max world-find " + win.score);
             win.quizNote = "Time's up! You found " + win.score + "."; win.say("Time's up! You found " + win.score + " countries!"); } } }
 
     Timer {
@@ -180,7 +182,7 @@ ApplicationWindow {
                         if (!ll) return;
                         const i = win.countryAt(ll[0], ll[1]);
                         if (i < 0) { win.picked = -1; globe.requestPaint(); return; }
-                        win.picked = i; globe.requestPaint();
+                        win.picked = i; globe.requestPaint(); win.trophy("add world-country " + win.countries[i].n);
                         if (win.quiz) {
                             if (i === win.target) { win.score++; win.quizNote = "✅ Yes! That's " + win.countries[i].n + "!"; win.say("Yes!"); win.nextTarget(); }
                             else win.quizNote = "❌ That's " + win.countries[i].n + ". Try again!";

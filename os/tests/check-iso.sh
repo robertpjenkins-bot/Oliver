@@ -150,7 +150,7 @@ check "Update Checker in the menu" test -f "$r/usr/share/applications/ollie-upda
 check "the list of the latest updates" test -s "$r/usr/local/share/ollie/updates.qml"
 check "Update Checker is asked about at the first start (off until then)" bash -c "! test -e '$r/etc/systemd/user/timers.target.wants/ollie-update-checker.timer' && grep -q update-checker '$r/usr/local/bin/ollie-welcome'"
 check "python for the Update Checker" test -x "$r/usr/bin/python3"
-for f in games finder typing pet coop sticker comic animator soundboard codequest space spelling world; do
+for f in games finder typing pet coop sticker comic animator soundboard codequest space spelling world mathquest appcenter trophies; do
     check "/usr/local/bin/ollie-$f is executable" test -x "$r/usr/local/bin/ollie-$f"
     check "$f window" test -s "$r/usr/local/share/ollie/$f.qml"
 done
@@ -165,6 +165,8 @@ check "the in-game overlay switch" test -x "$r/usr/local/bin/ollie-overlay"
 check "ffmpeg for the Animator and the Sound Board" test -x "$r/usr/bin/ffmpeg"
 check "Ollie OS version 1.4" grep -qx "1.4" "$r/etc/ollie-version"
 check "the colourful app icons" test -s "$r/usr/share/icons/hicolor/256x256/apps/ollie-games.png"
+check "Trophies can be earned" test -x "$r/usr/local/bin/ollie-trophy"
+check "Fun Fact of the Day on the desktop" bash -c "test -s '$r/usr/share/plasma/plasmoids/org.ollieos.funfact/contents/ui/facts.js' && grep -q org.ollieos.funfact '$r/usr/share/plasma/look-and-feel/org.ollieos.desktop/contents/layouts/org.kde.plasma.desktop-layout.js'"
 check "Recovery Mode in the menu" test -f "$r/usr/share/applications/ollie-recovery.desktop"
 check "Recovery Mode's window and helper" bash -c "test -s '$r/usr/local/share/ollie/recovery.qml' && test -x '$r/usr/local/lib/ollie/recovery-helper' && test -x '$r/usr/local/lib/ollie/recovery-cleanup' && test -x '$r/usr/local/bin/ollie-recovery'"
 check "Recovery Mode's tools (btrfs, rsync, arch-chroot)" bash -c "test -x '$r/usr/bin/btrfs' && test -x '$r/usr/bin/rsync' && test -x '$r/usr/bin/arch-chroot'"

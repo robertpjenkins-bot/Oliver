@@ -317,14 +317,16 @@ build_publisher
 # Space Explorer, Spelling Bee, World Explorer, Ollie's voice, the Game
 # Overlay and the secrets. Update Ollie OS opens next to get the packages
 # they use (espeak-ng for the voice, ffmpeg for GIFs and sounds).
-fun_apps=(games finder typing pet coop sticker comic animator soundboard codequest space spelling world)
+fun_apps=(games finder typing pet coop sticker comic animator soundboard codequest space spelling world mathquest appcenter trophies)
 fun_pack_files() { # fun_pack_files: its files, into files=()
     local a
     for a in "${fun_apps[@]}"; do
         files+=("usr/local/bin/ollie-$a" "usr/local/share/ollie/$a.qml" "usr/share/applications/ollie-$a.desktop")
     done
     files+=(usr/local/bin/ollie-{say,overlay,welcome,os-update,colours,settings} usr/local/lib/ollie/{games,pads}.py
-        usr/local/share/ollie/{PetBody,pet-desktop,Confetti,welcome,settings}.qml usr/local/share/ollie/world.json)
+        usr/local/share/ollie/{PetBody,pet-desktop,Confetti,welcome,settings}.qml usr/local/share/ollie/world.json
+        usr/local/bin/ollie-trophy usr/share/plasma/plasmoids/org.ollieos.funfact/metadata.json
+        usr/share/plasma/plasmoids/org.ollieos.funfact/contents/ui/{main.qml,facts.js})
 }
 build_fun_pack_updater() {
     local files=()

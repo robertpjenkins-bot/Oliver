@@ -16,6 +16,8 @@ ApplicationWindow {
     color: "#020617"
 
     function say(t) { console.log("OLLIE-ACTION say " + t) }
+    function trophy(w) { console.log("OLLIE-ACTION trophy " + w) }
+    onAtChanged: trophy("add space-body " + bodies[at].name)
 
     readonly property var bodies: [
         { name: "The Sun", kind: "A star", size: 1.0, c1: "#fef08a", c2: "#f97316", glow: true,

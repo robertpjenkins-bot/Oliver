@@ -1,0 +1,117 @@
+#!/bin/bash
+# Ollie OS Trophies: the apps say what you did, and badges are earned.
+#   ollie-trophy count EVENT [N]   EVENT happened (N more times; 1 if left out)
+#   ollie-trophy max EVENT N       the best so far for EVENT (a level, a score)
+#   ollie-trophy add EVENT ITEM    ITEM, once each (a country, a planet)
+#   ollie-trophy json              every trophy, earned or how far along, as JSON
+# A trophy just earned: a notification, and Ollie says it.
+# Kept in ~/.local/share/ollie/trophies: counts (EVENT=N), set-EVENT (one
+# ITEM a line), earned (ID TAB DATE).
+set -uo pipefail
+dir="$HOME/.local/share/ollie/trophies"
+mkdir -p "$dir"
+counts="$dir/counts" earned="$dir/earned"
+touch "$counts" "$earned"
+
+# ID|EMOJI|NAME|HOW|EVENT|TARGET
+readonly TROPHIES='first-word|🐝|First Word|Spell a word right in Spelling Bee|spell-right|1
+word-wizard|🧙|Word Wizard|Spell 50 words right|spell-right|50
+spelling-champ|🏅|Spelling Champion|Get 3 stars on a Spelling Bee level|spelling-3stars|1
+bee-utiful|👑|Bee-utiful!|Open all 8 Spelling Bee levels|spelling-level|8
+number-cruncher|🔢|Number Cruncher|Get 10 sums right in Math Quest|math-right|10
+math-master|🧮|Math Master|Get 100 sums right|math-right|100
+math-champ|🏆|Math Champion|Open all 8 Math Quest levels|math-level|8
+hello-robot|🤖|Hello, Robot!|Finish the first Coding Quest level|codequest-level|1
+master-coder|💻|Master Coder|Finish all 10 Coding Quest levels|codequest-level|10
+explorer|🧭|Explorer|Visit 10 countries in World Explorer|world-country|10
+globetrotter|🌍|Globetrotter|Visit 50 countries|world-country|50
+map-detective|🔎|Map Detective|Find 10 countries in one Find it! game|world-find|10
+space-cadet|🚀|Space Cadet|Visit all 11 places in Space Explorer|space-body|11
+snack-time|🍎|Snack Time|Feed your Ollie Pet 10 times|pet-feed|10
+playmate|⚽|Playmate|Play 10 Ollie Pet mini-games|pet-game|10
+all-grown-up|🐣|All Grown Up|Your Ollie Pet grows up|pet-stage|2
+fast-fingers|⌨️|Fast Fingers|Type 100 words in the Typing Game|typing-word|100
+keyboard-hero|🦸|Keyboard Hero|Reach level 5 in the Typing Game|typing-level|5
+player-one|🎮|Player One|Start 10 games from Games or Game Hub|game-play|10
+collector|💿|Collector|Add a game file to Games|game-add|1
+team-up|🤝|Team Up|Two controllers in Couch Co-op|coop-players|2
+party-time|🎉|Party Time|Four controllers in Couch Co-op|coop-players|4
+sticker-star|🌟|Sticker Star|Make a sticker|sticker|1
+comic-artist|💬|Comic Artist|Save a comic|comic|1
+animator|🎞️|Animator|Make a GIF in Ollie Animator|gif|1
+sound-maker|🎙️|Sound Maker|Record a sound on the Sound Board|sound-record|1
+composer|🎹|Composer|Save a song in Music Maker|song|1
+say-cheese|📸|Say Cheese!|Take a photo in Photo Booth|photo|1
+new-game|🛍️|New Game!|Get a game from the App Center|appcenter-install|1
+know-it-all|💡|Know-it-all|Read 10 fun facts|facts|10
+secret-finder|🤫|Secret Finder|Find one of Ollie OS'"'"'s secrets|secret|1
+dedicated-gamer|⏱️|Dedicated Gamer|Play games for 10 hours in all|playtime-hours|10'
+
+value() { sed -n "s/^$1=//p" "$counts" | tail -n 1; }
+setv() { # setv EVENT N, written whole each time (a new file, then moved over)
+    local tmp
+    tmp="$(mktemp "$dir/.counts.XXXXXX")" || return 1
+    { grep -v "^$1=" "$counts"; echo "$1=$2"; } >"$tmp" && mv -f "$tmp" "$counts"
+}
+safe() { [[ $1 =~ ^[a-z0-9-]{1,40}$ ]]; }
+
+check() { # check EVENT: award what it reached
+    local id emoji name how ev target now
+    now="$(value "$1")"
+    while IFS='|' read -r id emoji name how ev target; do
+        [[ $ev == "$1" ]] || continue
+        grep -q "^$id	" "$earned" && continue
+        ((${now:-0} >= target)) || continue
+        printf '%s\t%s\n' "$id" "$(date +%F)" >>"$earned"
+        if command -v notify-send >/dev/null; then
+            notify-send -a "Ollie OS" -i ollie-trophies "🏆 Trophy: $emoji $name" "$how" 2>/dev/null &
+        fi
+        /usr/local/bin/ollie-say "You got a trophy! $name!" 2>/dev/null &
+    done <<<"$TROPHIES"
+}
+
+# One at a time (apps can say things at once).
+exec 9>"$dir/.lock"
+flock 9 2>/dev/null
+
+case "${1:-}" in
+count)
+    safe "${2:-}" || exit 2
+    n=${3:-1}
+    [[ $n =~ ^[0-9]{1,6}$ ]] || exit 2
+    setv "$2" $(($(value "$2" || echo 0) + n))
+    check "$2"
+    ;;
+max)
+    safe "${2:-}" && [[ ${3:-} =~ ^[0-9]{1,6}$ ]] || exit 2
+    now="$(value "$2")"
+    ((${now:-0} >= $3)) || setv "$2" "$3"
+    check "$2"
+    ;;
+add)
+    safe "${2:-}" && [[ -n ${3:-} ]] || exit 2
+    item="$(printf '%s' "${*:3}" | tr -d '\n' | head -c 80)"
+    set_file="$dir/set-$2"
+    touch "$set_file"
+    grep -qxF -- "$item" "$set_file" || echo "$item" >>"$set_file"
+    setv "$2" "$(wc -l <"$set_file")"
+    check "$2"
+    ;;
+json)
+    first=1
+    printf '['
+    while IFS='|' read -r id emoji name how ev target; do
+        now="$(value "$ev")"
+        date="$(awk -F'\t' -v i="$id" '$1 == i {print $2; exit}' "$earned")"
+        ((first)) || printf ','
+        first=0
+        printf '{"id":"%s","emoji":"%s","name":"%s","how":"%s","now":%d,"target":%d,"earned":"%s"}' \
+            "$id" "$emoji" "${name//\"/\\\"}" "${how//\"/\\\"}" "${now:-0}" "$target" "$date"
+    done <<<"$TROPHIES"
+    printf ']\n'
+    ;;
+*)
+    echo "usage: ollie-trophy count EVENT [N] | max EVENT N | add EVENT ITEM | json" >&2
+    exit 2
+    ;;
+esac

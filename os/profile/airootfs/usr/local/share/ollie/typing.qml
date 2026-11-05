@@ -78,7 +78,7 @@ ApplicationWindow {
             falling = falling.slice(0, i).concat(falling.slice(i + 1));
             score += t.length * 10 * level;
             typedChars += t.length + 1;
-            popped++;
+            popped++; trophy("count typing-word"); trophy("max typing-level " + level);
             if (popped % 10 === 0) { level++; say("Level " + level + "! Awesome!"); }
         } else if (t === "ollie") {
             // A secret: Ollie's own name is worth 100.
@@ -90,6 +90,7 @@ ApplicationWindow {
         }
     }
     function say(t) { console.log("OLLIE-ACTION say " + t) }
+    function trophy(w) { console.log("OLLIE-ACTION trophy " + w) }
     function gameOver() {
         mode = "over";
         if (score > saved.best) { saved.best = score; saved.bestLevel = level; newBest.visible = true; say("New best score! You are a typing champion!"); }
