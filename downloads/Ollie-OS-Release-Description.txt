@@ -1,5 +1,7 @@
 ## 🎮 Ollie OS 1.4 — The Big Fun Update!
 
+![Ollie OS 1.4](https://raw.githubusercontent.com/robertpjenkins-bot/Ollie-OS/claude/fervent-gates-cs7smv/docs/ollie-os-showcase.jpg)
+
 Made by an awesome 8 year old. Great for gaming: comes with Steam, Wine and more, plus a debugger and a driver installer. Easy to install!
 
 ### 🆕 What's new
@@ -23,6 +25,7 @@ Made by an awesome 8 year old. Great for gaming: comes with Steam, Wine and more
 - **Start-up animation** (the Ollie cube spins) and a **start-up sound** 🔔
 - **Welcome app** with big buttons for everything
 - **Colours** – dark or light mode, in teal, purple or red 🎨
+- **New app icons** – every Ollie OS app has its own colourful icon
 - **Ollie talks!** 🗣️ Ollie says hello, cheers you on in games and reads words out loud (switch it off in Settings)
 - **Secret Easter eggs** 🤫 – there are hidden surprises to find! Hint: try typing some names into Ollie Finder… and gamers might know a secret code for the Welcome window ⬆️⬆️⬇️⬇️
 
@@ -60,6 +63,7 @@ Made by an awesome 8 year old. Great for gaming: comes with Steam, Wine and more
 - Starting from the drive: Steam Machine and Steam Deck, hold Volume Down. Dell: tap F12. Mac: hold Option
 
 ### ⬆️ Already have Ollie OS?
+- **Ollie OS 1.4 Updater** – everything new in one file (all of the below, plus Recovery Mode and the new app icons)
 - **Game Pack Updater** – Game Mode, Speed Boost, Settings, Screen Time, Update Checker and more
 - **Fun Pack Updater** – Games, Ollie Pet, Typing Game, Ollie Finder, Couch Co-op, Sticker Maker, Comic Maker, Animator, Sound Board, Coding Quest, World Explorer, Space Explorer, Spelling Bee and the secrets
 

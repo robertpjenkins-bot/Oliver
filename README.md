@@ -1,3 +1,26 @@
+![Ollie OS 1.4](docs/ollie-os-banner.png)
+
+# Ollie OS
+
+**The fun gaming computer, made by biobro.** Ollie OS is built on Arch Linux
+and starts straight into a colourful desktop with Steam (and its big-screen
+Game Mode), Minecraft, retro games, and a whole set of its own apps for
+playing, making and learning.
+
+![Ollie OS's apps](docs/ollie-os-showcase.jpg)
+
+- **Play:** Games (drop in ROMs and ISOs), Couch Co-op, Typing Game, Ollie Pet
+- **Make:** Sticker Maker, Comic Maker, Ollie Animator, Sound Board
+- **Learn:** Coding Quest, World Explorer, Space Explorer, Spelling Bee
+- **Keep it going:** one-click updates, the Update Checker, Recovery Mode,
+  The Fixer, and parent settings (Screen Time, Typing Scanner, Firefox password)
+
+Get it from the [Releases page](../../releases): the Installer (Windows,
+Mac, Linux / SteamOS) builds Ollie OS from the official Arch Linux ISO.
+Already have Ollie OS? The **Ollie OS 1.4 Updater** brings everything new.
+
+---
+
 # Oliver
 
 Run Windows programs on Linux using the best of the compatibility runtimes you
