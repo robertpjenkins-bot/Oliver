@@ -348,7 +348,7 @@ build_fun_pack_updater() {
         /usr/local/bin/ollie-os-update "" "${files[@]}"
 }
 build_fun_pack_updater
-# Ollie OS 1.4 Updater: everything new in one: the Game Pack and the Fun
+# Ollie OS Latest Updater: everything new in one: the Game Pack and the Fun
 # Pack, Recovery Mode, the app icons and the version. Update Ollie OS opens
 # next to get the packages they use.
 build_latest_updater() {
@@ -364,8 +364,8 @@ build_latest_updater() {
         command -v rsvg-convert >/dev/null && bash "$os/art/colour-wallpapers.sh" "$1/usr/share/wallpapers"
         return 0
     }
-    build_apps_updater Ollie-OS-1.4-Updater-x86_64.AppImage "Ollie OS 1.4 Updater" \
-        "everything new in Ollie OS 1.4 (the Game Pack, the Fun Pack's apps, Recovery Mode and the new icons)" \
+    build_apps_updater Ollie-OS-Latest-Updater-x86_64.AppImage "Ollie OS Latest Updater" \
+        "everything new in Ollie OS (the Game Pack, all the apps, Recovery Mode, the icons)" \
         /usr/local/bin/ollie-os-update ollie-game-pack.after-install "${files[@]}"
 }
 build_latest_updater

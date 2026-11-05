@@ -1,5 +1,5 @@
 #!/bin/bash
-# Ollie OS 1.4 Updater's checks, run as root after its files are in place:
+# Ollie OS Latest Updater's checks, run as root after its files are in place:
 # the Game Pack's checks (check-game-pack, next to this), then the Fun
 # Pack's apps, Recovery Mode, Ollie's voice and the new app icons. Prints
 # a line each: "OK what", "FIXED what", "LATER what" or "PROBLEM what".
