@@ -32,5 +32,5 @@ gtk-update-icon-cache -q -f /usr/share/icons/hicolor 2>/dev/null
 missing=""
 for p in espeak-ng ffmpeg btrfs-progs rsync arch-install-scripts; do pacman -Q "$p" >/dev/null 2>&1 || missing+=" $p"; done
 if [[ -z $missing ]]; then ok "Ollie's voice, GIF and sound making, and Recovery Mode's tools are installed"; else echo "LATER Update Ollie OS adds:$missing"; fi
-[[ "$(cat /etc/ollie-version 2>/dev/null)" == 1.4 ]] && ok "This is Ollie OS 1.4"
+[[ "$(cat /etc/ollie-version 2>/dev/null)" == 1.5 ]] && ok "This is Ollie OS 1.5"
 exit 0

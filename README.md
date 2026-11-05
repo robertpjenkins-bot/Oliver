@@ -18,6 +18,10 @@ playing, making and learning.
 
 ![Ollie OS's apps](docs/ollie-os-showcase.jpg)
 
+![The real Ollie OS desktop (from the automatic test)](docs/screenshots/desktop-real.png)
+
+*The real Ollie OS desktop (from the automatic test).*
+
 - **Play:** Game Hub (TV mode for controllers), Games (drop in ROMs and ISOs),
   App Center (free games, Epic & GOG), Couch Co-op, Typing Game, Ollie Pet,
   Quick Menu, Play Time, Trophies
