@@ -1,0 +1,122 @@
+#!/bin/bash
+# Play Time: how long each game was played.
+#   ollie-playtime --watch   (ollie-playtime.service, for each person) every
+#                            20 seconds: which game is running; a minute of
+#                            it is written down for each minute played
+#   ollie-playtime           the Play Time window (playtime.qml): this week,
+#                            day by day and game by game
+#   ollie-playtime --close   closes the game being played (the Quick Menu)
+# Games: Steam's, the App Center's and other Flathub games, Minecraft, retro
+# games (RetroArch, Dolphin, PCSX2), Windows games (Oliver, Wine), and Ollie
+# OS's own games. Kept in ~/.local/share/ollie/playtime/DATE.tsv (TIME TAB
+# GAME, a line a minute). While a game that is not one of Ollie OS's is
+# running, its name is in $XDG_RUNTIME_DIR/ollie-current-game (the Quick
+# Menu shows it; the controller's Game Hub button opens the Quick Menu then).
+set -uo pipefail
+dir="$HOME/.local/share/ollie/playtime"
+run="${XDG_RUNTIME_DIR:-/tmp}"
+mkdir -p "$dir"
+
+# The name of a Steam game from its app ID.
+steam_name() {
+    local id=$1 lib f
+    for lib in "$HOME/.local/share/Steam" "$HOME/.steam/steam" $(grep -o '"path"[[:space:]]*"[^"]*"' "$HOME/.local/share/Steam/steamapps/libraryfolders.vdf" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/'); do
+        f="$lib/steamapps/appmanifest_$id.acf"
+        [[ -f $f ]] && { sed -n 's/^[[:space:]]*"name"[[:space:]]*"\(.*\)"$/\1/p' "$f" | head -n 1; return; }
+    done
+    echo "Steam game $id"
+}
+# The name a Flathub app shows in the apps menu.
+flatpak_name() {
+    local d
+    for d in "$HOME/.local/share/flatpak/exports/share/applications" /var/lib/flatpak/exports/share/applications; do
+        [[ -f $d/$1.desktop ]] && { sed -n 's/^Name=//p' "$d/$1.desktop" | head -n 1; return; }
+    done
+    echo "${1##*.}"
+}
+# Flathub apps that are games (Minecraft, the App Center's games, emulators).
+readonly FLATPAK_GAMES='^(com\.mojang\.Minecraft|net\.supertuxkart\.SuperTuxKart|net\.sourceforge\.ExtremeTuxRacer|com\.agateau\.PixelWheels|org\.luanti\.luanti|net\.minetest\.Minetest|org\.openttd\.OpenTTD|com\.simutrans\.Simutrans|org\.supertuxproject\.SuperTux|com\.frogatto\.Frogatto|org\.neverball\.Neverball|com\.play0ad\.zeroad|com\.github\.Anuken\.Mindustry|io\.github\.yairm210\.unciv|org\.wesnoth\.Wesnoth|org\.frozen_bubble\.frozen-bubble|org\.hedgewars\.Hedgewars|org\.gnome\.(Chess|Sudoku|Mines)|org\.DolphinEmu\.dolphin-emu|net\.pcsx2\.PCSX2|com\.heroicgameslauncher\.hgl)$'
+# Ollie OS's own games: their window, and their name.
+readonly OLLIE_GAMES='typing.qml:Typing Game|pet.qml:Ollie Pet|codequest.qml:Coding Quest|mathquest.qml:Math Quest|spelling.qml:Spelling Bee|coop.qml:Couch Co-op|arcade.qml:Ollie Arcade'
+
+# now_playing: prints "outside|ollie<TAB>NAME", or nothing.
+now_playing() {
+    local line id f
+    # Steam: each game runs under Steam's "reaper ... AppId=N".
+    line="$(pgrep -u "$UID" -a -f 'SteamLaunch AppId=[0-9]+' | grep -o 'AppId=[0-9]*' | head -n 1)"
+    [[ -n $line ]] && { printf 'outside\t%s\n' "$(steam_name "${line#AppId=}")"; return; }
+    while read -r id; do
+        [[ $id =~ $FLATPAK_GAMES ]] && { printf 'outside\t%s\n' "$(flatpak_name "$id")"; return; }
+    done < <(flatpak ps --columns=application 2>/dev/null)
+    pgrep -u "$UID" -f 'minecraft-launcher|net\.minecraft\.client' >/dev/null && { printf 'outside\tMinecraft\n'; return; }
+    line="$(pgrep -u "$UID" -a -x retroarch | head -n 1)"
+    if [[ -n $line ]]; then
+        f="${line##* }"
+        [[ $f == */* ]] && f="$(basename "${f%.*}")" || f=RetroArch
+        printf 'outside\t%s\n' "$f"
+        return
+    fi
+    for line in dolphin-emu pcsx2-qt; do
+        pgrep -u "$UID" -x "$line" >/dev/null && { printf 'outside\t%s\n' "${line%%-*}"; return; }
+    done
+    line="$(pgrep -u "$UID" -a -f '\.exe( |$)' | grep -v -e pgrep -e wineserver -e 'C:\\\\windows' | grep -oiE '[^/\\ ]+\.exe' | grep -viE '^(explorer|services|winedevice|plugplay|svchost|rpcss|conhost|start|steam|steamwebhelper)\.exe$' | head -n 1)"
+    [[ -n $line ]] && { printf 'outside\t%s\n' "${line%.*}"; return; }
+    local IFS='|' pair
+    for pair in $OLLIE_GAMES; do
+        pgrep -u "$UID" -f "share/ollie/${pair%%:*}" >/dev/null && { printf 'ollie\t%s\n' "${pair#*:}"; return; }
+    done
+}
+
+if [[ ${1:-} == --close ]]; then
+    for pid in $(pgrep -u "$UID" -f 'reaper.*SteamLaunch'); do pkill -TERM -P "$pid"; done
+    while read -r id; do
+        [[ $id =~ $FLATPAK_GAMES && $id != com.heroicgameslauncher.hgl ]] && flatpak kill "$id" 2>/dev/null
+    done < <(flatpak ps --columns=application 2>/dev/null)
+    pkill -TERM -u "$UID" -x retroarch
+    pkill -TERM -u "$UID" -x dolphin-emu
+    pkill -TERM -u "$UID" -x pcsx2-qt
+    pkill -TERM -u "$UID" -f 'net\.minecraft\.client'
+    command -v wineserver >/dev/null && pgrep -u "$UID" -x wineserver >/dev/null && wineserver -k 2>/dev/null
+    exit 0
+fi
+
+if [[ ${1:-} == --watch ]]; then
+    secs=0 last=""
+    while :; do
+        IFS=$'\t' read -r kind name < <(now_playing)
+        if [[ ${kind:-} == outside ]]; then printf '%s\n' "$name" >"$run/ollie-current-game.new"; else : >"$run/ollie-current-game.new"; fi
+        mv -f "$run/ollie-current-game.new" "$run/ollie-current-game"
+        if [[ -n ${name:-} ]]; then
+            [[ $name == "$last" ]] || secs=0
+            last=$name
+            secs=$((secs + 20))
+            if ((secs >= 60)); then
+                secs=$((secs - 60))
+                printf '%s\t%s\n' "$(date +%H:%M)" "${name//$'\t'/ }" >>"$dir/$(date +%F).tsv"
+                minutes=$(cat "$dir"/*.tsv 2>/dev/null | wc -l)
+                ((minutes % 60 == 0)) && /usr/local/bin/ollie-trophy max playtime-hours $((minutes / 60)) >/dev/null 2>&1
+            fi
+        else
+            last="" secs=0
+        fi
+        name="" kind=""
+        sleep 20
+    done
+fi
+
+# The window: the last 7 days as JSON, then playtime.qml.
+export QML_XHR_ALLOW_FILE_READ=1
+data="$run/ollie-playtime-$$.json"
+trap 'rm -f -- "$data"' EXIT
+{
+    printf '{"days":['
+    for i in 6 5 4 3 2 1 0; do
+        d="$(date -d "-$i day" +%F)"
+        printf '{"date":"%s","day":"%s","games":{' "$d" "$(date -d "-$i day" +%a)"
+        awk -F'\t' '{n[$2]++} END {s = ""; for (g in n) { gsub(/["\\]/, "", g); s = s sprintf("%s\"%s\":%d", s == "" ? "" : ",", g, n[g]) } printf "%s", s}' "$dir/$d.tsv" 2>/dev/null
+        printf '}}'
+        ((i)) && printf ','
+    done
+    printf '],"total":%d}\n' "$(cat "$dir"/*.tsv 2>/dev/null | wc -l)"
+} >"$data"
+exec qml6 /usr/local/share/ollie/playtime.qml -- "data=$data"

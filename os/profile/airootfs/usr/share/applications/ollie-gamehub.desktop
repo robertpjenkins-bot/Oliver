@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Game Hub
+Comment=Every game on one big screen, for the TV and the controller
+Exec=/usr/local/bin/ollie-gamehub
+Icon=ollie-gamehub
+Terminal=false
+Categories=Game;

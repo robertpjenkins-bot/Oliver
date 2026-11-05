@@ -8,3 +8,6 @@ KERNEL=="hidraw*", ATTRS{idVendor}=="2dc8|20d6|0e6f|0f0d|0738|146b|044f|2563|007
 KERNEL=="hidraw*", KERNELS=="*2DC8:*|*20D6:*|*0E6F:*|*0F0D:*|*054C:*|*057E:*|*045E:*|*28DE:*|*3537:*", TAG+="uaccess"
 # Any game pad or joystick the kernel knows: its event device for the person too.
 SUBSYSTEM=="input", ENV{ID_INPUT_JOYSTICK}=="1", TAG+="uaccess"
+# The controller as a mouse (ollie-padd): the person at the computer may make
+# a mouse of their own (as Steam Input does).
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

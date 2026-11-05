@@ -47,6 +47,9 @@ ICONS = {
     "ollie-appcenter": ("🛍️", "#f472b6", "#9d174d"),
     "ollie-mathquest": ("🧮", "#67e8f9", "#0e7490"),
     "ollie-trophies": ("🏆", "#fde047", "#b45309"),
+    "ollie-gamehub": ("📺", "#818cf8", "#312e81"),
+    "ollie-quickmenu": ("⚡", "#fcd34d", "#c2410c"),
+    "ollie-playtime": ("⏱️", "#5eead4", "#115e59"),
 }
 
 here = os.path.dirname(os.path.abspath(__file__))

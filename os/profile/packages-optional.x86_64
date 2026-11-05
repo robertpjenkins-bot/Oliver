@@ -20,3 +20,5 @@ espeak-ng
 ffmpeg
 qt6-declarative
 layer-shell-qt
+# The Quick Menu: the screen's brightness
+brightnessctl

@@ -192,6 +192,10 @@ file_permissions=(
   ["/usr/local/bin/ollie-mathquest"]="0:0:755"
   ["/usr/local/bin/ollie-trophies"]="0:0:755"
   ["/usr/local/bin/ollie-trophy"]="0:0:755"
+  ["/usr/local/bin/ollie-gamehub"]="0:0:755"
+  ["/usr/local/bin/ollie-quickmenu"]="0:0:755"
+  ["/usr/local/bin/ollie-playtime"]="0:0:755"
+  ["/usr/local/lib/ollie/padd.py"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true

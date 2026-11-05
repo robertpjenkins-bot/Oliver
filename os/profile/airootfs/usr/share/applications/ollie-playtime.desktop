@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Play Time
+Comment=How long you played each game this week
+Exec=/usr/local/bin/ollie-playtime
+Icon=ollie-playtime
+Terminal=false
+Categories=Game;

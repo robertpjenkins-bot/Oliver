@@ -8,7 +8,7 @@ here="$(dirname "$(readlink -f "$0")")"
 ok() { echo "OK $*"; }
 
 bad=""
-for a in games finder typing pet coop sticker comic animator soundboard codequest space spelling world recovery say overlay mathquest appcenter trophies trophy; do
+for a in games finder typing pet coop sticker comic animator soundboard codequest space spelling world recovery say overlay mathquest appcenter trophies trophy gamehub quickmenu playtime; do
     f=/usr/local/bin/ollie-$a
     [[ -x $f ]] && bash -n "$f" 2>/dev/null || bad+=" ollie-$a"
 done
@@ -18,6 +18,8 @@ for f in PetBody pet-desktop Confetti recovery world; do
     [[ -s /usr/local/share/ollie/$f.qml ]] || echo "PROBLEM The $f window is missing"
 done
 [[ -s /usr/share/plasma/plasmoids/org.ollieos.funfact/contents/ui/facts.js ]] && ok "Fun Fact of the Day (right-click the desktop, Add Widgets, to put it on)"
+[[ -L /etc/systemd/user/default.target.wants/ollie-padd.service ]] && ok "The controller's Game Hub button and controller-as-a-mouse (after logging in again)"
+[[ -L /etc/systemd/user/default.target.wants/ollie-playtime.service ]] && ok "Play Time counts your games (after logging in again)"
 [[ -s /usr/local/share/ollie/world.json ]] && ok "World Explorer's map" || echo "PROBLEM World Explorer's map is missing"
 python3 -c 'import sys' 2>/dev/null && [[ -x /usr/local/lib/ollie/games.py ]] && ok "Games can add ROMs and ISOs"
 # The new icons show in the apps menu, for every Ollie OS app this computer has.

@@ -3,6 +3,11 @@
 # what runs by itself. (Its packages, and the start-up animation, come with
 # Update Ollie OS, which opens next.)
 systemctl --global enable ollie-speed-boost.service >/dev/null 2>&1
+# The controller helper (Game Hub button, controller as a mouse) and Play Time, when this pack has them.
+for u in ollie-padd ollie-playtime; do
+    [[ -f /etc/systemd/user/$u.service ]] && systemctl --global enable "$u.service" >/dev/null 2>&1
+done
+modprobe uinput 2>/dev/null
 systemctl start ollie-screen-time.service ollie-typing-scanner.service 2>/dev/null
 udevadm control --reload 2>/dev/null
 udevadm trigger --subsystem-match=hidraw --subsystem-match=input 2>/dev/null

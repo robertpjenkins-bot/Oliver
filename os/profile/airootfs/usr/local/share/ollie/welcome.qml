@@ -10,7 +10,7 @@ import QtQuick.Layouts
 
 ApplicationWindow {
     id: win
-    width: 860
+    width: 1040
     height: 640
     visible: true
     title: "Welcome to Ollie OS"
@@ -26,8 +26,10 @@ ApplicationWindow {
     function act(what) { console.log("OLLIE-ACTION " + what) }
 
     readonly property var buttons: [
+        { icon: "📺", label: "Game Hub", hint: "Big screen, play with a controller", act: "gamehub" },
         { icon: "🕹️", label: "Games", hint: "All your games, drop in ROMs", act: "library" },
         { icon: "🎮", label: "Install games", hint: "The Steam store", act: "games" },
+        { icon: "🛍️", label: "App Center", hint: "Free games, one click", act: "appcenter" },
         { icon: "⛏️", label: "Minecraft", hint: "The Minecraft Launcher", act: "minecraft" },
         { icon: "🖼️", label: "Change background", hint: "Your name, or draw one", act: "background" },
         { icon: "🎨", label: "Colours & settings", hint: "Dark mode, colours, Screen Time", act: "settings" },
@@ -82,7 +84,7 @@ ApplicationWindow {
         GridLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            columns: 3
+            columns: 4
             rowSpacing: 14
             columnSpacing: 14
             Repeater {

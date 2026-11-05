@@ -2,6 +2,7 @@
 // OLLIE-ACTION ... for ollie-settings to make:
 //   steam|fps|boost|sound on|off     colours dark|light teal|purple|red|gold [bg]
 //   screen-time MINUTES   extra MINUTES   scanner on|off   pin NEWPIN   notes   recovery
+//   pad-mouse on|off   pad-setup
 // Arguments (what is on now): steam= fps= boost= sound= mode= colour=
 // screentime= scanner= pin= (the PIN's check sum) left= (minutes left today)
 // gold=on|off (the secret Ollie Gold colour, once found in Ollie Finder)
@@ -94,6 +95,15 @@ ApplicationWindow {
                         text: "Start-up sound"
                         checked: win.arg("sound") !== "off"
                         onToggled: win.act("sound " + (checked ? "on" : "off"))
+                    }
+                    Switch {
+                        text: "Controller as a mouse on the desktop"
+                        checked: win.arg("padmouse") !== "off"
+                        onToggled: win.act("pad-mouse " + (checked ? "on" : "off"))
+                    }
+                    Button {
+                        text: "🎮  Choose the controller button that opens the Game Hub"
+                        onClicked: win.act("pad-setup")
                     }
                     Button {
                         text: "🛟  Recovery Mode: put a newer Ollie OS on from an ISO file"

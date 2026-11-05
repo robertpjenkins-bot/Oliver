@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Quick Menu
+Comment=Volume, brightness, FPS limit, power, Do Not Disturb and a screenshot, over your game
+Exec=/usr/local/bin/ollie-quickmenu
+Icon=ollie-quickmenu
+Terminal=false
+Categories=Game;Settings;

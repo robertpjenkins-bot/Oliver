@@ -150,7 +150,7 @@ check "Update Checker in the menu" test -f "$r/usr/share/applications/ollie-upda
 check "the list of the latest updates" test -s "$r/usr/local/share/ollie/updates.qml"
 check "Update Checker is asked about at the first start (off until then)" bash -c "! test -e '$r/etc/systemd/user/timers.target.wants/ollie-update-checker.timer' && grep -q update-checker '$r/usr/local/bin/ollie-welcome'"
 check "python for the Update Checker" test -x "$r/usr/bin/python3"
-for f in games finder typing pet coop sticker comic animator soundboard codequest space spelling world mathquest appcenter trophies; do
+for f in games finder typing pet coop sticker comic animator soundboard codequest space spelling world mathquest appcenter trophies gamehub quickmenu playtime; do
     check "/usr/local/bin/ollie-$f is executable" test -x "$r/usr/local/bin/ollie-$f"
     check "$f window" test -s "$r/usr/local/share/ollie/$f.qml"
 done
@@ -165,6 +165,8 @@ check "the in-game overlay switch" test -x "$r/usr/local/bin/ollie-overlay"
 check "ffmpeg for the Animator and the Sound Board" test -x "$r/usr/bin/ffmpeg"
 check "Ollie OS version 1.4" grep -qx "1.4" "$r/etc/ollie-version"
 check "the colourful app icons" test -s "$r/usr/share/icons/hicolor/256x256/apps/ollie-games.png"
+check "the controller helper and Play Time start with the desktop" bash -c "test -L '$r/etc/systemd/user/default.target.wants/ollie-padd.service' && test -L '$r/etc/systemd/user/default.target.wants/ollie-playtime.service' && test -x '$r/usr/local/lib/ollie/padd.py'"
+check "the controller as a mouse may make its mouse (uinput)" bash -c "grep -q uinput '$r/etc/udev/rules.d/71-ollie-controllers.rules' && test -s '$r/etc/modules-load.d/ollie-uinput.conf'"
 check "Trophies can be earned" test -x "$r/usr/local/bin/ollie-trophy"
 check "Fun Fact of the Day on the desktop" bash -c "test -s '$r/usr/share/plasma/plasmoids/org.ollieos.funfact/contents/ui/facts.js' && grep -q org.ollieos.funfact '$r/usr/share/plasma/look-and-feel/org.ollieos.desktop/contents/layouts/org.kde.plasma.desktop-layout.js'"
 check "Recovery Mode in the menu" test -f "$r/usr/share/applications/ollie-recovery.desktop"

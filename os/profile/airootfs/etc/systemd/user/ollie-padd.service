@@ -1,0 +1,12 @@
+[Unit]
+Description=Ollie OS controller helper (the Game Hub button, controller as a mouse)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/python3 -I /usr/local/lib/ollie/padd.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

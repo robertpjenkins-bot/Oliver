@@ -1,0 +1,84 @@
+#!/bin/bash
+# Ollie Game Hub: every game on one big screen, for the TV and the controller
+# (gamehub.qml).
+#   ollie-gamehub            open it
+#   ollie-gamehub --toggle   open it, or close it if it is open (the
+#                            controller's Game Hub button, from ollie-padd)
+#   ollie-gamehub --setup    which controller button opens the Game Hub, and
+#                            the controller as a mouse (padsetup.qml; opened
+#                            by ollie-padd the first time a controller is
+#                            ever plugged in, and from Ollie OS Settings)
+# Settings: ~/.config/ollie/controller.conf (HUB_BUTTON=, MOUSE=on|off).
+set -uo pipefail
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+export QML_XHR_ALLOW_FILE_READ=1
+run="${XDG_RUNTIME_DIR:-/tmp}" conf="$HOME/.config/ollie/controller.conf"
+mkdir -p "$HOME/.config/ollie"
+open_app() { (setsid env -u QT_FORCE_STDERR_LOGGING -u QT_MESSAGE_PATTERN -u QT_LOGGING_RULES "$@" >/dev/null 2>&1 &); }
+
+if [[ ${1:-} == --setup ]]; then
+    pgrep -u "$UID" -f 'share/ollie/padsetup.qml' >/dev/null && exit 0
+    rm -f "$run/ollie-pad-learn"
+    # (ollie-padd listens for the button: the first time by itself, from Settings when asked.)
+    [[ -f $conf ]] && touch "$run/ollie-pad-learn-request"
+    chosen=""
+    while IFS= read -r line; do
+        case "$line" in
+        *"OLLIE-ACTION set "*)
+            read -r code mouse <<<"${line#*OLLIE-ACTION set }"
+            [[ $code =~ ^[0-9]+$ && $mouse =~ ^(on|off)$ ]] || continue
+            printf 'HUB_BUTTON=%s\nMOUSE=%s\n' "$code" "$mouse" >"$conf"
+            chosen=1
+            /usr/local/bin/ollie-say "All set! Press that button to open the Game Hub." >/dev/null 2>&1 &
+            ;;
+        esac
+    done < <(qml6 /usr/local/share/ollie/padsetup.qml -- "learn=$run/ollie-pad-learn" 2>&1)
+    # "Later": the Home button, until it is changed in Ollie OS Settings.
+    [[ -n $chosen || -f $conf ]] || printf 'HUB_BUTTON=316\nMOUSE=on\n' >"$conf"
+    # (Changed or not, ollie-padd stops listening when the file is written.)
+    [[ -n $chosen ]] || touch "$conf"
+    rm -f "$run/ollie-pad-learn-request"
+    exit 0
+fi
+
+if [[ ${1:-} == --toggle ]] && pgrep -u "$UID" -f 'share/ollie/gamehub.qml' >/dev/null; then
+    pkill -u "$UID" -f 'share/ollie/gamehub.qml'
+    exit 0
+fi
+pgrep -u "$UID" -f 'share/ollie/gamehub.qml' >/dev/null && exit 0
+
+list="$run/ollie-gamehub-$$.json"
+touch "$run/ollie-hub-open"
+trap 'rm -f -- "$list" "$run/ollie-hub-open"' EXIT
+python3 -I /usr/local/lib/ollie/games.py list "$list" 2>/dev/null || echo '{"games": []}' >"$list"
+[[ -f $run/ollie-pad-events ]] || echo '{"events": []}' >"$run/ollie-pad-events"
+name="$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
+/usr/local/bin/ollie-say "Game Hub! What do you want to play?" >/dev/null 2>&1 &
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION play "*)
+        (setsid python3 -I /usr/local/lib/ollie/games.py launch "${line#*OLLIE-ACTION play }" >/dev/null 2>&1 &)
+        (/usr/local/bin/ollie-trophy count game-play >/dev/null 2>&1 &)
+        pkill -u "$UID" -f 'share/ollie/gamehub.qml'
+        ;;
+    *"OLLIE-ACTION run "*)
+        what="${line#*OLLIE-ACTION run }"
+        case "$what" in
+        ollie-quickmenu) open_app /usr/local/bin/ollie-quickmenu ;;
+        ollie-playtime | ollie-trophies | ollie-appcenter | ollie-minecraft | ollie-typing | ollie-pet | ollie-coop | ollie-codequest | ollie-mathquest | ollie-spelling | ollie-world | ollie-space)
+            open_app "/usr/local/bin/$what"
+            pkill -u "$UID" -f 'share/ollie/gamehub.qml'
+            ;;
+        heroic)
+            if flatpak info com.heroicgameslauncher.hgl >/dev/null 2>&1; then open_app flatpak run com.heroicgameslauncher.hgl; else open_app /usr/local/bin/ollie-appcenter; fi
+            pkill -u "$UID" -f 'share/ollie/gamehub.qml'
+            ;;
+        steam-store)
+            open_app /usr/local/bin/ollie-steam steam://store
+            pkill -u "$UID" -f 'share/ollie/gamehub.qml'
+            ;;
+        esac
+        ;;
+    *"OLLIE-ACTION quit"*) pkill -u "$UID" -f 'share/ollie/gamehub.qml' ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/gamehub.qml -- "list=$list" "events=$run/ollie-pad-events" "name=$name" 2>&1)

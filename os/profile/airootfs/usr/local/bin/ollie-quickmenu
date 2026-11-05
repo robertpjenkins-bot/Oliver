@@ -1,0 +1,78 @@
+#!/bin/bash
+# Ollie Quick Menu (quickmenu.qml): volume, brightness, an FPS limit, the
+# power mode, Do Not Disturb, a screenshot, closing the game, the Game Hub.
+#   ollie-quickmenu            open it
+#   ollie-quickmenu --toggle   open it, or close it if it is open (the
+#                              controller's Game Hub button during a game)
+# Volume: wpctl (PipeWire). Brightness: brightnessctl. FPS limit: MangoHud's
+# fps_limit. Power: powerprofilesctl. Do Not Disturb: Plasma's
+# notifications (plasmanotifyrc). Screenshots: Spectacle, into
+# Pictures/Screenshots.
+set -uo pipefail
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+export QML_XHR_ALLOW_FILE_READ=1
+run="${XDG_RUNTIME_DIR:-/tmp}" mango="$HOME/.config/MangoHud/MangoHud.conf"
+me='share/ollie/quickmenu.qml'
+if pgrep -u "$UID" -f "$me" >/dev/null; then
+    [[ ${1:-} == --toggle ]] && pkill -u "$UID" -f "$me"
+    exit 0
+fi
+open_app() { (setsid env -u QT_FORCE_STDERR_LOGGING -u QT_MESSAGE_PATTERN -u QT_LOGGING_RULES "$@" >/dev/null 2>&1 &); }
+
+game="$(head -n 1 "$run/ollie-current-game" 2>/dev/null)"
+today=0
+[[ -n $game ]] && today="$(grep -cF -- "	$game" "$HOME/.local/share/ollie/playtime/$(date +%F).tsv" 2>/dev/null)"
+vol="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk '{printf "%d", $2 * 100 + 0.5}')"
+bright=-1
+command -v brightnessctl >/dev/null && b="$(brightnessctl -m -c backlight 2>/dev/null | head -n 1 | cut -d, -f4)" && [[ -n $b ]] && bright=${b%\%}
+fps="$(sed -n 's/^fps_limit=\([0-9]*\).*/\1/p' "$mango" 2>/dev/null | tail -n 1)"
+power=none
+command -v powerprofilesctl >/dev/null && p="$(powerprofilesctl get 2>/dev/null)" && [[ -n $p ]] && power=$p
+dnd=off
+until_="$(kreadconfig6 --file plasmanotifyrc --group DoNotDisturb --key Until 2>/dev/null)"
+if [[ -n $until_ ]]; then
+    IFS=, read -r y mo d h mi s <<<"$until_"
+    [[ -n ${s:-} ]] && (($(date -d "$y-$mo-$d $h:$mi:$s" +%s 2>/dev/null || echo 0) > $(date +%s))) && dnd=on
+fi
+
+touch "$run/ollie-quickmenu-open"
+trap 'rm -f -- "$run/ollie-quickmenu-open"' EXIT
+[[ -f $run/ollie-pad-events ]] || echo '{"events": []}' >"$run/ollie-pad-events"
+close() { pkill -u "$UID" -f "$me"; }
+while IFS= read -r line; do
+    [[ $line == *"OLLIE-ACTION "* ]] || continue
+    read -r what value <<<"${line#*OLLIE-ACTION }"
+    case "$what" in
+    volume) [[ $value =~ ^[0-9]+$ ]] && wpctl set-volume @DEFAULT_AUDIO_SINK@ "$value%" 2>/dev/null ;;
+    bright) [[ $value =~ ^[0-9]+$ ]] && brightnessctl -q -c backlight set "$value%" 2>/dev/null ;;
+    fps)
+        if [[ $value =~ ^[0-9]+$ ]]; then
+            mkdir -p "${mango%/*}" && touch "$mango"
+            sed -i '/^fps_limit=/d' "$mango"
+            ((value > 0)) && echo "fps_limit=$value" >>"$mango"
+        fi
+        ;;
+    power) [[ $value =~ ^(power-saver|balanced|performance)$ ]] && powerprofilesctl set "$value" 2>/dev/null ;;
+    dnd)
+        if [[ $value == on ]]; then
+            kwriteconfig6 --file plasmanotifyrc --group DoNotDisturb --key Until "$(date -d '+4 hours' '+%Y,%-m,%-d,%-H,%-M,%-S')"
+        else
+            kwriteconfig6 --file plasmanotifyrc --group DoNotDisturb --key Until --delete
+        fi
+        ;;
+    screenshot)
+        close
+        mkdir -p "$HOME/Pictures/Screenshots"
+        f="$HOME/Pictures/Screenshots/Screenshot $(date '+%Y-%m-%d %H-%M-%S').png"
+        (sleep 0.6; spectacle -b -n -f -o "$f" >/dev/null 2>&1 && notify-send -a "Ollie OS" -i camera-photo "📸 Screenshot saved" "In Pictures, Screenshots" 2>/dev/null) &
+        ;;
+    close-game) close; /usr/local/bin/ollie-playtime --close ;;
+    run)
+        close
+        case "$value" in ollie-gamehub | ollie-playtime) open_app "/usr/local/bin/$value" ;; esac
+        ;;
+    quit) close ;;
+    esac
+done < <(qml6 "/usr/local/share/ollie/quickmenu.qml" -- "game=$game" "today=$today" "vol=${vol:-50}" "bright=$bright" "fps=${fps:-0}" \
+    "power=$power" "dnd=$dnd" "events=$run/ollie-pad-events" 2>&1)
+wait

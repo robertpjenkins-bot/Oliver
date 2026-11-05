@@ -17,6 +17,7 @@ grep -qx 'no_display' "$mango" 2>/dev/null && fps=off
 args=(
     "steam=$(flag steam-in-window)" "fps=$fps" "overlay=$(/usr/local/bin/ollie-overlay --which)" "voice=$(flag no-voice)" "boost=$(flag no-speed-boost)" "sound=$(flag no-startup-sound)"
     "mode=$(setting MODE "$cfg/colours")" "colour=$(setting COLOUR "$cfg/colours")" "gold=$([[ -e $cfg/gold-unlocked ]] && echo on || echo off)"
+    "padmouse=$(setting MOUSE "$cfg/controller.conf")"
     "screentime=$(setting SCREEN_TIME /etc/ollie/parent.conf)" "scanner=$(setting SCANNER /etc/ollie/parent.conf)"
     "pin=$(setting PIN_MD5 /etc/ollie/parent.conf)" "left=$(/usr/local/bin/ollie-parent left)"
     "updates=$(cat /etc/ollie/update-checker 2>/dev/null || echo off)"
@@ -60,6 +61,13 @@ while IFS= read -r line; do
         fi
         ;;
     notes) /usr/local/bin/ollie-scanner-notes --unlocked & ;; # Settings asked for the PIN already
+    pad-mouse)
+        if [[ ${a[1]:-} =~ ^(on|off)$ ]]; then
+            hub="$(setting HUB_BUTTON "$cfg/controller.conf")"
+            printf 'HUB_BUTTON=%s\nMOUSE=%s\n' "${hub:-316}" "${a[1]}" >"$cfg/controller.conf"
+        fi
+        ;;
+    pad-setup) (setsid env -u QT_FORCE_STDERR_LOGGING -u QT_MESSAGE_PATTERN -u QT_LOGGING_RULES /usr/local/bin/ollie-gamehub --setup >/dev/null 2>&1 &) ;;
     recovery) (setsid env -u QT_FORCE_STDERR_LOGGING -u QT_MESSAGE_PATTERN -u QT_LOGGING_RULES /usr/local/bin/ollie-recovery >/dev/null 2>&1 &) ;;
     esac
 done < <(qml6 /usr/local/share/ollie/settings.qml -- "${args[@]}" 2>&1)

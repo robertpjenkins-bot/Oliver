@@ -1,0 +1,11 @@
+[Unit]
+Description=Ollie OS Play Time (how long each game is played)
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/local/bin/ollie-playtime --watch
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

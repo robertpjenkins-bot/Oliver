@@ -1,5 +1,5 @@
 // Ollie App Center (ollie-appcenter): free games and apps picked for Ollie
-// OS, in groups (racing, building, adventure, strategy, puzzles, making
+// OS, in groups (game stores: Epic and GOG with Heroic; racing, building, adventure, strategy, puzzles, making
 // things, learning). One click gets one (from Flathub), then it's ready to
 // play. Says on the console: OLLIE-ACTION install ID [ID...] (the first that
 // Flathub has), play ID, remove ID.
@@ -33,6 +33,7 @@ ApplicationWindow {
 
     // [name, emoji, what it is, group, ages, Flathub IDs (the first one Flathub has is used)]
     readonly property var apps: [
+        ["Epic & GOG games", "🎁", "Heroic: play your Epic Games Store and GOG games, and get the free game Epic gives away every week. Sign in with a grown-up.", "Game stores", "Everyone", ["com.heroicgameslauncher.hgl"]],
         ["SuperTuxKart", "🏎️", "Kart racing with Tux and friends. Up to 4 players on one screen!", "Racing", "Everyone", ["net.supertuxkart.SuperTuxKart"]],
         ["Extreme Tux Racer", "🐧", "Slide down snowy mountains on your tummy, grabbing fish.", "Racing", "Everyone", ["net.sourceforge.ExtremeTuxRacer"]],
         ["Pixel Wheels", "🚗", "Top-down retro racing with power-ups.", "Racing", "Everyone", ["com.agateau.PixelWheels"]],
@@ -60,7 +61,7 @@ ApplicationWindow {
         ["KTouch", "⌨️", "Learn to type with all ten fingers.", "Learning", "Everyone", ["org.kde.ktouch"]],
         ["Marble", "🌐", "A virtual globe with maps of the whole world.", "Learning", "Everyone", ["org.kde.marble"]]
     ]
-    readonly property var groups: [["All", "🌟"], ["Racing", "🏁"], ["Building", "🧱"], ["Adventure", "🗺️"], ["Strategy", "🏰"], ["Puzzles", "🧩"], ["Making", "🎨"], ["Learning", "🧠"]]
+    readonly property var groups: [["All", "🌟"], ["Game stores", "🎁"], ["Racing", "🏁"], ["Building", "🧱"], ["Adventure", "🗺️"], ["Strategy", "🏰"], ["Puzzles", "🧩"], ["Making", "🎨"], ["Learning", "🧠"]]
     property string group: "All"
     property string search: ""
     property var installed: []        // app IDs
