@@ -3,6 +3,6 @@ Type=Application
 Name=Comic Maker
 Comment=Make comic strips with scenes, characters, speech bubbles and POW!
 Exec=/usr/local/bin/ollie-comic
-Icon=applications-graphics
+Icon=ollie-comic
 Terminal=false
 Categories=Graphics;

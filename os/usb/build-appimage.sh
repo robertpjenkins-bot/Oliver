@@ -269,8 +269,8 @@ build_tracker_updater
 # Minecraft, the start-up animation and sound, Welcome, Ollie OS Settings
 # (colours, Screen Time, the Typing Scanner) and Update Ollie OS, which opens
 # next to get the packages they use.
-build_game_pack_updater() {
-    local f files=() air="$os/profile/airootfs"
+game_pack_files() { # game_pack_files: its files, into files=()
+    local f air="$os/profile/airootfs"
     for f in usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox,update-checker,say,overlay,recovery} \
         usr/local/lib/ollie/{speed-boost-hook,boot-splash,recovery-helper,recovery-cleanup} usr/local/share/ollie/{welcome.qml,Confetti.qml,settings.qml,timesup.qml,updates.qml,recovery.qml,scanner-words.txt} \
         usr/local/share/applications/{steam,firefox}.desktop usr/share/applications/ollie-{minecraft,os-update,welcome,settings,scanner-notes,update-checker,recovery}.desktop \
@@ -282,6 +282,10 @@ build_game_pack_updater() {
         files+=("$f")
     done
     for f in "$air"/usr/share/plymouth/themes/ollie/*; do files+=("${f#"$air/"}"); done
+}
+build_game_pack_updater() {
+    local files=()
+    game_pack_files
     # Ollie OS's background in Settings' other colours, when this computer can draw them.
     # (And its checks that each part works: share/ollie-apps/check.)
     apps_updater_extra() {
@@ -314,13 +318,17 @@ build_publisher
 # Overlay and the secrets. Update Ollie OS opens next to get the packages
 # they use (espeak-ng for the voice, ffmpeg for GIFs and sounds).
 fun_apps=(games finder typing pet coop sticker comic animator soundboard codequest space spelling world)
-build_fun_pack_updater() {
-    local a files=()
+fun_pack_files() { # fun_pack_files: its files, into files=()
+    local a
     for a in "${fun_apps[@]}"; do
         files+=("usr/local/bin/ollie-$a" "usr/local/share/ollie/$a.qml" "usr/share/applications/ollie-$a.desktop")
     done
     files+=(usr/local/bin/ollie-{say,overlay,welcome,os-update,colours,settings} usr/local/lib/ollie/{games,pads}.py
         usr/local/share/ollie/{PetBody,pet-desktop,Confetti,welcome,settings}.qml usr/local/share/ollie/world.json)
+}
+build_fun_pack_updater() {
+    local files=()
+    fun_pack_files
     # The secret Ollie Gold background (and the others), when this computer can draw them.
     apps_updater_extra() {
         command -v rsvg-convert >/dev/null && bash "$os/art/colour-wallpapers.sh" "$1/usr/share/wallpapers"
@@ -331,6 +339,27 @@ build_fun_pack_updater() {
         /usr/local/bin/ollie-os-update "" "${files[@]}"
 }
 build_fun_pack_updater
+# Ollie OS 1.4 Updater: everything new in one: the Game Pack and the Fun
+# Pack, Recovery Mode, the app icons and the version. Update Ollie OS opens
+# next to get the packages they use.
+build_latest_updater() {
+    local f files=() air="$os/profile/airootfs"
+    game_pack_files
+    fun_pack_files
+    files+=(etc/ollie-version usr/share/applications/ollie-recovery.desktop)
+    for f in "$air"/usr/share/icons/hicolor/*/apps/ollie-*.png; do files+=("${f#"$air/"}"); done
+    mapfile -t files < <(printf '%s\n' "${files[@]}" | awk '!seen[$0]++')
+    apps_updater_extra() {
+        install -m 0755 "$here/ollie-latest.check" "$1/../check"
+        install -m 0755 "$here/ollie-game-pack.check" "$1/../check-game-pack"
+        command -v rsvg-convert >/dev/null && bash "$os/art/colour-wallpapers.sh" "$1/usr/share/wallpapers"
+        return 0
+    }
+    build_apps_updater Ollie-OS-1.4-Updater-x86_64.AppImage "Ollie OS 1.4 Updater" \
+        "everything new in Ollie OS 1.4 (the Game Pack, the Fun Pack's apps, Recovery Mode and the new icons)" \
+        /usr/local/bin/ollie-os-update ollie-game-pack.after-install "${files[@]}"
+}
+build_latest_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz

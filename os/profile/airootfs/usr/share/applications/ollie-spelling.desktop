@@ -3,6 +3,6 @@ Type=Application
 Name=Spelling Bee
 Comment=Hear a word, then spell it, with levels and stars
 Exec=/usr/local/bin/ollie-spelling
-Icon=accessories-dictionary
+Icon=ollie-spelling
 Terminal=false
 Categories=Education;Game;

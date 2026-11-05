@@ -3,6 +3,6 @@ Type=Application
 Name=Ollie Pet
 Comment=Your own little cube pet: feed it, play with it, put it to bed
 Exec=/usr/local/bin/ollie-pet
-Icon=ollie-os
+Icon=ollie-pet
 Terminal=false
 Categories=Game;
