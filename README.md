@@ -7,6 +7,8 @@ and starts straight into a colourful desktop with Steam (and its big-screen
 Game Mode), Minecraft, retro games, and a whole set of its own apps for
 playing, making and learning.
 
+![Ollie OS's apps](docs/ollie-os-desktop.png)
+
 ![Ollie OS's apps](docs/ollie-os-showcase.jpg)
 
 - **Play:** Games (drop in ROMs and ISOs), Couch Co-op, Typing Game, Ollie Pet
