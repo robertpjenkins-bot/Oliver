@@ -76,6 +76,7 @@ ApplicationWindow {
                 }
             }
             Item { Layout.fillWidth: true }
+            Button { text: "🖼️ Find covers"; onClicked: { win.act("covers"); Qt.quit(); } }
             Button { text: "📁 My Games folder"; onClicked: win.act("folder") }
             Button { text: "🔄 Refresh"; onClicked: { win.act("refresh"); Qt.quit(); } }
         }

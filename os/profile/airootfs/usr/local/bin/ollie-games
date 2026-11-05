@@ -15,15 +15,21 @@ trap 'rm -f -- "$list"' EXIT
 mkdir -p "$HOME/Games"
 while :; do
     python3 -I "$helper" list "$list" || { kdialog --title Games --error "Games could not look for games (is python installed? Update Ollie OS adds it)."; exit 1; }
-    again="" adds=()
+    again="" adds=() covers=""
     while IFS= read -r line; do
         case "$line" in
         *"OLLIE-ACTION play "*) (setsid python3 -I "$helper" launch "${line#*OLLIE-ACTION play }" >/dev/null 2>&1 &) ;;
         *"OLLIE-ACTION add "*) adds+=("${line#*OLLIE-ACTION add }") ;;
         *"OLLIE-ACTION refresh"*) again=1 ;;
+        *"OLLIE-ACTION covers"*) again=1 covers=1 ;;
         *"OLLIE-ACTION folder"*) (xdg-open "$HOME/Games" >/dev/null 2>&1 &) ;;
         esac
     done < <(qml6 /usr/local/share/ollie/games.qml -- "list=$list" 2>&1)
-    ((${#adds[@]})) && python3 -I "$helper" add "${adds[@]}"
+    ((${#adds[@]})) && python3 -I "$helper" add "${adds[@]}" && covers=1
+    # Box art for new game files (and, from the button, all without).
+    if [[ -n $covers ]]; then
+        kdialog --title Games --passivepopup "Finding box art for your games..." 4 2>/dev/null &
+        python3 -I "$helper" covers >/dev/null 2>&1
+    fi
     [[ -n $again || ${#adds[@]} -gt 0 ]] || exit 0
 done

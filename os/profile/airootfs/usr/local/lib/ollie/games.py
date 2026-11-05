@@ -8,6 +8,9 @@ dropped on the window, and starts a game.
                               console from the file
   games.py launch KEY         starts a game (KEY from the list); a console's
                               emulator is installed the first time
+  games.py covers             box art for the game files that have none, from
+                              libretro's free collection (thumbnails.libretro.com),
+                              kept next to each file as NAME.png
 
 Games: Steam's installed games, the apps menu's games (Minecraft too), and the
 files in ~/Games. Only the person's own game files: nothing is downloaded but
@@ -187,7 +190,7 @@ def file_games():
             for ext in (".png", ".jpg"):
                 if os.path.isfile(os.path.splitext(path)[0] + ext) and not path.endswith(ext):
                     cover = os.path.splitext(path)[0] + ext
-            if f.lower().endswith((".png", ".jpg", ".txt")):
+            if f.lower().endswith((".png", ".jpg", ".txt", ".nocover")):
                 continue
             games.append({"key": "file:" + path, "name": nice_name(f), "kind": "file", "system": cname,
                           "emoji": emoji, "cover": cover})
@@ -200,6 +203,73 @@ def cue_files(cue):
     except OSError:
         return []
     return [m for m in re.findall(r'FILE\s+"([^"]+)"', text)]
+
+
+# Where libretro keeps each console's box art (its names: No-Intro's).
+COVER_SETS = {
+    "nes": ["Nintendo - Nintendo Entertainment System"],
+    "snes": ["Nintendo - Super Nintendo Entertainment System"],
+    "gb": ["Nintendo - Game Boy", "Nintendo - Game Boy Color"],
+    "gba": ["Nintendo - Game Boy Advance"],
+    "sega": ["Sega - Mega Drive - Genesis", "Sega - Master System - Mark III", "Sega - Game Gear"],
+    "n64": ["Nintendo - Nintendo 64"],
+    "nds": ["Nintendo - Nintendo DS"],
+    "psp": ["Sony - PlayStation Portable"],
+    "ps1": ["Sony - PlayStation"],
+    "ps2": ["Sony - PlayStation 2"],
+    "gc": ["Nintendo - GameCube", "Nintendo - Wii"],
+}
+COVER_SITE = os.environ.get("OLLIE_COVER_SITE", "https://thumbnails.libretro.com")
+
+
+def cover_names(filename):
+    """The names a game's box art may have: its own, then with the usual regions."""
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    clean = re.sub(r"\s*\[[^\]]*\]", "", stem).strip()
+    bare = nice_name(filename)
+    names = [stem, clean] + [f"{bare} ({r})" for r in ("USA", "World", "USA, Europe", "Europe", "Japan")] + [bare]
+    out = []
+    for n in names:
+        n = re.sub(r'[&*/:`<>?\\|"]', "_", n)  # how libretro names them
+        if n and n not in out:
+            out.append(n)
+    return out
+
+
+def cover_urls(console, filename):
+    from urllib.parse import quote
+    return [f"{COVER_SITE}/{quote(s)}/Named_Boxarts/{quote(n)}.png"
+            for s in COVER_SETS.get(console, []) for n in cover_names(filename)]
+
+
+def cmd_covers():
+    import urllib.request
+    got, tried = 0, 0
+    for key in COVER_SETS:
+        d = os.path.join(GAMES, key)
+        if not os.path.isdir(d):
+            continue
+        for f in sorted(os.listdir(d)):
+            path = os.path.join(d, f)
+            stem = os.path.splitext(path)[0]
+            if f.startswith(".") or f.lower().endswith((".png", ".jpg", ".txt", ".bin")) or not os.path.isfile(path) \
+                    or os.path.exists(stem + ".png") or os.path.exists(stem + ".jpg") or os.path.exists(stem + ".nocover"):
+                continue
+            tried += 1
+            for url in cover_urls(key, f):
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "OllieOS-Games"}), timeout=8) as r:
+                        data = r.read()
+                except Exception:
+                    continue
+                if data[:8] == b"\x89PNG\r\n\x1a\n":
+                    with open(stem + ".png", "wb") as out:
+                        out.write(data)
+                    got += 1
+                    break
+            else:  # none: not asked again
+                open(stem + ".nocover", "w").close()
+    return got, tried
 
 
 def cmd_list(out):
@@ -320,6 +390,9 @@ if __name__ == "__main__":
         cmd_add(sys.argv[2:])
     elif len(sys.argv) >= 3 and sys.argv[1] == "launch":
         cmd_launch(sys.argv[2])
+    elif len(sys.argv) == 2 and sys.argv[1] == "covers":
+        got, tried = cmd_covers()
+        print(f"{got} of {tried}")
     else:
         print(__doc__)
         sys.exit(2)
