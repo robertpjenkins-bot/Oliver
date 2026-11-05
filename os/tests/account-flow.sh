@@ -116,6 +116,12 @@ press_enter() {
     vbox) timeout 60 sudo VBoxManage controlvm "$vm" keyboardputscancode 1c 9c ;;
     esac
 }
+press_escape() {
+    case "$mode" in
+    qemu | boxes) printf 'sendkey esc\n' | socat - UNIX-CONNECT:"$mon" >/dev/null 2>&1 ;;
+    vbox) timeout 60 sudo VBoxManage controlvm "$vm" keyboardputscancode 01 81 ;;
+    esac
+}
 type_text() { # type_text TEXT (small letters and digits)
     local i c
     case "$mode" in
@@ -225,6 +231,15 @@ if read_screen after | grep -qiE 'Welcome to Ollie|Create your username'; then
 else
     pass "the Welcome window does not ask again"
 fi
+# A picture of the desktop for Ollie OS's web page (not a check): the
+# first-start questions and the Tour answered with Escape ("not now"),
+# then the desktop as it is, with Welcome on it.
+for _ in 1 2 3 4 5 6; do
+    press_escape
+    sleep 5
+done
+sleep 10
+screenshot "$out/step-999-picture.png" || true
 
 stop_vm
 trap - EXIT
