@@ -212,7 +212,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
-      contents: read
+      contents: write
       actions: read
     steps:
       - uses: actions/checkout@v4
@@ -302,6 +302,24 @@ jobs:
             echo
             echo "=== SCREENSHOT END"
           done
+
+      - name: Save the screenshots for Ollie OS's web page (the ollie-os-screenshots branch)
+        # Pictures of the real desktop for the README and the website, kept
+        # on a branch of their own (one commit, replaced each time).
+        if: always() && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/claude/fervent-gates-cs7smv')
+        continue-on-error: true
+        run: |
+          shots="$RUNNER_TEMP/shots"
+          rm -rf "$shots" && mkdir -p "$shots/live" "$shots/installed" "$shots/boxes"
+          for f in $(ls boot/screen-*.png 2>/dev/null | tail -n 3); do cp "$f" "$shots/live/"; done
+          cp account/step-*.png "$shots/installed/" 2>/dev/null || true
+          cp boxes/step-*.png "$shots/boxes/" 2>/dev/null || true
+          cd "$shots"
+          printf 'Screenshots of Ollie OS from its tests (%s, %s).\n' "$(date -u +%Y-%m-%d)" "${GITHUB_SHA::7}" >README.md
+          git init -q -b ollie-os-screenshots
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "Ollie OS screenshots (${GITHUB_SHA::7})"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ollie-os-screenshots
 
       - uses: actions/upload-artifact@v4
         if: always()
