@@ -173,6 +173,18 @@ file_permissions=(
   ["/usr/local/bin/ollie-finder"]="0:0:755"
   ["/usr/local/bin/ollie-typing"]="0:0:755"
   ["/usr/local/bin/ollie-pet"]="0:0:755"
+  ["/usr/local/bin/ollie-say"]="0:0:755"
+  ["/usr/local/bin/ollie-overlay"]="0:0:755"
+  ["/usr/local/bin/ollie-coop"]="0:0:755"
+  ["/usr/local/bin/ollie-sticker"]="0:0:755"
+  ["/usr/local/bin/ollie-comic"]="0:0:755"
+  ["/usr/local/bin/ollie-animator"]="0:0:755"
+  ["/usr/local/bin/ollie-soundboard"]="0:0:755"
+  ["/usr/local/bin/ollie-codequest"]="0:0:755"
+  ["/usr/local/bin/ollie-space"]="0:0:755"
+  ["/usr/local/bin/ollie-spelling"]="0:0:755"
+  ["/usr/local/bin/ollie-world"]="0:0:755"
+  ["/usr/local/lib/ollie/pads.py"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true

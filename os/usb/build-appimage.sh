@@ -271,8 +271,8 @@ build_tracker_updater
 # next to get the packages they use.
 build_game_pack_updater() {
     local f files=() air="$os/profile/airootfs"
-    for f in usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox,update-checker} \
-        usr/local/lib/ollie/{speed-boost-hook,boot-splash} usr/local/share/ollie/{welcome.qml,settings.qml,timesup.qml,updates.qml,scanner-words.txt} \
+    for f in usr/local/bin/ollie-{steam,speed-boost,minecraft,startup-sound,os-update,colours,settings,welcome,parent,screen-time,timesup,typing-scanner,scanner-notes,firefox,update-checker,say,overlay} \
+        usr/local/lib/ollie/{speed-boost-hook,boot-splash} usr/local/share/ollie/{welcome.qml,Confetti.qml,settings.qml,timesup.qml,updates.qml,scanner-words.txt} \
         usr/local/share/applications/{steam,firefox}.desktop usr/share/applications/ollie-{minecraft,os-update,welcome,settings,scanner-notes,update-checker}.desktop \
         usr/share/icons/hicolor/scalable/apps/ollie-minecraft.svg etc/xdg/autostart/ollie-{welcome,startup-sound}.desktop \
         etc/systemd/user/ollie-speed-boost.service etc/systemd/user/ollie-update-checker.{service,timer} etc/systemd/system/ollie-{screen-time,typing-scanner}.service \
@@ -308,13 +308,27 @@ build_publisher() {
 }
 build_publisher
 # The Fun Pack: Games (every game in one place; drop in ROMs, ISOs and
-# Windows games), Ollie Finder, the Typing Game and Ollie Pet.
+# Windows games), Ollie Finder, the Typing Game, Ollie Pet, Couch Co-op,
+# Sticker Maker, Comic Maker, Ollie Animator, Sound Board, Coding Quest,
+# Space Explorer, Spelling Bee, World Explorer, Ollie's voice, the Game
+# Overlay and the secrets. Update Ollie OS opens next to get the packages
+# they use (espeak-ng for the voice, ffmpeg for GIFs and sounds).
+fun_apps=(games finder typing pet coop sticker comic animator soundboard codequest space spelling world)
 build_fun_pack_updater() {
+    local a files=()
+    for a in "${fun_apps[@]}"; do
+        files+=("usr/local/bin/ollie-$a" "usr/local/share/ollie/$a.qml" "usr/share/applications/ollie-$a.desktop")
+    done
+    files+=(usr/local/bin/ollie-{say,overlay,welcome,os-update,colours,settings} usr/local/lib/ollie/{games,pads}.py
+        usr/local/share/ollie/{PetBody,pet-desktop,Confetti,welcome,settings}.qml usr/local/share/ollie/world.json)
+    # The secret Ollie Gold background (and the others), when this computer can draw them.
+    apps_updater_extra() {
+        command -v rsvg-convert >/dev/null && bash "$os/art/colour-wallpapers.sh" "$1/usr/share/wallpapers"
+        return 0
+    }
     build_apps_updater Ollie-OS-Fun-Pack-Updater-x86_64.AppImage "Ollie OS Fun Pack Updater" \
-        "the Fun Pack (Games, Ollie Finder, Typing Game, Ollie Pet)" /usr/local/bin/ollie-games "" \
-        usr/local/bin/ollie-{games,finder,typing,pet,welcome} usr/local/lib/ollie/games.py \
-        usr/local/share/ollie/{games,finder,typing,pet,welcome}.qml \
-        usr/share/applications/ollie-{games,finder,typing,pet}.desktop
+        "the Fun Pack (Games, Finder, Typing Game, Ollie Pet, Couch Co-op, Sticker Maker, Comic Maker, Animator, Sound Board, Coding Quest, Space Explorer, Spelling Bee, World Explorer)" \
+        /usr/local/bin/ollie-os-update "" "${files[@]}"
 }
 build_fun_pack_updater
 
