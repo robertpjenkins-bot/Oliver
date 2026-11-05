@@ -1,13 +1,17 @@
 name: Ollie OS update
 
-# Publishes an Ollie OS update, which every Ollie OS with the Update Checker
-# then tells its person about: pushing a tag "ollie-update-..." (an annotated
-# tag: its first line is the update's name, the rest says what is new) makes
-# a release of it with downloads/Ollie-OS-Latest-Updater-x86_64.AppImage, in
-# the form the Update Checker reads (ollie-update-checker).
+# Publishes Ollie OS updates, which every Ollie OS with the Update Checker
+# then tells its person about. An update is a file updates/NAME.md: its
+# first line is the update's name, the rest says what is new. When one is
+# pushed, this makes the release "ollie-update-NAME" (the tag too) with
+# downloads/Ollie-OS-Latest-Updater-x86_64.AppImage, in the form the Update
+# Checker reads (ollie-update-checker). An update already published is left
+# as it is.
 on:
   push:
-    tags: ["ollie-update-*"]
+    branches: ["claude/fervent-gates-cs7smv", "claude/clever-johnson-3ittch"]
+    paths: ["updates/**"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,18 +21,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Publish the update
+      - name: Publish the updates not published yet
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
         run: |
-          # The tag itself (with its message), not just the commit.
-          git fetch -f origin "refs/tags/$TAG:refs/tags/$TAG"
-          title="$(git for-each-ref --format='%(contents:subject)' "refs/tags/$TAG")"
-          what="$(git for-each-ref --format='%(contents:body)' "refs/tags/$TAG")"
           file=downloads/Ollie-OS-Latest-Updater-x86_64.AppImage
           test -s "$file"
-          body="$(printf '%s\n\n<!-- ollie-update -->\n*An Ollie OS update. Ollie OS'"'"'s Update Checker tells you about it: install it from the notification, or from Ollie OS Updates in the apps menu.*\n' "$what")"
-          gh release create "$TAG" --title "${title:-$TAG}" --notes "$body" --latest=false "$file"
+          for notes in updates/*.md; do
+            [[ -f $notes ]] || continue
+            tag="ollie-update-$(basename "$notes" .md)"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "$tag: already published"
+              continue
+            fi
+            title="$(head -n 1 "$notes" | sed 's/^#* *//')"
+            what="$(tail -n +2 "$notes" | sed '1{/^$/d}')"
+            body="$(printf '%s\n\n<!-- ollie-update -->\n*An Ollie OS update. Ollie OS'"'"'s Update Checker tells you about it: install it from the notification, or from Ollie OS Updates in the apps menu.*\n' "$what")"
+            gh release create "$tag" --target "$GITHUB_SHA" --title "${title:-$tag}" --notes "$body" --latest=false "$file"
+            echo "$tag: published"
+          done
