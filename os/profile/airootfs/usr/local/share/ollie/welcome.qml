@@ -24,6 +24,7 @@ ApplicationWindow {
     function act(what) { console.log("OLLIE-ACTION " + what) }
 
     readonly property var buttons: [
+        { icon: "🕹️", label: "Games", hint: "All your games, drop in ROMs", act: "library" },
         { icon: "🎮", label: "Install games", hint: "The Steam store", act: "games" },
         { icon: "⛏️", label: "Minecraft", hint: "The Minecraft Launcher", act: "minecraft" },
         { icon: "🖼️", label: "Change background", hint: "Your name, or draw one", act: "background" },

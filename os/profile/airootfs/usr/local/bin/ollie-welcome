@@ -72,6 +72,7 @@ while IFS= read -r line; do
     read -r -a a <<<"${line#*OLLIE-ACTION }"
     case "${a[0]} ${a[1]:-}" in
     "open games") open /usr/local/bin/ollie-steam steam://store ;;
+    "open library") open /usr/local/bin/ollie-games ;;
     "open minecraft") open /usr/local/bin/ollie-minecraft ;;
     "open background") open /usr/local/bin/ollie-wallpaper-maker ;;
     "open settings") open /usr/local/bin/ollie-settings ;;

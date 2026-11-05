@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Games
+Comment=All your games in one place: Steam, Minecraft, and game files you drop in (ROMs, ISOs, Windows games)
+Exec=/usr/local/bin/ollie-games
+Icon=applications-games
+Terminal=false
+Categories=Game;
+Keywords=library;roms;iso;emulator;retro;

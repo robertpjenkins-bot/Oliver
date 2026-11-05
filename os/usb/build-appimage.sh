@@ -16,6 +16,7 @@
 #   Ollie-OS-Download-Tracker-Updater-x86_64.AppImage adds Download Tracker (biobro's GitHub downloads)
 #   Ollie-OS-Game-Pack-Updater-x86_64.AppImage   adds the Game Pack: Game Mode, Speed Boost, FPS, Minecraft, Settings...
 #   Ollie-OS-Update-Publisher-x86_64.AppImage    for biobro: publishes an update the Update Checker tells everyone about
+#   Ollie-OS-Fun-Pack-Updater-x86_64.AppImage    adds Games (drop in ROMs and ISOs), Ollie Finder, Typing Game, Ollie Pet
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
 #   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup); and as .dmg
 # (Ollie-OS-Builder-Windows.exe, for Windows: os/windows/builder/build.sh.)
@@ -306,6 +307,16 @@ build_publisher() {
     rm -rf "$appdir"
 }
 build_publisher
+# The Fun Pack: Games (every game in one place; drop in ROMs, ISOs and
+# Windows games), Ollie Finder, the Typing Game and Ollie Pet.
+build_fun_pack_updater() {
+    build_apps_updater Ollie-OS-Fun-Pack-Updater-x86_64.AppImage "Ollie OS Fun Pack Updater" \
+        "the Fun Pack (Games, Ollie Finder, Typing Game, Ollie Pet)" /usr/local/bin/ollie-games "" \
+        usr/local/bin/ollie-{games,finder,typing,pet,welcome} usr/local/lib/ollie/games.py \
+        usr/local/share/ollie/{games,finder,typing,pet,welcome}.qml \
+        usr/share/applications/ollie-{games,finder,typing,pet}.desktop
+}
+build_fun_pack_updater
 
 # The Ollie OS recipe: what os/build.sh needs, from the committed tree.
 source_tarball() { # source_tarball OUT.tar.gz

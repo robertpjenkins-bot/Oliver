@@ -1,0 +1,5 @@
+#!/bin/bash
+# Typing Game: words fall from the sky; type them before they land (typing.qml).
+# What it keeps (best score, or the pet) is in ~/.config/ollie/typing.ini.
+mkdir -p "$HOME/.config/ollie"
+exec qml6 /usr/local/share/ollie/typing.qml -- "config=$HOME/.config/ollie/typing.ini"

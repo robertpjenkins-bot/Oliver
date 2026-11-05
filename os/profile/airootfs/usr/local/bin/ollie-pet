@@ -1,0 +1,5 @@
+#!/bin/bash
+# Ollie Pet: a little cube pet to feed, play with and put to bed (pet.qml).
+# What it keeps (best score, or the pet) is in ~/.config/ollie/pet.ini.
+mkdir -p "$HOME/.config/ollie"
+exec qml6 /usr/local/share/ollie/pet.qml -- "config=$HOME/.config/ollie/pet.ini"

@@ -168,6 +168,11 @@ file_permissions=(
   ["/usr/local/bin/ollie-scanner-notes"]="0:0:755"
   ["/usr/local/bin/ollie-firefox"]="0:0:755"
   ["/usr/local/bin/ollie-update-checker"]="0:0:755"
+  ["/usr/local/bin/ollie-games"]="0:0:755"
+  ["/usr/local/lib/ollie/games.py"]="0:0:755"
+  ["/usr/local/bin/ollie-finder"]="0:0:755"
+  ["/usr/local/bin/ollie-typing"]="0:0:755"
+  ["/usr/local/bin/ollie-pet"]="0:0:755"
 )
 EOF
 find "$profile/efiboot" "$profile/syslinux" "$profile/grub" -type f -name '*speech*' -delete 2>/dev/null || true

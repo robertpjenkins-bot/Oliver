@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie Pet
+Comment=Your own little cube pet: feed it, play with it, put it to bed
+Exec=/usr/local/bin/ollie-pet
+Icon=ollie-os
+Terminal=false
+Categories=Game;
