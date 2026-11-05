@@ -1,0 +1,60 @@
+## 🎮 Ollie OS — The Big Fun Update!
+
+Made by an awesome 8 year old. Great for gaming: comes with Steam, Wine and more, plus a debugger and a driver installer. Easy to install!
+
+### 🆕 What's new
+
+**🕹️ Games**
+- **Games app** – all your games in one place: Steam games (with their covers), Minecraft and more
+- **Drag and drop game files** – ROMs (NES, SNES, Game Boy, GBA, N64, DS, Sega), ISOs (PlayStation 1 & 2, PSP, GameCube, Wii) and Windows games (.exe). It works out which console each game is for and installs the right player by itself
+- **Game Mode** – Steam opens in big-screen Game Mode, like a Steam Machine
+- **Speed Boost** – full power while you play 🚀
+- **FPS counter** in games (Right Shift + F12 hides it)
+- **More controllers** work when you plug them in
+- **Minecraft** – the official launcher, one click to get it ⛏️
+- **Couch Co-op** – plug in controllers and see who is Player 1, 2, 3 and 4, then pick a game to play together 👫
+- **Box art** – game files in the Games app get their cover pictures by themselves
+- **Game Overlay** – choose just the FPS, everything (CPU, GPU, temperature) or nothing
+
+**🐾 Fun**
+- **Ollie Pet** – your own cube pet! Name it, feed it, play with it and put it to bed 💖 It grows up (baby, kid, then grown-up with a crown 👑), plays 3 mini-games (Catch, Hide and Seek, Dance Party) and can walk along the bottom of your screen
+- **Typing Game** – pop falling words by typing them, with levels and a best score ⌨️
+- **Ollie Finder** – type to find any app or file at once 🔍
+- **Start-up animation** (the Ollie cube spins) and a **start-up sound** 🔔
+- **Welcome app** with big buttons for everything
+- **Colours** – dark or light mode, in teal, purple or red 🎨
+- **Ollie talks!** 🗣️ Ollie says hello, cheers you on in games and reads words out loud (switch it off in Settings)
+- **Secret Easter eggs** 🤫 – there are hidden surprises to find! Hint: try typing some names into Ollie Finder… and gamers might know a secret code for the Welcome window ⬆️⬆️⬇️⬇️
+
+**🎨 Make stuff**
+- **Sticker Maker** – make stickers with shapes, emoji and words, and stick them on your desktop background
+- **Comic Maker** – make comics with 1 to 4 panels, characters and speech bubbles 💬
+- **Ollie Animator** – draw a cartoon frame by frame and save it as a GIF 🎞️
+- **Sound Board** – 12 big buttons with fun sounds, or record your own with the microphone 🔊
+
+**🧠 Learn stuff**
+- **Coding Quest** – give a robot instructions to reach the star, 10 levels 🤖⭐
+- **World Explorer** – a spinning globe with 176 countries, their flags, capitals and fun facts, plus a "Find it!" game 🌍
+- **Space Explorer** – visit the Sun, all 8 planets, the Moon and Pluto 🪐
+- **Spelling Bee** – hear a word and spell it, 8 levels from easy to tricky 🐝
+
+**🔔 Updates**
+- **Update Checker** – the first start asks if you want it. Then you get a notification when there's a new Ollie OS update, with an Install button
+- **Latest updates** – see a list of every update and install them in one click
+- **Update Ollie OS** – one click updates everything
+
+**👪 For grown-ups (in Ollie OS Settings, locked with a parent PIN)**
+- **Screen Time** – a daily limit with warnings, then "come back tomorrow" 🌙
+- **Inappropriate Typing Scanner** – asked about on the first start. It only notes bad words (even misspelled ones), and the notes open only with the parent PIN
+- **Firefox password** – the first start asks if Firefox should have a password
+
+### 💾 How to install
+- **Installers** (Windows .exe, Mac .dmg, Linux/SteamOS AppImage) download the official Arch Linux ISO and turn it into Ollie OS right on your computer, then ask if you want to write it to a drive. No GitHub, no sign-in!
+- When you install it, it asks if **Windows** should be on the start-up menu too
+- Starting from the drive: Steam Machine and Steam Deck, hold Volume Down. Dell: tap F12. Mac: hold Option
+
+### ⬆️ Already have Ollie OS?
+- **Game Pack Updater** – Game Mode, Speed Boost, Settings, Screen Time, Update Checker and more
+- **Fun Pack Updater** – Games, Ollie Pet, Typing Game, Ollie Finder, Couch Co-op, Sticker Maker, Comic Maker, Animator, Sound Board, Coding Quest, World Explorer, Space Explorer, Spelling Bee and the secrets
+
+The updaters check what you already have, fix anything broken and show a report.
