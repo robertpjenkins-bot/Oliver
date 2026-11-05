@@ -6,6 +6,24 @@ Made by an awesome 8 year old. Great for gaming: comes with Steam, Wine and more
 
 ### 🆕 What's new
 
+**🆕 Newest: the big November update**
+- **Game Hub** 📺 – every game on one big screen, made for the TV and a controller. The first time you plug in a controller, it asks which button should open it
+- **Quick Menu** ⚡ – over your game: volume, brightness, FPS limit, battery saver or Turbo, Do Not Disturb, screenshot, close the game
+- **Play Time** ⏱️ – how long you played each game this week, with a chart
+- **Controller as a mouse** 🖱️ – move the mouse and click with a controller on the desktop
+- **Ollie App Center** 🛍️ – free games picked for kids (racing, building, adventure, strategy, puzzles), one click each – plus **Epic & GOG games** with Heroic
+- **Trophies** 🏆 – 32 trophies to win across the Ollie apps, and a profile page
+- **Math Quest** 🧮 – sums with levels and stars, read out loud
+- **Fun Fact of the Day** 💡 – a new fact on your desktop every day
+- **Music Maker** 🎹 – piano, xylophone and 8-bit sounds, a beat maker, and save your songs as music files
+- **Photo Booth** 📸 – webcam photos with funny hats, stickers and effects
+- **Seasonal themes** 🎃❄️🎂 – Ollie OS dresses up for Halloween, winter and your birthday
+- **Ollie's Tour** 🗺️ – Ollie shows you around on the first start
+- **Ollie login screen** 👋 and an **Ollie screensaver** where the pet plays ball
+- **Bedtime** 🌙 – for grown-ups: goodnight on school nights and weekends
+- **Easy reading** 📖 – bigger, easier text, and **Read aloud** (Meta+Alt+R)
+- **11 languages** 🌍 – Español, Français, Deutsch and more
+
 **🕹️ Games**
 - **Games app** – all your games in one place: Steam games (with their covers), Minecraft and more
 - **Drag and drop game files** – ROMs (NES, SNES, Game Boy, GBA, N64, DS, Sega), ISOs (PlayStation 1 & 2, PSP, GameCube, Wii) and Windows games (.exe). It works out which console each game is for and installs the right player by itself
@@ -63,7 +81,7 @@ Made by an awesome 8 year old. Great for gaming: comes with Steam, Wine and more
 - Starting from the drive: Steam Machine and Steam Deck, hold Volume Down. Dell: tap F12. Mac: hold Option
 
 ### ⬆️ Already have Ollie OS?
-- **Ollie OS 1.4 Updater** – everything new in one file (all of the below, plus Recovery Mode and the new app icons)
+- **Ollie OS Latest Updater** – everything new in one file (all of the below, plus Recovery Mode and the new app icons). With the Update Checker on, you get it as a notification too
 - **Game Pack Updater** – Game Mode, Speed Boost, Settings, Screen Time, Update Checker and more
 - **Fun Pack Updater** – Games, Ollie Pet, Typing Game, Ollie Finder, Couch Co-op, Sticker Maker, Comic Maker, Animator, Sound Board, Coding Quest, World Explorer, Space Explorer, Spelling Bee and the secrets
 

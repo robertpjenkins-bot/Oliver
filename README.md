@@ -18,11 +18,15 @@ playing, making and learning.
 
 ![Ollie OS's apps](docs/ollie-os-showcase.jpg)
 
-- **Play:** Games (drop in ROMs and ISOs), Couch Co-op, Typing Game, Ollie Pet
-- **Make:** Sticker Maker, Comic Maker, Ollie Animator, Sound Board
-- **Learn:** Coding Quest, World Explorer, Space Explorer, Spelling Bee
+- **Play:** Game Hub (TV mode for controllers), Games (drop in ROMs and ISOs),
+  App Center (free games, Epic & GOG), Couch Co-op, Typing Game, Ollie Pet,
+  Quick Menu, Play Time, Trophies
+- **Make:** Music Maker, Photo Booth, Sticker Maker, Comic Maker, Ollie Animator, Sound Board
+- **Learn:** Coding Quest, Math Quest, World Explorer, Space Explorer, Spelling Bee,
+  Fun Fact of the Day, Ollie's Tour
 - **Keep it going:** one-click updates, the Update Checker, Recovery Mode,
-  The Fixer, and parent settings (Screen Time, Typing Scanner, Firefox password)
+  The Fixer, seasonal themes, Easy reading, 11 languages, and parent settings
+  (Screen Time, Bedtime, Typing Scanner, Firefox password)
 
 ## How to get it
 
@@ -39,7 +43,7 @@ playing, making and learning.
    tap **F12**; Mac, hold **Option**. Try it out, and if you like it, open
    **Install Ollie OS** on its desktop.
 
-**Already have Ollie OS?** Download the **Ollie OS 1.4 Updater** and open it:
+**Already have Ollie OS?** Download the **Ollie OS Latest Updater** and open it:
 it brings everything new, then Update Ollie OS gets the rest. Later versions
 can go on with **Recovery Mode**, keeping all your files.
 
