@@ -1,0 +1,106 @@
+#!/bin/bash
+# Music Maker (music.qml): a piano, three instruments, a beat maker; songs
+# kept in ~/Music/Ollie Songs (NAME.song.json), and saved as music files
+# there too (NAME.ogg, mixed by ffmpeg).
+# The sounds are made once, by ffmpeg, into ~/.local/share/ollie/music:
+# 25 notes (C4 to C6) for each instrument, and 4 drums. They play with
+# pw-play (PipeWire).
+set -uo pipefail
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+export QML_XHR_ALLOW_FILE_READ=1
+sounds="$HOME/.local/share/ollie/music" songs="$HOME/Music/Ollie Songs"
+run="${XDG_RUNTIME_DIR:-/tmp}"
+mkdir -p "$sounds" "$songs"
+command -v ffmpeg >/dev/null || { kdialog --title "Music Maker" --error "Music Maker needs ffmpeg: open Update Ollie OS to add it."; exit 1; }
+
+# make NAME SECONDS EXPRESSION (in t; commas as \,), with a short fade at the end.
+make() {
+    [[ -s "$sounds/$1.wav" ]] && return 0
+    ffmpeg -loglevel error -y -f lavfi -i "aevalsrc=($3)*min(1\\,($2-t)*25)*min(1\\,t*300):s=44100:d=$2" -ac 1 "$sounds/$1.wav"
+}
+if [[ ! -s "$sounds/synth-24.wav" ]]; then
+    kdialog --title "Music Maker" --passivepopup "Getting the instruments ready (just this once)..." 5 2>/dev/null &
+    for n in $(seq 0 24); do
+        f="$(awk -v m=$((60 + n)) 'BEGIN {printf "%.3f", 440 * 2 ^ ((m - 69) / 12)}')"
+        make "piano-$n" 1.6 "0.45*exp(-2.6*t)*(sin(2*PI*$f*t)+0.45*sin(4*PI*$f*t)+0.2*sin(6*PI*$f*t)+0.08*sin(8*PI*$f*t))"
+        make "xylo-$n" 0.9 "0.6*exp(-7*t)*(sin(2*PI*$f*t)+0.3*sin(2*PI*$f*3.93*t))"
+        make "synth-$n" 1.0 "0.18*exp(-1.8*t)*sgn(sin(2*PI*$f*t))"
+    done
+fi
+make kick 0.45 "0.9*exp(-9*t)*sin(2*PI*(50+110*exp(-28*t))*t)"
+make snare 0.3 "0.45*exp(-15*t)*(random(0)*2-1)+0.3*exp(-20*t)*sin(2*PI*185*t)"
+make hihat 0.12 "0.3*exp(-45*t)*(random(0)*2-1)"
+make clap 0.25 "0.5*exp(-22*t)*(random(0)*2-1)*(0.6+0.4*sin(2*PI*90*t))"
+
+play() { [[ -s $1 ]] && (pw-play "$1" >/dev/null 2>&1 || paplay "$1" >/dev/null 2>&1) & }
+safe_name() { [[ $1 =~ ^[^/\\]{1,40}$ && $1 != .* ]]; }
+
+# export NAME: the song, mixed into NAME.ogg.
+export_song() {
+    local name=$1
+    python3 -I - "$songs/$name.song.json" "$sounds" "$songs/$name.ogg" <<'PY'
+import json, subprocess, sys
+song, sounds, out = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
+events = [(int(ms), f"{inst}-{n}") for ms, n, inst in song.get("notes", [])][:400]
+drums = ["kick", "snare", "hihat", "clap"]
+beat = song.get("beat") or [[], [], [], []]
+step = 60000 / (song.get("tempo") or 110) / 4
+end = (max(e[0] for e in events) + 1500) if events else int(step * 64)
+if any(beat):
+    s = 0
+    while s * step < end and len(events) < 900:
+        for d, steps in enumerate(beat):
+            if s % 16 in steps:
+                events.append((int(s * step), drums[d]))
+        s += 1
+if not events:
+    sys.exit(1)
+inputs, filters = [], []
+for i, (ms, snd) in enumerate(events):
+    inputs += ["-i", f"{sounds}/{snd}.wav"]
+    filters.append(f"[{i}]adelay={ms}|{ms}[a{i}]")
+mix = "".join(f"[a{i}]" for i in range(len(events))) + f"amix=inputs={len(events)}:normalize=0,volume=0.8,alimiter"
+cmd = ["ffmpeg", "-loglevel", "error", "-y"] + inputs + ["-filter_complex", ";".join(filters) + ";" + mix, "-c:a", "libvorbis", "-q:a", "5", out]
+sys.exit(subprocess.run(cmd).returncode)
+PY
+}
+
+list="$run/ollie-music-$$.songs" open="$run/ollie-music-$$.song"
+trap 'rm -f -- "$list" "$open"' EXIT
+for f in "$songs"/*.song.json; do [[ -f $f ]] && basename "$f" .song.json; done >"$list"
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION note "*)
+        read -r inst n <<<"${line#*OLLIE-ACTION note }"
+        [[ $inst =~ ^(piano|xylo|synth)$ && $n =~ ^[0-9]{1,2}$ ]] && play "$sounds/$inst-$n.wav"
+        ;;
+    *"OLLIE-ACTION drums "*)
+        for d in ${line#*OLLIE-ACTION drums }; do
+            [[ $d =~ ^(kick|snare|hihat|clap)$ ]] && play "$sounds/$d.wav"
+        done
+        ;;
+    *"OLLIE-SONG "*)
+        rest="${line#*OLLIE-SONG }"
+        name="${rest%%$'\t'*}"
+        safe_name "$name" && printf '%s\n' "${rest#*$'\t'}" >"$songs/$name.song.json"
+        ;;
+    *"OLLIE-ACTION export "*)
+        name="${line#*OLLIE-ACTION export }"
+        if safe_name "$name"; then
+            (export_song "$name" && notify-send -a "Music Maker" -i ollie-music "🎵 \"$name\" is saved" "In Music, Ollie Songs ($name.ogg)" 2>/dev/null) &
+        fi
+        ;;
+    *"OLLIE-ACTION open "*)
+        name="${line#*OLLIE-ACTION open }"
+        safe_name "$name" && [[ -f "$songs/$name.song.json" ]] &&
+            python3 -I -c 'import json, sys; s = json.load(open(sys.argv[1])); s["name"] = sys.argv[2]; json.dump(s, open(sys.argv[3], "w"))' \
+                "$songs/$name.song.json" "$name" "$open"
+        ;;
+    *"OLLIE-ACTION trophy "*)
+        read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
+        (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
+        ;;
+    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/music.qml -- "songs=$list" "song=$open" 2>&1)
+wait

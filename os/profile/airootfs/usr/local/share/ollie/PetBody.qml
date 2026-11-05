@@ -1,7 +1,8 @@
 // Ollie Pet's body (pet.qml and pet-desktop.qml): the Ollie cube with feet,
 // eyes that blink and look where it walks, cheeks and a mouth for its mood.
 // It grows: a baby (0-1 days old), a kid (2-5), then grown-up with a crown.
-// A secret: a pet called Ollie is golden and sparkles.
+// A secret: a pet called Ollie is golden and sparkles. In the seasons
+// (ollie-seasons) it wears a hat: a pumpkin, a snowflake, a party popper.
 import QtQuick
 
 Item {
@@ -12,6 +13,8 @@ Item {
     property real hopY: 0
     property int stage: 2           // 0 baby, 1 kid, 2 grown-up
     property bool golden: false
+    property string season: ""     // halloween, winter, birthday
+    readonly property string hat: ({ halloween: "🎃", winter: "❄️", birthday: "🎉" })[season] || ""
     readonly property color skin: golden ? "#fbbf24" : "#2dd4bf"
     readonly property color side: golden ? "#fde68a" : "#9eeee4"
     readonly property color dark: golden ? "#78350f" : "#0b4f4a"
@@ -95,12 +98,16 @@ Item {
                 }
             }
         }
+        Text { // the season's hat
+            visible: pet.hat !== ""
+            x: 44; y: -34; text: pet.hat; font.pixelSize: 36
+        }
         Text { // a grown-up's crown
-            visible: pet.stage === 2
+            visible: pet.stage === 2 && pet.hat === ""
             x: 46; y: -30; text: "👑"; font.pixelSize: 34
         }
         Text { // a baby's curl
-            visible: pet.stage === 0
+            visible: pet.stage === 0 && pet.hat === ""
             x: 56; y: -16; text: "🌱"; font.pixelSize: 24
         }
         Repeater { // a golden pet's sparkles

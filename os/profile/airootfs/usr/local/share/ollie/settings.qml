@@ -2,7 +2,7 @@
 // OLLIE-ACTION ... for ollie-settings to make:
 //   steam|fps|boost|sound on|off     colours dark|light teal|purple|red|gold [bg]
 //   screen-time MINUTES   extra MINUTES   scanner on|off   pin NEWPIN   notes   recovery
-//   pad-mouse on|off   pad-setup
+//   pad-mouse on|off   pad-setup   seasons on|off   birthday MM-DD
 // Arguments (what is on now): steam= fps= boost= sound= mode= colour=
 // screentime= scanner= pin= (the PIN's check sum) left= (minutes left today)
 // gold=on|off (the secret Ollie Gold colour, once found in Ollie Finder)
@@ -41,6 +41,10 @@ ApplicationWindow {
         { text: "1 hour 30 minutes a day", min: 90 }, { text: "2 hours a day", min: 120 },
         { text: "3 hours a day", min: 180 }, { text: "4 hours a day", min: 240 }
     ]
+    function setBirthday() {
+        if (bMonth.currentIndex > 0 && bDay.currentIndex > 0)
+            act("birthday " + String(bMonth.currentIndex).padStart(2, "0") + "-" + String(bDay.currentIndex).padStart(2, "0"));
+    }
     function applyColours() { act("colours " + mode + " " + colour + (bgToo.checked ? " bg" : "")) }
 
     ScrollView {
@@ -157,6 +161,27 @@ ApplicationWindow {
                         }
                     }
                     CheckBox { id: bgToo; text: "Change the background to match"; checked: true }
+                    Switch {
+                        text: "🎃❄️🎂  Seasonal themes: Halloween, winter and your birthday"
+                        checked: win.arg("seasons") !== "off"
+                        onToggled: win.act("seasons " + (checked ? "on" : "off"))
+                    }
+                    RowLayout {
+                        spacing: 8
+                        Label { text: "🎂 My birthday:" }
+                        ComboBox {
+                            id: bMonth
+                            model: ["Month", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+                            currentIndex: win.arg("birthday") ? parseInt(win.arg("birthday").split("-")[0]) : 0
+                            onActivated: win.setBirthday()
+                        }
+                        ComboBox {
+                            id: bDay
+                            model: ["Day"].concat(Array.from({ length: 31 }, (_, i) => String(i + 1)))
+                            currentIndex: win.arg("birthday") ? parseInt(win.arg("birthday").split("-")[1]) : 0
+                            onActivated: win.setBirthday()
+                        }
+                    }
                 }
             }
 

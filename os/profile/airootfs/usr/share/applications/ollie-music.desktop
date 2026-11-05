@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Music Maker
+Comment=Play the piano, make beats, and save your songs
+Exec=/usr/local/bin/ollie-music
+Icon=ollie-music
+Terminal=false
+Categories=AudioVideo;Audio;Music;Education;

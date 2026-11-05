@@ -1,0 +1,78 @@
+#!/bin/bash
+# Seasonal themes: Ollie OS changes by itself for Halloween (15 to 31
+# October), winter (1 December to 6 January) and your birthday (set in Ollie
+# OS Settings): its own background (only when the background is one of Ollie
+# OS's, never a picture you chose), a hello from Ollie, the pet's hat, and a
+# party on your birthday. Back to normal afterwards.
+#   ollie-seasons --watch   (at login, /etc/xdg/autostart) checks every hour
+#   ollie-seasons --now     which season it is: halloween|winter|birthday|none
+# Settings: ~/.config/ollie/seasons (SEASONS=on|off, BIRTHDAY=MM-DD); the
+# season shown now: ~/.config/ollie/season-now (the pet and Welcome read it).
+set -uo pipefail
+cfg="$HOME/.config/ollie"
+mkdir -p "$cfg"
+setting() { sed -n "s/^$1=//p" "$cfg/seasons" 2>/dev/null | tail -n 1; }
+
+season() {
+    [[ "$(setting SEASONS)" == off ]] && { echo none; return; }
+    local md birthday
+    md="$(date +%m-%d)" birthday="$(setting BIRTHDAY)"
+    if [[ -n $birthday && $md == "$birthday" ]]; then echo birthday
+    elif [[ $md > 10-14 && $md < 11-01 ]]; then echo halloween
+    elif [[ $md > 11-30 || $md < 01-07 ]]; then echo winter
+    else echo none
+    fi
+}
+[[ ${1:-} == --now ]] && { season; exit 0; }
+
+# The desktop's background now, and whether it is one of Ollie OS's.
+current_wallpaper() { grep -h '^Image=' "$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc" 2>/dev/null | head -n 1 | sed 's/^Image=//; s|^file://||'; }
+ollie_wallpaper() { [[ -z $1 || $1 == /usr/share/wallpapers/OllieOS* ]]; }
+normal_wallpaper() {
+    case "$(sed -n 's/^COLOUR=//p' "$cfg/colours" 2>/dev/null | tail -n 1)" in
+    purple) echo /usr/share/wallpapers/OllieOS-Purple ;;
+    red) echo /usr/share/wallpapers/OllieOS-Red ;;
+    gold) echo /usr/share/wallpapers/OllieOS-Gold ;;
+    *) echo /usr/share/wallpapers/OllieOS ;;
+    esac
+}
+
+apply() {
+    local now applied wall name
+    now="$(season)" applied="$(cat "$cfg/season-now" 2>/dev/null || echo none)"
+    [[ $now == "$applied" ]] && return
+    echo "$now" >"$cfg/season-now"
+    case $now in
+    halloween) wall=/usr/share/wallpapers/OllieOS-Halloween ;;
+    winter) wall=/usr/share/wallpapers/OllieOS-Winter ;;
+    birthday) wall=/usr/share/wallpapers/OllieOS-Birthday ;;
+    *) wall="$(normal_wallpaper)" ;;
+    esac
+    if ollie_wallpaper "$(current_wallpaper)" && [[ -d $wall ]]; then
+        plasma-apply-wallpaperimage "$wall" >/dev/null 2>&1
+    fi
+    name="$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
+    case $now in
+    halloween)
+        notify-send -a "Ollie OS" -i ollie-os "🎃 Happy Halloween!" "Ollie OS is dressed up for Halloween." 2>/dev/null
+        /usr/local/bin/ollie-say "Happy Halloween! Boo!" >/dev/null 2>&1
+        ;;
+    winter)
+        notify-send -a "Ollie OS" -i ollie-os "❄️ It's winter!" "Ollie OS is ready for the snow." 2>/dev/null
+        /usr/local/bin/ollie-say "Brr! It's winter! Let it snow!" >/dev/null 2>&1
+        ;;
+    birthday)
+        /usr/local/bin/ollie-say "Happy birthday${name:+, $name}! Hooray!" >/dev/null 2>&1 &
+        QT_FORCE_STDERR_LOGGING=1 qml6 /usr/local/share/ollie/birthday.qml -- "name=$name" >/dev/null 2>&1 &
+        ;;
+    esac
+}
+
+if [[ ${1:-} == --watch ]]; then
+    sleep 20 # (the desktop first)
+    while :; do
+        apply
+        sleep 3600
+    done
+fi
+apply

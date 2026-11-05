@@ -55,8 +55,14 @@ Window {
             w.send(p.name + " " + words[mood] + "\n");
         }
     }
-    Component.onCompleted: load()
-    Timer { interval: 30000; running: true; repeat: true; onTriggered: win.load() }
+    property string season: ""
+    function loadSeason() {
+        const x = new XMLHttpRequest();
+        x.open("GET", "file://" + arg("season"), false);
+        try { x.send(); season = x.responseText.trim().replace("none", ""); } catch (e) { season = ""; }
+    }
+    Component.onCompleted: { load(); loadSeason(); }
+    Timer { interval: 30000; running: true; repeat: true; onTriggered: { win.load(); win.loadSeason(); } }
 
     readonly property string mood: pet.asleep ? "asleep" : pet.full < 25 ? "hungry" : pet.energy < 20 ? "sleepy" : pet.fun < 25 ? "bored" : "happy"
     readonly property int ageDays: pet.born > 0 ? Math.floor((Date.now() - pet.born) / 86400000) : 0
@@ -69,6 +75,7 @@ Window {
         mood: win.mood
         stage: win.ageDays < 2 ? 0 : win.ageDays < 6 ? 1 : 2
         golden: win.pet.name.toLowerCase() === "ollie"
+        season: win.season
         scale: 0.8
     }
     Rectangle { // what it says now and then

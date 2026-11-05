@@ -1,0 +1,24 @@
+#!/bin/bash
+# Photo Booth (photobooth.qml): the webcam with hats, stickers and effects;
+# photos in Pictures/Photo Booth. Needs Qt Multimedia (qt6-multimedia and
+# its FFmpeg part: Update Ollie OS adds them).
+set -uo pipefail
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+dir="$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")/Photo Booth"
+mkdir -p "$dir"
+if [[ ! -d /usr/lib/qt6/qml/QtMultimedia ]]; then
+    kdialog --title "Photo Booth" --sorry "Photo Booth needs Qt Multimedia: open Update Ollie OS to add it, then try again." 2>/dev/null
+    exit 1
+fi
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION saved "*)
+        (pw-play /usr/share/sounds/freedesktop/stereo/camera-shutter.oga >/dev/null 2>&1 || paplay /usr/share/sounds/freedesktop/stereo/camera-shutter.oga >/dev/null 2>&1) &
+        ;;
+    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
+    *"OLLIE-ACTION trophy "*)
+        read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
+        (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
+        ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/photobooth.qml -- "dir=$dir" 2>&1)

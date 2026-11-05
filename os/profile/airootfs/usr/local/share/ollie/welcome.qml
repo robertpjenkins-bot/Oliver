@@ -77,7 +77,11 @@ ApplicationWindow {
             ColumnLayout {
                 spacing: 2
                 Label { text: "Welcome to Ollie OS!"; color: "white"; font.pixelSize: 34; font.bold: true }
-                Label { text: win.rainbow ? "🌈 You found the secret code! Ollie Gold is in Settings now. ✨" : "What do you want to do first?"; color: "#ccfbf1"; font.pixelSize: 18 }
+                Label {
+                    text: win.rainbow ? "🌈 You found the secret code! Ollie Gold is in Settings now. ✨"
+                        : (({ halloween: "🎃 Happy Halloween! ", winter: "❄️ Happy winter! ", birthday: "🎂 Happy birthday! " })[win.arg("season")] || "") + "What do you want to do first?"
+                    color: "#ccfbf1"; font.pixelSize: 18
+                }
             }
         }
 

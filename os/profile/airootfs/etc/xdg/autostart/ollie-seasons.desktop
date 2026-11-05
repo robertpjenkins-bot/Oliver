@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie OS seasons
+Comment=Halloween, winter and birthday themes
+Exec=/usr/local/bin/ollie-seasons --watch
+Icon=ollie-os
+Terminal=false
+NoDisplay=true
+X-KDE-autostart-phase=2

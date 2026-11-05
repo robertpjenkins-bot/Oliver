@@ -163,6 +163,7 @@ ApplicationWindow {
         mood: win.mood
         stage: win.stage
         golden: saved.name.toLowerCase() === "ollie"
+        season: win.arg("season")
         visible: !games.playing || games.which === "catch" || games.which === "dance"
         MouseArea {
             anchors.fill: parent

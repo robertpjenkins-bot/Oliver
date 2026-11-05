@@ -12,7 +12,7 @@ mkdir -p "$cfg" "$HOME/.cache"
 
 desktop_pet() {
     pgrep -u "$UID" -f 'pet-desktop.qml' >/dev/null && return 0
-    (setsid qml6 /usr/local/share/ollie/pet-desktop.qml -- "config=$cfg/pet.ini" "mood=$mood" >"${XDG_RUNTIME_DIR:-/tmp}/ollie-pet-desktop.log" 2>&1 &)
+    (setsid qml6 /usr/local/share/ollie/pet-desktop.qml -- "config=$cfg/pet.ini" "mood=$mood" "season=$cfg/season-now" >"${XDG_RUNTIME_DIR:-/tmp}/ollie-pet-desktop.log" 2>&1 &)
     # (It needs Plasma's layer shell: say so if it could not start.)
     sleep 3
     pgrep -u "$UID" -f 'pet-desktop.qml' >/dev/null ||
@@ -39,4 +39,4 @@ while IFS= read -r line; do
         pkill -u "$UID" -f 'pet-desktop.qml'
         ;;
     esac
-done < <(qml6 /usr/local/share/ollie/pet.qml -- "config=$cfg/pet.ini" "mood=$mood" "desktop=$([[ -f $auto ]] && echo on || echo off)" 2>&1)
+done < <(qml6 /usr/local/share/ollie/pet.qml -- "config=$cfg/pet.ini" "mood=$mood" "season=$(sed 's/none//' "$cfg/season-now" 2>/dev/null)" "desktop=$([[ -f $auto ]] && echo on || echo off)" 2>&1)

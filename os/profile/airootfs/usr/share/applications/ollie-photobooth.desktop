@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Photo Booth
+Comment=Funny photos with your webcam: hats, stickers and effects
+Exec=/usr/local/bin/ollie-photobooth
+Icon=ollie-photobooth
+Terminal=false
+Categories=Graphics;Photography;

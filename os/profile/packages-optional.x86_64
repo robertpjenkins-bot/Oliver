@@ -22,3 +22,6 @@ qt6-declarative
 layer-shell-qt
 # The Quick Menu: the screen's brightness
 brightnessctl
+# Photo Booth: the webcam (Qt Multimedia, with FFmpeg)
+qt6-multimedia
+qt6-multimedia-ffmpeg
