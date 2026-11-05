@@ -1,4 +1,4 @@
-## 🎮 Ollie OS — The Big Fun Update!
+## 🎮 Ollie OS 1.4 — The Big Fun Update!
 
 Made by an awesome 8 year old. Great for gaming: comes with Steam, Wine and more, plus a debugger and a driver installer. Easy to install!
 

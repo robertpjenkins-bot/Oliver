@@ -3,7 +3,7 @@
 // tick box whether to open at every start (OLLIE-ACTION at-start on|off).
 // A secret: the code ↑ ↑ ↓ ↓ ← → ← → B A makes a rainbow and confetti, and
 // unlocks the Ollie Gold colours in Settings (OLLIE-ACTION secret konami).
-// Arguments: atstart=on|off store=on|off.
+// Arguments: atstart=on|off store=on|off version= (Ollie OS's, /etc/ollie-version).
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -123,7 +123,7 @@ ApplicationWindow {
                 palette.windowText: "white"
             }
             Item { Layout.fillWidth: true }
-            Label { text: "Find it again in the apps menu: Ollie OS Welcome"; color: "#99f6e4"; font.pixelSize: 13 }
+            Label { text: (win.arg("version") ? "Ollie OS " + win.arg("version") + "   ·   " : "") + "Find it again in the apps menu: Ollie OS Welcome"; color: "#99f6e4"; font.pixelSize: 13 }
             Button { text: "Close"; onClicked: Qt.quit() }
         }
     }

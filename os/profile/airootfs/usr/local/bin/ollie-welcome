@@ -91,4 +91,4 @@ while IFS= read -r line; do
     "at-start on") touch "$cfg/welcome-at-start" ;;
     "at-start off") rm -f "$cfg/welcome-at-start" ;;
     esac
-done < <(qml6 /usr/local/share/ollie/welcome.qml -- "atstart=$at_start" "store=$(command -v plasma-discover >/dev/null && echo on || echo off)" 2>&1)
+done < <(qml6 /usr/local/share/ollie/welcome.qml -- "atstart=$at_start" "version=$(head -n 1 /etc/ollie-version 2>/dev/null)" "store=$(command -v plasma-discover >/dev/null && echo on || echo off)" 2>&1)

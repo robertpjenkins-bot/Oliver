@@ -58,7 +58,9 @@ ApplicationWindow {
                 if (line.indexOf("P ") === 0) {
                     const m = line.match(/^P (\d+) (.*)$/);
                     if (m) { win.percent = parseInt(m[1]); win.step = m[2]; }
-                } else if (line === "DONE") { win.page = "done"; poll.stop(); }
+                } else if (line.indexOf("VERSION ") === 0) win.newVersion = line.substring(8);
+                else if (line.indexOf("SIZE ") === 0) win.isoSize = parseFloat(line.substring(5));
+                else if (line === "DONE") { win.page = "done"; poll.stop(); }
                 else if (line === "ISOLLIE") { win.page = "isollie"; poll.stop(); }
                 else if (line === "NOTOLLIE") { win.page = "notollie"; poll.stop(); }
                 else if (line.indexOf("ERROR ") === 0) { win.problem = line.substring(6); win.page = "error"; poll.stop(); }
@@ -71,6 +73,7 @@ ApplicationWindow {
         }
     }
     property real isoSize: 0
+    property string newVersion: ""
 
     FileDialog {
         id: picker
@@ -181,7 +184,7 @@ ApplicationWindow {
         ColumnLayout {
             visible: win.page === "done"
             spacing: 14
-            Words { text: "🎉 The new Ollie OS is ready!"; font.pixelSize: 24; font.bold: true; color: "#5eead4" }
+            Words { text: "🎉 " + (win.newVersion ? "Ollie OS " + win.newVersion : "The new Ollie OS") + " is ready!"; font.pixelSize: 24; font.bold: true; color: "#5eead4" }
             Words {
                 text: win.mode === "keep" ? "Restart to start it. Everything of yours comes along. (If something is wrong with it, pick \"Ollie OS (before the update)\" on the start-up menu in the first 10 minutes.)"
                     : "Restart to start it. It asks you to make a username and password, like the first time."

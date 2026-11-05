@@ -20,7 +20,8 @@
 # PROGRESS gets one line per step: "P PERCENT TEXT", then "DONE", or
 # "ERROR TEXT", or "ISOLLIE" (erase was asked, but it is an Ollie OS ISO)
 # or "NOTOLLIE" (keep or fresh was asked, but it is not). Erasing also
-# says "SIZE BYTES" (the ISO's), then dd's own progress.
+# says "SIZE BYTES" (the ISO's), then dd's own progress. For an Ollie OS
+# ISO, "VERSION X" says which version it is (its /etc/ollie-version).
 set -uo pipefail
 mode=${1:-} iso=${2:-} progress=${3:-/dev/null}
 readonly R=/run/ollie-recovery
@@ -68,6 +69,8 @@ is_ollie=0
 if [[ -f $sfs ]] && mount -o loop,ro "$sfs" "$R/sfs" 2>/dev/null; then
     [[ -x "$R/sfs/usr/local/bin/ollie-welcome" && -d "$R/sfs/usr/local/share/ollie" ]] && is_ollie=1
 fi
+
+((is_ollie)) && [[ -s "$R/sfs/etc/ollie-version" ]] && say "VERSION $(head -n 1 "$R/sfs/etc/ollie-version" | tr -cd '0-9A-Za-z. -')"
 
 # --- Any other ISO: written over the whole drive -----------------------------------------------
 if [[ $mode == erase ]]; then
