@@ -137,8 +137,11 @@ ApplicationWindow {
                 id: atStart
                 checked: win.arg("atstart") === "on"
                 onToggled: win.act("at-start " + (checked ? "on" : "off"))
-                text: "Show this when Ollie OS starts"
-                palette.windowText: "#22252B"
+            }
+            // Its words in the window's own ink (the box's own text follows dark mode).
+            Label {
+                text: "Show this when Ollie OS starts"; color: "#22252B"; font.pixelSize: 14
+                MouseArea { anchors.fill: parent; onClicked: atStart.toggle(), atStart.toggled() }
             }
             Item { Layout.fillWidth: true }
             Label { text: (win.arg("version") ? "Ollie OS " + win.arg("version") + "  ·  " : "") + "It's in the apps menu too: Ollie OS Welcome"; color: "#6B6F78"; font.pixelSize: 13 }
