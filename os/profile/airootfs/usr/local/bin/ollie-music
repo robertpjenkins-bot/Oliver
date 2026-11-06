@@ -87,7 +87,7 @@ while IFS= read -r line; do
     *"OLLIE-ACTION export "*)
         name="${line#*OLLIE-ACTION export }"
         if safe_name "$name"; then
-            (export_song "$name" && notify-send -a "Music Maker" -i ollie-music "🎵 \"$name\" is saved" "In Music, Ollie Songs ($name.ogg)" 2>/dev/null) &
+            (export_song "$name" && notify-send -a "Music Maker" -i ollie-music "\"$name\" is saved" "In Music, Ollie Songs ($name.ogg)" 2>/dev/null) &
         fi
         ;;
     *"OLLIE-ACTION open "*)

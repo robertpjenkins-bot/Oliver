@@ -64,7 +64,7 @@ check() { # check EVENT: award what it reached
         ((${now:-0} >= target)) || continue
         printf '%s\t%s\n' "$id" "$(date +%F)" >>"$earned"
         if command -v notify-send >/dev/null; then
-            notify-send -a "Ollie OS" -i ollie-trophies "🏆 Trophy: $emoji $name" "$how" 2>/dev/null &
+            notify-send -a "Ollie OS" -i ollie-trophies "New trophy: $name" "$how" 2>/dev/null &
         fi
     done <<<"$TROPHIES"
 }

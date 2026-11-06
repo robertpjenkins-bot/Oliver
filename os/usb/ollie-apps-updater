@@ -123,7 +123,7 @@ report="$tmp/report.txt"
     if [[ -n $checks ]]; then
         echo
         echo "Does everything work?"
-        sed -e 's/^OK /   ✔  /' -e 's/^FIXED /   🔧 fixed: /' -e 's/^LATER /   ⏳ next: /' -e 's/^PROBLEM /   ✖  /' <<<"$checks"
+        sed -e 's/^OK /   ✔  /' -e 's/^FIXED /   +  fixed: /' -e 's/^LATER /   …  next: /' -e 's/^PROBLEM /   ✖  /' <<<"$checks"
     fi
     echo
     if ((${#added[@]} + ${#replaced[@]} + ${#runnable[@]} + ${#turned_on[@]} == 0)) && ! grep -q '^\(FIXED\|LATER\|PROBLEM\) ' <<<"$checks"; then

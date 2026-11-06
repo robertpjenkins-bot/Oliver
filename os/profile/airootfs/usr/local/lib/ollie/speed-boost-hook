@@ -9,7 +9,7 @@ start)
         [[ -s $saved ]] || powerprofilesctl get >"$saved" 2>/dev/null
         powerprofilesctl set performance 2>/dev/null
     fi
-    kdialog --title "Speed Boost" --passivepopup "🚀 Speed Boost on: full power for your game" 4 2>/dev/null &
+    kdialog --title "Speed Boost" --passivepopup "Speed Boost on: full power for your game" 4 2>/dev/null &
     ;;
 end)
     if command -v powerprofilesctl >/dev/null; then

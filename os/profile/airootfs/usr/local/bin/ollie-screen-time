@@ -44,8 +44,8 @@ while sleep 60; do
     [[ $left == off && $bed == off ]] && continue
     user="$(at_computer)" || continue
     case $bed in
-    10 | 5) tell "$user" "🌙 Bedtime in $bed minutes. Time to save your game!" ;;
-    1) tell "$user" "🌙 Bedtime in 1 minute! Save your game now." ;;
+    10 | 5) tell "$user" "Bedtime in $bed minutes. Time to save your game." ;;
+    1) tell "$user" "Bedtime in 1 minute. Save your game now." ;;
     bed)
         if ! pgrep -u "$user" -f 'ollie-timesup --bedtime' >/dev/null; then
             close_games "$user"
@@ -59,8 +59,8 @@ while sleep 60; do
         echo $(($(cat "$STATE/used-$day" 2>/dev/null || echo 0) + 1)) >"$STATE/used-$day"
         left=$((left - 1))
         case $left in
-        10 | 5) tell "$user" "⏰ $left minutes of screen time left today. Time to save your game!" ;;
-        1) tell "$user" "⏰ 1 minute of screen time left today! Save your game now." ;;
+        10 | 5) tell "$user" "$left minutes of screen time left today. Time to save your game." ;;
+        1) tell "$user" "1 minute of screen time left today. Save your game now." ;;
         0) close_games "$user" ;;
         esac
     fi

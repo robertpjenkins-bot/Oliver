@@ -138,10 +138,10 @@ ApplicationWindow {
                                 visible: status === Image.Ready
                                 asynchronous: true
                             }
-                            Label {
+                            Label { // no cover: its first letter, big
                                 anchors.centerIn: parent
-                                text: modelData.emoji
-                                font.pixelSize: 64
+                                text: (modelData.name || "?")[0]
+                                color: "#C9CAD0"; font.pixelSize: 72; font.bold: true
                                 visible: !modelData.cover
                             }
                         }

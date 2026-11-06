@@ -64,7 +64,7 @@ while IFS= read -r line; do
         close
         mkdir -p "$HOME/Pictures/Screenshots"
         f="$HOME/Pictures/Screenshots/Screenshot $(date '+%Y-%m-%d %H-%M-%S').png"
-        (sleep 0.6; spectacle -b -n -f -o "$f" >/dev/null 2>&1 && notify-send -a "Ollie OS" -i camera-photo "📸 Screenshot saved" "In Pictures, Screenshots" 2>/dev/null) &
+        (sleep 0.6; spectacle -b -n -f -o "$f" >/dev/null 2>&1 && notify-send -a "Ollie OS" -i camera-photo "Screenshot saved" "In Pictures, Screenshots" 2>/dev/null) &
         ;;
     close-game) close; /usr/local/bin/ollie-playtime --close ;;
     run)

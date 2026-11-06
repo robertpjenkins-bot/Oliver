@@ -54,10 +54,10 @@ apply() {
     name="$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
     case $now in
     halloween)
-        notify-send -a "Ollie OS" -i ollie-os "🎃 Happy Halloween!" "Ollie OS is dressed up for Halloween." 2>/dev/null
+        notify-send -a "Ollie OS" -i ollie-os "Happy Halloween" "Ollie OS is dressed up for Halloween." 2>/dev/null
         ;;
     winter)
-        notify-send -a "Ollie OS" -i ollie-os "❄️ It's winter!" "Ollie OS is ready for the snow." 2>/dev/null
+        notify-send -a "Ollie OS" -i ollie-os "It's winter" "Ollie OS is ready for the snow." 2>/dev/null
         ;;
     birthday)
         QT_FORCE_STDERR_LOGGING=1 qml6 /usr/local/share/ollie/birthday.qml -- "name=$name" >/dev/null 2>&1 &

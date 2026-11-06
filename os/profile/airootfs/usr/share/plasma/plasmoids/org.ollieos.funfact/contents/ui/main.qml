@@ -35,26 +35,22 @@ PlasmoidItem {
         Layout.preferredWidth: 400
         Layout.minimumHeight: 170
         Layout.preferredHeight: 210
-        radius: 22
-        gradient: Gradient {
-            GradientStop { position: 0; color: "#e60f766e" }
-            GradientStop { position: 1; color: "#e6312e81" }
-        }
-        border.color: "#5eead4"
-        border.width: 2
+        radius: 6 // a note card
+        color: "#FBF7EE"
+        border.color: "#DDD5C7"
+        border.width: 1
 
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: 16
             spacing: 8
             RowLayout {
-                Text { text: "💡"; font.pixelSize: 22 }
-                Text { text: "Fun fact of the day"; color: "#ccfbf1"; font.pixelSize: 15; font.bold: true; Layout.fillWidth: true }
-                Text { text: root.fact[0]; font.pixelSize: 34 }
+                Text { text: "DID YOU KNOW?"; color: "#C8473D"; font.pixelSize: 13; font.bold: true; font.letterSpacing: 1; Layout.fillWidth: true }
             }
             Text {
                 text: root.fact[1]
-                color: "white"
+                color: "#22252B"
+                font.family: "Noto Serif"
                 font.pixelSize: 18
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
@@ -63,7 +59,7 @@ PlasmoidItem {
             RowLayout {
                 Item { Layout.fillWidth: true }
                 PlasmaComponents.Button {
-                    text: "Another one ▶"
+                    text: "Another one →"
                     onClicked: { root.extra++; root.shell("/usr/local/bin/ollie-trophy count facts"); }
                 }
             }
