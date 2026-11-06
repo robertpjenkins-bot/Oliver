@@ -2,7 +2,7 @@
 // the star with code blocks: Forward, Turn left, Turn right, and (from
 // level 4) Repeat, which does the next block several times. Build the
 // program, press Run, and watch it go. 10 levels; fewer blocks, more stars.
-// Says on the console: OLLIE-ACTION say TEXT.
+// Says on the console: OLLIE-ACTION trophy ...
 // Argument: config=FILE (the stars won).
 // (Every level was checked to have a way to the star; "par" is the fewest
 // blocks for it.)
@@ -26,7 +26,6 @@ ApplicationWindow {
                 return a[i].substring(n.length + 1);
         return "";
     }
-    function say(t) { console.log("OLLIE-ACTION say " + t) }
     function trophy(w) { console.log("OLLIE-ACTION trophy " + w) }
 
     readonly property var levels: [{"name": "Walk to the star", "repeat": false, "rows": ["........", "........", "S..*....", "........", "........", "........"], "par": 3}, {"name": "Turn the corner", "repeat": false, "rows": ["S.##....", "........", ".*......", "........", "........", "........"], "par": 4}, {"name": "Zig zag", "repeat": false, "rows": ["S.......", "..#.....", "....*...", "........", "........", "........"], "par": 7}, {"name": "Repeat!", "repeat": true, "rows": ["........", "........", "........", "S......*", "........", "........"], "par": 2}, {"name": "Big L", "repeat": true, "rows": ["S.......", "........", "........", "........", ".....*..", "........"], "par": 5}, {"name": "Around the rocks", "repeat": true, "rows": ["S..#....", "...#....", "...#..*.", "........", "........", "........"], "par": 8}, {"name": "The stairs", "repeat": true, "rows": ["S#######", ".......#", "######.#", "#......#", "#.######", "#......*"], "par": 17}, {"name": "Snake", "repeat": true, "rows": ["S......#", "######.#", "#......#", "#.######", "#......*", "########"], "par": 14}, {"name": "Spiral", "repeat": true, "rows": ["S.......", "#######.", "#.....#.", "#.#*..#.", "#.####..", "#......."], "par": 16}, {"name": "The big maze", "repeat": true, "rows": ["S#......", ".#.####.", ".#.#..#.", ".#.#*.#.", "...#..#.", "#......."], "par": 13}]
@@ -84,7 +83,7 @@ ApplicationWindow {
             if (win.stepAt >= win.steps.length) {
                 win.running = false; win.activeBlock = -1;
                 if (win.at(win.px, win.py) === "*") win.won();
-                else { win.message = "Not at the star yet. Add more blocks!"; win.say("Not there yet!"); }
+                else { win.message = "Not at the star yet. Add more blocks!"; }
                 return;
             }
             const st = win.steps[win.stepAt++];
@@ -95,7 +94,7 @@ ApplicationWindow {
                 const nx = win.px + win.dx[win.dir], ny = win.py + win.dy[win.dir];
                 if (win.at(nx, ny) === "#") {
                     win.running = false; bump.start();
-                    win.message = "Bump! A rock is in the way. Try again!"; win.say("Bump! Try again!");
+                    win.message = "Bump! A rock is in the way. Try again!";
                     return;
                 }
                 win.px = nx; win.py = ny;
@@ -109,7 +108,6 @@ ApplicationWindow {
         saved.stars = JSON.stringify(s); stars = s;
         trophy("max codequest-level " + s.filter(x => x > 0).length);
         message = "🎉 You did it with " + n + " blocks! " + "⭐".repeat(got) + (got < 3 ? "  (Can you do it with " + lv.par + "?)" : "");
-        say(got === 3 ? "Perfect! Three stars!" : "You did it!");
         cheer.start();
     }
 

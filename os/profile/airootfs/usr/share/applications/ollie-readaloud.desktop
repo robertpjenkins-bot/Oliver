@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Read aloud
-Comment=Reads the text you copied out loud (Meta+Alt+R)
-Exec=/usr/local/bin/ollie-readaloud
-Icon=ollie-readaloud
-Terminal=false
-Categories=Utility;Accessibility;
-X-KDE-Shortcuts=Meta+Alt+R

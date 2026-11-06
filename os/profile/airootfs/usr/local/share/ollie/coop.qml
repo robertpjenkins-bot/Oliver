@@ -2,7 +2,7 @@
 // card (Player 1 blue, 2 red, 3 green, 4 yellow) that lights up when its
 // buttons are pressed, so everyone knows which controller is theirs. Then
 // start playing together: Steam's big screen, or free SuperTuxKart.
-// Says on the console: OLLIE-ACTION steam | supertuxkart | say TEXT.
+// Says on the console: OLLIE-ACTION steam | supertuxkart.
 // Argument: pads=FILE (pads.py's live file).
 import QtQuick
 import QtQuick.Controls
@@ -35,8 +35,6 @@ ApplicationWindow {
             const x = new XMLHttpRequest();
             x.open("GET", "file://" + win.arg("pads"), false);
             try { x.send(); win.players = JSON.parse(x.responseText).players; } catch (e) {}
-            if (win.players.length > win.lastCount && win.lastCount >= 0)
-                win.act("say " + win.names[Math.min(3, win.players.length - 1)] + " is here!");
             if (win.players.length > win.lastCount && win.players.length >= 2) win.act("trophy max coop-players " + win.players.length);
             win.lastCount = win.players.length;
         }

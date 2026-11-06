@@ -2,7 +2,6 @@
 // eight planets, the Moon and Pluto, each drawn big with its facts (how far
 // from the Sun, how long its day and year are, its moons, how hot or cold,
 // and something amazing). Click one in the strip, or fly to the next.
-// "Read it to me" says the facts out loud (OLLIE-ACTION say TEXT).
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -15,7 +14,6 @@ ApplicationWindow {
     title: "Space Explorer"
     color: "#020617"
 
-    function say(t) { console.log("OLLIE-ACTION say " + t) }
     function trophy(w) { console.log("OLLIE-ACTION trophy " + w) }
     onAtChanged: trophy("add space-body " + bodies[at].name)
 
@@ -67,10 +65,6 @@ ApplicationWindow {
     ]
     property int at: 3
     readonly property var b: bodies[at]
-    function readIt() {
-        say(b.name + ". " + b.kind + ". " + b.facts.map(f => f[1] + ": " + f[2].replace(/−/g, "minus ").replace(/°C/g, "degrees")).join(". ") + ". " + b.wow);
-    }
-
     // Stars.
     Repeater {
         model: 160
@@ -228,7 +222,6 @@ ApplicationWindow {
                 Item { Layout.fillHeight: true }
                 RowLayout {
                     Button { text: "← Back"; enabled: win.at > 0; onClicked: win.at-- }
-                    Button { text: "🔊 Read it to me"; onClicked: win.readIt() }
                     Item { Layout.fillWidth: true }
                     Button { text: "Fly to the next one 🚀"; highlighted: true; enabled: win.at < win.bodies.length - 1; onClicked: win.at++ }
                 }

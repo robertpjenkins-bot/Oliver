@@ -15,7 +15,7 @@ setting() { sed -n "s/^$1=//p" "$2" 2>/dev/null | tail -n 1; }
 fps=on
 grep -qx 'no_display' "$mango" 2>/dev/null && fps=off
 args=(
-    "steam=$(flag steam-in-window)" "fps=$fps" "overlay=$(/usr/local/bin/ollie-overlay --which)" "voice=$(flag no-voice)" "boost=$(flag no-speed-boost)" "sound=$(flag no-startup-sound)"
+    "steam=$(flag steam-in-window)" "fps=$fps" "overlay=$(/usr/local/bin/ollie-overlay --which)" "boost=$(flag no-speed-boost)" "sound=$(flag no-startup-sound)"
     "mode=$(setting MODE "$cfg/colours")" "colour=$(setting COLOUR "$cfg/colours")" "gold=$([[ -e $cfg/gold-unlocked ]] && echo on || echo off)"
     "easyread=$(cat "$cfg/easyread" 2>/dev/null)" "language=$(cat "$cfg/language" 2>/dev/null)" "screensaver=$(setting MINUTES "$cfg/screensaver")"
     "padmouse=$(setting MOUSE "$cfg/controller.conf")" "seasons=$(setting SEASONS "$cfg/seasons")" "birthday=$(setting BIRTHDAY "$cfg/seasons")"
@@ -35,7 +35,6 @@ while IFS= read -r line; do
     steam) onoff steam-in-window "${a[1]}" ;;
     boost) onoff no-speed-boost "${a[1]}" ;;
     sound) onoff no-startup-sound "${a[1]}" ;;
-    voice) onoff no-voice "${a[1]}" ;;
     overlay) /usr/local/bin/ollie-overlay "${a[1]}" ;;
     updates)
         if [[ ${a[1]} == on ]]; then

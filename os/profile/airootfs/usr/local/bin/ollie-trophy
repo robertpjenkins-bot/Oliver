@@ -66,7 +66,6 @@ check() { # check EVENT: award what it reached
         if command -v notify-send >/dev/null; then
             notify-send -a "Ollie OS" -i ollie-trophies "🏆 Trophy: $emoji $name" "$how" 2>/dev/null &
         fi
-        /usr/local/bin/ollie-say "You got a trophy! $name!" 2>/dev/null &
     done <<<"$TROPHIES"
 }
 

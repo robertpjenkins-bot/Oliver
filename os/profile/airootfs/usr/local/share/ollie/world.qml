@@ -1,9 +1,9 @@
 // World Explorer (ollie-world): a spinning globe. Drag it to turn it; click
 // a country to see its flag, continent, capital, how many people live
-// there and (for many) a fun fact; "Read it to me" says it out loud.
+// there and (for many) a fun fact.
 // "Find it!" is a game: find the country named, as fast as you can.
 // The map is Natural Earth's (public domain), in world.json
-// (os/art/make-world.py). Says on the console: OLLIE-ACTION say TEXT.
+// (os/art/make-world.py). Says on the console: OLLIE-ACTION trophy ...
 // Argument: config=FILE (the best Find it! score).
 import QtQuick
 import QtQuick.Controls
@@ -25,7 +25,6 @@ ApplicationWindow {
                 return a[i].substring(n.length + 1);
         return "";
     }
-    function say(t) { console.log("OLLIE-ACTION say " + t) }
     function trophy(w) { console.log("OLLIE-ACTION trophy " + w) }
     Settings {
         id: saved
@@ -103,13 +102,12 @@ ApplicationWindow {
         const known = [];
         for (let i = 0; i < countries.length; i++) if (countries[i].cap && countries[i].p > 3000000) known.push(i);
         target = known[Math.floor(Math.random() * known.length)];
-        say("Find " + countries[target].n);
     }
     Timer { interval: 1000; running: win.quiz; repeat: true
         onTriggered: { win.timeLeft--; if (win.timeLeft <= 0) { win.quiz = false;
             if (win.score > saved.best) saved.best = win.score;
             win.trophy("max world-find " + win.score);
-            win.quizNote = "Time's up! You found " + win.score + "."; win.say("Time's up! You found " + win.score + " countries!"); } } }
+            win.quizNote = "Time's up! You found " + win.score + "."; } } }
 
     Timer {
         interval: 40; running: true; repeat: true
@@ -184,7 +182,7 @@ ApplicationWindow {
                         if (i < 0) { win.picked = -1; globe.requestPaint(); return; }
                         win.picked = i; globe.requestPaint(); win.trophy("add world-country " + win.countries[i].n);
                         if (win.quiz) {
-                            if (i === win.target) { win.score++; win.quizNote = "✅ Yes! That's " + win.countries[i].n + "!"; win.say("Yes!"); win.nextTarget(); }
+                            if (i === win.target) { win.score++; win.quizNote = "✅ Yes! That's " + win.countries[i].n + "!"; win.nextTarget(); }
                             else win.quizNote = "❌ That's " + win.countries[i].n + ". Try again!";
                         }
                     }
@@ -257,13 +255,6 @@ ApplicationWindow {
                         visible: text !== ""
                         text: win.picked >= 0 && win.countries[win.picked].fun ? "🤩 " + win.countries[win.picked].fun : ""
                         color: "#fde68a"; font.pixelSize: 16; wrapMode: Text.WordWrap; Layout.fillWidth: true
-                    }
-                    Button {
-                        text: "🔊 Read it to me"
-                        onClicked: {
-                            const k = win.countries[win.picked];
-                            win.say(k.n + ". It is in " + k.c + "." + (k.cap ? " Its capital is " + k.cap + "." : "") + " " + win.people(k.p) + " people live there. " + (k.fun || ""));
-                        }
                     }
                 }
             }

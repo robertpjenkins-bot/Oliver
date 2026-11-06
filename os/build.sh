@@ -173,7 +173,6 @@ file_permissions=(
   ["/usr/local/bin/ollie-finder"]="0:0:755"
   ["/usr/local/bin/ollie-typing"]="0:0:755"
   ["/usr/local/bin/ollie-pet"]="0:0:755"
-  ["/usr/local/bin/ollie-say"]="0:0:755"
   ["/usr/local/bin/ollie-overlay"]="0:0:755"
   ["/usr/local/bin/ollie-coop"]="0:0:755"
   ["/usr/local/bin/ollie-sticker"]="0:0:755"
@@ -202,7 +201,6 @@ file_permissions=(
   ["/usr/local/bin/ollie-tour"]="0:0:755"
   ["/usr/local/bin/ollie-screensaver"]="0:0:755"
   ["/usr/local/bin/ollie-easyread"]="0:0:755"
-  ["/usr/local/bin/ollie-readaloud"]="0:0:755"
   ["/usr/local/bin/ollie-language"]="0:0:755"
 )
 EOF

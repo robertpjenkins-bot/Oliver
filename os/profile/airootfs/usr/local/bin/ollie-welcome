@@ -70,8 +70,6 @@ fi
 touch "$cfg/welcome-seen"
 at_start=off
 [[ -e "$cfg/welcome-at-start" ]] && at_start=on
-# Ollie says hello.
-(/usr/local/bin/ollie-say "Hi! I'm Ollie! Welcome to Ollie OS! What do you want to do first?" &)
 open() { (setsid env -u QT_FORCE_STDERR_LOGGING -u QT_MESSAGE_PATTERN -u QT_LOGGING_RULES "$@" >/dev/null 2>&1 &); }
 while IFS= read -r line; do
     [[ $line == *"OLLIE-ACTION "* ]] || continue
@@ -91,7 +89,6 @@ while IFS= read -r line; do
     "secret konami")
         touch "$cfg/gold-unlocked"
         (/usr/local/bin/ollie-trophy count secret >/dev/null 2>&1 &)
-        (/usr/local/bin/ollie-say "You found the secret code! Ollie Gold is yours!" &)
         ;;
     "at-start on") touch "$cfg/welcome-at-start" ;;
     "at-start off") rm -f "$cfg/welcome-at-start" ;;

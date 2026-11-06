@@ -15,7 +15,6 @@ while IFS= read -r line; do
         read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
         (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
         ;;
-    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
     *"OLLIE-ACTION steam"*) (setsid /usr/local/bin/ollie-steam --game-mode >/dev/null 2>&1 &) ;;
     *"OLLIE-ACTION supertuxkart"*)
         if command -v supertuxkart >/dev/null; then

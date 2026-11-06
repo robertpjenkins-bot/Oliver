@@ -100,7 +100,6 @@ while IFS= read -r line; do
         read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
         (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
         ;;
-    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
     esac
 done < <(qml6 /usr/local/share/ollie/music.qml -- "songs=$list" "song=$open" 2>&1)
 wait

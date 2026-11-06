@@ -55,14 +55,11 @@ apply() {
     case $now in
     halloween)
         notify-send -a "Ollie OS" -i ollie-os "🎃 Happy Halloween!" "Ollie OS is dressed up for Halloween." 2>/dev/null
-        /usr/local/bin/ollie-say "Happy Halloween! Boo!" >/dev/null 2>&1
         ;;
     winter)
         notify-send -a "Ollie OS" -i ollie-os "❄️ It's winter!" "Ollie OS is ready for the snow." 2>/dev/null
-        /usr/local/bin/ollie-say "Brr! It's winter! Let it snow!" >/dev/null 2>&1
         ;;
     birthday)
-        /usr/local/bin/ollie-say "Happy birthday${name:+, $name}! Hooray!" >/dev/null 2>&1 &
         QT_FORCE_STDERR_LOGGING=1 qml6 /usr/local/share/ollie/birthday.qml -- "name=$name" >/dev/null 2>&1 &
         ;;
     esac

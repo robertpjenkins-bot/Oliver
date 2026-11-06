@@ -28,7 +28,6 @@ while IFS= read -r line; do
         read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
         (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
         ;;
-    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
     *"OLLIE-ACTION desktop on"*)
         mkdir -p "${auto%/*}"
         printf '[Desktop Entry]\nType=Application\nName=Ollie Pet on the desktop\nExec=/usr/local/bin/ollie-pet --desktop\nIcon=ollie-os\nNoDisplay=true\n' >"$auto"

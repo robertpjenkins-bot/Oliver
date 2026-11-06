@@ -2,7 +2,7 @@
 // flip book. The frame before shows faintly while you draw the next
 // ("onion skin"); Play shows it moving; Save makes a GIF in
 // Pictures/Animations. Says on the console: OLLIE-ACTION gif DIR FPS (the
-// frames are DIR/frame-000.png ...), say TEXT.
+// frames are DIR/frame-000.png ...).
 // Argument: frames=DIR (an empty folder for the frames while saving).
 import QtQuick
 import QtQuick.Controls

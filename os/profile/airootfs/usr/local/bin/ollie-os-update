@@ -6,7 +6,7 @@
 set -uo pipefail
 readonly TITLE="Update Ollie OS"
 # What newer Ollie OS has, added if missing (only those the servers carry).
-readonly EXTRAS=(gamemode lib32-gamemode mangohud lib32-mangohud plymouth libinput libinput-tools evtest libnotify python espeak-ng ffmpeg qt6-declarative layer-shell-qt brightnessctl qt6-multimedia qt6-multimedia-ffmpeg)
+readonly EXTRAS=(gamemode lib32-gamemode mangohud lib32-mangohud plymouth libinput libinput-tools evtest libnotify python ffmpeg qt6-declarative layer-shell-qt brightnessctl qt6-multimedia qt6-multimedia-ffmpeg)
 # Firefox in the language chosen in Ollie OS Settings (ollie-language).
 declare -A _ff=([es]=es-es [fr]=fr [de]=de [pt]=pt-br [it]=it [nl]=nl [pl]=pl [sv]=sv-se [ja]=ja [zh]=zh-cn)
 _lang="$(cat /etc/ollie/language 2>/dev/null)"

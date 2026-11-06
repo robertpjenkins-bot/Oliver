@@ -19,13 +19,11 @@ while IFS= read -r line; do
         # A palette made from the frames themselves: clean colours.
         if ffmpeg -loglevel error -y -framerate "$fps" -i "$dir/frame-%03d.png" \
             -vf "scale=640:-1:flags=lanczos,split[a][b];[a]palettegen=reserve_transparent=0[p];[b][p]paletteuse" -loop 0 "$gif"; then
-            (/usr/local/bin/ollie-say "Your cartoon is ready!" &)
             (setsid xdg-open "$gif" >/dev/null 2>&1 &)
         else
             kdialog --title "Ollie Animator" --error "Could not make the GIF (is ffmpeg installed?)." &
         fi
         rm -f "$dir"/frame-*.png
         ;;
-    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
     esac
 done < <(qml6 /usr/local/share/ollie/animator.qml -- "frames=$frames" 2>&1)

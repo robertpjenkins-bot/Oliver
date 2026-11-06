@@ -33,7 +33,6 @@ while IFS= read -r line; do
         rec=$!
         ;;
     *"OLLIE-ACTION stop"*) [[ -n $rec ]] && kill -INT "$rec" 2>/dev/null; rec="" ;;
-    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
     esac
 done < <(qml6 /usr/local/share/ollie/soundboard.qml -- "config=$HOME/.config/ollie/soundboard.ini" "sounds=$sounds" "mine=$mine" 2>&1)
 [[ -n $rec ]] && kill -INT "$rec" 2>/dev/null

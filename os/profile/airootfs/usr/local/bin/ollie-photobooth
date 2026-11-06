@@ -15,7 +15,6 @@ while IFS= read -r line; do
     *"OLLIE-ACTION saved "*)
         (pw-play /usr/share/sounds/freedesktop/stereo/camera-shutter.oga >/dev/null 2>&1 || paplay /usr/share/sounds/freedesktop/stereo/camera-shutter.oga >/dev/null 2>&1) &
         ;;
-    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
     *"OLLIE-ACTION trophy "*)
         read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
         (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)

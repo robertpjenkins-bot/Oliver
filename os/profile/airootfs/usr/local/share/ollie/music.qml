@@ -5,7 +5,7 @@
 // file to play anywhere.
 // Says on the console: OLLIE-ACTION note INSTRUMENT N (N: 0 = C4 ... 24 = C6),
 // drums NAME..., save NAME (the song: then its JSON on the next line as
-// OLLIE-SONG JSON), export NAME, open NAME, trophy ..., say TEXT.
+// OLLIE-SONG JSON), export NAME, open NAME, trophy ....
 // Arguments: songs=FILE (the saved songs' names, one a line), song=FILE (one
 // to open, written by ollie-music when asked).
 import QtQuick

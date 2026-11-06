@@ -86,11 +86,6 @@ ApplicationWindow {
                     }
                     Label { text: "    (Right Shift + F12 hides and shows it in a game)"; opacity: 0.7 }
                     Switch {
-                        text: "Ollie's voice: Ollie says hi and cheers when you win"
-                        checked: win.arg("voice") !== "off"
-                        onToggled: win.act("voice " + (checked ? "on" : "off"))
-                    }
-                    Switch {
                         text: "Speed Boost: full power while a game runs"
                         checked: win.arg("boost") !== "off"
                         onToggled: win.act("boost " + (checked ? "on" : "off"))
@@ -203,7 +198,6 @@ ApplicationWindow {
                         checked: win.arg("easyread") === "on"
                         onToggled: win.act("easyread " + (checked ? "on" : "off"))
                     }
-                    Label { text: "🔊  Read aloud: copy some text (Ctrl+C), then press Meta + Alt + R."; opacity: 0.8 }
                     RowLayout {
                         spacing: 8
                         Label { text: "Language:" }

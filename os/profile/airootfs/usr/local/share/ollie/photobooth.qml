@@ -2,7 +2,7 @@
 // stickers to drag onto the picture (bigger and smaller with the mouse
 // wheel), colour effects, a mirror, and a 3-2-1 countdown. Photos go to
 // Pictures/Photo Booth.
-// Says on the console: OLLIE-ACTION saved FILE, say TEXT, trophy ...
+// Says on the console: OLLIE-ACTION saved FILE, trophy ...
 // Argument: dir=DIR (where photos go).
 import QtQuick
 import QtQuick.Controls
@@ -49,7 +49,7 @@ ApplicationWindow {
 
     function snap() {
         if (count > 0) return;
-        count = 3; countdown.start(); act("say Three, two, one!");
+        count = 3; countdown.start();
     }
     Timer {
         id: countdown

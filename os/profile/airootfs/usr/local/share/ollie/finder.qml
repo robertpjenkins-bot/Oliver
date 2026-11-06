@@ -4,8 +4,7 @@
 // shows where a file is. Says on the console what to open:
 // OLLIE-ACTION open app|file PATH, or show PATH.
 // Secrets: type "ollie" (unlocks the Ollie Gold colours: OLLIE-ACTION secret
-// gold), "party" (confetti) or "biobro" (who made Ollie OS); the last two
-// say OLLIE-ACTION say TEXT (Ollie's voice).
+// gold), "party" (confetti) or "biobro" (who made Ollie OS).
 // Arguments: index=FILE (lines: kind TAB name TAB path), home=DIR.
 import QtQuick
 import QtQuick.Controls
@@ -88,10 +87,8 @@ ApplicationWindow {
                 console.log("OLLIE-ACTION secret gold");
             } else if (it.path === "party") {
                 secretText = "🎉 Party time! 🎈🎂🎊";
-                console.log("OLLIE-ACTION say Party time! Woo hoo!");
             } else {
                 secretText = "😎 Ollie OS was made by biobro. Hi from biobro!";
-                console.log("OLLIE-ACTION say Ollie OS was made by bio bro! Hi!");
             }
             return;
         }

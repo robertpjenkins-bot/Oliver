@@ -1,7 +1,7 @@
 // Sound Board (ollie-soundboard): 12 big buttons that play sounds. Six come
 // with fun sounds; the others (or any, after Change) play what you record
 // with the microphone (up to 10 seconds). Each gets a name and an emoji.
-// Says on the console: OLLIE-ACTION play FILE | record FILE | stop | say TEXT.
+// Says on the console: OLLIE-ACTION play FILE | record FILE | stop.
 // Arguments: config=FILE, sounds=DIR (the made sounds), mine=DIR (recordings).
 import QtQuick
 import QtQuick.Controls

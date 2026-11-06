@@ -14,9 +14,8 @@ evtest
 # The Update Checker: its notification with an Install button, and reading GitHub's list
 libnotify
 python
-# Ollie OS 3: Ollie's voice, the Animator's GIFs and the Sound Board's
-# sounds, the apps' windows (qml6) and the pet walking on the desktop
-espeak-ng
+# Ollie OS 3: the Animator's GIFs and the Sound Board's sounds, the apps'
+# windows (qml6) and the pet walking on the desktop
 ffmpeg
 qt6-declarative
 layer-shell-qt

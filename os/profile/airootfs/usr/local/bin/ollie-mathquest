@@ -1,6 +1,5 @@
 #!/bin/bash
-# Math Quest (mathquest.qml). What it keeps is in ~/.config/ollie/mathquest.ini;
-# Ollie's voice (ollie-say) cheers and reads out loud.
+# Math Quest (mathquest.qml). What it keeps is in ~/.config/ollie/mathquest.ini.
 export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
 export QML_XHR_ALLOW_FILE_READ=1
 mkdir -p "$HOME/.config/ollie"
@@ -10,8 +9,5 @@ while IFS= read -r line; do
         read -r -a t <<<"${line#*OLLIE-ACTION trophy }"
         (/usr/local/bin/ollie-trophy "${t[@]}" >/dev/null 2>&1 &)
         ;;
-    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
-    # The sums themselves: spoken even with Ollie's voice switched off, slowly.
-    *"OLLIE-ACTION speak "*) (pkill -u "$UID" -f '^espeak-ng -v en-us -s 120' 2>/dev/null; espeak-ng -v en-us -s 120 -- "${line#*OLLIE-ACTION speak }" >/dev/null 2>&1 &) ;;
     esac
 done < <(qml6 /usr/local/share/ollie/mathquest.qml -- "config=$HOME/.config/ollie/mathquest.ini" 2>&1)

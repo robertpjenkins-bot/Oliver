@@ -2,8 +2,7 @@
 // around: the screen goes dim except for one part at a time (the menu, the
 // search box, your apps, the clock, the fun fact...), and Ollie says what it
 // is. Next and Back (or the arrows, Enter, the controller), Skip (Escape).
-// Over everything (Plasma's layer shell). Says on the console:
-// OLLIE-ACTION say TEXT (each step out loud).
+// Over everything (Plasma's layer shell).
 // Arguments: name= (yours), events=FILE (ollie-padd's controller buttons).
 import QtQuick
 import QtQuick.Controls
@@ -40,7 +39,7 @@ Window {
         ["Type in this box to search the internet with Google.", 250, sh - bar / 2, 200],
         ["These are your favourite apps: Firefox, Steam, your files and more. Click one to open it.", sw - 560, sh - bar / 2, 210],
         ["Here are the time, the Wi-Fi, the sound and the battery.", sw - 120, sh - bar / 2, 130],
-        ["Every day there's a new fun fact up here. Press Read it, and I'll read it to you!", sw - 240, 145, 220],
+        ["Every day there's a new fun fact up here. Press Another one for more.", sw - 240, 145, 220],
         ["Got a controller? Plug it in and press its Home button for the Game Hub. 🎮", sw / 2, sh / 2, 0],
         ["Play Ollie OS's games and apps to win trophies! 🏆 Find Trophies in the menu.", sw / 2, sh / 2, 0],
         ["That's it! Open Ollie OS Welcome from the menu any time you need help. Have fun! 🎉", sw / 2, sh / 2, 0]
@@ -55,8 +54,7 @@ Window {
         else if (w === "left" && at > 0) at--;
         else if (w === "skip") Qt.quit();
     }
-    onAtChanged: { console.log("OLLIE-ACTION say " + cur[0].replace(/[^\w !?',.:]/g, "")); canvas.requestPaint(); if (at === steps.length - 1) confetti.burst(); }
-    Component.onCompleted: console.log("OLLIE-ACTION say " + steps[0][0].replace(/[^\w !?',.:]/g, ""))
+    onAtChanged: { canvas.requestPaint(); if (at === steps.length - 1) confetti.burst(); }
 
     // The screen, dim except for the light.
     Canvas {

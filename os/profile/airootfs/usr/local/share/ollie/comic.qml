@@ -2,7 +2,7 @@
 // a scene (sky, space, forest, city, beach, night, under the sea); click a
 // panel, then add characters, speech and thought bubbles and sound words
 // ("POW!"), and drag them where they go. Save puts it in Pictures/Comics.
-// Says on the console: OLLIE-ACTION saved FILE | say TEXT.
+// Says on the console: OLLIE-ACTION saved FILE.
 // Argument: out=DIR.
 import QtQuick
 import QtQuick.Controls
@@ -144,7 +144,7 @@ ApplicationWindow {
                     win.selected = -1;
                     Qt.callLater(() => strip.grabToImage(r => {
                         const f = win.arg("out") + "/comic-" + Date.now() + ".png";
-                        if (r.saveToFile(f)) { win.act("trophy count comic"); win.act("saved " + f); win.act("say What a great comic!"); savedNote.text = "Saved in Pictures, Comics!"; }
+                        if (r.saveToFile(f)) { win.act("trophy count comic"); win.act("saved " + f); savedNote.text = "Saved in Pictures, Comics!"; }
                     }));
                 }
             }

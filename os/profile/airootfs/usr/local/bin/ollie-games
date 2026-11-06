@@ -24,7 +24,6 @@ while :; do
             ;;
         *"OLLIE-ACTION play "*)
             (setsid python3 -I "$helper" launch "${line#*OLLIE-ACTION play }" >/dev/null 2>&1 &)
-            (/usr/local/bin/ollie-say "Let's play!" &)
             (/usr/local/bin/ollie-trophy count game-play >/dev/null 2>&1 &)
             ;;
         *"OLLIE-ACTION add "*)

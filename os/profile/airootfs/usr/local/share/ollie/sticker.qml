@@ -3,7 +3,7 @@
 // caption; it is saved in Pictures/Stickers. Then drag it to where it goes
 // on the desktop: the stickers are drawn into the desktop's background
 // (the background without stickers is kept, so they can all come off).
-// Says on the console: OLLIE-ACTION wallpaper FILE | restore | say TEXT.
+// Says on the console: OLLIE-ACTION wallpaper FILE | restore.
 // Arguments: wall=FILE (the background now), out=DIR (Pictures/Stickers),
 // data=DIR (where the backgrounds with stickers go), config=FILE,
 // screen=WxH.
@@ -59,7 +59,7 @@ ApplicationWindow {
             if (!r.saveToFile(f)) return;
             win.made = f;
             if (thenPlace) { win.mode = "place"; newOne.x = place.width * 0.4; newOne.y = place.height * 0.3; }
-            else { savedNote.text = "Saved in Pictures, Stickers!"; win.act("say Cool sticker!"); }
+            else { savedNote.text = "Saved in Pictures, Stickers!"; }
         });
     }
     onSourceChanged: repaint()
@@ -298,7 +298,7 @@ ApplicationWindow {
                     newOne.visible = false;
                     Qt.callLater(() => place.grabToImage(r => {
                         const f = win.arg("data") + "/wallpaper-" + Date.now() + ".png";
-                        if (r.saveToFile(f)) { win.act("trophy count sticker"); win.act("wallpaper " + f); win.act("say Your sticker is on the desktop!"); }
+                        if (r.saveToFile(f)) { win.act("trophy count sticker"); win.act("wallpaper " + f); }
                         newOne.visible = true;
                         win.mode = "make";
                     }, Qt.size(win.screenW, win.screenH)));

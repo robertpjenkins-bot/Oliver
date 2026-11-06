@@ -1,9 +1,8 @@
 // Math Quest (ollie-mathquest): 8 levels of 10 sums each, from adding up to
 // 10 to sharing; stars for each level (10 right: 3 stars, 8: 2, 6: 1, and
-// the next level opens). Ollie reads each sum out; "Show me" draws it with
-// dots for the small ones, or gives a tip. Type the answer or press the big
-// number buttons. Says on the console: OLLIE-ACTION speak TEXT (the sum, even
-// with Ollie's voice off), say TEXT (cheering), trophy ... (ollie-trophy).
+// the next level opens). "Show me" draws the sum with dots for the small
+// ones, or gives a tip. Type the answer or press the big number buttons.
+// Says on the console: OLLIE-ACTION trophy ... (ollie-trophy).
 // Argument: config=FILE (the stars won).
 import QtQuick
 import QtQuick.Controls
@@ -25,8 +24,6 @@ ApplicationWindow {
                 return a[i].substring(n.length + 1);
         return "";
     }
-    function speak(t) { console.log("OLLIE-ACTION speak " + t) }
-    function cheer(t) { console.log("OLLIE-ACTION say " + t) }
     function trophy(w) { console.log("OLLIE-ACTION trophy " + w) }
     function rnd(a, b) { return a + Math.floor(Math.random() * (b - a + 1)) }
 
@@ -81,15 +78,14 @@ ApplicationWindow {
     }
     function ask() {
         sum = make(level); typed = ""; hint = false; state2 = "ask";
-        speak(words(sum)); keys.forceActiveFocus();
+        keys.forceActiveFocus();
     }
     function check() {
         if (state2 !== "ask" || typed === "") return;
         if (parseInt(typed) === sum.answer) {
             right++; state2 = "right"; trophy("count math-right");
-            cheer(["Correct!", "Brilliant!", "You got it!", "Super math!", "Yes!"][rnd(0, 4)]);
         } else {
-            state2 = "wrong"; speak(words(sum) + " is " + sum.answer);
+            state2 = "wrong";
         }
     }
     function next() {
@@ -99,7 +95,6 @@ ApplicationWindow {
             const got = right === 10 ? 3 : right >= 8 ? 2 : right >= 6 ? 1 : 0;
             const s = stars.slice(); s[level] = Math.max(s[level] || 0, got); saved.stars = JSON.stringify(s); stars = s;
             trophy("max math-level " + (unlocked + 1));
-            cheer(got === 3 ? "Perfect! You are a math champion!" : got > 0 ? "Well done! Next level open!" : "Good try! Practice makes perfect!");
             return;
         }
         ask();
@@ -219,7 +214,6 @@ ApplicationWindow {
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 10
-                Button { text: "🔊 Hear it again"; font.pixelSize: 16; onClicked: win.speak(win.words(win.sum)) }
                 Button { text: "👀 Show me"; font.pixelSize: 16; onClicked: win.hint = true }
             }
             GridLayout {

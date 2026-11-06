@@ -4,7 +4,7 @@
 # through the apps menu and the home folder (not hidden folders) when it
 # opens; the window is finder.qml, which says on its console what to open
 # (OLLIE-ACTION open app|file PATH). Its secrets: "ollie" unlocks the Ollie
-# Gold colours (OLLIE-ACTION secret gold), and Ollie says things (say TEXT).
+# Gold colours (OLLIE-ACTION secret gold).
 set -uo pipefail
 export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
 export QML_XHR_ALLOW_FILE_READ=1
@@ -42,9 +42,7 @@ while IFS= read -r line; do
         (/usr/local/bin/ollie-trophy count secret >/dev/null 2>&1 &)
         mode="$(sed -n 's/^MODE=//p' "$cfg/colours" 2>/dev/null | tail -n 1)"
         (/usr/local/bin/ollie-colours "${mode:-dark}" gold --background &)
-        (/usr/local/bin/ollie-say "You found a secret! Ollie Gold!" &)
         ;;
-    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
     *"OLLIE-ACTION show "*) (setsid xdg-open "$(dirname "${line#*OLLIE-ACTION show }")" >/dev/null 2>&1 &) ;;
     esac
 done < <(qml6 /usr/local/share/ollie/finder.qml -- "index=$index" "home=$HOME" 2>&1)

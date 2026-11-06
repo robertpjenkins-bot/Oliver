@@ -29,7 +29,6 @@ if [[ ${1:-} == --setup ]]; then
             [[ $code =~ ^[0-9]+$ && $mouse =~ ^(on|off)$ ]] || continue
             printf 'HUB_BUTTON=%s\nMOUSE=%s\n' "$code" "$mouse" >"$conf"
             chosen=1
-            /usr/local/bin/ollie-say "All set! Press that button to open the Game Hub." >/dev/null 2>&1 &
             ;;
         esac
     done < <(qml6 /usr/local/share/ollie/padsetup.qml -- "learn=$run/ollie-pad-learn" 2>&1)
@@ -53,7 +52,6 @@ trap 'rm -f -- "$list" "$run/ollie-hub-open"' EXIT
 python3 -I /usr/local/lib/ollie/games.py list "$list" 2>/dev/null || echo '{"games": []}' >"$list"
 [[ -f $run/ollie-pad-events ]] || echo '{"events": []}' >"$run/ollie-pad-events"
 name="$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
-/usr/local/bin/ollie-say "Game Hub! What do you want to play?" >/dev/null 2>&1 &
 while IFS= read -r line; do
     case "$line" in
     *"OLLIE-ACTION play "*)

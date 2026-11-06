@@ -3,8 +3,7 @@
 # (Atkinson Hyperlegible or Lexend when installed, else Noto Sans) and a
 # bigger mouse pointer, all over the desktop; off puts back what was there.
 #   ollie-easyread on|off
-# (Some apps show it after they are opened again.) Reading text out loud:
-# ollie-readaloud (Meta+Alt+R).
+# (Some apps show it after they are opened again.)
 set -uo pipefail
 cfg="$HOME/.config/ollie" before="$HOME/.config/ollie/easyread-before"
 mkdir -p "$cfg"

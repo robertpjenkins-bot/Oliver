@@ -5,7 +5,7 @@
 // grows up: a baby, a kid, then a grown-up with a crown. It can walk along
 // the bottom of the screen too (Pet on the desktop).
 // Secret: call it Ollie and it is golden.
-// Says on the console: OLLIE-ACTION say TEXT (Ollie's voice), desktop on|off.
+// Says on the console: OLLIE-ACTION desktop on|off.
 // Arguments: config=FILE (where the pet is kept), mood=FILE (one line, for
 // the Game Overlay), desktop=on|off.
 import QtQuick
@@ -60,7 +60,7 @@ ApplicationWindow {
         if (saved.last > 0) passTime((now - saved.last) / 3600000);
         if (saved.born === 0) saved.born = now;
         saved.last = now;
-        if (saved.name) { say(hello()); voice(hello().replace(/[^\w !?'.,]/g, "")); checkGrowth(); }
+        if (saved.name) { say(hello()); checkGrowth(); }
         writeMood();
     }
     Timer {
@@ -88,7 +88,6 @@ ApplicationWindow {
         if (stage > saved.stageSeen) {
             saved.stageSeen = stage;
             say(stage === 1 ? "🎉 I grew up! I'm a kid now!" : "🎉 I'm all grown up! Look, a crown! 👑");
-            voice(stage === 1 ? "Wow! I grew up! I'm a kid now!" : "I'm all grown up! I got a crown!");
             hearts(6);
         }
     }
@@ -109,7 +108,6 @@ ApplicationWindow {
     }
     property string saying: ""
     function say(t) { saying = t; bubbleTimer.restart(); }
-    function voice(t) { if (!saved.asleep) act("say " + t); }
     Timer { id: bubbleTimer; interval: 3500; onTriggered: win.saying = "" }
     function hearts(n) { for (let i = 0; i < n; i++) heartModel.append({ hx: pet.x + 30 + Math.random() * 60, delay: i * 120 }); }
 
@@ -130,14 +128,13 @@ ApplicationWindow {
     function bed() {
         saved.asleep = !saved.asleep;
         say(saved.asleep ? "Good night! 🌙" : saved.energy < 50 ? "Five more minutes..." : "Good morning! ☀️");
-        if (!saved.asleep) voice("Good morning!");
     }
     function reward(fun, full, text) {
         trophy("count pet-game");
         saved.fun = Math.min(100, saved.fun + fun);
         saved.full = Math.min(100, saved.full + full);
         saved.energy = Math.max(0, saved.energy - 5);
-        say(text); voice(text.replace(/[^\w !?'.,]/g, "")); hearts(5); hop.start();
+        say(text); hearts(5); hop.start();
     }
 
     // --- The garden ---
@@ -320,7 +317,7 @@ ApplicationWindow {
                         enabled: !games.found
                         onClicked: {
                             games.found = true;
-                            if (index === games.hideAt) { games.score++; win.say("You found me! 🎉"); win.voice("You found me!"); }
+                            if (index === games.hideAt) { games.score++; win.say("You found me! 🎉"); }
                             else win.say("Nope! I was behind the " + ["tree", "box", "flowers"][games.hideAt] + "!");
                             hideNext.start();
                         }
@@ -479,8 +476,8 @@ ApplicationWindow {
                     onClicked: {
                         saved.name = nameField.text.trim(); saved.born = Date.now(); saved.stageSeen = 0;
                         if (saved.name.toLowerCase() === "ollie") {   // a secret
-                            win.say("✨ A golden Ollie! You found a secret! ✨"); win.voice("Wow! I'm Ollie, the golden one! You found a secret!"); win.hearts(10);
-                        } else { win.say("Hi! I'm " + saved.name + "! 💖"); win.voice("Hi! I'm " + saved.name + "!"); win.hearts(4); }
+                            win.say("✨ A golden Ollie! You found a secret! ✨"); win.hearts(10);
+                        } else { win.say("Hi! I'm " + saved.name + "! 💖"); win.hearts(4); }
                         win.writeMood();
                     } }
             }

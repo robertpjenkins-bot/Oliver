@@ -13,8 +13,4 @@ name="$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
 # (The pad-events file: while the tour is open, ollie-padd sends it the controller's buttons.)
 touch "$run/ollie-hub-open"
 trap 'rm -f -- "$run/ollie-hub-open"' EXIT
-while IFS= read -r line; do
-    case "$line" in
-    *"OLLIE-ACTION say "*) (/usr/local/bin/ollie-say "${line#*OLLIE-ACTION say }" &) ;;
-    esac
-done < <(qml6 /usr/local/share/ollie/tour.qml -- "name=$name" "events=$run/ollie-pad-events" 2>&1)
+qml6 /usr/local/share/ollie/tour.qml -- "name=$name" "events=$run/ollie-pad-events" >/dev/null 2>&1
