@@ -57,7 +57,17 @@ cp -a "$share/." "$tmp/" || { tell error "Could not unpack $TITLE (is the disk f
 # Each file: already there and the same as this one (left alone, but a
 # program that cannot run is made runnable), missing (added), or old or
 # changed (replaced).
-same=0 added=() replaced=() runnable=() units=() failed=""
+same=0 added=() replaced=() runnable=() units=() failed="" removed=()
+# Files that are not part of Ollie OS any more (share/ollie-apps/remove,
+# one path a line): taken out.
+if [[ -f "$tmp/remove" ]]; then
+    while IFS= read -r gone; do
+        [[ $gone == /* && $gone != *..* ]] || continue
+        if [[ -e $gone || -L $gone ]]; then
+            sudo -n rm -f -- "$gone" && removed+=("$gone") || failed+=" $gone"
+        fi
+    done <"$tmp/remove"
+fi
 while IFS= read -r -d '' path; do
     rel="${path#"$tmp/airootfs/"}"
     case "$rel" in
@@ -116,6 +126,10 @@ report="$tmp/report.txt"
         echo "Replaced or repaired (were old, changed or could not run): $((${#replaced[@]} + ${#runnable[@]}))"
         printf '   ~ %s\n' "${replaced[@]}" "${runnable[@]}" | grep -v '^   ~ $'
     fi
+    if ((${#removed[@]})); then
+        echo "Taken out (not part of Ollie OS any more): ${#removed[@]}"
+        printf '   - %s\n' "${removed[@]}"
+    fi
     if ((${#turned_on[@]})); then
         echo "Switched on (were off): ${#turned_on[@]}"
         printf '   ~ %s\n' "${turned_on[@]}"
@@ -126,7 +140,7 @@ report="$tmp/report.txt"
         sed -e 's/^OK /   ✔  /' -e 's/^FIXED /   +  fixed: /' -e 's/^LATER /   …  next: /' -e 's/^PROBLEM /   ✖  /' <<<"$checks"
     fi
     echo
-    if ((${#added[@]} + ${#replaced[@]} + ${#runnable[@]} + ${#turned_on[@]} == 0)) && ! grep -q '^\(FIXED\|LATER\|PROBLEM\) ' <<<"$checks"; then
+    if ((${#added[@]} + ${#replaced[@]} + ${#runnable[@]} + ${#turned_on[@]} + ${#removed[@]} == 0)) && ! grep -q '^\(FIXED\|LATER\|PROBLEM\) ' <<<"$checks"; then
         echo "Everything was already there and working: nothing needed changing."
     else
         echo "Done: everything is there now."
