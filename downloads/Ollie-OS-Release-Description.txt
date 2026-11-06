@@ -9,6 +9,7 @@ Made by biobro (age 8). A gaming computer built on Arch Linux, with Steam, Minec
 - **No more robot voice.** Ollie doesn't talk anymore, and Read aloud is gone too.
 - **Pick your own apps.** Sticker Maker, Spelling Bee, Ollie Animator, Sound Board, World Explorer and Space Explorer have moved to the App Center. Install the ones you want with one click.
 - **Ollie Paint.** A drawing app for the mouse: brush, pencil, eraser, fill bucket, lines, rectangles and circles, lots of colours, undo, and Save. Your drawings go in Pictures → Drawings. It's on the Welcome screen as **Draw**.
+- **Mouse Maker.** Draw your own mouse pointer, square by square, try it out, and press **Use this mouse** to make it the computer's real pointer. **Back to the normal mouse** puts the old one back. It's on the Welcome screen as **My own mouse**.
 - **New look.** Cleaner apps: real icons instead of emoji, shorter text, and each app has its own style.
 
 ### How to install

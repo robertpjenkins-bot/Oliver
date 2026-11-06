@@ -62,6 +62,7 @@ ICONS = {
                            f'<path d="M88 130 V158 M74 144 H102" stroke-width="10"/><circle cx="162" cy="134" r="8"{F}/><circle cx="180" cy="152" r="8"{F}/>'),
     "ollie-paint": (PURPLE, '<line x1="190" y1="66" x2="132" y2="124" stroke-width="18"/><path d="M118 120 L136 138"/>'
                             f'<path d="M114 128 L128 142 C126 168 104 186 70 190 C76 160 90 134 114 128 Z"{F}/><circle cx="178" cy="176" r="12"{F}/>'),
+    "ollie-mouse": (TEAL, '<path d="M84 52 V188 L118 156 L142 206 L166 194 L142 146 H190 Z" stroke-linejoin="round"/>'),
     "ollie-sticker": (PINK, f'<path d="{star(128, 132, 66, 28)}"/>'),
     "ollie-comic": (MUSTARD, '<path d="M72 80 H184 A20 20 0 0 1 204 100 V148 A20 20 0 0 1 184 168 H120 L88 196 V168 H72 A20 20 0 0 1 52 148 V100 A20 20 0 0 1 72 80 Z"/>'
                              f'<circle cx="100" cy="124" r="9"{F}/><circle cx="128" cy="124" r="9"{F}/><circle cx="156" cy="124" r="9"{F}/>'),

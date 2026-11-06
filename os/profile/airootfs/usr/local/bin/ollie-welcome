@@ -81,6 +81,7 @@ while IFS= read -r line; do
     "open appcenter") open /usr/local/bin/ollie-appcenter ;;
     "open minecraft") open /usr/local/bin/ollie-minecraft ;;
     "open paint") open /usr/local/bin/ollie-paint ;;
+    "open mouse") open /usr/local/bin/ollie-mouse ;;
     "open background") open /usr/local/bin/ollie-wallpaper-maker ;;
     "open settings") open /usr/local/bin/ollie-settings ;;
     "open fixer") open /usr/local/bin/ollie-fixer ;;

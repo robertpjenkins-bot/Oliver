@@ -1,0 +1,20 @@
+#!/bin/bash
+# Mouse Maker: draw your own mouse pointer (mouse.qml) and use it as the real
+# one (/usr/local/lib/ollie/mouse.py makes it a cursor theme and switches it on).
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+saved="${XDG_DATA_HOME:-$HOME/.local/share}/ollie/my-mouse"
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION use "*)
+        read -r -a a <<<"${line#*OLLIE-ACTION use }"
+        if err="$(/usr/local/lib/ollie/mouse.py use "${a[@]}" 2>&1)"; then
+            (/usr/local/bin/ollie-trophy count mouse-use >/dev/null 2>&1 &)
+        else
+            (notify-send -a "Mouse Maker" -i ollie-mouse "Your mouse could not be switched on" "${err#Error: }" >/dev/null 2>&1 &)
+        fi
+        ;;
+    *"OLLIE-ACTION normal"*)
+        /usr/local/lib/ollie/mouse.py normal >/dev/null 2>&1
+        ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/mouse.qml -- "saved=$(head -n 1 "$saved" 2>/dev/null)" 2>&1)

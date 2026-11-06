@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Mouse Maker
+Comment=Draw your own mouse pointer and use it
+Exec=/usr/local/bin/ollie-mouse
+Icon=ollie-mouse
+Terminal=false
+Categories=Graphics;Settings;
+Keywords=mouse;pointer;cursor;draw;
