@@ -154,6 +154,9 @@ for f in games finder typing pet coop sticker comic animator soundboard codeques
     check "/usr/local/bin/ollie-$f is executable" test -x "$r/usr/local/bin/ollie-$f"
     check "$f window" test -s "$r/usr/local/share/ollie/$f.qml"
 done
+for f in sticker spelling animator soundboard world space; do
+    check "$f is in the App Center (Ollie apps), not the apps menu" bash -c "test -f '$r/usr/local/share/ollie/store/ollie-$f.desktop' && ! test -e '$r/usr/share/applications/ollie-$f.desktop'"
+done
 check "Games' helper runs" test -x "$r/usr/local/lib/ollie/games.py"
 check "Couch Co-op's controller watcher runs" test -x "$r/usr/local/lib/ollie/pads.py"
 check "the pet's body" test -s "$r/usr/local/share/ollie/PetBody.qml"

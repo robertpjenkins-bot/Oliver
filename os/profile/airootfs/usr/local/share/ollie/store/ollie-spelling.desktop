@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Spelling Bee
-Comment=Hear a word, then spell it, with levels and stars
+Comment=Look at a word, then spell it, with levels and stars
 Exec=/usr/local/bin/ollie-spelling
 Icon=ollie-spelling
 Terminal=false

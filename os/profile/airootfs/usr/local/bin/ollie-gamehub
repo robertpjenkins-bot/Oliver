@@ -52,6 +52,8 @@ trap 'rm -f -- "$list" "$run/ollie-hub-open"' EXIT
 python3 -I /usr/local/lib/ollie/games.py list "$list" 2>/dev/null || echo '{"games": []}' >"$list"
 [[ -f $run/ollie-pad-events ]] || echo '{"events": []}' >"$run/ollie-pad-events"
 name="$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
+# The App Center's Ollie apps this person has installed (comma-separated).
+store="$(cd "$HOME/.local/share/applications" 2>/dev/null && ls ollie-*.desktop 2>/dev/null | sed 's/\.desktop$//' | paste -sd,)"
 while IFS= read -r line; do
     case "$line" in
     *"OLLIE-ACTION play "*)
@@ -79,4 +81,4 @@ while IFS= read -r line; do
         ;;
     *"OLLIE-ACTION quit"*) pkill -u "$UID" -f 'share/ollie/gamehub.qml' ;;
     esac
-done < <(qml6 /usr/local/share/ollie/gamehub.qml -- "list=$list" "events=$run/ollie-pad-events" "name=$name" 2>&1)
+done < <(qml6 /usr/local/share/ollie/gamehub.qml -- "list=$list" "events=$run/ollie-pad-events" "name=$name" "store=$store" 2>&1)

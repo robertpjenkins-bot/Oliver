@@ -1,16 +1,26 @@
 #!/bin/bash
 # Ollie App Center (appcenter.qml): free games and apps picked for Ollie OS,
 # one click each, from Flathub (for this person: flatpak --user, no password).
+# Ollie OS's own extra apps (IDs ollie-NAME: Sticker Maker, Spelling Bee...)
+# are on the computer already but not in the apps menu: getting one puts its
+# launcher (/usr/local/share/ollie/store/ollie-NAME.desktop) in this person's
+# menu (~/.local/share/applications), no internet needed; removing takes it out.
 set -uo pipefail
 export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
 export QML_XHR_ALLOW_FILE_READ=1
 run="${XDG_RUNTIME_DIR:-/tmp}"
 installed="$run/ollie-appcenter-$$.installed" status="$run/ollie-appcenter-$$.status"
 trap 'rm -f -- "$installed" "$status"' EXIT
+store=/usr/local/share/ollie/store mine="$HOME/.local/share/applications"
 flatpak list --app --columns=application 2>/dev/null >"$installed"
+for d in "$store"/ollie-*.desktop; do
+    [[ -f $d && -f $mine/${d##*/} ]] && basename "$d" .desktop >>"$installed"
+done
 : >"$status"
 say() { echo "$*" >>"$status"; }
 valid() { [[ $1 =~ ^[A-Za-z0-9_.-]{3,100}$ ]]; }
+ours() { [[ $1 =~ ^ollie-[a-z]+$ && -f $store/$1.desktop ]]; } # one of Ollie OS's own
+menu_changed() { (kbuildsycoca6 --noincremental >/dev/null 2>&1 &); }
 get() { # get ID [ID...]: the first one Flathub has
     local id
     say "$1 installing"
@@ -31,15 +41,28 @@ while IFS= read -r line; do
     case "$line" in
     *"OLLIE-ACTION install "*)
         read -r -a ids <<<"${line#*OLLIE-ACTION install }"
-        get "${ids[@]}" &
+        if ours "${ids[0]}"; then
+            mkdir -p "$mine"
+            if cp "$store/${ids[0]}.desktop" "$mine/"; then
+                say "${ids[0]} done"; menu_changed
+                /usr/local/bin/ollie-trophy count appcenter-install >/dev/null 2>&1
+            else say "${ids[0]} failed"; fi
+        elif [[ ${ids[0]} == ollie-* ]]; then
+            say "${ids[0]} failed" # not one of Ollie OS's
+        else
+            get "${ids[@]}" &
+        fi
         ;;
     *"OLLIE-ACTION play "*)
         id="${line#*OLLIE-ACTION play }"
-        valid "$id" && (setsid flatpak run "$id" >/dev/null 2>&1 &)
+        if ours "$id"; then (setsid "/usr/local/bin/$id" >/dev/null 2>&1 &)
+        elif valid "$id"; then (setsid flatpak run "$id" >/dev/null 2>&1 &); fi
         ;;
     *"OLLIE-ACTION remove "*)
         id="${line#*OLLIE-ACTION remove }"
-        if valid "$id"; then
+        if ours "$id"; then
+            rm -f -- "$mine/$id.desktop" && say "$id removed"; menu_changed
+        elif valid "$id"; then
             (flatpak uninstall --user -y --noninteractive "$id" >/dev/null 2>&1 || flatpak uninstall -y --noninteractive "$id" >/dev/null 2>&1) && say "$id removed" &
         fi
         ;;

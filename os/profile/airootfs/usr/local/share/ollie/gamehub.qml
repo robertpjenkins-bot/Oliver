@@ -39,10 +39,10 @@ ApplicationWindow {
         { name: "Couch Co-op", emoji: "🎮", icon: "coop", run: "ollie-coop" },
         { name: "Coding Quest", emoji: "🤖", icon: "codequest", run: "ollie-codequest" },
         { name: "Math Quest", emoji: "🧮", icon: "mathquest", run: "ollie-mathquest" },
-        { name: "Spelling Bee", emoji: "🐝", icon: "spelling", run: "ollie-spelling" },
-        { name: "World Explorer", emoji: "🌍", icon: "world", run: "ollie-world" },
-        { name: "Space Explorer", emoji: "🪐", icon: "space", run: "ollie-space" }
-    ]
+        { name: "Spelling Bee", emoji: "🐝", icon: "spelling", run: "ollie-spelling", store: true },
+        { name: "World Explorer", emoji: "🌍", icon: "world", run: "ollie-world", store: true },
+        { name: "Space Explorer", emoji: "🪐", icon: "space", run: "ollie-space", store: true }
+    ].filter(g => !g.store || arg("store").split(",").includes(g.run))  // App Center ones: only once installed
     readonly property var more: [
         { name: "App Center", emoji: "🛍️", icon: "appcenter", run: "ollie-appcenter", note: "Free games, one click" },
         { name: "Epic & GOG games", emoji: "🎁", icon: "", run: "heroic", note: "Free games every week (Heroic)" },

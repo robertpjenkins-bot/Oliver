@@ -1,7 +1,8 @@
 // Ollie App Center (ollie-appcenter): free games and apps picked for Ollie
-// OS, in groups (game stores: Epic and GOG with Heroic; racing, building, adventure, strategy, puzzles, making
-// things, learning). One click gets one (from Flathub), then it's ready to
-// play. Says on the console: OLLIE-ACTION install ID [ID...] (the first that
+// OS, in groups (Ollie apps: Ollie OS's own extras; game stores: Epic and
+// GOG with Heroic; racing, building, adventure, strategy, puzzles, making
+// things, learning). One click gets one (from Flathub, or for Ollie apps
+// from the computer itself), then it's ready to play. Says on the console: OLLIE-ACTION install ID [ID...] (the first that
 // Flathub has), play ID, remove ID.
 // Arguments: installed=FILE (the app IDs installed, one a line), status=FILE
 // (the helper's lines while getting one: "ID installing|done|failed").
@@ -31,8 +32,15 @@ ApplicationWindow {
         try { x.send(); return x.responseText; } catch (e) { return ""; }
     }
 
-    // [name, emoji, what it is, group, ages, Flathub IDs (the first one Flathub has is used)]
+    // [name, emoji, what it is, group, ages, Flathub IDs (the first one Flathub has is used)];
+    // Ollie OS's own extra apps have the ID ollie-NAME (already on the computer).
     readonly property var apps: [
+        ["Sticker Maker", "🌟", "Make stickers from pictures, drawings and shapes, and stick them on your desktop.", "Ollie apps", "Everyone", ["ollie-sticker"]],
+        ["Ollie Animator", "🎞️", "Draw a cartoon frame by frame and save it as a GIF.", "Ollie apps", "Everyone", ["ollie-animator"]],
+        ["Sound Board", "🥁", "Twelve big buttons with sounds, and record your own.", "Ollie apps", "Everyone", ["ollie-soundboard"]],
+        ["Spelling Bee", "🐝", "Look at a word, then spell it. Eight levels, from easy to tricky.", "Ollie apps", "Everyone", ["ollie-spelling"]],
+        ["World Explorer", "🌍", "Spin the globe: flags, capitals and facts for 176 countries.", "Ollie apps", "Everyone", ["ollie-world"]],
+        ["Space Explorer", "🪐", "Visit the Sun, the planets, the Moon and Pluto.", "Ollie apps", "Everyone", ["ollie-space"]],
         ["Epic & GOG games", "🎁", "Heroic: play your Epic Games Store and GOG games, and get the free game Epic gives away every week. Sign in with a grown-up.", "Game stores", "Everyone", ["com.heroicgameslauncher.hgl"]],
         ["SuperTuxKart", "🏎️", "Kart racing with Tux and friends. Up to 4 players on one screen!", "Racing", "Everyone", ["net.supertuxkart.SuperTuxKart"]],
         ["Extreme Tux Racer", "🐧", "Slide down snowy mountains on your tummy, grabbing fish.", "Racing", "Everyone", ["net.sourceforge.ExtremeTuxRacer"]],
@@ -61,7 +69,7 @@ ApplicationWindow {
         ["KTouch", "⌨️", "Learn to type with all ten fingers.", "Learning", "Everyone", ["org.kde.ktouch"]],
         ["Marble", "🌐", "A virtual globe with maps of the whole world.", "Learning", "Everyone", ["org.kde.marble"]]
     ]
-    readonly property var groups: [["All", "🌟"], ["Game stores", "🎁"], ["Racing", "🏁"], ["Building", "🧱"], ["Adventure", "🗺️"], ["Strategy", "🏰"], ["Puzzles", "🧩"], ["Making", "🎨"], ["Learning", "🧠"]]
+    readonly property var groups: [["All", "🌟"], ["Ollie apps", "🧊"], ["Game stores", "🎁"], ["Racing", "🏁"], ["Building", "🧱"], ["Adventure", "🗺️"], ["Strategy", "🏰"], ["Puzzles", "🧩"], ["Making", "🎨"], ["Learning", "🧠"]]
     property string group: "All"
     property string search: ""
     property var installed: []        // app IDs
@@ -150,7 +158,14 @@ ApplicationWindow {
                                     GradientStop { position: 0; color: "#334155" }
                                     GradientStop { position: 1; color: "#1e293b" }
                                 }
-                                Label { anchors.centerIn: parent; text: card.modelData[1]; font.pixelSize: 38 }
+                                Label { anchors.centerIn: parent; visible: !ownIcon.visible; text: card.modelData[1]; font.pixelSize: 38 }
+                                Image {
+                                    id: ownIcon
+                                    anchors.fill: parent
+                                    visible: status === Image.Ready
+                                    source: card.modelData[5][0].indexOf("ollie-") === 0 ? "file:///usr/share/icons/hicolor/128x128/apps/" + card.modelData[5][0] + ".png" : ""
+                                    sourceSize: Qt.size(128, 128)
+                                }
                             }
                             ColumnLayout {
                                 spacing: 2
@@ -166,7 +181,7 @@ ApplicationWindow {
                                 font.bold: true
                                 highlighted: card.st === "" || card.st === "installed" || card.st === "failed"
                                 enabled: card.st !== "installing"
-                                text: card.st === "installed" ? "▶ Play" : card.st === "installing" ? "⏳ Getting it..." : card.st === "failed" ? "🔁 Try again" : "⬇️ Get it (free)"
+                                text: card.st === "installed" ? "▶ Open" : card.st === "installing" ? "⏳ Getting it..." : card.st === "failed" ? "🔁 Try again" : card.modelData[5][0].indexOf("ollie-") === 0 ? "⬇️ Install" : "⬇️ Get it (free)"
                                 onClicked: {
                                     if (card.st === "installed") { win.act("play " + win.idOf(card.modelData)); return; }
                                     const b = Object.assign({}, win.busy); b[card.modelData[5][0]] = "installing"; win.busy = b;
@@ -186,7 +201,7 @@ ApplicationWindow {
         }
         Label {
             Layout.alignment: Qt.AlignHCenter
-            text: "Games come from Flathub, the free app store. Getting one needs the internet and takes a few minutes."
+            text: "Ollie apps install at once. Other games come from Flathub, the free app store: getting one needs the internet and takes a few minutes."
             color: "#64748b"; font.pixelSize: 13
         }
     }
