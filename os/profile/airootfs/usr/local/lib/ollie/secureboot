@@ -1,0 +1,154 @@
+#!/bin/bash
+# Secure Boot for Ollie OS: computers with Secure Boot on start Ollie OS too.
+#
+# How: the start-up part's first program is shim (signed by Microsoft, so every
+# PC trusts it; from Ubuntu, in /usr/local/share/ollie/secureboot). shim starts
+# grubx64.efi, which is Ollie OS's start-up menu (systemd-boot), and that starts
+# Linux: both signed with an Ollie OS key. The first time, shim does not know
+# that key and opens MokManager (a blue screen): "Enroll key from disk", then
+# OLLIE-OS-KEY.cer on the start-up part, Continue, Yes, Reboot. Once.
+#
+# The key is made by the Builder that makes the USB (os/out/secureboot), and
+# the installer gives the same one to the Ollie OS it installs, so it starts
+# without asking again; it signs Linux again after each update (pacman hook).
+#
+#   secureboot key DIR                  a key in DIR, if it has none
+#   secureboot esp ESP KEYDIR [SDBOOT]  sign the start-up part at ESP (a folder)
+#                                       (SDBOOT: systemd-bootx64.efi to use)
+#   secureboot system ROOT KEYDIR       an installed Ollie OS at ROOT (its /boot
+#                                       mounted): the key kept in it, its pacman
+#                                       hook, its start-up part signed
+#   secureboot keep ROOT KEYDIR         only the key and the hook, into ROOT
+#   secureboot sign FILE KEYDIR         sign one file (Linux) in place
+#   secureboot check ESP KEYDIR         is the start-up part at ESP signed?
+#   secureboot resign                   on an installed Ollie OS (after updates)
+set -uo pipefail
+here="$(dirname "$(readlink -f "$0")")"
+files="${OLLIE_SB_FILES:-$here/../../share/ollie/secureboot}"
+fail() { echo "Error: $*" >&2; exit 1; }
+
+# A file in a start-up part, whatever the case of its name (FAT does not mind,
+# a copy of it in a Linux folder does): the one there, or the name given.
+ci() { # ci BASE REL
+    local found
+    found="$(find "$1" -ipath "$1/$2" -print -quit 2>/dev/null)"
+    echo "${found:-$1/$2}"
+}
+signed_by_us() { sbverify --cert "$crt" "$1" >/dev/null 2>&1; }
+sign() { # sign IN OUT: signed with the key (not twice)
+    local tmp
+    if signed_by_us "$1"; then
+        [[ $1 -ef $2 ]] || cp -f "$1" "$2"
+        return
+    fi
+    tmp="$2.ollie-signing"
+    sbsign --key "$key" --cert "$crt" --output "$tmp" "$1" >/dev/null 2>&1 &&
+        mv -f "$tmp" "$2" || { rm -f "$tmp"; fail "could not sign $1"; }
+}
+use_key() {
+    key="$1/ollie.key" crt="$1/ollie.crt" cer="$1/ollie.cer"
+    [[ -s $key && -s $crt ]] || fail "no key in $1"
+    [[ -s $cer ]] || openssl x509 -in "$crt" -outform DER -out "$cer" || fail "the key's certificate could not be made"
+    command -v sbsign >/dev/null || fail "sbsign is missing (sbsigntools)"
+    [[ -s $files/shimx64.efi && -s $files/mmx64.efi ]] || fail "shim is missing ($files)"
+}
+
+make_key() {
+    local dir="$1"
+    [[ -s $dir/ollie.key && -s $dir/ollie.crt ]] && return 0
+    install -d -m 0700 "$dir" || fail "could not make $dir"
+    (
+        umask 077
+        openssl req -new -x509 -newkey rsa:2048 -nodes -sha256 -days 36500 \
+            -subj "/CN=Ollie OS Secure Boot ($(hostname 2>/dev/null || echo builder), $(date +%Y-%m-%d))/" \
+            -keyout "$dir/ollie.key" -out "$dir/ollie.crt" >/dev/null 2>&1
+    ) || fail "the key could not be made"
+    openssl x509 -in "$dir/ollie.crt" -outform DER -out "$dir/ollie.cer"
+    chmod 0644 "$dir/ollie.crt" "$dir/ollie.cer"
+}
+
+esp() { # esp ESP KEYDIR [SDBOOT]
+    local e="$1" sd="${3:-}" made="" boot conf f k
+    [[ -d $e ]] || fail "no start-up part at $e"
+    use_key "$2"
+    boot="$(ci "$e" EFI/BOOT/BOOTX64.EFI)"
+    # systemd-boot: the one given, the system's, or the one the part starts now.
+    if [[ -z $sd ]]; then
+        if [[ -s /usr/lib/systemd/boot/efi/systemd-bootx64.efi ]]; then
+            sd=/usr/lib/systemd/boot/efi/systemd-bootx64.efi
+        elif [[ -s $boot ]] && grep -aq 'systemd-boot' "$boot"; then
+            made="$(mktemp)" && cp -f "$boot" "$made" && sd="$made"
+        else
+            fail "no systemd-boot to sign"
+        fi
+    fi
+    mkdir -p "$(dirname "$boot")" "$e/EFI/ollie"
+    sign "$sd" "$(ci "$e" EFI/BOOT/grubx64.efi)"
+    cp -f "$(ci "$e" EFI/BOOT/grubx64.efi)" "$e/EFI/ollie/grubx64.efi"
+    for f in "$(ci "$e" EFI/BOOT/mmx64.efi)" "$e/EFI/ollie/mmx64.efi"; do cp -f "$files/mmx64.efi" "$f"; done
+    cp -f "$files/shimx64.efi" "$boot"
+    cp -f "$files/shimx64.efi" "$e/EFI/ollie/shimx64.efi"
+    f="$(ci "$e" EFI/systemd/systemd-bootx64.efi)"
+    [[ -f $f ]] && sign "$sd" "$f"
+    # Linux, as each start-up menu entry names it.
+    for conf in "$(ci "$e" loader/entries)"/*.conf; do
+        [[ -f $conf ]] || continue
+        while read -r k f; do
+            [[ $k == linux && -n $f ]] || continue
+            f="$(ci "$e" "${f#/}")"
+            [[ -f $f ]] && sign "$f" "$f"
+        done <"$conf"
+    done
+    cp -f "$cer" "$e/OLLIE-OS-KEY.cer"
+    [[ -n $made ]] && rm -f -- "$made"
+    sync
+}
+
+keep() { # keep ROOT KEYDIR: the key and the pacman hook in the Ollie OS at ROOT
+    local r="${1%/}" kd
+    kd="$r/etc/ollie/secureboot"
+    use_key "$2"
+    install -d -m 0700 "$kd"
+    [[ $2 -ef $kd ]] || {
+        install -m 0600 "$key" "$kd/ollie.key"
+        install -m 0644 "$crt" "$kd/ollie.crt"
+        install -m 0644 "$cer" "$kd/ollie.cer"
+    }
+    install -D -m 0644 "$here/../../share/ollie/pacman-hooks/zz-ollie-secureboot.hook" \
+        "$r/etc/pacman.d/hooks/zz-ollie-secureboot.hook"
+}
+system() { # system ROOT KEYDIR
+    keep "$1" "$2"
+    esp "${1%/}/boot" "${1%/}/etc/ollie/secureboot" "${1%/}/usr/lib/systemd/boot/efi/systemd-bootx64.efi"
+}
+sign_file() { # sign_file FILE KEYDIR: one file, signed in place (Linux)
+    use_key "$2"
+    sign "$1" "$1"
+}
+check() { # check ESP KEYDIR: does the start-up part start with Secure Boot on?
+    local e="$1" f k
+    use_key "$2"
+    cmp -s "$(ci "$e" EFI/BOOT/BOOTX64.EFI)" "$files/shimx64.efi" || { echo "the start-up part does not start shim"; return 1; }
+    signed_by_us "$(ci "$e" EFI/BOOT/grubx64.efi)" || { echo "the start-up menu is not signed"; return 1; }
+    while read -r k f; do
+        [[ $k == linux ]] || continue
+        signed_by_us "$(ci "$e" "${f#/}")" || { echo "Linux ($f) is not signed"; return 1; }
+    done < <(cat "$(ci "$e" loader/entries)"/*.conf 2>/dev/null)
+    [[ -s $e/OLLIE-OS-KEY.cer ]] || { echo "the key for MokManager is missing"; return 1; }
+}
+
+case "${1:-}" in
+key) make_key "${2:?}" ;;
+esp) esp "${2:?}" "${3:?}" "${4:-}" ;;
+system) system "${2:?}" "${3:?}" ;;
+keep) keep "${2:?}" "${3:?}" ;;
+sign) sign_file "${2:?}" "${3:?}" ;;
+check) check "${2:?}" "${3:?}" ;;
+resign)
+    [[ -s /etc/ollie/secureboot/ollie.key ]] || exit 0
+    mountpoint -q /boot || exit 0
+    esp /boot /etc/ollie/secureboot
+    echo "Ollie OS's start-up is signed for Secure Boot."
+    ;;
+*) sed -n '2,/^set /p' "$0" | sed '$d; s/^# \{0,1\}//' >&2; exit 2 ;;
+esac

@@ -519,6 +519,9 @@ cat <<EOF
     Dell: tap F12 at the Dell logo and pick the drive ("UEFI: ..." or "OLLIE_BOOT").
     Mac:  hold Option while it starts and pick "EFI Boot".
     Steam Machine: hold Volume Down and pick the drive.
+  Secure Boot on? The first time, a blue screen says "Verification failed":
+    press Enter, then any key quickly, then pick Enroll key from disk,
+    OLLIE_BOOT, OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once.
 EOF
 if [[ -n ${unpacked_later:-} ]]; then
     echo "  Its first start unpacks Ollie OS onto the drive: 5 to 15 minutes, once. Do that"

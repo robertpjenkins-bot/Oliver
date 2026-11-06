@@ -146,7 +146,17 @@ test_uefi() {
         { echo "the start-up part has older start-up files"; return 1; }
     grep -q "root=UUID=$uuid .*ollie.unpack" "$esp/loader/entries/ollie.conf" || { echo "the menu does not point at Ollie OS"; return 1; }
 }
+# Secure Boot: Linux signed in the system too (the check above compares the two).
+if [[ -n "${OLLIE_SB_KEYDIR:-}" ]]; then
+    sb="$profile/airootfs/usr/local/lib/ollie/secureboot"
+    bash "$sb" keep "$t" "$OLLIE_SB_KEYDIR" && bash "$sb" sign "$t/boot/vmlinuz-linux" "$OLLIE_SB_KEYDIR" || true
+fi
 check "Starting on new computers: Steam Machine, Dells, Intel Macs (UEFI)" test_uefi put_boot_files
+if [[ -n "${OLLIE_SB_KEYDIR:-}" ]]; then
+    test_secureboot() { bash "$sb" check "$esp" "$OLLIE_SB_KEYDIR"; }
+    fix_secureboot() { bash "$sb" esp "$esp" "$OLLIE_SB_KEYDIR" "$t/usr/lib/systemd/boot/efi/systemd-bootx64.efi"; }
+    check "Starting with Secure Boot on (the first time: MokManager, Enroll key from disk, OLLIE-OS-KEY.cer)" test_secureboot fix_secureboot
+fi
 test_fstab() {
     grep -q "^UUID=${uuid}[[:space:]]*/[[:space:]]" "$t/etc/fstab" && grep -q "^UUID=${boot_uuid}[[:space:]]*/boot[[:space:]]" "$t/etc/fstab" ||
         { echo "the list of the drive's parts is wrong"; return 1; }

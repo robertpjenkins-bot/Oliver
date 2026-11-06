@@ -1,0 +1,18 @@
+shim and MokManager, signed for Secure Boot (Microsoft UEFI CA, and Canonical),
+for /usr/local/lib/ollie/secureboot. Unchanged copies from Ubuntu 24.04's
+package shim-signed 1.58+15.8-0ubuntu1 (amd64):
+
+  shimx64.efi  = /usr/lib/shim/shimx64.efi.dualsigned
+                 sha256 3ed8aa3591f793de2e0886d077aae950810843caac5eaf96e1436a439bf5e150
+  mmx64.efi    = /usr/lib/shim/mmx64.efi
+                 sha256 d2fa8e52fddc99dad94a0009fee23cb2478c28373b777d50b2f784eb4e96f88e
+
+shim 15.8 is new enough for Microsoft's revocations (SBAT shim,4). It starts
+grubx64.efi next to it: Ollie OS's systemd-boot, signed with the Ollie OS key.
+
+shim is free software (BSD 2-clause): https://github.com/rhboot/shim
+Copyright (c) 2012-2024 Red Hat, Inc., Canonical Ltd., and the shim authors.
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the copyright notice, this list of
+conditions and the disclaimer in https://github.com/rhboot/shim/blob/main/COPYRIGHT
+are kept.

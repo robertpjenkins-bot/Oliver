@@ -52,7 +52,7 @@ pacman -Sy --noconfirm --needed archlinux-keyring
 pacman -Su --noconfirm
 # noto-fonts: rsvg-convert draws the "Ollie OS" text on the wallpaper with it;
 # without any font installed the letters come out as boxes.
-pacman -S --noconfirm --needed archiso base-devel git go librsvg noto-fonts sudo
+pacman -S --noconfirm --needed archiso base-devel git go librsvg noto-fonts sudo sbsigntools
 # Onto a drive: Ollie OS's installer partitions, formats and makes it start
 # (and checks the time zone it is given), and build-drive.sh checks it.
 if [[ -n "${OLLIE_BUILD_DISK:-}" ]]; then
@@ -185,6 +185,7 @@ file_permissions=(
   ["/usr/local/bin/ollie-mouse"]="0:0:755"
   ["/usr/local/bin/ollie-undo-update"]="0:0:755"
   ["/usr/local/lib/ollie/snapshot"]="0:0:755"
+  ["/usr/local/lib/ollie/secureboot"]="0:0:755"
   ["/usr/local/lib/ollie/mouse.py"]="0:0:755"
   ["/usr/local/bin/ollie-animator"]="0:0:755"
   ["/usr/local/bin/ollie-soundboard"]="0:0:755"
@@ -302,6 +303,14 @@ SigLevel = Optional TrustAll
 Server = file://$localrepo
 EOF
 
+# Secure Boot: this Builder's own key (made the first time, then kept in
+# os/out/secureboot), so a computer that learned it once starts every Ollie OS
+# made here with Secure Boot on. See secureboot-iso.sh.
+mkdir -p "$out"
+export OLLIE_SB_KEYDIR="${OLLIE_SB_KEYDIR:-$out/secureboot}"
+bash "$os/profile/airootfs/usr/local/lib/ollie/secureboot" key "$OLLIE_SB_KEYDIR" ||
+    { echo "(No Secure Boot key: Ollie OS starts with Secure Boot off.)"; unset OLLIE_SB_KEYDIR; }
+
 if [[ -n "${OLLIE_BUILD_DISK:-}" ]]; then
     step "Installing Ollie OS onto $OLLIE_BUILD_DISK"
     mkdir -p "$out"
@@ -321,6 +330,11 @@ rm -rf "$work"
 
 cd "$out"
 for iso in ollie-os-*.iso; do
+    if [[ -n "${OLLIE_SB_KEYDIR:-}" ]]; then
+        step "Making it start with Secure Boot on"
+        bash "$os/secureboot-iso.sh" "$iso" "$OLLIE_SB_KEYDIR" ||
+            echo "(Secure Boot could not be added: this ISO starts with Secure Boot off.)"
+    fi
     sha256sum "$iso" >"$iso.sha256"
 done
 step "Done"

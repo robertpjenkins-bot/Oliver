@@ -742,6 +742,9 @@ cat <<EOF
     Mac (Intel):         hold Option (alt) while it starts, pick "EFI Boot"
     Steam Machine / PC:  tap Esc, F12, F11 or F8 while it starts
     Steam Deck:          hold Volume Down, press Power
-  If a Dell says "Secure Boot violation", turn off Secure Boot (F2 at the Dell logo).
+  Secure Boot on? The first time, a blue screen says "Verification failed": press
+  Enter, then any key quickly, then Enroll key from disk, the drive, OLLIE-OS-KEY.cer,
+  Continue, Yes, Reboot. (Drives made before Ollie OS 1.6, with no OLLIE-OS-KEY.cer:
+  turn off Secure Boot instead, F2 at the Dell logo.)
 EOF
 echo

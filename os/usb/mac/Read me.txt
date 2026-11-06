@@ -7,3 +7,6 @@ Ollie OS Installer for Mac
 4. When it says Done, start the computer from the USB drive:
    Intel Mac: hold Option while it starts, pick "EFI Boot".
    Steam Machine: hold Volume Down.  Dell and most PCs: tap F12.
+5. PCs with Secure Boot on: the first time, a blue screen says "Verification
+   failed". Press Enter, then any key quickly, then pick Enroll key from disk,
+   OLLIE_OS, OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once on each computer.

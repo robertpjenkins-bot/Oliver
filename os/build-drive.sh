@@ -67,6 +67,12 @@ fix_uefi() {
     entry "Ollie OS (show start-up messages)" "" >"$t/boot/loader/entries/ollie-fallback.conf"
 }
 check "Starting on new computers: Steam Machine, Dells, Intel Macs (UEFI)" test_uefi fix_uefi
+if [[ -n "${OLLIE_SB_KEYDIR:-}" ]]; then
+    sb="$profile/airootfs/usr/local/lib/ollie/secureboot"
+    test_secureboot() { bash "$sb" check "$t/boot" "$OLLIE_SB_KEYDIR"; }
+    fix_secureboot() { bash "$sb" system "$t" "$OLLIE_SB_KEYDIR"; }
+    check "Starting with Secure Boot on (the first time: MokManager, Enroll key from disk, OLLIE-OS-KEY.cer)" test_secureboot fix_secureboot
+fi
 
 test_bios() {
     [[ -s "$t/boot/syslinux/ldlinux.sys" ]] || { echo "SYSLINUX is not installed"; return 1; }

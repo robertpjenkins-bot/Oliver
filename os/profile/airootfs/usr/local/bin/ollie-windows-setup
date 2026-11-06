@@ -151,10 +151,14 @@ cat >"$tmp/setup/autounattend.xml" <<'EOF'
   </settings>
 </unattend>
 EOF
-install -D -m 0644 /dev/stdin "$tmp/setup/sources/\$OEM\$/\$\$/Setup/Scripts/SetupComplete.cmd" <<'EOF'
+# Ollie OS's menu as Windows Boot Manager's program: with Secure Boot set up,
+# through shim (the menu alone is signed only with Ollie OS's own key).
+menu='\EFI\systemd\systemd-bootx64.efi'
+[[ -f ${root%/}/boot/EFI/ollie/shimx64.efi ]] && menu='\EFI\ollie\shimx64.efi'
+install -D -m 0644 /dev/stdin "$tmp/setup/sources/\$OEM\$/\$\$/Setup/Scripts/SetupComplete.cmd" <<EOF
 @echo off
 rem Ollie OS: Windows Boot Manager starts Ollie OS's start-up menu (both are on it).
-bcdedit /set {bootmgr} path \EFI\systemd\systemd-bootx64.efi
+bcdedit /set {bootmgr} path $menu
 rem The clock in UTC, like Ollie OS, so the time is right after switching.
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeIsUniversal /t REG_DWORD /d 1 /f
 rem No automatic BitLocker: it would ask for a recovery key because of the menu.

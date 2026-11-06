@@ -299,6 +299,29 @@ initrd  /initramfs-linux.img
 options root=UUID=$root_uuid rootflags=subvol=@ rw
 EOF
 
+# Secure Boot: shim first, then the menu and Linux signed with the key of the
+# USB this was started from (so a computer that learned that key once starts
+# this Ollie OS too); signed again after each update. Without a key (an older
+# USB), Ollie OS starts with Secure Boot off, as before.
+sbkeys=""
+for d in "${OLLIE_SB_KEYDIR:-}" /run/archiso/bootmnt/ollie/secureboot; do
+    [[ -n $d && -s $d/ollie.key && -s $d/ollie.crt ]] && { sbkeys="$d"; break; }
+done
+sbtool="$(dirname "$(readlink -f "$0")")/../lib/ollie/secureboot"
+[[ -x $sbtool ]] || sbtool=/usr/local/lib/ollie/secureboot
+if [[ -n $sbkeys ]] && command -v sbsign >/dev/null; then
+    progress 94 "Making it start with Secure Boot on too"
+    if bash "$sbtool" system "$TARGET" "$sbkeys"; then
+        if [[ -z "${OLLIE_INSTALL_NO_EFI_VARS:-}" && -d /sys/firmware/efi/efivars ]] && command -v efibootmgr >/dev/null; then
+            while read -r num; do efibootmgr -q -b "$num" -B >/dev/null 2>&1; done < <(efibootmgr | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? Ollie OS\b.*/\1/p')
+            efibootmgr -q -c -d "$disk" -p 1 -L "Ollie OS" -l '\EFI\ollie\shimx64.efi' >/dev/null 2>&1 ||
+                echo "(The computer's start-up list was not changed; it starts Ollie OS from the drive's start-up part.)"
+        fi
+    else
+        echo "(Secure Boot could not be set up: Ollie OS starts with Secure Boot off.)"
+    fi
+fi
+
 # Older computers (BIOS / Legacy, older Dells): SYSLINUX on the start-up
 # partition, its boot code in the drive's first sector, and the partition
 # marked "legacy BIOS bootable". New computers use systemd-boot as before.

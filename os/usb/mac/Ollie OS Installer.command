@@ -78,6 +78,9 @@ cat <<'MSG'
   Start a computer from it: Intel Mac, hold Option while it starts and pick
   "EFI Boot"; Steam Machine, hold Volume Down; Dell and most PCs, tap F12.
   (If this Mac says the drive is not readable, click Ignore: that is Ollie OS.)
+  Secure Boot on (most PCs)? The first time, a blue screen says "Verification
+  failed": press Enter, then any key quickly, then pick Enroll key from disk,
+  OLLIE_OS, OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once on each computer.
 
 Press Enter to close.
 MSG

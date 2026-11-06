@@ -70,7 +70,9 @@ grep -q '^timeout' "$conf" && sed -i 's/^timeout.*/timeout 4/' "$conf" || echo '
 
 if [[ $found == "$boot" && -n $version ]] && command -v efibootmgr >/dev/null && [[ -d /sys/firmware/efi ]]; then
     # Ollie OS's menu first (Windows Setup puts Windows Boot Manager first).
-    ours="$(efibootmgr | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? Linux Boot Manager\b.*/\1/p' | head -n 1)"
+    # ("Ollie OS": shim, when Secure Boot is set up; else systemd-boot's own.)
+    ours="$(efibootmgr | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? Ollie OS\b.*/\1/p' | head -n 1)"
+    [[ -n $ours ]] || ours="$(efibootmgr | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? Linux Boot Manager\b.*/\1/p' | head -n 1)"
     order="$(efibootmgr | sed -n 's/^BootOrder: //p')"
     if [[ -n $ours && -n $order && ${order%%,*} != "$ours" ]]; then
         efibootmgr -q -o "$ours,$(tr ',' '\n' <<<"$order" | grep -vx "$ours" | paste -sd,)" >/dev/null 2>&1

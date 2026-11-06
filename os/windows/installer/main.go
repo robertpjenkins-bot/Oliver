@@ -155,6 +155,10 @@ func run() error {
 	fmt.Println("  Start the computer from it: Dell and most PCs, tap F12 (or F11, Esc)")
 	fmt.Println("  while it starts; Steam Machine, hold Volume Down; Mac, hold Option.")
 	fmt.Println("  (Windows may say the drive needs formatting: say Cancel. That is Ollie OS.)")
+	fmt.Println()
+	fmt.Println("  Secure Boot on? The first time, a blue screen says \"Verification failed\":")
+	fmt.Println("  press Enter, then any key quickly, then pick Enroll key from disk, OLLIE_OS,")
+	fmt.Println("  OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once on each computer.")
 	return nil
 }
 
