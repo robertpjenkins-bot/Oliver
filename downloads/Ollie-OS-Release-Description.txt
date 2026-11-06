@@ -1,88 +1,29 @@
-## 🎮 Ollie OS 1.4 — The Big Fun Update!
+## Ollie OS 1.6
 
-![Ollie OS 1.4](https://raw.githubusercontent.com/robertpjenkins-bot/Ollie-OS/claude/fervent-gates-cs7smv/docs/ollie-os-showcase.jpg)
+Made by biobro (age 8). A gaming computer built on Arch Linux, with Steam, Minecraft, retro games and Ollie's own apps.
 
-Made by an awesome 8 year old. Great for gaming: comes with Steam, Wine and more, plus a debugger and a driver installer. Easy to install!
+![Ollie OS](https://raw.githubusercontent.com/robertpjenkins-bot/Ollie-OS/claude/fervent-gates-cs7smv/docs/ollie-os-showcase.jpg)
 
-### 🆕 What's new
+### What's new
+- **Install Windows too.** The installer asks if you want Windows. Say yes, pick Windows 10 or Windows 11, and Ollie OS gets it ready. Windows Setup runs on the next start, and after that the start-up menu lets you pick Ollie OS or Windows.
+- **No more robot voice.** Ollie doesn't talk anymore, and Read aloud is gone too.
+- **Pick your own apps.** Sticker Maker, Spelling Bee, Ollie Animator, Sound Board, World Explorer and Space Explorer have moved to the App Center. Install the ones you want with one click.
+- **New look.** Cleaner apps: real icons instead of emoji, shorter text, and each app has its own style.
 
-**🆕 Newest: the big November update**
-- **Game Hub** 📺 – every game on one big screen, made for the TV and a controller. The first time you plug in a controller, it asks which button should open it
-- **Quick Menu** ⚡ – over your game: volume, brightness, FPS limit, battery saver or Turbo, Do Not Disturb, screenshot, close the game
-- **Play Time** ⏱️ – how long you played each game this week, with a chart
-- **Controller as a mouse** 🖱️ – move the mouse and click with a controller on the desktop
-- **Ollie App Center** 🛍️ – free games picked for kids (racing, building, adventure, strategy, puzzles), one click each – plus **Epic & GOG games** with Heroic
-- **Trophies** 🏆 – 32 trophies to win across the Ollie apps, and a profile page
-- **Math Quest** 🧮 – sums with levels and stars, read out loud
-- **Fun Fact of the Day** 💡 – a new fact on your desktop every day
-- **Music Maker** 🎹 – piano, xylophone and 8-bit sounds, a beat maker, and save your songs as music files
-- **Photo Booth** 📸 – webcam photos with funny hats, stickers and effects
-- **Seasonal themes** 🎃❄️🎂 – Ollie OS dresses up for Halloween, winter and your birthday
-- **Ollie's Tour** 🗺️ – Ollie shows you around on the first start
-- **Ollie login screen** 👋 and an **Ollie screensaver** where the pet plays ball
-- **Bedtime** 🌙 – for grown-ups: goodnight on school nights and weekends
-- **Easy reading** 📖 – bigger, easier text, and **Read aloud** (Meta+Alt+R)
-- **11 languages** 🌍 – Español, Français, Deutsch and more
+### How to install
+1. Download the installer for your computer: **Windows** (.exe), **Mac** (.dmg) or **Linux / Steam Deck** (.AppImage).
+2. Open it. It downloads Arch Linux, turns it into Ollie OS and writes it to a USB drive. No sign-in needed.
+3. Start the computer from the USB drive and press **Install Ollie OS**.
+   - Steam Deck: hold Volume Down
+   - Dell: tap F12
+   - Mac: hold Option
 
-**🕹️ Games**
-- **Games app** – all your games in one place: Steam games (with their covers), Minecraft and more
-- **Drag and drop game files** – ROMs (NES, SNES, Game Boy, GBA, N64, DS, Sega), ISOs (PlayStation 1 & 2, PSP, GameCube, Wii) and Windows games (.exe). It works out which console each game is for and installs the right player by itself
-- **Game Mode** – Steam opens in big-screen Game Mode, like a Steam Machine
-- **Speed Boost** – full power while you play 🚀
-- **FPS counter** in games (Right Shift + F12 hides it)
-- **More controllers** work when you plug them in
-- **Minecraft** – the official launcher, one click to get it ⛏️
-- **Couch Co-op** – plug in controllers and see who is Player 1, 2, 3 and 4, then pick a game to play together 👫
-- **Box art** – game files in the Games app get their cover pictures by themselves
-- **Game Overlay** – choose just the FPS, everything (CPU, GPU, temperature) or nothing
+If your Mac won't open the installer, go to System Settings → Privacy & Security and press **Open Anyway**.
 
-**🐾 Fun**
-- **Ollie Pet** – your own cube pet! Name it, feed it, play with it and put it to bed 💖 It grows up (baby, kid, then grown-up with a crown 👑), plays 3 mini-games (Catch, Hide and Seek, Dance Party) and can walk along the bottom of your screen
-- **Typing Game** – pop falling words by typing them, with levels and a best score ⌨️
-- **Ollie Finder** – type to find any app or file at once 🔍
-- **Start-up animation** (the Ollie cube spins) and a **start-up sound** 🔔
-- **Welcome app** with big buttons for everything
-- **Colours** – dark or light mode, in teal, purple or red 🎨
-- **New app icons** – every Ollie OS app has its own colourful icon
-- **Ollie talks!** 🗣️ Ollie says hello, cheers you on in games and reads words out loud (switch it off in Settings)
-- **Secret Easter eggs** 🤫 – there are hidden surprises to find! Hint: try typing some names into Ollie Finder… and gamers might know a secret code for the Welcome window ⬆️⬆️⬇️⬇️
+### Already have Ollie OS?
+Download **Ollie-OS-Latest-Updater-x86_64.AppImage** and open it. It brings everything above. If the Update Checker is on, you'll also get a notification.
 
-**🎨 Make stuff**
-- **Sticker Maker** – make stickers with shapes, emoji and words, and stick them on your desktop background
-- **Comic Maker** – make comics with 1 to 4 panels, characters and speech bubbles 💬
-- **Ollie Animator** – draw a cartoon frame by frame and save it as a GIF 🎞️
-- **Sound Board** – 12 big buttons with fun sounds, or record your own with the microphone 🔊
-
-**🧠 Learn stuff**
-- **Coding Quest** – give a robot instructions to reach the star, 10 levels 🤖⭐
-- **World Explorer** – a spinning globe with 176 countries, their flags, capitals and fun facts, plus a "Find it!" game 🌍
-- **Space Explorer** – visit the Sun, all 8 planets, the Moon and Pluto 🪐
-- **Spelling Bee** – hear a word and spell it, 8 levels from easy to tricky 🐝
-
-**🔔 Updates**
-- **Update Checker** – the first start asks if you want it. Then you get a notification when there's a new Ollie OS update, with an Install button
-- **Latest updates** – see a list of every update and install them in one click
-- **Update Ollie OS** – one click updates everything
-
-**🛟 Recovery Mode**
-- Get newer versions from an ISO file: open **Recovery Mode** (in the apps menu, or Ollie OS Settings), pick the Ollie OS .iso and press **Write**
-- It asks if it's an Ollie OS version. If yes, it asks if you want to **keep your files, username and password, Wi-Fi passwords and website logins**: everything comes with you to the new version except the OS itself
-- Safe: the new version is built next to the old one and only swapped in at the end. If anything goes wrong, nothing changes. For 10 minutes after, "Ollie OS (before the update)" is on the start-up menu in case you need to go back
-- Not an Ollie OS ISO? It can write it over the whole drive instead (it warns you first, and asks for the parent PIN if there is one)
-
-**👪 For grown-ups (in Ollie OS Settings, locked with a parent PIN)**
-- **Screen Time** – a daily limit with warnings, then "come back tomorrow" 🌙
-- **Inappropriate Typing Scanner** – asked about on the first start. It only notes bad words (even misspelled ones), and the notes open only with the parent PIN
-- **Firefox password** – the first start asks if Firefox should have a password
-
-### 💾 How to install
-- **Installers** (Windows .exe, Mac .dmg, Linux/SteamOS AppImage) download the official Arch Linux ISO and turn it into Ollie OS right on your computer, then ask if you want to write it to a drive. No GitHub, no sign-in!
-- When you install it, it asks if **Windows** should be on the start-up menu too
-- Starting from the drive: Steam Machine and Steam Deck, hold Volume Down. Dell: tap F12. Mac: hold Option
-
-### ⬆️ Already have Ollie OS?
-- **Ollie OS Latest Updater** – everything new in one file (all of the below, plus Recovery Mode and the new app icons). With the Update Checker on, you get it as a notification too
-- **Game Pack Updater** – Game Mode, Speed Boost, Settings, Screen Time, Update Checker and more
-- **Fun Pack Updater** – Games, Ollie Pet, Typing Game, Ollie Finder, Couch Co-op, Sticker Maker, Comic Maker, Animator, Sound Board, Coding Quest, World Explorer, Space Explorer, Spelling Bee and the secrets
-
-The updaters check what you already have, fix anything broken and show a report.
+### Good to know about Windows
+- Installing Windows needs internet (about 6 GB) and at least 64 GB of space on the drive for Windows.
+- Windows asks for a product key. You can press "I don't have a product key" and add one later.
+- Windows 10 doesn't get security updates from Microsoft anymore. Windows 11 is the safer choice.

@@ -21,8 +21,8 @@ Window {
         x: 22; y: 22
         spacing: 14
         Repeater {
-            model: [["games", "Games"], ["pet", "Ollie Pet"], ["codequest", "Coding Quest"], ["world", "World Explorer"],
-                    ["space", "Space Explorer"], ["spelling", "Spelling Bee"], ["sticker", "Sticker Maker"], ["soundboard", "Sound Board"]]
+            model: [["games", "Games"], ["gamehub", "Game Hub"], ["pet", "Ollie Pet"], ["codequest", "Coding Quest"],
+                    ["mathquest", "Math Quest"], ["typing", "Typing Game"], ["appcenter", "App Center"], ["music", "Music Maker"]]
             delegate: Column {
                 required property var modelData
                 width: 104
@@ -68,7 +68,7 @@ Window {
     }
 
     Win { x: 170; y: 34; width: 800; height: 588; title: "Games"; icon: "games"; shot: "games" }
-    Win { x: 1010; y: 40; width: 860; height: 595; title: "World Explorer"; icon: "world"; shot: "world" }
+    Win { x: 1010; y: 40; width: 860; height: 669; title: "Math Quest"; icon: "mathquest"; shot: "mathquest" }
     Win { x: 1180; y: 520; width: 700; height: 486; title: "Coding Quest"; icon: "codequest"; shot: "codequest" }
     Win { x: 560; y: 430; width: 640; height: 544; title: "Bobby (Ollie Pet)"; icon: "pet"; shot: "pet"; active: true }
 
@@ -81,7 +81,7 @@ Window {
     Rectangle {
         x: 372; y: 1080 - 56 - 150; width: 150; height: 40; radius: 16
         color: "white"; border.color: "#0b4f4a"; border.width: 2
-        Text { anchors.centerIn: parent; text: "Let's play! 🎮"; color: "#0b4f4a"; font.pixelSize: 17 }
+        Text { anchors.centerIn: parent; text: "Let's play"; color: "#0b4f4a"; font.pixelSize: 17 }
     }
 
     // The bar along the bottom.
@@ -99,7 +99,7 @@ Window {
             anchors.centerIn: parent; anchors.horizontalCenterOffset: 120
             spacing: 10
             Repeater {
-                model: ["games", "pet", "world", "codequest", "space", "spelling", "sticker", "comic", "animator", "soundboard", "typing", "finder"]
+                model: ["games", "gamehub", "pet", "codequest", "mathquest", "typing", "comic", "music", "photobooth", "appcenter", "trophies", "finder"]
                 delegate: Item {
                     required property string modelData
                     width: 46; height: 56

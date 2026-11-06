@@ -23,11 +23,13 @@ playing, making and learning.
 *The real Ollie OS desktop (from the automatic test).*
 
 - **Play:** Game Hub (TV mode for controllers), Games (drop in ROMs and ISOs),
-  App Center (free games, Epic & GOG), Couch Co-op, Typing Game, Ollie Pet,
-  Quick Menu, Play Time, Trophies
-- **Make:** Music Maker, Photo Booth, Sticker Maker, Comic Maker, Ollie Animator, Sound Board
-- **Learn:** Coding Quest, Math Quest, World Explorer, Space Explorer, Spelling Bee,
-  Fun Fact of the Day, Ollie's Tour
+  App Center (free games, Epic & GOG, and Ollie's extra apps), Couch Co-op,
+  Typing Game, Ollie Pet, Quick Menu, Play Time, Trophies
+- **Make:** Music Maker, Photo Booth, Comic Maker
+- **Learn:** Coding Quest, Math Quest, Fun Fact of the Day, Ollie's Tour
+- **In the App Center, to install if you want them:** Sticker Maker, Ollie
+  Animator, Sound Board, Spelling Bee, World Explorer, Space Explorer
+- **Windows too:** installing Ollie OS can put Windows 10 or 11 next to it
 - **Keep it going:** one-click updates, the Update Checker, Recovery Mode,
   The Fixer, seasonal themes, Easy reading, 11 languages, and parent settings
   (Screen Time, Bedtime, Typing Scanner, Firefox password)
@@ -61,6 +63,13 @@ drive, which erases that drive (it warns you if Windows is on it), or into a
 drive or folder *keeping everything on it*, where Ollie OS goes in one big
 file. If Windows is on another drive, Ollie OS can put it on the start-up
 menu so you pick each time.
+
+**Can I have Windows too?** Yes. Installing Ollie OS onto a drive asks if you
+want Windows too, then Windows 10 or 11 and how much of the drive it gets. It
+downloads Windows from Microsoft (or uses a Windows .iso file you have), and
+the next start runs Windows Setup: pick "Unallocated Space" there. Then the
+start-up menu shows Ollie OS and Windows. Windows needs about 6 GB to download
+and at least 64 GB of the drive, and asks for a product key (you can skip it).
 
 **What computers does it work on?** 64-bit PCs and laptops with Intel or AMD
 chips (new ones and older BIOS ones), Intel Macs, and the Steam Deck and
