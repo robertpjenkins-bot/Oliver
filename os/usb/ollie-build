@@ -116,28 +116,59 @@ if [ "${free_kb:-0}" -lt $((20 * 1024 * 1024)) ]; then
     die "not enough free space: building needs about 20 GB, $work has $((free_kb / 1024 / 1024)) GB free.$hint"
 fi
 
-# --- The Arch Linux to build in (all but Podman, Docker and the Mac) -------------------
-# The official Arch Linux ISO, from the Arch servers, checked against their
-# checksums (or one already in Downloads, if it is that same one). The
-# package downloads are kept until the build succeeds, so running it again
-# after a failure is quicker.
+# --- The Arch Linux to build in -------------------------------------------------------
+# First an Arch Linux ISO already on this computer (or a drive plugged into
+# it): any archlinux-*x86_64.iso in the work folder, Downloads, Desktop, the
+# home folder, next to this app, or on a USB drive; the newest, if it is
+# less than 4 months old (older ones may not take today's packages), and
+# when the internet is on, checked against the Arch servers' checksums for
+# its version. Else the official one from the Arch servers, checked against
+# their checksums. The package downloads are kept until the build succeeds,
+# so running it again after a failure is quicker.
 arch_iso=archlinux-x86_64.iso iso_file=""
 root="$work/arch-root" build_tmp="$work/build-tmp" pkg_cache="$work/pkg-cache"
+MIRRORS="${OLLIE_BUILD_ARCH_MIRRORS:-https://geo.mirror.pkgbuild.com https://fastly.mirror.pkgbuild.com https://mirror.rackspace.com/archlinux https://mirrors.kernel.org/archlinux}"
+sha256() { sha256sum "$1" 2>/dev/null | cut -d ' ' -f 1 || shasum -a 256 "$1" | cut -d ' ' -f 1; }
+find_iso() { # find_iso: prints the Arch Linux ISO found on this computer, if any
+    local d f v sum base list="" seen=""
+    # ("$here" is inside the AppImage: the folder the AppImage is in is $APPIMAGE's.)
+    for d in "$work" "$HOME/Downloads" "$HOME/Desktop" "$HOME" "$here" "$(dirname "${APPIMAGE:-$here/x}")" /run/media/"$USER"/* /media/"$USER"/* /media/* /Volumes/*; do
+        [ -d "$d" ] || continue
+        for f in "$d"/archlinux-*x86_64.iso "$d"/archlinux-x86_64.iso; do
+            [ -f "$f" ] || continue
+            case " $seen " in *" $f "*) continue ;; esac
+            seen="$seen $f"
+            # A real one: at least 500 MB, and less than 4 months old.
+            [ "$(wc -c <"$f" | tr -d ' ')" -gt 500000000 ] 2>/dev/null || continue
+            [ -n "$(find "$f" -mtime -120 2>/dev/null)" ] || continue
+            list="$list
+$f"
+        done
+    done
+    # The newest first; the first whose checksum is right (or can't be checked: offline).
+    printf '%s\n' "$list" | sed '/^$/d' | while IFS= read -r f; do printf '%s\t%s\n' "$(date -r "$f" +%s 2>/dev/null || stat -c %Y "$f")" "$f"; done |
+        sort -rn | cut -f 2- | while IFS= read -r f; do
+            v="$(basename "$f" | sed -n 's/^archlinux-\([0-9][0-9.]*\)-x86_64\.iso$/\1/p')"
+            sum=""
+            for base in $MIRRORS; do
+                sum="$(curl -fsSL --max-time 20 "$base/iso/${v:-latest}/sha256sums.txt" 2>/dev/null | awk -v n="$(basename "$f")" '$2 == n || $2 == "archlinux-x86_64.iso" {print $1; exit}')"
+                [ -n "$sum" ] && break
+            done
+            if [ -z "$sum" ] || [ "$(sha256 "$f")" = "$sum" ]; then
+                echo "$f"
+                break
+            fi
+        done
+}
 fetch_iso() {
     local base sum f part="$work/$arch_iso.part"
     # A half download from another day may be last month's: start that over.
     find "$work" -maxdepth 1 -name "$arch_iso.part" -mtime +0 -exec rm -f {} + 2>/dev/null
-    for base in ${OLLIE_BUILD_ARCH_MIRRORS:-https://geo.mirror.pkgbuild.com https://fastly.mirror.pkgbuild.com https://mirror.rackspace.com/archlinux https://mirrors.kernel.org/archlinux}; do
+    for base in $MIRRORS; do
         sum="$(curl -fsSL --retry 3 "$base/iso/latest/sha256sums.txt" 2>/dev/null | awk -v f="$arch_iso" '$2 == f {print $1}')"
         [ -n "$sum" ] || continue
-        for f in "$work/$arch_iso" "$HOME/Downloads/$arch_iso"; do
-            if [ -f "$f" ] && [ "$(sha256sum "$f" | cut -d ' ' -f 1)" = "$sum" ]; then
-                iso_file="$f"
-                return 0
-            fi
-        done
         if curl -fL --retry 5 -C - -o "$part" "$base/iso/latest/$arch_iso"; then
-            if [ "$(sha256sum "$part" | cut -d ' ' -f 1)" = "$sum" ] && mv -f "$part" "$work/$arch_iso"; then
+            if [ "$(sha256 "$part")" = "$sum" ] && mv -f "$part" "$work/$arch_iso"; then
                 iso_file="$work/$arch_iso"
                 return 0
             fi
@@ -197,8 +228,15 @@ mkdir -p "$src" && tar -xzf "$source_tar" -C "$src" || die "could not unpack the
 start=$(date +%s)
 case "$kind" in
 userns | sudo)
-    say "Downloading the Arch Linux ISO from the Arch Linux servers (about 1.4 GB)"
-    fetch_iso || die "could not download the Arch Linux ISO from the Arch servers. Is the internet connected? Run this again to retry."
+    say "Looking for Arch Linux on this computer"
+    iso_file="$(find_iso)"
+    if [ -n "$iso_file" ]; then
+        echo "  Found it: $iso_file (no download needed)."
+    else
+        echo "  None here (an archlinux-...-x86_64.iso less than 4 months old)."
+        say "Downloading the Arch Linux ISO from the Arch Linux servers (about 1.4 GB)"
+        fetch_iso || die "could not download the Arch Linux ISO from the Arch servers. Is the internet connected? Run this again to retry."
+    fi
     say "Opening the Arch Linux ISO"
     open_iso || die "could not open the Arch Linux ISO (is the disk full?). Run this again to retry."
     # Its tools, where the build's own users can reach them (not inside the AppImage).
@@ -220,7 +258,17 @@ userns | sudo)
         "$work/arch/x86_64/airootfs.sfs" "$unsq" "$root" "$src" "$build_tmp" "$pkg_cache" </dev/null >"$work/build.log" 2>&1 &
     ;;
 *)
-    "${engine[@]}" run --rm --privileged ${rootless:+-e OLLIE_ROOTLESS=1} -v "$src:/src" -w /src \
+    # An Arch Linux ISO found on this computer goes in too (no download inside).
+    say "Looking for Arch Linux on this computer"
+    found="$(find_iso)"
+    found_args=()
+    if [ -n "$found" ]; then
+        echo "  Found it: $found (no download needed)."
+        found_args=(-v "$found:/arch.iso:ro" -e OLLIE_ARCH_ISO=/arch.iso)
+    else
+        echo "  None here: the build downloads it (about 1.4 GB)."
+    fi
+    "${engine[@]}" run --rm --privileged ${rootless:+-e OLLIE_ROOTLESS=1} ${found_args[@]+"${found_args[@]}"} -v "$src:/src" -w /src \
         docker.io/library/archlinux:latest bash os/build-from-arch-iso.sh /var/tmp/ollie-from-iso >"$work/build.log" 2>&1 &
     ;;
 esac

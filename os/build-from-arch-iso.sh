@@ -32,9 +32,17 @@ sed -i '/^## Worldwide/,/^$/ s/^#Server/Server/' /etc/pacman.d/mirrorlist
 grep -q '^Server' /etc/pacman.d/mirrorlist || echo 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch' >>/etc/pacman.d/mirrorlist
 pacman -Syu --needed --noconfirm curl libarchive squashfs-tools
 
-step "Downloading the Arch Linux ISO from the Arch Linux servers (about 1.4 GB)"
 got=""
+# One found on the computer and handed in (OLLIE_ARCH_ISO, by the Builder): no download.
+if [[ -n ${OLLIE_ARCH_ISO:-} && -s $OLLIE_ARCH_ISO ]]; then
+    step "Using the Arch Linux ISO found on the computer"
+    ln -sfn "$OLLIE_ARCH_ISO" "$work/$iso"
+    got=1
+else
+step "Downloading the Arch Linux ISO from the Arch Linux servers (about 1.4 GB)"
+fi
 for base in ${OLLIE_BUILD_ARCH_MIRRORS:-https://geo.mirror.pkgbuild.com https://fastly.mirror.pkgbuild.com https://mirror.rackspace.com/archlinux https://mirrors.kernel.org/archlinux}; do
+    [[ -n $got ]] && break
     sum="$(curl -fsSL --retry 3 "$base/iso/latest/sha256sums.txt" 2>/dev/null | awk -v f="$iso" '$2 == f {print $1}')" || continue
     [[ -n $sum ]] || continue
     if [[ -f "$work/$iso" && "$(sha256sum "$work/$iso" | cut -d ' ' -f 1)" == "$sum" ]]; then

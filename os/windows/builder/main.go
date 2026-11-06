@@ -109,6 +109,27 @@ func build() error {
 	}
 
 	// --- The Arch Linux to build in ---
+	// First one already on this PC: an Arch Linux in WSL (copied, so it is
+	// not changed), or an Arch Linux WSL file (archlinux*.wsl or .tar) less
+	// than 4 months old in Downloads, on the Desktop, in the home folder or
+	// next to this program. Else from the Arch Linux servers.
+	if !strings.Contains(wslOutput("--list", "--quiet"), distro) {
+		say("Looking for Arch Linux on this PC")
+		if found := findArch(home, downloads, work); found != "" {
+			fmt.Println("  Found it: " + found + " (no download needed).")
+			c := wsl("--import", distro, filepath.Join(work, "wsl"), found, "--version", "2")
+			c.Stdout, c.Stderr = os.Stdout, os.Stderr
+			err := c.Run()
+			if strings.HasPrefix(filepath.Base(found), "ollie-arch-copy") {
+				os.Remove(found)
+			}
+			if err != nil {
+				fmt.Println("  It did not work (" + err.Error() + "); downloading Arch Linux instead.")
+			}
+		} else {
+			fmt.Println("  None here.")
+		}
+	}
 	if !strings.Contains(wslOutput("--list", "--quiet"), distro) {
 		say("Getting Arch Linux from the Arch Linux servers (about 150 MB)")
 		img := filepath.Join(work, "archlinux.wsl")
@@ -196,6 +217,45 @@ echo "OLLIE-ISO $(basename "$iso")"`
 }
 
 // downloadFirst saves the first of urls that downloads whole.
+// findArch: an Arch Linux already on this PC to build in, as a file WSL can
+// import: a copy of an Arch Linux installed in WSL (exported into work), or
+// the newest archlinux*.wsl / archlinux*.tar(.gz) less than 4 months old.
+func findArch(home, downloads, work string) string {
+	for _, name := range strings.Fields(wslOutput("--list", "--quiet")) {
+		if strings.EqualFold(name, "archlinux") || strings.EqualFold(name, "Arch") {
+			copyTar := filepath.Join(work, "ollie-arch-copy.tar")
+			fmt.Println("  Arch Linux is in WSL here (" + name + "): copying it (yours is not changed)...")
+			if wsl("--export", name, copyTar).Run() == nil {
+				return copyTar
+			}
+			os.Remove(copyTar)
+		}
+	}
+	dirs := []string{work, downloads, filepath.Join(home, "Desktop"), home}
+	if exe, err := os.Executable(); err == nil {
+		dirs = append(dirs, filepath.Dir(exe))
+	}
+	best, bestTime := "", time.Time{}
+	for _, d := range dirs {
+		for _, pat := range []string{"archlinux*.wsl", "archlinux*.tar", "archlinux*.tar.gz"} {
+			matches, _ := filepath.Glob(filepath.Join(d, pat))
+			for _, m := range matches {
+				fi, err := os.Stat(m)
+				if err != nil || fi.IsDir() || fi.Size() < 50_000_000 || time.Since(fi.ModTime()) > 120*24*time.Hour {
+					continue
+				}
+				if strings.Contains(strings.ToLower(filepath.Base(m)), "bootstrap") {
+					continue // the bootstrap has a folder around it: not one WSL can import
+				}
+				if best == "" || fi.ModTime().After(bestTime) {
+					best, bestTime = m, fi.ModTime()
+				}
+			}
+		}
+	}
+	return best
+}
+
 func downloadFirst(urls []string, dest string) error {
 	for _, u := range urls {
 		r, err := http.Get(u)

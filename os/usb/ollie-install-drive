@@ -275,16 +275,24 @@ cp -f "$recipe" "$work/ollie-os-source.tar.gz" || die "could not copy the recipe
 # checked against the Arch servers' checksums.
 bootstrap="${OLLIE_DRIVE_BOOTSTRAP:-}" downloaded="" found=""
 if [[ -z $bootstrap ]]; then
-    found="$(find "$work" "$HOME/Downloads" "$HOME/Desktop" "$here" -maxdepth 1 -type f \
-        \( -name 'archlinux-bootstrap*x86_64.tar.zst' -o -name 'archlinux-bootstrap*x86_64.tar.gz' \) \
-        -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n 1 | cut -d ' ' -f 2-)"
+    say "Looking for Arch Linux on this computer"
+    # In the work folder, Downloads, Desktop, the home folder, next to this
+    # app, or on a USB drive plugged in.
+    found="$( {
+        find "$work" "$HOME/Downloads" "$HOME/Desktop" "$HOME" "$here" "$(dirname "${APPIMAGE:-$here/x}")" -maxdepth 1 -type f \
+            \( -name 'archlinux-bootstrap*x86_64.tar.zst' -o -name 'archlinux-bootstrap*x86_64.tar.gz' \) -printf '%T@ %p\n' 2>/dev/null
+        find /run/media/"$USER" /media -mindepth 1 -maxdepth 3 -type f \
+            \( -name 'archlinux-bootstrap*x86_64.tar.zst' -o -name 'archlinux-bootstrap*x86_64.tar.gz' \) -printf '%T@ %p\n' 2>/dev/null
+    } | sort -rn | head -n 1 | cut -d ' ' -f 2-)"
     if [[ -n $found && -n "$(find "$found" -mtime -100 2>/dev/null)" ]]; then
-        say "Using the Arch Linux found on this computer: $found"
+        echo "  Found it: $found (no download needed)."
         if { case "$found" in *.zst) zstd -tq "$found" ;; *) gzip -t "$found" ;; esac; } 2>/dev/null; then
             bootstrap=$found
         else
             echo "  (It is damaged; downloading Arch Linux instead.)"
         fi
+    else
+        echo "  None here (an archlinux-bootstrap-...-x86_64.tar.zst less than 100 days old)."
     fi
 fi
 if [[ -z $bootstrap ]]; then
