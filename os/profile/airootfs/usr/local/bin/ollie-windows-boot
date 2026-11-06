@@ -1,11 +1,19 @@
 #!/bin/bash
-# Windows on Ollie OS's start-up menu: copies Windows Boot Manager from this
-# computer's own Windows start-up part (its EFI system partition) onto Ollie
-# OS's start-up part (mounted at /boot). Ollie OS's start-up menu
-# (systemd-boot) then finds it by itself and shows "Windows Boot Manager",
-# which starts Windows from where it is; Windows is not changed. The menu
-# shows for 4 seconds. Running it again (after a big Windows update, say)
-# copies the newest one. As root, with no password (Ollie OS's admin rights).
+# Windows on Ollie OS's start-up menu, as "Windows" (or "Windows 11" / "10"
+# when it was installed with Ollie OS). Two ways Windows can be there:
+#  - Windows on another drive (or its own start-up part): Windows Boot
+#    Manager is copied from that start-up part (its EFI system partition)
+#    onto Ollie OS's (mounted at /boot), and starts Windows from where it
+#    is; Windows is not changed. Running it again (after a big Windows
+#    update, say) copies the newest one.
+#  - Windows installed next to Ollie OS on the same drive (ollie-install,
+#    ollie-windows-setup): Windows Setup put Windows Boot Manager on Ollie
+#    OS's start-up part itself. Then Ollie OS's menu is put first again at
+#    start-up (in case Windows put itself first), and the Windows Setup part
+#    is removed (not needed any more).
+# The menu shows for 4 seconds. Run at each start until it has
+# (ollie-windows-boot.service), and by the Windows Boot Updater. As root,
+# with no password (Ollie OS's admin rights).
 #
 #   ollie-windows-boot
 set -uo pipefail
@@ -41,13 +49,43 @@ while read -r part type; do
     mountpoint -q "$tmp" && umount "$tmp"
     [[ -n $found ]] && break
 done < <(lsblk -lnpo NAME,PARTTYPE)
-[[ -n $found ]] || die "no Windows was found on this computer (no Windows start-up part with Windows Boot Manager). Run this on the computer that has Windows, with the Ollie OS drive plugged into it."
 
-# Long enough to pick it.
-if grep -q '^timeout' /boot/loader/loader.conf; then
-    sed -i 's/^timeout.*/timeout 4/' /boot/loader/loader.conf
-else
-    echo 'timeout 4' >>/boot/loader/loader.conf
+# Installed next to Ollie OS (ollie-windows-setup noted which one).
+version="$(sed -n 's/^VERSION=//p' /etc/ollie/windows 2>/dev/null)"
+if [[ -z $found ]]; then
+    [[ -f /boot/EFI/Microsoft/Boot/bootmgfw.efi ]] ||
+        die "no Windows was found on this computer (no Windows start-up part with Windows Boot Manager). Run this on the computer that has Windows, with the Ollie OS drive plugged into it."
+    found="$boot"
+fi
+
+# The menu: "Windows 11" (instead of the automatic "Windows Boot Manager"),
+# long enough to pick it.
+cat >/boot/loader/entries/windows.conf <<EOF
+title   Windows${version:+ $version}
+efi     /EFI/Microsoft/Boot/bootmgfw.efi
+EOF
+conf=/boot/loader/loader.conf
+grep -q '^auto-entries' "$conf" && sed -i 's/^auto-entries.*/auto-entries no/' "$conf" || echo 'auto-entries no' >>"$conf"
+grep -q '^timeout' "$conf" && sed -i 's/^timeout.*/timeout 4/' "$conf" || echo 'timeout 4' >>"$conf"
+
+if [[ $found == "$boot" && -n $version ]] && command -v efibootmgr >/dev/null && [[ -d /sys/firmware/efi ]]; then
+    # Ollie OS's menu first (Windows Setup puts Windows Boot Manager first).
+    ours="$(efibootmgr | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? Linux Boot Manager\b.*/\1/p' | head -n 1)"
+    order="$(efibootmgr | sed -n 's/^BootOrder: //p')"
+    if [[ -n $ours && -n $order && ${order%%,*} != "$ours" ]]; then
+        efibootmgr -q -o "$ours,$(tr ',' '\n' <<<"$order" | grep -vx "$ours" | paste -sd,)" >/dev/null 2>&1
+    fi
+    # Windows Setup is done: its start-up entry and its part go.
+    while read -r num; do efibootmgr -q -b "$num" -B >/dev/null 2>&1; done < <(efibootmgr | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? Install Windows 1[01]\b.*/\1/p')
+    setup="$(sed -n 's/^SETUP=//p' /etc/ollie/windows)"
+    dev="$(blkid -t PARTUUID="$setup" -o device 2>/dev/null | head -n 1)"
+    if [[ -n $setup && -b $dev && "$(lsblk -no PARTLABEL "$dev")" == OLLIE_WINSETUP ]] && ! findmnt -rno TARGET --source "$dev" >/dev/null; then
+        disk="/dev/$(lsblk -no PKNAME "$dev" | head -n 1)"
+        num="$(cat "/sys/class/block/${dev#/dev/}/partition")"
+        wipefs -aq "$dev" && sgdisk -d "$num" "$disk" >/dev/null && partprobe "$disk" 2>/dev/null
+        sed -i '/^SETUP=/d' /etc/ollie/windows
+    fi
+    rm -f /var/tmp/ollie-windows-1[01].iso.part
 fi
 sync
-echo "Windows Boot Manager (from $found) is on Ollie OS's start-up menu."
+echo "Windows${version:+ $version} (from $found) is on Ollie OS's start-up menu."

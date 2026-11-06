@@ -24,6 +24,10 @@ e2fsprogs
 exfatprogs
 ntfs-3g
 gptfdisk
+# Installing Windows next to Ollie OS (ollie-windows-setup): the start-up
+# list, and Windows images bigger than 4 GB in parts
+efibootmgr
+wimlib
 rsync
 pciutils
 usbutils

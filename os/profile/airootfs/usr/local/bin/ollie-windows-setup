@@ -1,0 +1,183 @@
+#!/bin/bash
+# Gets Windows Setup ready next to Ollie OS: the Windows 10 or 11 ISO
+# (downloaded from Microsoft, or a file you have) is unpacked onto this
+# drive's Windows Setup part (partition name OLLIE_WINSETUP, made by
+# ollie-install when you asked for Windows), and the computer starts Windows
+# Setup the next time it restarts (just that once: the start-up list's
+# BootNext). In Windows Setup you pick "Unallocated Space" (the space kept
+# for Windows); Ollie OS is not touched. When Windows is installed, Ollie
+# OS's start-up menu shows "Windows 11" (or 10) next to Ollie OS
+# (ollie-windows-boot), and this part is removed again.
+#
+# Windows Setup gets, next to it:
+#   autounattend.xml: Windows 11 installs on computers without TPM 2.0 or
+#       Secure Boot too (Microsoft's LabConfig switches). Nothing else is
+#       answered: Setup still asks where to install, and nothing is wiped.
+#   SetupComplete.cmd (run once by Windows at the end of Setup): Windows
+#       Boot Manager starts Ollie OS's menu, so both stay on it; the clock is
+#       kept in UTC like Ollie OS (no wrong time after switching); automatic
+#       BitLocker drive encryption is off (it would ask for a recovery key
+#       because of the menu).
+#
+#   ollie-windows-setup --version 10|11 [--iso FILE|DIR] [--part DEVICE]
+#                       [--work DIR] [--root DIR] [--no-efi-vars]
+#     --iso      a Windows ISO you have (or a folder with one unpacked);
+#                without it, the newest is downloaded from Microsoft (about
+#                6 GB, into --work: deleted once it is on the drive)
+#     --part     the Windows Setup part (default: OLLIE_WINSETUP on the drive
+#                Ollie OS starts from)
+#     --root     the Ollie OS to note it in (/etc/ollie/windows; default /)
+# Prints "PROGRESS percent text" lines. As root.
+set -uo pipefail
+[[ $EUID -eq 0 ]] || exec sudo -n "$0" "$@"
+
+version="" iso="" part="" work=/var/tmp root=/ efi_vars=1
+while (($#)); do
+    case "$1" in
+    --version) version="$2"; shift 2 ;;
+    --iso) iso="$2"; shift 2 ;;
+    --part) part="$2"; shift 2 ;;
+    --work) work="$2"; shift 2 ;;
+    --root) root="$2"; shift 2 ;;
+    --no-efi-vars) efi_vars=""; shift ;;
+    *) echo "Unknown option $1" >&2; exit 2 ;;
+    esac
+done
+die() { echo "Error: $*" >&2; exit 1; }
+progress() { echo "PROGRESS $1 $2"; }
+[[ $version == 10 || $version == 11 ]] || die "--version must be 10 or 11."
+
+# The Windows Setup part.
+if [[ -z $part ]]; then
+    bootdisk="$(lsblk -no PKNAME "$(findmnt -no SOURCE /boot | sed 's/\[.*//')" 2>/dev/null | head -n 1)"
+    part="$(lsblk -lnpo NAME,PARTLABEL ${bootdisk:+"/dev/$bootdisk"} | awk '$2 == "OLLIE_WINSETUP" {print $1; exit}')"
+fi
+[[ -b $part && "$(lsblk -no PARTLABEL "$part")" == OLLIE_WINSETUP ]] ||
+    die "this drive has no Windows Setup part. It is made when Ollie OS is installed with Windows: install Ollie OS again and say yes to Windows."
+disk="/dev/$(lsblk -no PKNAME "$part" | head -n 1)"
+partnum="$(cat "/sys/class/block/${part#/dev/}/partition")"
+if [[ -n $efi_vars && ! -d /sys/firmware/efi ]]; then
+    die "this computer started the old way (BIOS / Legacy). Windows Setup needs it to start the new way (UEFI): change it in the computer's start-up settings."
+fi
+
+tmp="$(mktemp -d)"
+cleanup() {
+    for m in "$tmp/setup" "$tmp/iso"; do mountpoint -q "$m" && umount "$m"; done
+    # The downloaded ISO goes once it is on the drive; a half-downloaded one
+    # stays, so trying again goes on from where it stopped.
+    [[ -n ${downloaded:-} ]] && rm -f -- "$downloaded"
+    rm -rf -- "$tmp"
+}
+trap cleanup EXIT
+mkdir -p "$tmp/setup" "$tmp/iso"
+
+# --- The ISO ---------------------------------------------------------------------------------
+downloaded=""
+if [[ -z $iso ]]; then
+    progress 1 "Asking Microsoft for Windows $version"
+    link="$(python3 -I /usr/local/lib/ollie/get-windows.py "$version")" || die "Windows $version could not be downloaded automatically. Download the ISO on Microsoft's page (microsoft.com/software-download/windows$version), then pick the file."
+    mkdir -p "$work"
+    (($(df -B1 --output=avail "$work" | tail -n 1) > 8 * 1024 * 1024 * 1024)) || die "not enough free space to download Windows (8 GB needed in $work)."
+    downloaded="$work/ollie-windows-$version.iso"
+    progress 2 "Downloading Windows $version"
+    # curl's percentage, as 2 to 70.
+    curl -fL --retry 5 --retry-delay 5 -C - --progress-bar -o "$downloaded.part" "$link" 2>&1 >/dev/null |
+        stdbuf -o0 tr '\r' '\n' | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9.]+%$/) {p = int(2 + $i * 68 / 100); if (p != last) {print "PROGRESS " p " Downloading Windows '"$version"'"; fflush(); last = p}}}'
+    ((PIPESTATUS[0] == 0)) || die "downloading Windows $version stopped (is the internet on?). Try again: it goes on from where it stopped."
+    mv "$downloaded.part" "$downloaded"
+    iso="$downloaded"
+fi
+if [[ -d $iso ]]; then
+    src="$iso"
+else
+    [[ -s $iso ]] || die "$iso is not there."
+    if mount -o loop,ro -t udf "$iso" "$tmp/iso" 2>/dev/null || mount -o loop,ro "$iso" "$tmp/iso" 2>/dev/null; then
+        src="$tmp/iso"
+    else
+        die "$iso could not be opened (is it a Windows ISO?)."
+    fi
+fi
+image=""
+for f in "$src"/sources/install.wim "$src"/sources/install.esd "$src"/sources/install.swm; do [[ -f $f ]] && image="$f" && break; done
+[[ -n $image && -f "$src/efi/boot/bootx64.efi" && -f "$src/sources/boot.wim" ]] ||
+    die "this is not a Windows 10 or 11 ISO (no Windows Setup for 64-bit computers in it)."
+if [[ -f "$src/sources/idwbinfo.txt" ]] && grep -qi 'arm64' "$src/sources/idwbinfo.txt"; then
+    die "this is Windows for ARM computers: this computer needs the x64 one."
+fi
+
+# --- Onto the Windows Setup part (FAT32, which every computer can start from) --------------------
+progress 72 "Putting Windows Setup on the drive"
+umount "$part" 2>/dev/null
+mkfs.fat -F 32 -n WINSETUP "$part" >/dev/null || die "the Windows Setup part could not be formatted."
+mount "$part" "$tmp/setup" || die "the Windows Setup part could not be opened."
+# Everything but the Windows image itself (a FAT32 file can be at most 4 GB).
+(cd "$src" && find . -type f ! -path ./sources/install.wim ! -path ./sources/install.esd -print0) |
+    while IFS= read -r -d '' f; do
+        install -D -m 0644 "$src/$f" "$tmp/setup/$f" || exit 1
+    done || die "copying Windows Setup failed (is the drive full?)."
+progress 80 "Putting Windows on the drive"
+size="$(stat -c %s "$image")"
+if [[ $image == *.swm ]]; then
+    cp "$src"/sources/install*.swm "$tmp/setup/sources/" || die "copying Windows failed."
+elif ((size < 4 * 1024 * 1024 * 1024 - 1)); then
+    cp "$image" "$tmp/setup/sources/" || die "copying Windows failed."
+else
+    # Windows Setup reads it in parts too (install.swm, install2.swm...).
+    command -v wimlib-imagex >/dev/null || die "wimlib is missing (Update Ollie OS adds it)."
+    if [[ $image == *.esd ]]; then
+        wimlib-imagex export "$image" all "$work/ollie-install.wim" --compress=LZX >/dev/null || die "converting Windows failed."
+        image="$work/ollie-install.wim"
+    fi
+    wimlib-imagex split "$image" "$tmp/setup/sources/install.swm" 3800 >/dev/null || die "putting Windows on the drive failed (is it full?)."
+    rm -f "$work/ollie-install.wim"
+fi
+
+progress 94 "Getting Windows Setup ready"
+cat >"$tmp/setup/autounattend.xml" <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ollie OS: Windows 11 installs on computers without TPM 2.0 or Secure Boot
+     too. Nothing else is answered: Setup asks where to install it. -->
+<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add"><Order>1</Order><Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassTPMCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>2</Order><Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>3</Order><Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassRAMCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>4</Order><Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassCPUCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>5</Order><Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassStorageCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+      </RunSynchronous>
+    </component>
+  </settings>
+</unattend>
+EOF
+install -D -m 0644 /dev/stdin "$tmp/setup/sources/\$OEM\$/\$\$/Setup/Scripts/SetupComplete.cmd" <<'EOF'
+@echo off
+rem Ollie OS: Windows Boot Manager starts Ollie OS's start-up menu (both are on it).
+bcdedit /set {bootmgr} path \EFI\systemd\systemd-bootx64.efi
+rem The clock in UTC, like Ollie OS, so the time is right after switching.
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeIsUniversal /t REG_DWORD /d 1 /f
+rem No automatic BitLocker: it would ask for a recovery key because of the menu.
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\BitLocker" /v PreventDeviceEncryption /t REG_DWORD /d 1 /f
+EOF
+sed -i 's/$/\r/' "$tmp/setup/sources/\$OEM\$/\$\$/Setup/Scripts/SetupComplete.cmd"
+sync
+umount "$tmp/setup"
+
+# Noted for Ollie OS: the menu says "Windows 11" (or 10) once it is installed.
+install -D -m 0644 /dev/stdin "$root/etc/ollie/windows" <<EOF
+VERSION=$version
+SETUP=$(blkid -s PARTUUID -o value "$part")
+EOF
+
+# --- Start Windows Setup at the next restart (that once) ----------------------------------------
+if [[ -n $efi_vars ]] && command -v efibootmgr >/dev/null; then
+    label="Install Windows $version"
+    while read -r num; do efibootmgr -q -b "$num" -B >/dev/null 2>&1; done < <(efibootmgr | sed -n "s/^Boot\([0-9A-Fa-f]\{4\}\)\*\? $label\b.*/\1/p")
+    efibootmgr -q -C -d "$disk" -p "$partnum" -L "$label" -l '\efi\boot\bootx64.efi' >/dev/null 2>&1
+    num="$(efibootmgr | sed -n "s/^Boot\([0-9A-Fa-f]\{4\}\)\*\? $label\b.*/\1/p" | head -n 1)"
+    if [[ -n $num ]] && efibootmgr -q -n "$num" >/dev/null 2>&1; then
+        echo "NEXT-START Windows Setup"
+    fi
+fi
+progress 100 "Windows Setup is ready"
