@@ -1,0 +1,15 @@
+# Windows, as asked for at the end of the Drive Writer: room made for it and
+# Windows Setup's part, at the drive's first start (only when the Drive
+# Writer left /boot/ollie-windows-plan; usr/local/lib/ollie/windows-plan).
+[Unit]
+Description=Get the room for Windows ready (asked for in the Drive Writer)
+ConditionPathExists=/boot/ollie-windows-plan
+RequiresMountsFor=/boot
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ollie/windows-plan
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,64 @@
+#!/bin/bash
+# Windows, as asked for at the end of the Drive Writer (os/usb/ollie-install-drive),
+# done at the drive's first start, as root (ollie-windows-plan.service). The
+# Drive Writer leaves its answers on the start-up part, /boot/ollie-windows-plan:
+#   MENU=1                 Windows (already on the computer) on the start-up
+#                          menu: ollie-windows-boot.service is switched on
+#   VERSION=10|11 GB=N     install Windows next to Ollie OS: Ollie OS's part
+#                          is made smaller (its btrfs, then the partition, at
+#                          the end of the drive), N GB are left empty for
+#                          Windows and a Windows Setup part (OLLIE_WINSETUP,
+#                          10 GB) is made after them, the way ollie-install
+#                          does it; then "Install Windows" opens at the next
+#                          login to get Windows Setup ready (it needs the
+#                          internet) and start it.
+# The file is used once (taken away first, so this never runs twice). What
+# happens is in the journal (journalctl -u ollie-windows-plan).
+set -uo pipefail
+plan=/boot/ollie-windows-plan
+[[ -f $plan ]] || exit 0
+val() { sed -n "s/^$1=//p" "$plan" | tail -n 1 | tr -cd '0-9'; }
+menu="$(val MENU)" version="$(val VERSION)" gb="$(val GB)"
+rm -f -- "$plan"
+sync
+fail() { echo "Windows could not be got ready: $*" >&2; exit 1; }
+
+if [[ $menu == 1 ]]; then
+    systemctl enable --now ollie-windows-boot.service && echo "Windows on the start-up menu: switched on."
+fi
+[[ ($version == 10 || $version == 11) && -n $gb ]] || exit 0
+
+# Ollie OS's part: btrfs, the last part on its drive.
+src="$(findmnt -no SOURCE / | sed 's/\[.*//')"
+[[ "$(findmnt -no FSTYPE /)" == btrfs && -b $src ]] || fail "Ollie OS's part is not btrfs."
+name="${src#/dev/}"
+disk="/dev/$(lsblk -no PKNAME "$src" | head -n 1)"
+num="$(cat "/sys/class/block/$name/partition")"
+last="$(lsblk -lnpo NAME,TYPE "$disk" | awk '$2 == "part" {n++} END {print n}')"
+[[ -n $num && $num == "$last" ]] || fail "Ollie OS's part is not the last one on $disk."
+((gb >= (version == 11 ? 64 : 32))) || fail "$gb GB is too little for Windows $version."
+GiB=1073741824
+shrink=$((gb + 12)) # GiB: Windows, Windows Setup (10), and 2 to spare
+free="$(btrfs filesystem usage -b / 2>/dev/null | awk '/Free \(estimated\)/ {print $3; exit}')"
+((${free:-0} > (shrink + 8) * GiB)) || fail "not enough free room in Ollie OS's part for $gb GB of Windows."
+
+echo "Making room for Windows $version: Ollie OS's part gets $shrink GB smaller."
+btrfs filesystem resize "-${shrink}g" / >/dev/null || fail "Ollie OS's part could not be made smaller."
+# The partition: still 1 GB bigger than its btrfs now (start kept).
+size="$(cat "/sys/class/block/$name/size")" # sectors of 512 bytes
+newsize=$((size - (shrink - 1) * GiB / 512))
+echo ", $newsize" | sfdisk --no-reread --no-tell-kernel -q -N "$num" "$disk" || fail "the partition could not be made smaller."
+resizepart "$disk" "$num" "$newsize" || partx -u "$disk" 2>/dev/null
+# Windows Setup's part at the end of the drive; Windows' room before it, empty.
+sgdisk -n "0:-10G:0" -t 0:0700 -c 0:OLLIE_WINSETUP "$disk" >/dev/null || fail "the Windows Setup part could not be made."
+partx -a "$disk" 2>/dev/null
+udevadm settle 2>/dev/null
+
+install -D -m 0644 /dev/stdin /etc/ollie/windows <<EOF
+VERSION=$version
+EOF
+# "Install Windows" in the apps menu, and once at the next login.
+install -m 0644 /usr/local/share/ollie/ollie-windows-install.desktop /usr/share/applications/
+sed -e 's#^Exec=.*#Exec=/usr/local/bin/ollie-windows-install --at-login#' /usr/local/share/ollie/ollie-windows-install.desktop >/etc/xdg/autostart/ollie-windows-install.desktop
+systemctl enable ollie-windows-boot.service >/dev/null 2>&1
+echo "Room for Windows $version is ready: Install Windows opens at the next login."

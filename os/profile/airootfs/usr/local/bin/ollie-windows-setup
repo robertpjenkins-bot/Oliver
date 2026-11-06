@@ -169,6 +169,8 @@ install -D -m 0644 /dev/stdin "$root/etc/ollie/windows" <<EOF
 VERSION=$version
 SETUP=$(blkid -s PARTUUID -o value "$part")
 EOF
+# Ready: "Install Windows" no longer opens by itself at login (windows-plan).
+rm -f "$root/etc/xdg/autostart/ollie-windows-install.desktop"
 
 # --- Start Windows Setup at the next restart (that once) ----------------------------------------
 if [[ -n $efi_vars ]] && command -v efibootmgr >/dev/null; then

@@ -259,15 +259,7 @@ if [[ -z "${OLLIE_DRIVE_YES:-}" ]]; then
     [[ "$answer" == ERASE ]] || die "cancelled; nothing was changed."
 fi
 tz="$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')"
-# Windows on the start-up menu: found and added by Ollie OS itself when the
-# drive starts on a computer that has Windows (ollie-windows-boot.service).
-if [[ -z "${OLLIE_DRIVE_YES:-}" ]]; then
-    echo
-    read -rp "Add Windows to Ollie OS's start-up menu, for a computer that has Windows? [y/N] " answer
-    [[ $answer == [yY]* ]] && export OLLIE_WINDOWS_BOOT=1
-else
-    export OLLIE_WINDOWS_BOOT="${OLLIE_DRIVE_WINDOWS:-}"
-fi
+# (Windows is asked about at the end, once Ollie OS is on the drive.)
 
 # --- 3. Room on this computer, for the while ------------------------------------------------
 mkdir -p "$work" || die "could not make $work."
@@ -443,6 +435,68 @@ rm -f -- "$work/Ollie-OS-Drive-Writer.log" "$work/ollie-os-source.tar.gz" "$work
 rmdir -- "$work" 2>/dev/null
 echo "  (What it put on this computer is removed.)"
 
+# --- 7. Windows: asked now, done at the drive's first start --------------------------------------
+# The answers go on the drive's start-up part (ollie-windows-plan), and at
+# its first start Ollie OS does it as root (usr/local/lib/ollie/windows-plan):
+# makes room for Windows and its Setup part, then "Install Windows" gets
+# Windows Setup ready after you log in; or puts Windows already on the
+# computer on the start-up menu.
+winplan="" wintold=""
+if [[ -n "${OLLIE_DRIVE_YES:-}" ]]; then
+    [[ -n "${OLLIE_DRIVE_WINDOWS:-}" ]] && winplan="MENU=1"
+else
+    disk_gb=$(($(lsblk -bdno SIZE "$disk") / 1000000000))
+    say "Ollie OS is on the drive. Windows too?"
+    read -rp "Do you want to install Windows on this drive too, next to Ollie OS? [y/N] " answer
+    if [[ $answer == [yY]* ]]; then
+        while :; do
+            read -rp "Windows 10 or 11? [11] " v
+            v="${v:-11}"
+            [[ $v == 10 || $v == 11 ]] && break
+            echo "  Type 10 or 11."
+        done
+        min=$((v == 11 ? 64 : 32)) most=$((disk_gb - 38)) # Ollie OS 26 GB, Windows Setup 10, 2 to spare
+        if ((most < min)); then
+            echo "  This drive ($disk_gb GB) is too small for Ollie OS and Windows $v: that needs at least $((min + 38)) GB. Only Ollie OS stays on it."
+        else
+            half=$(((disk_gb - 12) / 2))
+            ((half < min)) && half=$min
+            ((half > most)) && half=$most
+            while :; do
+                read -rp "How many GB of the drive for Windows $v ($min to $most)? [$half] " g
+                g="${g:-$half}"
+                [[ $g =~ ^[0-9]+$ ]] && ((g >= min && g <= most)) && break
+                echo "  A number from $min to $most."
+            done
+            winplan="VERSION=$v
+GB=$g"
+            wintold="  Windows $v: at the drive's first start Ollie OS makes $g GB of room for it. After you
+  log in, Install Windows gets Windows Setup ready (it needs the internet, about 6 GB,
+  or a Windows .iso file) and restarts into it: there, pick \"Unallocated Space\"."
+        fi
+    else
+        read -rp "Should Ollie OS's start-up menu show Windows, on a computer that already has it? [y/N] " answer
+        [[ $answer == [yY]* ]] && winplan="MENU=1" wintold="  Windows: Ollie OS puts it on its start-up menu when it starts on a computer that has it."
+    fi
+fi
+if [[ -n $winplan ]]; then
+    esp="$(lsblk -lnpo NAME,LABEL "$disk" | awk '$2 == "OLLIE_BOOT" {print $1; exit}')"
+    written=""
+    if [[ -n $esp ]]; then
+        if m="$(open_part "$esp" 2>/dev/null)" && printf '%s\n' "$winplan" >"$m/ollie-windows-plan" 2>/dev/null; then
+            written=1
+        elif have sudo && m="$(mktemp -d)" && sudo -n mount "$esp" "$m" 2>/dev/null; then
+            printf '%s\n' "$winplan" | sudo -n tee "$m/ollie-windows-plan" >/dev/null && written=1
+            sudo -n umount "$m"
+            rmdir "$m"
+        fi
+        sync
+        udisks "$(udisks_obj "$esp")" org.freedesktop.UDisks2.Filesystem Unmount 'a{sv}' 0 >/dev/null 2>&1
+    fi
+    [[ -n $written ]] || wintold="  (Windows: the answers could not be saved on the drive. Use Install Ollie OS from the
+  Ollie OS USB instead to have Windows next to it.)"
+fi
+
 echo
 [[ -n $saved ]] && cat "$saved"
 if ((rc == 3)); then
@@ -462,6 +516,7 @@ if [[ -n ${unpacked_later:-} ]]; then
     echo "  Its first start unpacks Ollie OS onto the drive: 5 to 15 minutes, once. Do that"
     echo "  first start on one of those (older computers set to BIOS work after it)."
 fi
+[[ -n $wintold ]] && echo "$wintold"
 cat <<'EOF'
   On its first start it asks you to make a username and password.
 
