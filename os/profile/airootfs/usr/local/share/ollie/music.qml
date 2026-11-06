@@ -18,7 +18,7 @@ ApplicationWindow {
     height: 720
     visible: true
     title: "Music Maker"
-    color: "#1e1b4b"
+    color: "#2A2033" // a dark plum music room
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -34,9 +34,9 @@ ApplicationWindow {
         try { x.send(); return x.responseText; } catch (e) { return ""; }
     }
 
-    readonly property var instruments: [["piano", "🎹 Piano"], ["xylo", "🔔 Xylophone"], ["synth", "👾 8-bit"]]
+    readonly property var instruments: [["piano", "Piano"], ["xylo", "Xylophone"], ["synth", "8-bit"]]
     property string instrument: "piano"
-    readonly property var drums: [["kick", "🥁 Boom"], ["snare", "🪘 Tsss"], ["hihat", "✨ Tick"], ["clap", "👏 Clap"]]
+    readonly property var drums: [["kick", "Boom"], ["snare", "Tsss"], ["hihat", "Tick"], ["clap", "Clap"]]
     property var beat: [[], [], [], []]       // drum -> steps on
     property int tempo: 110
     property int step: -1
@@ -86,16 +86,16 @@ ApplicationWindow {
 
     // Recording and playing back.
     function record() {
-        notes = []; recording = true; playing = false; startedAt = Date.now(); message = "⏺ Recording... play something!";
+        notes = []; recording = true; playing = false; startedAt = Date.now(); message = "Recording. Play something.";
         if (!beatOn && beat.some(r => r.length)) beatOn = true;
     }
     function stop() {
-        if (recording) message = notes.length ? "Got it! " + notes.length + " notes. ▶ to hear it, 💾 to keep it." : "";
+        if (recording) message = notes.length ? notes.length + " notes. Play to hear it, Keep it to save it." : "";
         recording = false; playing = false; playback.stop();
     }
     property int playAt: 0
     function playBack() {
-        if (!notes.length) { message = "Record something first! ⏺"; return; }
+        if (!notes.length) { message = "Record something first."; return; }
         recording = false; playing = true; playAt = 0; startedAt = Date.now(); playback.start();
         if (beat.some(r => r.length)) beatOn = true;
     }
@@ -116,14 +116,14 @@ ApplicationWindow {
     function song() { return JSON.stringify({ tempo: tempo, beat: beat, notes: notes, instrument: instrument }) }
     function save(alsoFile) {
         const n = nameField.text.trim().replace(/[\/\\:*?"<>|]/g, "").slice(0, 40);
-        if (!n) { message = "Give your song a name first ✏️"; return; }
-        if (!notes.length && !beat.some(r => r.length)) { message = "Play or record something first! 🎹"; return; }
+        if (!n) { message = "Give your song a name first."; return; }
+        if (!notes.length && !beat.some(r => r.length)) { message = "Play or record something first."; return; }
         songName = n;
         console.log("OLLIE-SONG " + n + "\t" + song());
         act("save " + n);
         if (alsoFile) act("export " + n);
         act("trophy count song");
-        message = alsoFile ? "🎵 Saving \"" + n + "\" as a music file, in Music, Ollie Songs..." : "💾 Saved \"" + n + "\"!";
+        message = alsoFile ? "Saving \"" + n + "\" as a music file, in Music, Ollie Songs…" : "Saved \"" + n + "\".";
         songs = songs.includes(n) ? songs : songs.concat([n]);
     }
     property var songs: []
@@ -143,7 +143,7 @@ ApplicationWindow {
             if (s.name !== name) { if (++tries > 10) { stop(); tries = 0; } return; }
             stop(); tries = 0;
             win.tempo = s.tempo || 110; win.beat = s.beat || [[], [], [], []]; win.notes = s.notes || []; win.instrument = s.instrument || "piano";
-            win.songName = name; nameField.text = name; win.message = "📂 \"" + name + "\" is ready: ▶ to hear it.";
+            win.songName = name; nameField.text = name; win.message = "\"" + name + "\" is open. Play to hear it.";
         }
     }
 
@@ -177,7 +177,7 @@ ApplicationWindow {
                 }
             }
             Item { Layout.fillWidth: true }
-            Label { text: win.message; color: "#fde68a"; font.pixelSize: 15 }
+            Label { text: win.message; color: "#F2D06B"; font.pixelSize: 15 }
         }
 
         // The beat maker.
@@ -185,7 +185,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.preferredHeight: 250
             radius: 18
-            color: "#2e2a6b"
+            color: "#3A2E45"
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 14
@@ -196,9 +196,9 @@ ApplicationWindow {
                     Button { text: "Clear"; onClicked: win.beat = [[], [], [], []] }
                     Button { text: "Surprise me"; onClicked: win.beat = [[0, 8], [4, 12], [0, 2, 4, 6, 8, 10, 12, 14], Math.random() < 0.5 ? [12] : [6, 14]] }
                     Item { Layout.fillWidth: true }
-                    Label { text: "Speed"; color: "#c7d2fe"; font.pixelSize: 15 }
+                    Label { text: "Speed"; color: "#D8CCE0"; font.pixelSize: 15 }
                     Slider { from: 60; to: 180; stepSize: 5; value: win.tempo; onMoved: win.tempo = value; Layout.preferredWidth: 180 }
-                    Label { text: win.tempo; color: "#c7d2fe"; font.pixelSize: 15 }
+                    Label { text: win.tempo; color: "#D8CCE0"; font.pixelSize: 15 }
                 }
                 Repeater {
                     model: win.drums
@@ -216,7 +216,7 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 34
                                 radius: 8
-                                color: on ? ["#f43f5e", "#f59e0b", "#22d3ee", "#a3e635"][drumRow.index] : index % 4 === 0 ? "#4338ca" : "#3730a3"
+                                color: on ? ["#D0587E", "#E0A030", "#22d3ee", "#8DB86B"][drumRow.index] : index % 4 === 0 ? "#5A4880" : "#4A3B66"
                                 border.color: win.step === index ? "white" : "transparent"; border.width: 3
                                 MouseArea { anchors.fill: parent; onClicked: win.toggleStep(drumRow.index, index) }
                             }
@@ -239,7 +239,7 @@ ApplicationWindow {
             Item { Layout.fillWidth: true }
             ComboBox {
                 visible: win.songs.length > 0
-                model: ["📂 My songs"].concat(win.songs)
+                model: ["My songs"].concat(win.songs)
                 Layout.preferredWidth: 190
                 onActivated: (i) => { if (i > 0) win.open(win.songs[i - 1]); currentIndex = 0; }
             }
@@ -261,12 +261,12 @@ ApplicationWindow {
                     x: (Math.floor(index / 12) * 7 + white) * piano.w
                     width: piano.w - 3; height: piano.height
                     radius: 8
-                    color: win.pressed[index] ? "#fde047" : "white"
+                    color: win.pressed[index] ? "#F2D06B" : "white"
                     border.color: "#1e1b4b"
                     Column {
                         anchors.bottom: parent.bottom; anchors.bottomMargin: 10; anchors.horizontalCenter: parent.horizontalCenter
-                        Label { text: win.names[index % 12]; color: "#6d28d9"; font.pixelSize: 16; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
-                        Label { text: win.keyOf(index); color: "#94a3b8"; font.pixelSize: 13; anchors.horizontalCenter: parent.horizontalCenter }
+                        Label { text: win.names[index % 12]; color: "#6A4E9C"; font.pixelSize: 16; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
+                        Label { text: win.keyOf(index); color: "#9A90A3"; font.pixelSize: 13; anchors.horizontalCenter: parent.horizontalCenter }
                     }
                     MouseArea { anchors.fill: parent; onPressed: win.play(index) }
                 }
@@ -280,9 +280,9 @@ ApplicationWindow {
                     x: (Math.floor(index / 12) * 7 + whiteBefore + 1) * piano.w - piano.w * 0.32
                     width: piano.w * 0.62; height: piano.height * 0.6
                     radius: 6
-                    color: win.pressed[index] ? "#f59e0b" : "#111827"
+                    color: win.pressed[index] ? "#E0A030" : "#111827"
                     Label { anchors.bottom: parent.bottom; anchors.bottomMargin: 8; anchors.horizontalCenter: parent.horizontalCenter
-                        text: win.keyOf(index); color: "#9ca3af"; font.pixelSize: 12 }
+                        text: win.keyOf(index); color: "#9A90A3"; font.pixelSize: 12 }
                     MouseArea { anchors.fill: parent; onPressed: win.play(index) }
                 }
             }

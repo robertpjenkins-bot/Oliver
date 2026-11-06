@@ -19,7 +19,7 @@ ApplicationWindow {
     height: 720
     visible: true
     title: "Sticker Maker"
-    color: "#fdf4ff"
+    color: "#EEE6D8" // craft paper
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -106,7 +106,7 @@ ApplicationWindow {
         // The sticker.
         ColumnLayout {
             spacing: 10
-            Label { text: "Sticker Maker"; font.pixelSize: 30; font.bold: true; color: "#86198f" }
+            Label { text: "Sticker Maker"; font.pixelSize: 30; font.bold: true; color: "#22252B" }
             Rectangle {
                 width: 440; height: 440; radius: 20
                 color: "#f5f5f4"
@@ -210,7 +210,7 @@ ApplicationWindow {
             Label { text: "2. Shape"; font.bold: true; font.pixelSize: 17; color: "#701a75" }
             RowLayout {
                 Repeater {
-                    model: [{ k: "circle", t: "⚪ Circle" }, { k: "square", t: "⬜ Square" }, { k: "heart", t: "❤️ Heart" }, { k: "star", t: "⭐ Star" }]
+                    model: [{ k: "circle", t: "Circle" }, { k: "square", t: "Square" }, { k: "heart", t: "Heart" }, { k: "star", t: "Star" }]
                     delegate: Button { required property var modelData; text: modelData.t; highlighted: win.shape === modelData.k; onClicked: win.shape = modelData.k }
                 }
             }
@@ -246,7 +246,7 @@ ApplicationWindow {
         anchors.margins: 18
         spacing: 12
         visible: win.mode === "place"
-        Label { text: "Drag your sticker to where it goes on the desktop"; font.pixelSize: 24; font.bold: true; color: "#86198f" }
+        Label { text: "Drag your sticker to where it goes on the desktop"; font.pixelSize: 24; font.bold: true; color: "#22252B" }
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true

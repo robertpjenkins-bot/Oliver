@@ -140,7 +140,7 @@ ApplicationWindow {
             }
             RowLayout {
                 spacing: 10
-                Button { text: "Take a photo!"; font.pixelSize: 20; font.bold: true; highlighted: true; enabled: win.hasCamera && win.count === 0; onClicked: win.snap() }
+                Button { text: "Take a photo"; font.pixelSize: 20; font.bold: true; highlighted: true; enabled: win.hasCamera && win.count === 0; onClicked: win.snap() }
                 Button { text: win.mirror ? "Mirror: on" : "Mirror: off"; onClicked: win.mirror = !win.mirror }
                 Button { text: "Take the stickers off"; onClicked: win.stuck = [] }
                 Label { text: "Drag stickers to move them · mouse wheel: bigger or smaller · double-click: take it off"; color: "#a1a1aa"; font.pixelSize: 13; wrapMode: Text.WordWrap; Layout.fillWidth: true }
@@ -163,7 +163,7 @@ ApplicationWindow {
             Layout.maximumWidth: 290
             Layout.fillHeight: true
             spacing: 10
-            Label { text: "Click to add:"; color: "white"; font.pixelSize: 17; font.bold: true }
+            Label { text: "Add a sticker"; color: "white"; font.pixelSize: 17; font.bold: true }
             GridLayout {
                 columns: 5
                 columnSpacing: 4; rowSpacing: 4
@@ -177,7 +177,7 @@ ApplicationWindow {
                     }
                 }
             }
-            Label { text: "Effects:"; color: "white"; font.pixelSize: 17; font.bold: true; Layout.topMargin: 8 }
+            Label { text: "Effects"; color: "white"; font.pixelSize: 17; font.bold: true; Layout.topMargin: 8 }
             GridLayout {
                 columns: 2
                 columnSpacing: 6; rowSpacing: 6

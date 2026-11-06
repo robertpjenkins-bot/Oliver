@@ -14,7 +14,7 @@ ApplicationWindow {
     height: 760
     visible: true
     title: "Comic Maker"
-    color: "#fefce8"
+    color: "#F7F3E8" // newsprint
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -32,13 +32,13 @@ ApplicationWindow {
     property int nextId: 1
     property int selected: -1               // a thing's id
     readonly property var sceneList: [
-        { k: "sky", t: "☀️ Sky", top: "#7dd3fc", bottom: "#bbf7d0", deco: "☁️" },
-        { k: "forest", t: "🌲 Forest", top: "#bef264", bottom: "#166534", deco: "🌲" },
-        { k: "space", t: "🚀 Space", top: "#0f172a", bottom: "#312e81", deco: "⭐" },
-        { k: "city", t: "🏙️ City", top: "#fde68a", bottom: "#78716c", deco: "🏢" },
-        { k: "beach", t: "🏖️ Beach", top: "#67e8f9", bottom: "#fde68a", deco: "🌴" },
-        { k: "night", t: "🌙 Night", top: "#1e1b4b", bottom: "#0f172a", deco: "🌙" },
-        { k: "sea", t: "🐠 Under the sea", top: "#06b6d4", bottom: "#1e3a8a", deco: "🫧" }
+        { k: "sky", t: "Sky", top: "#A9D3E8", bottom: "#B7D7A0", deco: "☁️" },
+        { k: "forest", t: "Forest", top: "#CFE0A8", bottom: "#4F7A3E", deco: "🌲" },
+        { k: "space", t: "Space", top: "#1B2140", bottom: "#2E2A55", deco: "⭐" },
+        { k: "city", t: "City", top: "#F0D9A0", bottom: "#8A8178", deco: "🏢" },
+        { k: "beach", t: "Beach", top: "#9ED8E0", bottom: "#EBD7A2", deco: "🌴" },
+        { k: "night", t: "Night", top: "#24224A", bottom: "#161A2C", deco: "🌙" },
+        { k: "sea", t: "Under the sea", top: "#3E8FA8", bottom: "#24496E", deco: "🫧" }
     ]
     function scene(k) { return sceneList.find(s => s.k === k) || sceneList[0] }
     function thing(id) { return things.find(t => t.id === id) }
@@ -66,7 +66,7 @@ ApplicationWindow {
             Layout.maximumWidth: 310
             Layout.fillHeight: true
             spacing: 8
-            Label { text: "Comic Maker"; font.pixelSize: 28; font.bold: true; color: "#b45309" }
+            Label { text: "COMIC MAKER"; font.pixelSize: 28; font.weight: Font.Black; font.letterSpacing: 1; color: "#111111" }
             Label { text: "Panels"; font.bold: true }
             RowLayout {
                 Repeater {
@@ -111,8 +111,9 @@ ApplicationWindow {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: chosen.implicitHeight + 20
-                radius: 12
-                color: "#fef3c7"
+                radius: 0
+                color: "white"
+                border.color: "#111111"; border.width: 2
                 visible: win.selected >= 0
                 ColumnLayout {
                     id: chosen
@@ -148,7 +149,7 @@ ApplicationWindow {
                     }));
                 }
             }
-            Label { id: savedNote; color: "#15803d" }
+            Label { id: savedNote; color: "#3E7B36" }
         }
 
         // --- The strip ---
@@ -162,7 +163,7 @@ ApplicationWindow {
                 width: grid ? Math.min(parent.width, parent.height * 1.2) : Math.min(parent.width, parent.height * win.panels * 0.9)
                 height: grid ? width / 1.2 : width / (win.panels * 0.9)
                 color: "white"
-                border.color: "#111827"
+                border.color: "#111111"
                 border.width: 6
                 Grid {
                     anchors.fill: parent
@@ -178,12 +179,10 @@ ApplicationWindow {
                             width: (strip.width - 24 - (strip.grid ? 12 : 12 * (win.panels - 1))) / (strip.grid ? 2 : win.panels)
                             height: (strip.height - 24 - (strip.grid ? 12 : 0)) / (strip.grid ? 2 : 1)
                             clip: true
-                            border.color: win.panel === index ? "#f59e0b" : "#111827"
+                            border.color: win.panel === index ? "#C8473D" : "#111111"
                             border.width: win.panel === index ? 6 : 4
-                            gradient: Gradient {
-                                GradientStop { position: 0; color: box.sc.top }
-                                GradientStop { position: 1; color: box.sc.bottom }
-                            }
+                            color: box.sc.top // flat colours, like a printed comic: sky, then ground
+                            Rectangle { anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right; anchors.margins: parent.border.width; height: parent.height * 0.3; color: box.sc.bottom }
                             MouseArea { anchors.fill: parent; onClicked: { win.panel = index; win.selected = -1; } }
                             Text { x: parent.width * 0.72; y: parent.height * 0.06; text: box.sc.deco; font.pixelSize: parent.height * 0.14; opacity: 0.85 }
                             Text { x: parent.width * 0.06; y: parent.height * 0.66; text: box.sc.deco; font.pixelSize: parent.height * 0.18; opacity: 0.7 }
@@ -213,18 +212,18 @@ ApplicationWindow {
                                             visible: it.modelData.kind === "say" || it.modelData.kind === "think"
                                             anchors.fill: parent
                                             radius: it.modelData.kind === "think" ? height / 2 : 14
-                                            color: "white"; border.color: "#111827"; border.width: 3
+                                            color: "white"; border.color: "#111111"; border.width: 3
                                             Rectangle { // the tail
                                                 visible: it.modelData.kind === "say"
                                                 width: 18; height: 18; rotation: 45; color: "white"
-                                                border.color: "#111827"; border.width: 3
+                                                border.color: "#111111"; border.width: 3
                                                 x: it.modelData.flip ? parent.width - 40 : 22; y: parent.height - 10
                                                 z: -1
                                             }
                                             Repeater { // thought dots
                                                 model: it.modelData.kind === "think" ? 2 : 0
                                                 delegate: Rectangle { required property int index; width: 14 - index * 5; height: width; radius: width / 2
-                                                    color: "white"; border.color: "#111827"; border.width: 2
+                                                    color: "white"; border.color: "#111111"; border.width: 2
                                                     x: 24 + index * 14; y: shapeItem.height + 4 + index * 10 }
                                             }
                                         }
@@ -236,7 +235,7 @@ ApplicationWindow {
                                             font.pixelSize: (it.modelData.kind === "pow" ? 9 : 5) * it.u * it.modelData.size
                                             font.bold: true
                                             font.family: "Comic Neue, Comic Sans MS, sans-serif"
-                                            color: it.modelData.kind === "pow" ? "#facc15" : "#111827"
+                                            color: it.modelData.kind === "pow" ? "#facc15" : "#111111"
                                             style: it.modelData.kind === "pow" ? Text.Outline : Text.Normal
                                             styleColor: "#b91c1c"
                                             rotation: it.modelData.kind === "pow" ? -8 : 0
@@ -247,7 +246,7 @@ ApplicationWindow {
                                     }
                                     Rectangle {
                                         anchors.fill: parent; anchors.margins: -4
-                                        color: "transparent"; border.color: "#f59e0b"; border.width: 3; radius: 6
+                                        color: "transparent"; border.color: "#C8473D"; border.width: 3; radius: 0
                                         visible: win.selected === it.modelData.id
                                     }
                                     MouseArea {

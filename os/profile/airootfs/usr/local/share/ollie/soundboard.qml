@@ -14,7 +14,7 @@ ApplicationWindow {
     height: 720
     visible: true
     title: "Sound Board"
-    color: "#1e1b4b"
+    color: "#1F2024" // a drum-pad machine
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -41,7 +41,7 @@ ApplicationWindow {
         if (pads.length !== 12) {
             const p = builtIn.map(b => ({ emoji: b.emoji, name: b.name, file: arg("sounds") + "/" + b.file }));
             const colours = ["🎤", "🎵", "😂", "🐶", "🐱", "👻"];
-            for (let i = 0; i < 6; i++) p.push({ emoji: colours[i], name: "Record me!", file: "" });
+            for (let i = 0; i < 6; i++) p.push({ emoji: colours[i], name: "Empty: press to record", file: "" });
             pads = p;
         }
     }
@@ -89,17 +89,15 @@ ApplicationWindow {
                     readonly property bool empty: modelData.file === ""
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: 22
-                    color: win.recording === index ? "#dc2626" : win.playingPad === index ? "#facc15"
-                        : empty ? "#312e81" : ["#7c3aed", "#db2777", "#2563eb", "#059669", "#ea580c", "#0891b2"][index % 6]
-                    scale: pad.pressed ? 0.94 : win.playingPad === index ? 1.05 : 1
-                    Behavior on scale { NumberAnimation { duration: 90 } }
-                    border.color: "white"; border.width: empty ? 2 : 0
+                    radius: 6
+                    color: win.recording === index ? "#C8473D" : win.playingPad === index ? "#F2D06B"
+                        : empty ? "#2A2C31" : ["#6A4E9C", "#D0587E", "#336B9E", "#4F8A45", "#E07A2F", "#257A78"][index % 6]
+                    scale: pad.pressed ? 0.97 : 1
+                    border.color: "#4A4D55"; border.width: empty ? 2 : 0
                     ColumnLayout {
                         anchors.centerIn: parent
                         spacing: 4
-                        Label { text: win.recording === index ? "" : modelData.emoji; font.pixelSize: 52; Layout.alignment: Qt.AlignHCenter }
-                        Label { text: modelData.name; color: "white"; font.pixelSize: 17; font.bold: true; Layout.alignment: Qt.AlignHCenter }
+                        Label { text: win.recording === index ? "Recording… press to stop" : modelData.name; color: parent.parent.empty ? "#9A9CA3" : "white"; font.pixelSize: 20; font.bold: true; Layout.alignment: Qt.AlignHCenter }
                     }
                     MouseArea {
                         id: pad
@@ -114,7 +112,7 @@ ApplicationWindow {
                     }
                     Button {
                         anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 6
-                        text: ""; flat: true
+                        text: "Change"; flat: true; font.pixelSize: 12
                         onClicked: { win.editing = index; nameField.text = modelData.name; editBox.open(); }
                     }
                 }

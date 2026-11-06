@@ -14,7 +14,7 @@ ApplicationWindow {
     height: 760
     visible: true
     title: "Ollie Animator"
-    color: "#ecfeff"
+    color: "#EDEDEB" // a lightbox table
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -85,9 +85,9 @@ ApplicationWindow {
         spacing: 10
 
         RowLayout {
-            Label { text: "Ollie Animator"; font.pixelSize: 28; font.bold: true; color: "#0e7490" }
+            Label { text: "Ollie Animator"; font.pixelSize: 28; font.bold: true; color: "#22252B" }
             Item { Layout.fillWidth: true }
-            Label { text: "Frame " + (win.cur + 1) + " of " + win.frames.length; font.pixelSize: 18; color: "#155e75" }
+            Label { text: "Frame " + (win.cur + 1) + " of " + win.frames.length; font.pixelSize: 18; color: "#C8473D"; font.family: "Noto Sans Mono" }
         }
 
         RowLayout {
