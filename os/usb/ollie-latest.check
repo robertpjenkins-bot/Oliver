@@ -22,6 +22,17 @@ done
 [[ -L /etc/systemd/user/default.target.wants/ollie-playtime.service ]] && ok "Play Time counts your games (after logging in again)"
 [[ -s /usr/local/share/ollie/world.json ]] && ok "World Explorer's map" || echo "PROBLEM World Explorer's map is missing"
 python3 -c 'import sys' 2>/dev/null && [[ -x /usr/local/lib/ollie/games.py ]] && ok "Games can add ROMs and ISOs"
+# Saved starts: the hook goes in now (and the old Ollie OS is tidied at each start).
+if [[ -x /usr/local/lib/ollie/snapshot ]] && bash -n /usr/local/lib/ollie/snapshot 2>/dev/null; then
+    /usr/local/lib/ollie/snapshot cleanup >/dev/null 2>&1
+    if [[ -f /etc/pacman.d/hooks/00-ollie-save.hook ]]; then
+        ok "Ollie OS saves itself before each update (Undo an update goes back)"
+    else
+        ok "Undo an update is there (saving before updates works when Ollie OS is installed on a drive)"
+    fi
+else
+    echo "PROBLEM Undo an update's helper is missing"
+fi
 # The new icons show in the apps menu, for every Ollie OS app this computer has.
 for d in /usr/share/applications/ollie-*.desktop; do
     n="$(basename "$d" .desktop)"

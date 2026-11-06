@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Undo an update
+Comment=Go back to Ollie OS as it was before an update (your files stay)
+Exec=/usr/local/bin/ollie-undo-update
+Icon=ollie-undo-update
+Terminal=false
+Categories=System;Settings;
+Keywords=undo;update;restore;go back;snapshot;

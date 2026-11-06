@@ -1,0 +1,237 @@
+#!/bin/bash
+# Saved starts: Ollie OS as it was before an update, to go back to. As root.
+#
+# Ollie OS is the btrfs subvolume @ (the kids' files are @home, not in it). Before
+# an update (the pacman hook 00-ollie-save.hook, put in place by cleanup) a copy of @ is kept, beside it:
+# @ollie-saved-DATE, with that time's Linux kernel on the start-up part
+# (/boot/ollie-saved/DATE) and an entry on the start-up menu, "Ollie OS as it was
+# on ...". The newest 2 are kept. Copies share what did not change, so they take
+# little room.
+#
+#   snapshot take [--auto]   keep a copy now (--auto: from the pacman hook: not if
+#                            the newest is less than 12 hours old, and never
+#                            stops an update, except when Ollie OS is running as
+#                            a saved start: then updates wait until it is kept)
+#   snapshot list            the saved starts: NAME SECONDS (newest first)
+#   snapshot current         NAME, when Ollie OS is running as a saved start
+#   snapshot restore NAME    make NAME Ollie OS again (from the next start); the
+#                            Ollie OS from before is taken away at the next start
+#   snapshot cleanup         at each start: take away what is left over
+#
+# For tests: OLLIE_SNAP_ROOT (/) and OLLIE_SNAP_BOOT (/boot).
+set -uo pipefail
+ROOT="${OLLIE_SNAP_ROOT:-/}"
+BOOT="${OLLIE_SNAP_BOOT:-/boot}"
+KEEP=2
+PREFIX=ollie-saved-
+say() { echo "$*"; }
+fail() { echo "Error: $*" >&2; exit 1; }
+
+src="$(findmnt -no SOURCE "$ROOT" 2>/dev/null | sed 's/\[.*//')"
+opts="$(findmnt -no OPTIONS "$ROOT" 2>/dev/null)"
+running="$(sed -n 's/.*subvol=\/\{0,1\}\([^,]*\).*/\1/p' <<<"$opts")"
+installed() { [[ "$(findmnt -no FSTYPE "$ROOT" 2>/dev/null)" == btrfs && -b $src && ($running == @ || $running == "$PREFIX"*) ]]; }
+
+top=""
+mount_top() { # the whole btrfs (all its subvolumes), at $top
+    [[ -n $top ]] && return 0
+    top="$(mktemp -d /run/ollie-snapshot.XXXXXX)" || return 1
+    mount -o subvolid=5 "$src" "$top" || { rmdir "$top"; top=""; return 1; }
+}
+unmount_top() { [[ -n $top ]] && { umount "$top" && rmdir "$top"; top=""; }; }
+trap unmount_top EXIT
+
+names() { # the saved starts, newest first
+    local d
+    for d in "$top/$PREFIX"*; do [[ -d $d ]] && echo "${d##*/}"; done | sort -r
+}
+stamp_of() { echo "${1#"$PREFIX"}"; }
+seconds_of() { # ollie-saved-20261106-150102 -> seconds
+    local s
+    s="$(stamp_of "$1")"
+    date -d "${s:0:4}-${s:4:2}-${s:6:2} ${s:9:2}:${s:11:2}:${s:13:2}" +%s 2>/dev/null || echo 0
+}
+
+# A subvolume, with any inside it (systemd makes some: /var/lib/machines).
+delete_subvolume() {
+    local inner
+    btrfs subvolume list -o "$1" 2>/dev/null | awk '{print $NF}' | sort -r | while read -r inner; do
+        btrfs subvolume delete "$top/${inner#<FS_TREE>/}" >/dev/null 2>&1
+    done
+    btrfs subvolume delete "$1" >/dev/null 2>&1 || rm -rf --one-file-system -- "$1"
+}
+
+# The start-up menu's entry for Ollie OS (what to copy), and the copies' entries.
+main_entry="$BOOT/loader/entries/ollie.conf"
+entry_files() { sed -n 's/^\(linux\|initrd\)[[:space:]]\+\/\{0,1\}\(.*\)$/\2/p' "$main_entry"; }
+write_entry() { # write_entry NAME
+    local name="$1" stamp when f
+    stamp="$(stamp_of "$name")"
+    when="$(date -d "@$(seconds_of "$name")" '+%-d %B %Y, %H:%M')"
+    {
+        echo "title   Ollie OS as it was on $when"
+        while read -r key f; do
+            case $key in
+            linux | initrd) echo "$key  /ollie-saved/$stamp/${f##*/}" ;;
+            options) echo "options $(sed -e "s/rootflags=subvol=[^ ]*/rootflags=subvol=$name/" -e 's/ ollie\.unpack//' <<<"$f")" ;;
+            esac
+        done <"$main_entry"
+    } >"$BOOT/loader/entries/$name.conf"
+}
+
+# Older computers (SYSLINUX): the same, between two marks in its menu.
+syslinux_entries() {
+    local cfg="$BOOT/syslinux/syslinux.cfg" name stamp append tmp
+    [[ -f $cfg ]] || return 0
+    append="$(sed -n 's/^[[:space:]]*APPEND \(.*rootflags=subvol=@ .*quiet.*\)$/\1/p' "$cfg" | head -n 1)"
+    tmp="$(mktemp)"
+    sed '/^# ollie-saved-start$/,/^# ollie-saved-end$/d' "$cfg" >"$tmp"
+    if [[ -n $append ]] && [[ -n "$(names)" ]]; then
+        {
+            echo "# ollie-saved-start"
+            names | while read -r name; do
+                stamp="$(stamp_of "$name")"
+                echo "LABEL $name"
+                echo "    MENU LABEL Ollie OS as it was on $(date -d "@$(seconds_of "$name")" '+%-d %B %Y')"
+                echo "    LINUX /ollie-saved/$stamp/vmlinuz-linux"
+                echo "    INITRD /ollie-saved/$stamp/initramfs-linux.img"
+                echo "    APPEND ${append/rootflags=subvol=@ /rootflags=subvol=$name }"
+            done
+            echo "# ollie-saved-end"
+        } >>"$tmp"
+    fi
+    cat "$tmp" >"$cfg"
+    rm -f "$tmp"
+}
+
+forget() { # forget NAME: the copy, its kernel and its menu entry
+    local stamp
+    stamp="$(stamp_of "$1")"
+    delete_subvolume "$top/$1"
+    rm -rf -- "${BOOT:?}/ollie-saved/$stamp"
+    rm -f -- "$BOOT/loader/entries/$1.conf"
+}
+
+# The root's line in fstab: no subvolid (it changes when a copy becomes @).
+fix_fstab() { # fix_fstab FSTAB SUBVOL
+    sed -i -E -e '/[[:space:]]\/[[:space:]]+btrfs[[:space:]]/{s/,subvolid=[0-9]+//; s/subvolid=[0-9]+,//; s#subvol=/?[^,[:space:]]*#subvol=/'"$2"'#}' "$1"
+}
+
+take() {
+    local auto="${1:-}" name stamp newest need free f size
+    if ! installed; then
+        [[ -n $auto ]] && exit 0
+        fail "this Ollie OS is not on a drive of its own (no saved starts here)."
+    fi
+    if [[ $running != @ ]]; then
+        echo "Ollie OS is running as it was on an earlier day (a saved start)." >&2
+        echo "Updates wait until it is kept: open \"Undo an update\" and keep it, or restart into the newest Ollie OS." >&2
+        exit 1
+    fi
+    [[ -f $main_entry ]] || { [[ -n $auto ]] && exit 0; fail "the start-up menu has no Ollie OS entry."; }
+    mount_top || { [[ -n $auto ]] && exit 0; fail "the drive could not be opened."; }
+    newest="$(names | head -n 1)"
+    if [[ -n $auto && -n $newest ]] && (($(date +%s) - $(seconds_of "$newest") < 12 * 3600)); then
+        say "Ollie OS was saved less than 12 hours ago: that one is kept."
+        exit 0
+    fi
+    stamp="$(date +%Y%m%d-%H%M%S)"
+    name="$PREFIX$stamp"
+    # Room for the kernel on the start-up part (the oldest copies go if needed).
+    need=$((16 * 1024 * 1024))
+    while read -r f; do
+        size="$(stat -c %s "$BOOT/$f" 2>/dev/null)" || { [[ -n $auto ]] && exit 0; fail "$BOOT/$f is missing."; }
+        need=$((need + size))
+    done < <(entry_files)
+    while :; do
+        free="$(df -B1 --output=avail "$BOOT" | tail -n 1 | tr -d ' ')"
+        ((free > need)) && break
+        f="$(names | tail -n 1)"
+        [[ -n $f ]] || { say "Not enough room on the start-up part to save Ollie OS: not saved."; [[ -n $auto ]] && exit 0; exit 1; }
+        forget "$f"
+    done
+    say "Saving Ollie OS as it is now (to go back to if the update goes wrong)"
+    btrfs subvolume snapshot "$top/@" "$top/$name" >/dev/null || { [[ -n $auto ]] && exit 0; fail "the copy could not be made."; }
+    fix_fstab "$top/$name/etc/fstab" "$name"
+    fix_fstab "$top/@/etc/fstab" @
+    mkdir -p "$BOOT/ollie-saved/$stamp"
+    while read -r f; do
+        cp -f "$BOOT/$f" "$BOOT/ollie-saved/$stamp/${f##*/}" || {
+            forget "$name"
+            [[ -n $auto ]] && exit 0
+            fail "the kernel could not be copied."
+        }
+    done < <(entry_files)
+    write_entry "$name"
+    # The newest $KEEP stay.
+    names | tail -n +$((KEEP + 1)) | while read -r f; do forget "$f"; done
+    syslinux_entries
+    sync
+    say "Saved: \"Ollie OS as it was on $(date '+%-d %B %Y')\" is on the start-up menu."
+}
+
+restore() {
+    local name="${1:-}" stamp broken f
+    [[ $name == "$PREFIX"* && $name != */* ]] || fail "no saved start called \"$name\"."
+    installed || fail "this Ollie OS is not on a drive of its own."
+    mount_top || fail "the drive could not be opened."
+    [[ -d $top/$name ]] || fail "no saved start called \"$name\"."
+    stamp="$(stamp_of "$name")"
+    for f in $(entry_files); do
+        [[ -f $BOOT/ollie-saved/$stamp/${f##*/} ]] || fail "its kernel is missing from the start-up part."
+    done
+    broken="ollie-old-$(date +%Y%m%d-%H%M%S)"
+    mv "$top/@" "$top/$broken" || fail "Ollie OS could not be moved aside."
+    if ! btrfs subvolume snapshot "$top/$name" "$top/@" >/dev/null; then
+        mv "$top/$broken" "$top/@"
+        fail "the saved start could not be copied."
+    fi
+    fix_fstab "$top/@/etc/fstab" @
+    for f in $(entry_files); do
+        { cp -f "$BOOT/ollie-saved/$stamp/${f##*/}" "$BOOT/$f.new" && mv -f "$BOOT/$f.new" "$BOOT/$f"; } ||
+            fail "the kernel could not be put back (Ollie OS from before is $broken)."
+    done
+    sync
+    say "Done: from the next start, Ollie OS is as it was on $(date -d "@$(seconds_of "$name")" '+%-d %B %Y')."
+}
+
+cleanup() {
+    local d name
+    installed || exit 0
+    # The pacman hook that saves before updates (not in /etc/pacman.d/hooks on
+    # the USB: there it would run while Ollie OS itself is being built).
+    if [[ ! -f $ROOT/etc/pacman.d/hooks/00-ollie-save.hook && -f $ROOT/usr/local/share/ollie/pacman-hooks/00-ollie-save.hook ]]; then
+        install -D -m 0644 "$ROOT/usr/local/share/ollie/pacman-hooks/00-ollie-save.hook" "$ROOT/etc/pacman.d/hooks/00-ollie-save.hook"
+    fi
+    mount_top || exit 0
+    # Ollie OS from before a restore (not if it is the one running).
+    for d in "$top"/ollie-old-*; do
+        [[ -d $d && ${d##*/} != "$running" ]] && delete_subvolume "$d"
+    done
+    # Menu entries and kernels without their copy, and the other way round.
+    for d in "$BOOT/loader/entries/$PREFIX"*.conf; do
+        [[ -f $d ]] || continue
+        name="$(basename "$d" .conf)"
+        [[ -d $top/$name ]] || rm -f -- "$d"
+    done
+    for d in "$BOOT/ollie-saved"/*; do
+        [[ -d $d && -d $top/$PREFIX${d##*/} ]] || rm -rf -- "$d"
+    done
+    names | while read -r name; do
+        [[ -f $BOOT/loader/entries/$name.conf && -d $BOOT/ollie-saved/$(stamp_of "$name") ]] || { [[ $name == "$running" ]] || forget "$name"; }
+    done
+    syslinux_entries
+}
+
+case "${1:-}" in
+take) take "${2:-}" ;;
+list)
+    installed || exit 0
+    mount_top || exit 0
+    names | while read -r n; do echo "$n $(seconds_of "$n")"; done
+    ;;
+current) [[ $running == "$PREFIX"* ]] && echo "$running" ;;
+restore) restore "${2:-}" ;;
+cleanup) cleanup ;;
+*) sed -n '2,/^set /p' "$0" | sed '$d; s/^# \{0,1\}//' >&2; exit 2 ;;
+esac

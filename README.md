@@ -30,7 +30,8 @@ playing, making and learning.
 - **In the App Center, to install if you want them:** Sticker Maker, Ollie
   Animator, Sound Board, Spelling Bee, World Explorer, Space Explorer
 - **Windows too:** installing Ollie OS can put Windows 10 or 11 next to it
-- **Keep it going:** one-click updates, the Update Checker, Recovery Mode,
+- **Keep it going:** one-click updates that save Ollie OS first (Undo an update
+  goes back), the Update Checker, Recovery Mode,
   The Fixer, seasonal themes, Easy reading, 11 languages, and parent settings
   (Screen Time, Bedtime, Typing Scanner, Firefox password)
 

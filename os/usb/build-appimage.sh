@@ -374,7 +374,10 @@ build_latest_updater() {
     game_pack_files
     fun_pack_files
     files+=(etc/ollie-version usr/share/applications/ollie-recovery.desktop
-        usr/local/bin/ollie-windows-boot etc/systemd/system/ollie-windows-boot.service)
+        usr/local/bin/ollie-windows-boot etc/systemd/system/ollie-windows-boot.service
+        usr/local/lib/ollie/snapshot usr/local/bin/ollie-undo-update usr/share/applications/ollie-undo-update.desktop
+        etc/xdg/autostart/ollie-undo-update.desktop usr/local/share/ollie/pacman-hooks/00-ollie-save.hook
+        etc/systemd/system/ollie-saved-cleanup.service etc/systemd/system/multi-user.target.wants/ollie-saved-cleanup.service)
     for f in "$air"/usr/share/icons/hicolor/*/apps/ollie-*.png "$air"/usr/share/icons/hicolor/scalable/apps/ollie-*.svg; do files+=("${f#"$air/"}"); done
     mapfile -t files < <(printf '%s\n' "${files[@]}" | awk '!seen[$0]++')
     apps_updater_extra() {

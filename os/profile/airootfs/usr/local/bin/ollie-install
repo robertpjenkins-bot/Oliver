@@ -253,6 +253,8 @@ FILES=(/etc/systemd/system/emergency.service.d/ollie-shell.conf /etc/systemd/sys
 EOF
 
 genfstab -U "$TARGET" >"$TARGET/etc/fstab"
+# No subvolid (a saved start becomes @ with a new one; see "Undo an update").
+sed -i -E 's/,subvolid=[0-9]+//; s/subvolid=[0-9]+,//' "$TARGET/etc/fstab"
 echo "$hostname" >"$TARGET/etc/hostname"
 ln -sf "/usr/share/zoneinfo/$timezone" "$TARGET/etc/localtime"
 sed -i 's/^#\(en_US.UTF-8 UTF-8\)/\1/' "$TARGET/etc/locale.gen"

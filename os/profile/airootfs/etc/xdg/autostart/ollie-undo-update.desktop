@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Undo an update (at login)
+Exec=/usr/local/bin/ollie-undo-update --at-login
+Icon=ollie-undo-update
+Terminal=false
+NoDisplay=true
+X-KDE-autostart-phase=2

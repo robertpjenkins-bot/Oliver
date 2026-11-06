@@ -33,6 +33,13 @@ sudo -n true 2>/dev/null ||
 if [[ -d /run/archiso ]] && ! grep -qE 'cow_label=|cow_device=' /proc/cmdline; then
     echo "  Ollie OS is running from its USB drive without keeping changes: the update is gone when this computer restarts."
 fi
+if [[ -n "$(/usr/local/lib/ollie/snapshot current 2>/dev/null)" ]]; then
+    finish "${bold}This is Ollie OS as it was on an earlier day (picked on the start-up menu).$reset
+  To update it, keep it first: open \"Undo an update\" and press \"Yes, keep it\".
+  Or restart, and the newest Ollie OS starts."
+fi
+# Ollie OS saves itself before updating (the pacman hook; "Undo an update").
+sudo -n /usr/local/lib/ollie/snapshot cleanup >/dev/null 2>&1
 kernel_before="$(pacman -Q linux 2>/dev/null)"
 
 say "Updating Ollie OS's programs and drivers"

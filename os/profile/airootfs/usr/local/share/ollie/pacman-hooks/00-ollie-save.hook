@@ -1,0 +1,15 @@
+# (Copied to /etc/pacman.d/hooks on an installed Ollie OS by "snapshot cleanup".)
+# Before programs change: Ollie OS as it is now is kept, to go back to
+# ("Ollie OS as it was on ..." on the start-up menu; /usr/local/lib/ollie/snapshot).
+[Trigger]
+Operation = Upgrade
+Operation = Install
+Operation = Remove
+Type = Package
+Target = *
+
+[Action]
+Description = Saving Ollie OS as it is now (to go back to)...
+When = PreTransaction
+Exec = /usr/local/lib/ollie/snapshot take --auto
+AbortOnFail

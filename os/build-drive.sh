@@ -85,7 +85,7 @@ test_fstab() {
     grep -q "^UUID=${uuid}[[:space:]]*/[[:space:]]" "$t/etc/fstab" && grep -q "[[:space:]]/boot[[:space:]]" "$t/etc/fstab" ||
         { echo "the list of the drive's parts is wrong"; return 1; }
 }
-fix_fstab() { genfstab -U "$t" >"$t/etc/fstab"; }
+fix_fstab() { genfstab -U "$t" | sed -E 's/,subvolid=[0-9]+//; s/subvolid=[0-9]+,//' >"$t/etc/fstab"; }
 check "The drive's parts are found at start-up (fstab)" test_fstab fix_fstab
 
 check "The desktop, and the first start that asks for your name and password" test_first_start fix_first_start

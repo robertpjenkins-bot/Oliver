@@ -162,6 +162,9 @@ for f in sticker spelling animator soundboard world space; do
 done
 check "Games' helper runs" test -x "$r/usr/local/lib/ollie/games.py"
 check "Mouse Maker's helper runs" test -x "$r/usr/local/lib/ollie/mouse.py"
+check "Ollie OS saves itself before updates (snapshot, Undo an update)" bash -c "test -x '$r/usr/local/lib/ollie/snapshot' && test -x '$r/usr/local/bin/ollie-undo-update' && test -f '$r/usr/local/share/ollie/pacman-hooks/00-ollie-save.hook'"
+check "the save-before-update hook is not in the USB's pacman (it would run while building)" bash -c "! test -e '$r/etc/pacman.d/hooks/00-ollie-save.hook'"
+check "saved starts are tidied at each start" test -L "$r/etc/systemd/system/multi-user.target.wants/ollie-saved-cleanup.service"
 check "Couch Co-op's controller watcher runs" test -x "$r/usr/local/lib/ollie/pads.py"
 check "the pet's body" test -s "$r/usr/local/share/ollie/PetBody.qml"
 check "the pet on the desktop" test -s "$r/usr/local/share/ollie/pet-desktop.qml"

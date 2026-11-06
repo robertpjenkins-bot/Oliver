@@ -1,0 +1,65 @@
+#!/bin/bash
+# Undo an update: go back to Ollie OS as it was before an update (a saved
+# start, kept by /usr/local/lib/ollie/snapshot before each update). Your files,
+# games, drawings and saves stay as they are: only Ollie OS's programs go back.
+#   ollie-undo-update [--at-login]   (--at-login: only when Ollie OS was
+#   started as it was on an earlier day, from the start-up menu: keep it?)
+set -uo pipefail
+readonly TITLE="Undo an update"
+helper=/usr/local/lib/ollie/snapshot
+when() { date -d "@$1" '+%-d %B %Y, %H:%M'; }
+admin() {
+    sudo -n true 2>/dev/null && return 0
+    kdialog --title "$TITLE" --sorry "This needs an administrator account (the one made when Ollie OS was set up)."
+    exit 1
+}
+run() { # run ARGS...: the helper as root, its error shown
+    local out
+    if ! out="$(sudo -n "$helper" "$@" 2>&1)"; then
+        kdialog --title "$TITLE" --error "That did not work:
+
+$(sed -n 's/^Error: //p' <<<"$out" | tail -n 1)"
+        exit 1
+    fi
+}
+restart() {
+    kdialog --title "$TITLE" --yes-label "Restart now" --no-label "Later" --yesno "$1" && systemctl reboot
+    exit 0
+}
+
+current="$("$helper" current 2>/dev/null)"
+if [[ -n $current ]]; then
+    s="$(sudo -n "$helper" list 2>/dev/null | awk -v n="$current" '$1 == n {print $2}')"
+    kdialog --title "$TITLE" --yes-label "Yes, keep it" --no-label "No" --yesno \
+        "This is Ollie OS as it was on $(when "${s:-0}") (before an update).
+
+Use this one from now on? Your files, games and drawings are the same either way.
+(No: the next start is the newest Ollie OS again.)" || exit 0
+    admin
+    run restore "$current"
+    restart "Kept. Ollie OS stays like this from now on; Update Ollie OS can bring it up to date again later."
+fi
+[[ ${1:-} == --at-login ]] && exit 0
+
+admin
+mapfile -t saved < <(sudo -n "$helper" list 2>/dev/null)
+items=()
+for line in "${saved[@]}"; do
+    read -r name s <<<"$line"
+    items+=("$name" "Ollie OS as it was on $(when "$s")" off)
+done
+items+=(save "Save Ollie OS as it is now" off)
+((${#saved[@]})) && items[2]=on || items[$((${#items[@]} - 1))]=on
+pick="$(kdialog --title "$TITLE" --geometry 600x300 --radiolist \
+    "Ollie OS saves itself before each update. Going back puts its programs back as they were then.
+Your files, games, drawings and saves stay as they are." "${items[@]}")" || exit 0
+if [[ $pick == save ]]; then
+    run take
+    kdialog --title "$TITLE" --msgbox "Saved. \"Ollie OS as it was on $(date '+%-d %B %Y')\" is on the start-up menu now."
+    exit 0
+fi
+kdialog --title "$TITLE" --warningcontinuecancel "Go back to Ollie OS as it was then?
+
+Programs and settings for the whole computer go back. Your files, games, drawings and saves stay." --continue-label "Go back" || exit 0
+run restore "$pick"
+restart "Done. When the computer restarts, Ollie OS is as it was then."

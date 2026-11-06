@@ -1,0 +1,11 @@
+[Unit]
+Description=Ollie OS: tidy the saved starts (what an undone update left)
+After=local-fs.target
+ConditionPathIsDirectory=/boot/loader
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ollie/snapshot cleanup
+
+[Install]
+WantedBy=multi-user.target
