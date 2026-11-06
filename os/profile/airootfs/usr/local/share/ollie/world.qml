@@ -16,7 +16,8 @@ ApplicationWindow {
     height: 740
     visible: true
     title: "World Explorer"
-    color: "#020617"
+    color: "#EFE6D2" // an atlas page
+    readonly property color ink: "#2B2621"
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -43,8 +44,8 @@ ApplicationWindow {
     property real lat0: 20
     property int picked: -1
     property real idleUntil: 0
-    readonly property var colours: ({ "Africa": "#f59e0b", "Europe": "#a78bfa", "Asia": "#f87171", "North America": "#34d399",
-        "South America": "#22d3ee", "Oceania": "#f472b6", "Antarctica": "#e2e8f0" })
+    readonly property var colours: ({ "Africa": "#E3B866", "Europe": "#B9A3C9", "Asia": "#D99A86", "North America": "#9FC08A",
+        "South America": "#E2C98F", "Oceania": "#C99AB0", "Antarctica": "#F4F1EA" })
 
     function flag(code) {
         if (!code || code.length !== 2) return "🏳️";
@@ -107,19 +108,13 @@ ApplicationWindow {
         onTriggered: { win.timeLeft--; if (win.timeLeft <= 0) { win.quiz = false;
             if (win.score > saved.best) saved.best = win.score;
             win.trophy("max world-find " + win.score);
-            win.quizNote = "Time's up! You found " + win.score + "."; } } }
+            win.quizNote = "Time's up. You found " + win.score + "."; } } }
 
     Timer {
         interval: 40; running: true; repeat: true
         onTriggered: { if (Date.now() > win.idleUntil && !win.quiz) { win.lon0 = (win.lon0 + 0.25) % 360; globe.requestPaint(); } }
     }
 
-    // Stars.
-    Repeater {
-        model: 140
-        delegate: Rectangle { required property int index; x: (index * 7919) % win.width; y: (index * 104729) % win.height
-            width: 2; height: 2; radius: 1; color: "white"; opacity: 0.2 + (index % 5) * 0.15 }
-    }
 
     RowLayout {
         anchors.fill: parent
@@ -136,13 +131,11 @@ ApplicationWindow {
                 onPaint: {
                     const c = getContext("2d"), R = width / 2 - 10, cx = width / 2, cy = height / 2;
                     c.reset();
-                    const sea = c.createRadialGradient(cx - R * 0.3, cy - R * 0.3, R * 0.1, cx, cy, R);
-                    sea.addColorStop(0, "#3b82f6"); sea.addColorStop(1, "#1e3a8a");
-                    c.fillStyle = sea; c.beginPath(); c.arc(cx, cy, R, 0, 2 * Math.PI); c.fill();
-                    c.lineWidth = 0.8; c.strokeStyle = "rgba(15,23,42,0.6)";
+                    c.fillStyle = "#A9C7D6"; c.beginPath(); c.arc(cx, cy, R, 0, 2 * Math.PI); c.fill();
+                    c.lineWidth = 0.7; c.strokeStyle = "rgba(43,38,33,0.55)";
                     for (let i = 0; i < win.countries.length; i++) {
                         const k = win.countries[i];
-                        c.fillStyle = i === win.picked ? "#fde047" : (win.colours[k.c] || "#94a3b8");
+                        c.fillStyle = i === win.picked ? "#C8473D" : (win.colours[k.c] || "#C9C1B0");
                         for (const r of k.r) {
                             let seen = false;
                             c.beginPath();
@@ -155,9 +148,7 @@ ApplicationWindow {
                             c.closePath(); c.fill(); c.stroke();
                         }
                     }
-                    const shade = c.createRadialGradient(cx - R * 0.35, cy - R * 0.35, R * 0.2, cx, cy, R);
-                    shade.addColorStop(0, "rgba(255,255,255,0.12)"); shade.addColorStop(0.7, "rgba(0,0,0,0)"); shade.addColorStop(1, "rgba(0,0,0,0.45)");
-                    c.fillStyle = shade; c.beginPath(); c.arc(cx, cy, R, 0, 2 * Math.PI); c.fill();
+                    c.lineWidth = 2; c.strokeStyle = "#2B2621"; c.beginPath(); c.arc(cx, cy, R, 0, 2 * Math.PI); c.stroke();
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -182,8 +173,8 @@ ApplicationWindow {
                         if (i < 0) { win.picked = -1; globe.requestPaint(); return; }
                         win.picked = i; globe.requestPaint(); win.trophy("add world-country " + win.countries[i].n);
                         if (win.quiz) {
-                            if (i === win.target) { win.score++; win.quizNote = "✅ Yes! That's " + win.countries[i].n + "!"; win.nextTarget(); }
-                            else win.quizNote = "❌ That's " + win.countries[i].n + ". Try again!";
+                            if (i === win.target) { win.score++; win.quizNote = "Yes, that's " + win.countries[i].n + "."; win.nextTarget(); }
+                            else win.quizNote = "That's " + win.countries[i].n + ". Try again.";
                         }
                     }
                 }
@@ -194,36 +185,36 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 12
-            Label { text: "World Explorer"; color: "white"; font.pixelSize: 30; font.bold: true }
-            Label { text: "Drag the globe to spin it. Click a country!"; color: "#93c5fd"; font.pixelSize: 15; visible: !win.quiz }
+            Label { text: "World Explorer"; color: win.ink; font.family: "Noto Serif"; font.pixelSize: 30; font.bold: true }
+            Label { text: "Drag the globe to turn it. Click a country."; color: "#6B6157"; font.pixelSize: 15; visible: !win.quiz }
 
             // Find it!
             Rectangle {
                 visible: win.quiz
                 Layout.fillWidth: true
                 implicitHeight: quizCol.implicitHeight + 24
-                radius: 16; color: "#7c2d12"
+                radius: 4; color: "#2B2621"
                 ColumnLayout {
                     id: quizCol
                     anchors.fill: parent; anchors.margins: 12
                     Label { text: "Find: " + (win.target >= 0 ? win.countries[win.target].n : ""); color: "white"; font.pixelSize: 24; font.bold: true; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-                    Label { text: win.target >= 0 ? "Hint: it's in " + win.countries[win.target].c : ""; color: "#fed7aa"; font.pixelSize: 15 }
-                    Label { text: "Found: " + win.score + "" + win.timeLeft + " s"; color: "white"; font.pixelSize: 18 }
+                    Label { text: win.target >= 0 ? "Hint: it's in " + win.countries[win.target].c : ""; color: "#D8CDB8"; font.pixelSize: 15 }
+                    Label { text: "Found: " + win.score + "    Time: " + win.timeLeft + " s"; color: "white"; font.pixelSize: 18 }
                     RowLayout {
                         Button { text: "Skip"; onClicked: win.nextTarget() }
                         Button { text: "Stop"; onClicked: { win.quiz = false; win.quizNote = ""; } }
                     }
                 }
             }
-            Label { text: win.quizNote; color: "#fde68a"; font.pixelSize: 17; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            Label { text: win.quizNote; color: win.ink; font.pixelSize: 17; wrapMode: Text.WordWrap; Layout.fillWidth: true }
 
             // The country picked.
             Rectangle {
                 Layout.fillWidth: true
                 implicitHeight: info.implicitHeight + 28
-                radius: 18
-                color: "#0f172acc"
-                border.color: "#1e40af"
+                radius: 4
+                color: "#FBF7EE"
+                border.color: "#2B2621"
                 visible: win.picked >= 0
                 readonly property var k: win.picked >= 0 ? win.countries[win.picked] : null
                 ColumnLayout {
@@ -233,28 +224,27 @@ ApplicationWindow {
                     spacing: 8
                     RowLayout {
                         Label { text: parent.parent.parent.k ? win.flag(parent.parent.parent.k.f) : ""; font.pixelSize: 54 }
-                        Label { text: parent.parent.parent.k ? parent.parent.parent.k.n : ""; color: "white"; font.pixelSize: 30; font.bold: true; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                        Label { text: parent.parent.parent.k ? parent.parent.parent.k.n : ""; color: win.ink; font.family: "Noto Serif"; font.pixelSize: 30; font.bold: true; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                     }
                     Repeater {
                         model: {
                             const k = win.picked >= 0 ? win.countries[win.picked] : null;
                             if (!k) return [];
-                            const rows = [[k.e, "Continent", k.c]];
-                            if (k.cap) rows.push(["🏛️", "Capital", k.cap]);
-                            rows.push(["👨‍👩‍👧", "People", win.people(k.p)]);
+                            const rows = [["Continent", k.c]];
+                            if (k.cap) rows.push(["Capital", k.cap]);
+                            rows.push(["People", win.people(k.p)]);
                             return rows;
                         }
                         delegate: RowLayout {
                             required property var modelData
-                            Label { text: modelData[0]; font.pixelSize: 22 }
-                            Label { text: modelData[1]; color: "#93c5fd"; font.pixelSize: 15; font.bold: true; Layout.preferredWidth: 90 }
-                            Label { text: modelData[2]; color: "white"; font.pixelSize: 17; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                            Label { text: modelData[0]; color: "#6B6157"; font.pixelSize: 14; font.bold: true; font.capitalization: Font.AllUppercase; Layout.preferredWidth: 100 }
+                            Label { text: modelData[1]; color: win.ink; font.pixelSize: 17; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                         }
                     }
                     Label {
                         visible: text !== ""
                         text: win.picked >= 0 && win.countries[win.picked].fun ? "" + win.countries[win.picked].fun : ""
-                        color: "#fde68a"; font.pixelSize: 16; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                        color: "#44403A"; font.italic: true; font.pixelSize: 16; wrapMode: Text.WordWrap; Layout.fillWidth: true
                     }
                 }
             }

@@ -16,7 +16,13 @@ ApplicationWindow {
     height: 680
     visible: true
     title: "Spelling Bee"
-    color: "#fefce8"
+    color: "#FBFAF5" // a page of a notebook: blue lines and a red margin
+    readonly property color ink: "#1F3B73"
+    Repeater {
+        model: Math.ceil(win.height / 36)
+        Rectangle { required property int index; y: 70 + index * 36; width: win.width; height: 1; color: "#D3DDEB" }
+    }
+    Rectangle { x: 64; width: 2; height: win.height; color: "#E5A4A0" }
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -99,13 +105,13 @@ ApplicationWindow {
         anchors.centerIn: parent
         spacing: 18
         visible: win.level < 0 || win.state2 === "done"
-        Label { text: "Spelling Bee"; font.pixelSize: 44; font.bold: true; color: "#a16207"; Layout.alignment: Qt.AlignHCenter }
+        Label { text: "Spelling Bee"; font.family: "Noto Serif"; font.pixelSize: 44; font.bold: true; color: win.ink; Layout.alignment: Qt.AlignHCenter }
         Label {
             visible: win.state2 === "done"
-            text: "You spelled " + win.right + " of 10 right! " + "★".repeat(win.right === 10 ? 3 : win.right >= 8 ? 2 : win.right >= 6 ? 1 : 0)
-            font.pixelSize: 24; color: "#854d0e"; Layout.alignment: Qt.AlignHCenter
+            text: win.right + " of 10 right   " + "★".repeat(win.right === 10 ? 3 : win.right >= 8 ? 2 : win.right >= 6 ? 1 : 0)
+            font.pixelSize: 24; color: "#B7791F"; Layout.alignment: Qt.AlignHCenter
         }
-        Label { text: "Look at the word, then spell it. Pick a level:"; font.pixelSize: 18; color: "#854d0e"; Layout.alignment: Qt.AlignHCenter }
+        Label { text: "Look at the word, then spell it. Pick a level."; font.pixelSize: 18; color: "#44474F"; Layout.alignment: Qt.AlignHCenter }
         GridLayout {
             columns: 4
             columnSpacing: 12; rowSpacing: 12
@@ -117,7 +123,7 @@ ApplicationWindow {
                     Layout.preferredWidth: 150; Layout.preferredHeight: 80
                     enabled: index <= win.unlocked
                     font.pixelSize: 17
-                    text: "Level " + (index + 1) + "\n" + (index > win.unlocked ? "" : (win.stars[index] ? "★".repeat(win.stars[index]) : "☆"))
+                    text: "Level " + (index + 1) + "\n" + (index > win.unlocked ? "locked" : (win.stars[index] ? "★".repeat(win.stars[index]) + "☆".repeat(3 - win.stars[index]) : "☆☆☆"))
                     onClicked: win.start(index)
                 }
             }
@@ -131,10 +137,10 @@ ApplicationWindow {
         spacing: 18
         visible: win.level >= 0 && win.state2 !== "done"
         RowLayout {
-            Label { text: "Level " + (win.level + 1); font.pixelSize: 24; font.bold: true; color: "#a16207" }
+            Label { text: "Level " + (win.level + 1); font.family: "Noto Serif"; font.pixelSize: 24; font.bold: true; color: win.ink }
             Item { Layout.fillWidth: true }
-            Label { text: "Word " + Math.min(10, win.n + 1) + " of 10" + win.right; font.pixelSize: 20; color: "#854d0e" }
-            Button { text: "✖"; onClicked: win.level = -1 }
+            Label { text: "Word " + Math.min(10, win.n + 1) + " of 10    Right: " + win.right; font.pixelSize: 20; color: "#44474F" }
+            Button { text: "Stop"; onClicked: win.level = -1 }
         }
         Item { Layout.fillHeight: true }
         // The word while it shows, then the sentence clue (or nothing).
@@ -145,7 +151,8 @@ ApplicationWindow {
             text: win.showing ? win.word[0] : win.clue && win.state2 === "ask" ? win.gapped : win.state2 === "ask" ? "Now spell it." : ""
             font.pixelSize: win.showing ? 72 : 26; font.bold: win.showing
             font.letterSpacing: win.showing ? 4 : 0
-            color: win.showing ? "#713f12" : "#854d0e"
+            color: win.ink
+            font.family: "Noto Serif"
         }
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
@@ -163,12 +170,12 @@ ApplicationWindow {
                 model: win.word[0].length
                 delegate: Rectangle {
                     required property int index
-                    width: 46; height: 56; radius: 8
-                    color: win.state2 === "right" ? "#bbf7d0" : win.state2 === "wrong" ? "#fecaca" : "white"
-                    border.color: "#ca8a04"; border.width: 3
+                    width: 46; height: 56; radius: 2
+                    color: win.state2 === "right" ? "#DCEBD5" : win.state2 === "wrong" ? "#F6D9D6" : "white"
+                    border.color: win.ink; border.width: 2
                     Text {
                         anchors.centerIn: parent
-                        font.pixelSize: 30; font.bold: true; color: "#713f12"
+                        font.pixelSize: 30; font.family: "Noto Serif"; color: win.ink
                         text: win.state2 === "wrong" ? win.word[0][index].toUpperCase()
                             : index < answer.text.length ? answer.text[index].toUpperCase()
                             : (index === 0 && win.peeked) ? win.word[0][0].toUpperCase() : ""
@@ -190,12 +197,12 @@ ApplicationWindow {
         Label {
             Layout.alignment: Qt.AlignHCenter
             font.pixelSize: 22; font.bold: true
-            color: win.state2 === "right" ? "#15803d" : "#b91c1c"
-            text: win.state2 === "right" ? "Correct!" : win.state2 === "wrong" ? "Oops! It's spelled " + win.word[0].toUpperCase() : ""
+            color: win.state2 === "right" ? "#3E7B36" : "#B0413A"
+            text: win.state2 === "right" ? "Right" : win.state2 === "wrong" ? "It's spelled " + win.word[0] : ""
         }
         Button {
             Layout.alignment: Qt.AlignHCenter
-            text: win.state2 === "ask" ? "✔ Check" : win.n >= 9 ? "See my stars" : "Next word →"
+            text: win.state2 === "ask" ? "Check" : win.n >= 9 ? "See my stars" : "Next word →"
             font.pixelSize: 20
             highlighted: true
             onClicked: win.state2 === "ask" ? win.check() : win.next()

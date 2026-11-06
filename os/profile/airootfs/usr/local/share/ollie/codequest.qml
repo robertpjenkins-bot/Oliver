@@ -17,7 +17,21 @@ ApplicationWindow {
     height: 720
     visible: true
     title: "Coding Quest"
-    color: "#f0fdf4"
+    color: "#FAF7EF" // graph paper
+    readonly property color ink: "#22252B"
+    readonly property color line: "#C9D7E8"
+    // A star, drawn.
+    component Star: Canvas {
+        property color fill: "#D9A021"
+        onPaint: {
+            const c = getContext("2d"); c.reset(); c.fillStyle = fill; c.beginPath();
+            for (let i = 0; i < 10; i++) {
+                const r = (i % 2 ? 0.42 : 1) * width / 2, a = Math.PI * i / 5 - Math.PI / 2;
+                c.lineTo(width / 2 + r * Math.cos(a), height / 2 + r * Math.sin(a));
+            }
+            c.closePath(); c.fill();
+        }
+    }
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -59,7 +73,7 @@ ApplicationWindow {
     readonly property var dy: [0, 1, 0, -1]
 
     function reset() { const s = find("S"); px = s.x; py = s.y; dir = 0; running = false; activeBlock = -1; }
-    onLevelChanged: { program = []; reset(); message = lv.repeat && level === 3 ? "New block: 🔁 Repeat does the next block again and again!" : ""; }
+    onLevelChanged: { program = []; reset(); message = lv.repeat && level === 3 ? "New block: repeat(n) does the next block n times." : ""; }
     Component.onCompleted: reset()
     function addBlock(k) { if (!running) { program = program.concat([{ k: k, n: 2 }]); message = ""; } }
 
@@ -83,7 +97,7 @@ ApplicationWindow {
             if (win.stepAt >= win.steps.length) {
                 win.running = false; win.activeBlock = -1;
                 if (win.at(win.px, win.py) === "*") win.won();
-                else { win.message = "Not at the star yet. Add more blocks!"; }
+                else { win.message = "Not at the star yet. Add more blocks."; }
                 return;
             }
             const st = win.steps[win.stepAt++];
@@ -94,7 +108,7 @@ ApplicationWindow {
                 const nx = win.px + win.dx[win.dir], ny = win.py + win.dy[win.dir];
                 if (win.at(nx, ny) === "#") {
                     win.running = false; bump.start();
-                    win.message = "Bump! A rock is in the way. Try again!";
+                    win.message = "Bump. A rock is in the way.";
                     return;
                 }
                 win.px = nx; win.py = ny;
@@ -107,7 +121,7 @@ ApplicationWindow {
         const s = stars.slice(); s[level] = Math.max(s[level] || 0, got);
         saved.stars = JSON.stringify(s); stars = s;
         trophy("max codequest-level " + s.filter(x => x > 0).length);
-        message = "🎉 You did it with " + n + " blocks! " + "★".repeat(got) + (got < 3 ? "  (Can you do it with " + lv.par + "?)" : "");
+        message = "Done, with " + n + " blocks. " + "★".repeat(got) + (got < 3 ? "  (Can you do it with " + lv.par + "?)" : "");
         cheer.start();
     }
 
@@ -119,14 +133,14 @@ ApplicationWindow {
         ColumnLayout {
             spacing: 10
             RowLayout {
-                Label { text: "Coding Quest"; font.pixelSize: 28; font.bold: true; color: "#166534" }
+                Label { text: "Coding Quest"; font.pixelSize: 28; font.bold: true; color: win.ink }
                 Item { Layout.fillWidth: true }
-                Label { text: "Level " + (win.level + 1) + ": " + win.lv.name; font.pixelSize: 18; font.bold: true; color: "#15803d" }
+                Label { text: "Level " + (win.level + 1) + ": " + win.lv.name; font.pixelSize: 18; color: "#44474F" }
             }
             // The board.
             Rectangle {
                 width: win.cols * win.cell + 8; height: win.rowsN * win.cell + 8
-                radius: 12; color: "#86efac"; border.color: "#166534"; border.width: 4
+                radius: 2; color: win.line; border.color: win.ink; border.width: 2
                 Grid {
                     x: 4; y: 4; columns: win.cols
                     Repeater {
@@ -135,8 +149,14 @@ ApplicationWindow {
                             required property int index
                             readonly property string c: win.lv.rows[Math.floor(index / win.cols)][index % win.cols]
                             width: win.cell; height: win.cell
-                            color: (index % win.cols + Math.floor(index / win.cols)) % 2 ? "#bbf7d0" : "#a7f3d0"
-                            Text { anchors.centerIn: parent; text: parent.c === "#" ? "" : parent.c === "*" ? "" : ""; font.pixelSize: 40 }
+                            color: "white"
+                            border.color: win.line; border.width: 1
+                            Rectangle { // a rock
+                                visible: parent.c === "#"
+                                anchors.centerIn: parent; width: parent.width * 0.7; height: parent.height * 0.55; radius: height / 2.4
+                                color: "#8A8F98"; border.color: "#5E636C"; border.width: 2
+                            }
+                            Star { visible: parent.c === "*"; anchors.centerIn: parent; width: parent.width * 0.62; height: width }
                         }
                     }
                 }
@@ -154,8 +174,8 @@ ApplicationWindow {
                         stepping: win.running && win.stepAt % 2 === 0
                     }
                     Text { // which way it faces
-                        text: ["", "▼", "", "▲"][win.dir]
-                        color: "#166534"; font.pixelSize: 22; font.bold: true
+                        text: ["→", "↓", "←", "↑"][win.dir]
+                        color: "#C8473D"; font.pixelSize: 24; font.bold: true
                         x: [win.cell - 18, win.cell / 2 - 8, -4, win.cell / 2 - 8][win.dir]
                         y: [win.cell / 2 - 14, win.cell - 22, win.cell / 2 - 14, -10][win.dir]
                     }
@@ -165,7 +185,7 @@ ApplicationWindow {
                         NumberAnimation { to: 1.4; duration: 200 } NumberAnimation { to: 1; duration: 200 } NumberAnimation { to: 1.4; duration: 200 } NumberAnimation { to: 1; duration: 200 } }
                 }
             }
-            Label { text: win.message; font.pixelSize: 18; color: "#14532d"; wrapMode: Text.WordWrap; Layout.preferredWidth: 520 }
+            Label { text: win.message; font.pixelSize: 18; color: win.ink; wrapMode: Text.WordWrap; Layout.preferredWidth: 520 }
             // Levels.
             RowLayout {
                 spacing: 4
@@ -189,22 +209,22 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 10
-            Label { text: "Blocks"; font.bold: true; font.pixelSize: 18; color: "#166534" }
+            Label { text: "Blocks"; font.bold: true; font.pixelSize: 18; color: win.ink }
             Flow {
                 Layout.fillWidth: true
                 spacing: 8
-                Button { text: "Forward"; font.pixelSize: 16; onClicked: win.addBlock("F") }
-                Button { text: "Turn left"; font.pixelSize: 16; onClicked: win.addBlock("L") }
-                Button { text: "Turn right"; font.pixelSize: 16; onClicked: win.addBlock("R") }
-                Button { text: "Repeat"; font.pixelSize: 16; visible: win.lv.repeat; onClicked: win.addBlock("P") }
+                Button { text: "forward()"; font.family: "Noto Sans Mono"; font.pixelSize: 15; onClicked: win.addBlock("F") }
+                Button { text: "turn_left()"; font.family: "Noto Sans Mono"; font.pixelSize: 15; onClicked: win.addBlock("L") }
+                Button { text: "turn_right()"; font.family: "Noto Sans Mono"; font.pixelSize: 15; onClicked: win.addBlock("R") }
+                Button { text: "repeat(n)"; font.family: "Noto Sans Mono"; font.pixelSize: 15; visible: win.lv.repeat; onClicked: win.addBlock("P") }
             }
-            Label { text: "Your program (click a block to take it out" + (win.lv.repeat ? "; click 's number to change it" : "") + ")"; color: "#15803d"; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            Label { text: "Your program (click a block to take it out" + (win.lv.repeat ? "; click 's number to change it" : "") + ")"; color: "#6B6F78"; wrapMode: Text.WordWrap; Layout.fillWidth: true }
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                radius: 14
+                radius: 2
                 color: "white"
-                border.color: "#86efac"; border.width: 3
+                border.color: win.line; border.width: 2
                 Flow {
                     anchors.fill: parent
                     anchors.margins: 12
@@ -214,13 +234,13 @@ ApplicationWindow {
                         delegate: Rectangle {
                             required property var modelData
                             required property int index
-                            width: blockText.width + 24; height: 44; radius: 10
-                            color: win.activeBlock === index ? "#facc15" : modelData.k === "P" ? "#c084fc" : modelData.k === "F" ? "#60a5fa" : "#fb923c"
+                            width: blockText.width + 24; height: 40; radius: 3
+                            color: win.activeBlock === index ? "#D9A021" : modelData.k === "P" ? "#6A4E9C" : modelData.k === "F" ? "#336B9E" : "#E07A2F"
                             Text {
                                 id: blockText
                                 anchors.centerIn: parent
-                                text: modelData.k === "F" ? "Forward" : modelData.k === "L" ? "Left" : modelData.k === "R" ? "Right" : "×" + modelData.n
-                                font.pixelSize: 16; font.bold: true; color: "white"
+                                text: modelData.k === "F" ? "forward()" : modelData.k === "L" ? "turn_left()" : modelData.k === "R" ? "turn_right()" : "repeat(" + modelData.n + ")"
+                                font.family: "Noto Sans Mono"; font.pixelSize: 15; font.bold: true; color: "white"
                             }
                             MouseArea {
                                 anchors.fill: parent
@@ -237,7 +257,7 @@ ApplicationWindow {
                     }
                 }
             }
-            Label { text: win.program.length + " blocks" + " (3 stars: " + win.lv.par + " or fewer)"; color: "#166534" }
+            Label { text: win.program.length + " blocks  (3 stars: " + win.lv.par + " or fewer)"; color: "#44474F" }
             RowLayout {
                 Button { text: "Run"; font.pixelSize: 20; highlighted: true; enabled: !win.running && win.program.length > 0; onClicked: win.run() }
                 Button { text: "Start again"; enabled: !win.running; onClicked: { win.reset(); win.message = ""; } }

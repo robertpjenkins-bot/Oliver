@@ -13,7 +13,7 @@ ApplicationWindow {
     height: 680
     visible: true
     title: "Typing Game"
-    color: "#0c4a6e"
+    color: "#CFE3EC"
 
     function arg(name) {
         const a = Qt.application.arguments;
@@ -83,7 +83,7 @@ ApplicationWindow {
         } else if (t === "ollie") {
             // A secret: Ollie's own name is worth 100.
             score += 100;
-            pops.model.append({ px: sky.width / 2 - 100, py: sky.height / 2, txt: "🥚 Secret bonus +100!" });
+            pops.model.append({ px: sky.width / 2 - 100, py: sky.height / 2, txt: "Secret bonus +100" });
         } else {
             miss.restart();
         }
@@ -99,11 +99,8 @@ ApplicationWindow {
     Rectangle {
         id: sky
         anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0; color: "#0c4a6e" }
-            GradientStop { position: 0.85; color: "#0369a1" }
-            GradientStop { position: 1; color: "#15803d" }
-        }
+        color: "#CFE3EC" // a flat sky, with grass along the bottom
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: parent.height * 0.12; color: "#6E9F4E" }
 
         // Falling words.
         Repeater {
@@ -114,18 +111,19 @@ ApplicationWindow {
                 y: modelData.y
                 width: wordText.width + 30
                 height: 44
-                radius: 22
+                radius: 4
                 readonly property bool matching: input.text.length > 0 && modelData.text.indexOf(input.text.trim().toLowerCase()) === 0
-                color: matching ? "#facc15" : "white"
-                border.color: "#0c4a6e"
-                border.width: 3
+                color: matching ? "#F2D06B" : "white"
+                border.color: "#22252B"
+                border.width: 2
                 Text {
                     id: wordText
                     anchors.centerIn: parent
                     text: modelData.text
                     font.pixelSize: 24
+                    font.family: "Noto Sans Mono"
                     font.bold: true
-                    color: "#0c4a6e"
+                    color: "#22252B"
                 }
             }
         }
@@ -139,7 +137,7 @@ ApplicationWindow {
                 required property string txt
                 x: px; y: py
                 text: txt
-                color: "#fde047"
+                color: "#B7791F"
                 font.pixelSize: 28
                 font.bold: true
                 NumberAnimation on y { to: py - 80; duration: 700 }
@@ -176,17 +174,18 @@ ApplicationWindow {
     }
 
     // Top bar.
-    Rectangle { anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; height: 56; color: "#082f49"; opacity: 0.85 }
+    Rectangle { anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; height: 56; color: "#22252B" }
     RowLayout {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 14
-        Label { text: "⌨️ Typing Game"; color: "white"; font.pixelSize: 22; font.bold: true }
+        Label { text: "Typing Game"; color: "white"; font.pixelSize: 22; font.bold: true }
         Item { Layout.fillWidth: true }
-        Label { text: "Level " + win.level; color: "#bae6fd"; font.pixelSize: 20; font.bold: true }
+        Label { text: "Level " + win.level; color: "#C9CAD0"; font.pixelSize: 20; font.bold: true }
         Label { text: "   Score " + win.score; color: "white"; font.pixelSize: 20; font.bold: true }
-        Label { text: "   " + "❤️".repeat(Math.max(0, win.hearts)) + "🖤".repeat(3 - Math.max(0, win.hearts)); font.pixelSize: 20 }
+        Label { text: "   " + "♥".repeat(Math.max(0, win.hearts)); color: "#E8665C"; font.pixelSize: 22 }
+        Label { text: "♥".repeat(3 - Math.max(0, win.hearts)); color: "#55575E"; font.pixelSize: 22 }
     }
 
     // Where you type.
@@ -196,7 +195,7 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         height: 90
-        color: ouch.running ? "#b91c1c" : "#14532d"
+        color: ouch.running ? "#C8473D" : "#22252B"
         RowLayout {
             anchors.fill: parent
             anchors.margins: 18
@@ -206,7 +205,7 @@ ApplicationWindow {
                 font.pixelSize: 28
                 placeholderText: win.mode === "play" ? "Type a word, then Space or Enter" : ""
                 enabled: win.mode === "play"
-                background: Rectangle { radius: 12; color: miss.running ? "#fecaca" : "white" }
+                background: Rectangle { radius: 4; color: miss.running ? "#F3C9C4" : "white" }
                 onTextChanged: if (text.endsWith(" ")) { win.typed(text); text = ""; }
                 onAccepted: { win.typed(text); text = ""; }
             }
@@ -221,38 +220,39 @@ ApplicationWindow {
         anchors.centerIn: parent
         width: 520
         height: 360
-        radius: 24
-        color: "#f0f9ff"
+        radius: 6
+        color: "white"
+        border.color: "#22252B"; border.width: 2
         visible: win.mode !== "play"
         ColumnLayout {
             anchors.centerIn: parent
             spacing: 14
             Label {
                 Layout.alignment: Qt.AlignHCenter
-                text: win.mode === "start" ? "⌨️ Typing Game" : "Game over!"
+                text: win.mode === "start" ? "Typing Game" : "Game over"
                 font.pixelSize: 38
                 font.bold: true
-                color: "#0c4a6e"
+                color: "#22252B"
             }
             Label {
                 Layout.alignment: Qt.AlignHCenter
                 horizontalAlignment: Text.AlignHCenter
                 text: win.mode === "start"
-                    ? "Words fall from the sky.\nType each one and press Space before it lands!"
+                    ? "Words fall from the sky.\nType each one and press Space before it lands."
                     : "Score: " + win.score + "   Level: " + win.level + "\nWords popped: " + win.popped + "   Speed: " + win.wpm + " words a minute"
                 font.pixelSize: 18
-                color: "#075985"
+                color: "#44474F"
             }
-            Label { id: newBest; visible: false; Layout.alignment: Qt.AlignHCenter; text: "🏆 New best score!"; font.pixelSize: 24; font.bold: true; color: "#ca8a04" }
+            Label { id: newBest; visible: false; Layout.alignment: Qt.AlignHCenter; text: "New best score"; font.pixelSize: 24; font.bold: true; color: "#B7791F" }
             Label {
                 Layout.alignment: Qt.AlignHCenter
                 text: "Best score: " + saved.best + " (level " + saved.bestLevel + ")"
                 font.pixelSize: 16
-                color: "#0369a1"
+                color: "#6B6F78"
             }
             Button {
                 Layout.alignment: Qt.AlignHCenter
-                text: win.mode === "start" ? "▶ Play" : "▶ Play again"
+                text: win.mode === "start" ? "Play" : "Play again"
                 font.pixelSize: 22
                 highlighted: true
                 onClicked: win.start()

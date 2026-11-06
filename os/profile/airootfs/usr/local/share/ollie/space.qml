@@ -12,7 +12,8 @@ ApplicationWindow {
     height: 740
     visible: true
     title: "Space Explorer"
-    color: "#020617"
+    color: "#0B0E14" // space, with a mission screen's amber writing
+    readonly property color amber: "#F2A33A"
 
     function trophy(w) { console.log("OLLIE-ACTION trophy " + w) }
     onAtChanged: trophy("add space-body " + bodies[at].name)
@@ -84,15 +85,16 @@ ApplicationWindow {
 
         // The strip.
         RowLayout {
-            Label { text: "Space Explorer"; color: "white"; font.pixelSize: 28; font.bold: true }
+            Label { text: "SPACE EXPLORER"; color: win.amber; font.family: "Noto Sans Mono"; font.pixelSize: 24; font.bold: true; font.letterSpacing: 2 }
             Item { Layout.fillWidth: true }
             Repeater {
                 model: win.bodies
                 delegate: Rectangle {
                     required property var modelData
                     required property int index
-                    width: 58; height: 58; radius: 12
-                    color: index === win.at ? "#1e3a8a" : strip.containsMouse ? "#1e293b" : "transparent"
+                    width: 58; height: 58; radius: 2
+                    color: "transparent"
+                    border.color: index === win.at ? win.amber : strip.containsMouse ? "#3A4150" : "transparent"; border.width: 2
                     Rectangle {
                         anchors.centerIn: parent
                         width: 14 + Math.min(30, Math.sqrt(modelData.size) * 12); height: width; radius: width / 2
@@ -192,22 +194,21 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 spacing: 10
                 Label { text: win.b.name; color: "white"; font.pixelSize: 44; font.bold: true }
-                Label { text: win.b.kind; color: "#93c5fd"; font.pixelSize: 20 }
+                Label { text: win.b.kind.toUpperCase(); color: win.amber; font.family: "Noto Sans Mono"; font.pixelSize: 16; font.letterSpacing: 1 }
                 Repeater {
                     model: win.b.facts
                     delegate: Rectangle {
                         required property var modelData
                         Layout.fillWidth: true
                         implicitHeight: 54
-                        radius: 12
-                        color: "#0f172acc"
-                        border.color: "#1e3a8a"
+                        radius: 2
+                        color: "transparent"
+                        border.color: "#2A3140"
                         RowLayout {
                             anchors.fill: parent
                             anchors.margins: 10
                             spacing: 12
-                            Label { text: modelData[0]; font.pixelSize: 24 }
-                            Label { text: modelData[1]; color: "#93c5fd"; font.pixelSize: 15; font.bold: true; Layout.preferredWidth: 120 }
+                            Label { text: modelData[1].toUpperCase(); color: "#8C93A3"; font.family: "Noto Sans Mono"; font.pixelSize: 13; Layout.preferredWidth: 130 }
                             Label { text: modelData[2]; color: "white"; font.pixelSize: 16; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                         }
                     }
@@ -215,9 +216,10 @@ ApplicationWindow {
                 Rectangle {
                     Layout.fillWidth: true
                     implicitHeight: wowText.implicitHeight + 24
-                    radius: 14
-                    color: "#4c1d95"
-                    Label { id: wowText; anchors.fill: parent; anchors.margins: 12; text: "" + win.b.wow; color: "white"; font.pixelSize: 17; wrapMode: Text.WordWrap }
+                    radius: 2
+                    color: "transparent"
+                    border.color: win.amber; border.width: 1
+                    Label { id: wowText; anchors.fill: parent; anchors.margins: 12; text: win.b.wow; color: "white"; font.pixelSize: 17; wrapMode: Text.WordWrap }
                 }
                 Item { Layout.fillHeight: true }
                 RowLayout {
