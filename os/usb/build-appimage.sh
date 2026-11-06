@@ -317,9 +317,9 @@ build_publisher
 # Animator, Sound Board, Space Explorer, Spelling Bee and World Explorer in
 # it, to install), the Game Overlay and the secrets. Update Ollie OS opens
 # next to get the packages they use (ffmpeg for GIFs and sounds).
-fun_apps=(games finder typing pet coop sticker comic animator soundboard codequest space spelling world mathquest appcenter trophies gamehub quickmenu playtime music photobooth tour)
+fun_apps=(games finder typing pet coop sticker comic paint animator soundboard codequest space spelling world mathquest appcenter trophies gamehub quickmenu playtime music photobooth tour)
 fun_pack_files() { # fun_pack_files: its files, into files=()
-    local a
+    local a f
     for a in "${fun_apps[@]}"; do
         files+=("usr/local/bin/ollie-$a" "usr/local/share/ollie/$a.qml")
         # In the apps menu, or in the App Center's Ollie apps (to install).
@@ -328,6 +328,10 @@ fun_pack_files() { # fun_pack_files: its files, into files=()
         else
             files+=("usr/local/share/ollie/store/ollie-$a.desktop")
         fi
+        # Its icon, where it has one of its own.
+        for f in "$os"/profile/airootfs/usr/share/icons/hicolor/*/apps/"ollie-$a".{png,svg}; do
+            [[ -f $f ]] && files+=("${f#"$os/profile/airootfs/"}")
+        done
     done
     files+=(usr/local/bin/ollie-{overlay,welcome,os-update,colours,settings} usr/local/lib/ollie/{games,pads}.py
         usr/local/share/ollie/{PetBody,pet-desktop,Confetti,welcome,settings}.qml usr/local/share/ollie/world.json

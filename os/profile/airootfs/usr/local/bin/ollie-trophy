@@ -38,6 +38,8 @@ team-up|🤝|Team Up|Two controllers in Couch Co-op|coop-players|2
 party-time|🎉|Party Time|Four controllers in Couch Co-op|coop-players|4
 sticker-star|🌟|Sticker Star|Make a sticker|sticker|1
 comic-artist|💬|Comic Artist|Save a comic|comic|1
+painter|🎨|Painter|Save a drawing in Ollie Paint|drawing|1
+gallery|🖼️|Gallery|Save 10 drawings|drawing|10
 animator|🎞️|Animator|Make a GIF in Ollie Animator|gif|1
 sound-maker|🎙️|Sound Maker|Record a sound on the Sound Board|sound-record|1
 composer|🎹|Composer|Save a song in Music Maker|song|1

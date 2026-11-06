@@ -181,6 +181,7 @@ file_permissions=(
   ["/usr/local/bin/ollie-coop"]="0:0:755"
   ["/usr/local/bin/ollie-sticker"]="0:0:755"
   ["/usr/local/bin/ollie-comic"]="0:0:755"
+  ["/usr/local/bin/ollie-paint"]="0:0:755"
   ["/usr/local/bin/ollie-animator"]="0:0:755"
   ["/usr/local/bin/ollie-soundboard"]="0:0:755"
   ["/usr/local/bin/ollie-codequest"]="0:0:755"

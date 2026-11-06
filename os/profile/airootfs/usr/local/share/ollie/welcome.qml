@@ -33,6 +33,7 @@ ApplicationWindow {
         { icon: "/usr/share/icons/hicolor/256x256/apps/steam.png", label: "Install games", hint: "The Steam store", act: "games" },
         { icon: "ollie-appcenter", label: "App Center", hint: "Free games and apps", act: "appcenter" },
         { icon: "/usr/share/icons/hicolor/scalable/apps/ollie-minecraft.svg", label: "Minecraft", hint: "The Minecraft Launcher", act: "minecraft" },
+        { icon: "ollie-paint", label: "Draw", hint: "Ollie Paint", act: "paint" },
         { icon: "ollie-wallpaper-maker", label: "Change background", hint: "Your name, or draw one", act: "background" },
         { icon: "ollie-settings", label: "Settings", hint: "Colours, dark mode, Screen Time", act: "settings" },
         { icon: "ollie-fixer", label: "Fix a problem", hint: "The Ollie OS Fixer", act: "fixer" },

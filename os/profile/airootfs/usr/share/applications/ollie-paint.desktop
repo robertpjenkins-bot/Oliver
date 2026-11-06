@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ollie Paint
+Comment=Draw and paint with the mouse: brushes, shapes, fill and lots of colours
+Exec=/usr/local/bin/ollie-paint
+Icon=ollie-paint
+Terminal=false
+Categories=Graphics;
+Keywords=draw;paint;drawing;picture;
