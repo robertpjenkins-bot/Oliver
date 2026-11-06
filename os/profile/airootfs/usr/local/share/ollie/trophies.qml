@@ -12,7 +12,21 @@ ApplicationWindow {
     height: 720
     visible: true
     title: "Trophies"
-    color: "#1e1b4b"
+    color: "#F4EFE6" // a wall of medals
+    // A medal: a ribbon and a disc (gold, or grey when not won yet), with a letter.
+    component Medal: Item {
+        property bool won: false
+        property string letter: ""
+        width: 56; height: 64
+        Rectangle { x: 14; width: 12; height: 26; color: won ? "#C8473D" : "#C9C3B8"; rotation: -12 }
+        Rectangle { x: 30; width: 12; height: 26; color: won ? "#336B9E" : "#C9C3B8"; rotation: 12 }
+        Rectangle {
+            y: 16; anchors.horizontalCenter: parent.horizontalCenter
+            width: 46; height: 46; radius: 23
+            color: won ? "#D9A021" : "#DDD7CC"; border.color: won ? "#A67712" : "#C9C3B8"; border.width: 3
+            Label { anchors.centerIn: parent; text: parent.parent.letter; color: won ? "white" : "#A8A193"; font.pixelSize: 20; font.bold: true }
+        }
+    }
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -31,7 +45,7 @@ ApplicationWindow {
         // Earned ones first, then the nearest to being earned.
         trophies = trophies.slice().sort((a, b) => (b.earned !== "") - (a.earned !== "") || (b.now / b.target) - (a.now / a.target));
     }
-    readonly property string rank: got >= 30 ? "🌟 Ollie OS Legend" : got >= 20 ? "👑 Champion" : got >= 12 ? "🥇 Gold" : got >= 6 ? "🥈 Silver" : got >= 1 ? "🥉 Bronze" : "🥚 Just starting"
+    readonly property string rank: got >= 30 ? "Ollie OS Legend" : got >= 20 ? "Champion" : got >= 12 ? "Gold" : got >= 6 ? "Silver" : got >= 1 ? "Bronze" : "Just starting"
 
     ColumnLayout {
         anchors.fill: parent
@@ -42,29 +56,22 @@ ApplicationWindow {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 130
-            radius: 24
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0; color: "#7c3aed" }
-                GradientStop { position: 1; color: "#db2777" }
-            }
+            radius: 8
+            color: "#22252B"
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: 22
                 spacing: 20
-                Rectangle {
-                    width: 86; height: 86; radius: 43; color: "white"
-                    Label { anchors.centerIn: parent; text: ""; font.pixelSize: 50 }
-                }
+                Image { source: "file:///usr/share/icons/hicolor/128x128/apps/ollie-trophies.png"; sourceSize: Qt.size(80, 80) }
                 ColumnLayout {
                     spacing: 2
                     Label { text: win.arg("name") || "You"; color: "white"; font.pixelSize: 32; font.bold: true }
-                    Label { text: win.rank + (win.arg("pet") ? " ·" + win.arg("pet") : ""); color: "#fce7f3"; font.pixelSize: 18 }
+                    Label { text: win.rank + (win.arg("pet") ? "  ·  " + win.arg("pet") : ""); color: "#D9A021"; font.pixelSize: 18 }
                 }
                 Item { Layout.fillWidth: true }
                 ColumnLayout {
                     Label { text: win.got + " / " + win.trophies.length; color: "white"; font.pixelSize: 40; font.bold: true; Layout.alignment: Qt.AlignRight }
-                    Label { text: "trophies"; color: "#fce7f3"; font.pixelSize: 16; Layout.alignment: Qt.AlignRight }
+                    Label { text: "trophies"; color: "#C9CAD0"; font.pixelSize: 16; Layout.alignment: Qt.AlignRight }
                 }
             }
         }
@@ -72,7 +79,7 @@ ApplicationWindow {
         RowLayout {
             spacing: 8
             Repeater {
-                model: [["all", "All"], ["got", "🏆 Got them"], ["todo", "🎯 Still to get"]]
+                model: [["all", "All"], ["got", "Got them"], ["todo", "Still to get"]]
                 delegate: Button {
                     required property var modelData
                     text: modelData[1]
@@ -81,7 +88,7 @@ ApplicationWindow {
                 }
             }
             Item { Layout.fillWidth: true }
-            Label { text: "Play Ollie OS's apps to earn more!"; color: "#c7d2fe"; font.pixelSize: 15 }
+            Label { text: "Play Ollie OS's apps to earn more."; color: "#6B6F78"; font.pixelSize: 15 }
         }
 
         GridView {
@@ -90,7 +97,7 @@ ApplicationWindow {
             Layout.fillHeight: true
             clip: true
             cellWidth: Math.floor(width / 4)
-            cellHeight: 190
+            cellHeight: 200
             model: win.trophies.filter(t => win.show === "all" || (win.show === "got") === (t.earned !== ""))
             delegate: Item {
                 required property var modelData
@@ -100,21 +107,18 @@ ApplicationWindow {
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: 7
-                    radius: 18
-                    color: parent.have ? "#312e81" : "#26234d"
-                    border.color: parent.have ? "#facc15" : "#3b3770"
-                    border.width: parent.have ? 3 : 1
+                    radius: 6
+                    color: "white"
+                    border.color: parent.have ? "#D9A021" : "#DDD5C7"
+                    border.width: parent.have ? 2 : 1
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 12
                         spacing: 4
+                        Medal { won: parent.parent.parent.have; letter: modelData.name[0]; Layout.alignment: Qt.AlignHCenter }
+                        Label { text: modelData.name; color: "#22252B"; font.pixelSize: 16; font.bold: true; Layout.alignment: Qt.AlignHCenter }
                         Label {
-                            text: modelData.emoji; font.pixelSize: 46; Layout.alignment: Qt.AlignHCenter
-                            opacity: parent.parent.parent.have ? 1 : 0.25
-                        }
-                        Label { text: modelData.name; color: "white"; font.pixelSize: 16; font.bold: true; Layout.alignment: Qt.AlignHCenter }
-                        Label {
-                            text: modelData.how; color: "#c7d2fe"; font.pixelSize: 12; wrapMode: Text.WordWrap
+                            text: modelData.how; color: "#6B6F78"; font.pixelSize: 12; wrapMode: Text.WordWrap
                             horizontalAlignment: Text.AlignHCenter; Layout.fillWidth: true
                         }
                         Item { Layout.fillHeight: true }
@@ -126,9 +130,9 @@ ApplicationWindow {
                         Label {
                             Layout.alignment: Qt.AlignHCenter
                             font.pixelSize: 12
-                            color: parent.parent.parent.have ? "#fde047" : "#a5b4fc"
-                            text: parent.parent.parent.have ? "Got it! " + modelData.earned
-                                : modelData.target > 1 ? Math.min(modelData.now, modelData.target) + " / " + modelData.target : "🔒 Not yet"
+                            color: parent.parent.parent.have ? "#A67712" : "#8A8D94"
+                            text: parent.parent.parent.have ? "Won " + modelData.earned
+                                : modelData.target > 1 ? Math.min(modelData.now, modelData.target) + " / " + modelData.target : "Not yet"
                         }
                     }
                 }

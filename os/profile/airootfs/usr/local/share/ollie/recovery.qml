@@ -18,7 +18,7 @@ ApplicationWindow {
     height: 560
     visible: true
     title: "Recovery Mode"
-    color: "#0f172a"
+    color: palette.window
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -93,7 +93,7 @@ ApplicationWindow {
         Layout.fillWidth: true
     }
     component Words: Label {
-        color: "#e2e8f0"; font.pixelSize: 17; wrapMode: Text.WordWrap
+        color: palette.text; font.pixelSize: 17; wrapMode: Text.WordWrap
         Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
     }
 
@@ -106,7 +106,7 @@ ApplicationWindow {
             Layout.alignment: Qt.AlignHCenter
             spacing: 12
             Image { source: "file:///usr/share/icons/hicolor/64x64/apps/ollie-recovery.png"; sourceSize: Qt.size(48, 48) }
-            Label { text: "Recovery Mode"; color: "white"; font.pixelSize: 34; font.bold: true }
+            Label { text: "Recovery Mode"; color: palette.text; font.pixelSize: 34; font.bold: true }
         }
         Item { Layout.fillHeight: true }
 
@@ -116,7 +116,7 @@ ApplicationWindow {
             spacing: 14
             Words { text: "Put a newer Ollie OS over this one: pick its .iso file, then press Write." }
             Big { text: "Choose an ISO file..."; onClicked: picker.open() }
-            Words { visible: win.iso !== ""; text: win.isoName; font.bold: true; color: "#5eead4" }
+            Words { visible: win.iso !== ""; text: win.isoName; font.bold: true; color: "#257A78" }
             Big { text: "Write"; highlighted: true; enabled: win.iso !== ""; onClicked: win.page = "ask" }
         }
 
@@ -138,7 +138,7 @@ ApplicationWindow {
             visible: win.page === "keep"
             spacing: 14
             Words { text: "Keep your files, username and password, Wi-Fi passwords and website logins?"; font.pixelSize: 21; font.bold: true }
-            Words { text: "Yes takes everything with you to the new version: only Ollie OS itself is new. Your games, pictures, settings and apps stay."; font.pixelSize: 15; color: "#94a3b8" }
+            Words { text: "Yes takes everything with you to the new version: only Ollie OS itself is new. Your games, pictures, settings and apps stay."; font.pixelSize: 15; color: palette.placeholderText }
             Big { text: "Yes, keep everything"; highlighted: true; onClicked: win.start("keep") }
             Big { text: "No, start fresh (your files are erased)"; onClicked: win.start("fresh") }
             Button { text: "← Back"; Layout.alignment: Qt.AlignHCenter; onClicked: win.page = "ask" }
@@ -148,8 +148,8 @@ ApplicationWindow {
         ColumnLayout {
             visible: win.page === "erase"
             spacing: 14
-            Words { text: "This ERASES the whole drive: Ollie OS and all your files!"; font.pixelSize: 22; font.bold: true; color: "#fca5a5" }
-            Words { text: win.isoName + " is written over the drive, then the computer starts from it. Only ISOs that can start from a USB stick (Linux) work this way."; font.pixelSize: 15; color: "#94a3b8" }
+            Words { text: "This ERASES the whole drive: Ollie OS and all your files!"; font.pixelSize: 22; font.bold: true; color: "#C8473D" }
+            Words { text: win.isoName + " is written over the drive, then the computer starts from it. Only ISOs that can start from a USB stick (Linux) work this way."; font.pixelSize: 15; color: palette.placeholderText }
             Big { text: "Erase and write"; onClicked: win.start("erase") }
             Button { text: "← Back"; Layout.alignment: Qt.AlignHCenter; onClicked: win.page = "ask" }
         }
@@ -168,7 +168,7 @@ ApplicationWindow {
                 inputMethodHints: Qt.ImhDigitsOnly
                 onTextEdited: pinWrong.visible = false
             }
-            Label { id: pinWrong; visible: false; text: "That PIN is not right."; color: "#fca5a5"; Layout.alignment: Qt.AlignHCenter }
+            Label { id: pinWrong; visible: false; text: "That PIN is not right."; color: "#C8473D"; Layout.alignment: Qt.AlignHCenter }
         }
 
         // --- Working ---
@@ -177,18 +177,18 @@ ApplicationWindow {
             spacing: 14
             Words { text: win.step; font.pixelSize: 19 }
             ProgressBar { Layout.fillWidth: true; from: 0; to: 100; value: win.percent }
-            Words { text: win.percent + "% Don't turn the computer off!"; color: "#94a3b8"; font.pixelSize: 15 }
+            Words { text: win.percent + "% Don't turn the computer off!"; color: palette.placeholderText; font.pixelSize: 15 }
         }
 
         // --- Done ---
         ColumnLayout {
             visible: win.page === "done"
             spacing: 14
-            Words { text: (win.newVersion ? "Ollie OS " + win.newVersion : "The new Ollie OS") + " is ready"; font.pixelSize: 24; font.bold: true; color: "#5eead4" }
+            Words { text: (win.newVersion ? "Ollie OS " + win.newVersion : "The new Ollie OS") + " is ready"; font.pixelSize: 24; font.bold: true; color: "#257A78" }
             Words {
                 text: win.mode === "keep" ? "Restart to start it. Everything of yours comes along. (If something is wrong with it, pick \"Ollie OS (before the update)\" on the start-up menu in the first 10 minutes.)"
                     : "Restart to start it. It asks you to make a username and password, like the first time."
-                font.pixelSize: 15; color: "#94a3b8"
+                font.pixelSize: 15; color: palette.placeholderText
             }
             Big { text: "Restart now"; highlighted: true; onClicked: win.act("restart") }
         }
@@ -203,7 +203,7 @@ ApplicationWindow {
                     : "😕 " + win.problem
                 font.pixelSize: 19
             }
-            Words { visible: win.page === "error"; text: "Nothing was changed: this Ollie OS is just as it was."; font.pixelSize: 15; color: "#94a3b8" }
+            Words { visible: win.page === "error"; text: "Nothing was changed: this Ollie OS is just as it was."; font.pixelSize: 15; color: palette.placeholderText }
             RowLayout {
                 spacing: 14
                 Big { visible: win.page === "isollie"; text: "Yes, it's Ollie OS"; highlighted: true; onClicked: win.page = "keep" }

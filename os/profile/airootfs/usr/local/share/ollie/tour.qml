@@ -34,15 +34,15 @@ Window {
     readonly property real sh: height
     // [what Ollie says, where (x, y, size of the light; size 0: no light)]
     readonly property var steps: [
-        ["Hi" + (arg("name") ? " " + arg("name") : "") + "! I'm Ollie! 👋 Let me show you around your new computer.", sw / 2, sh / 2, 0],
-        ["This is the Ollie menu. Click the cube to find all your apps: games, drawing, music and lots more!", 26, sh - bar / 2, 46],
-        ["Type in this box to search the internet with Google.", 250, sh - bar / 2, 200],
-        ["These are your favourite apps: Firefox, Steam, your files and more. Click one to open it.", sw - 560, sh - bar / 2, 210],
-        ["Here are the time, the Wi-Fi, the sound and the battery.", sw - 120, sh - bar / 2, 130],
-        ["Every day there's a new fun fact up here. Press Another one for more.", sw - 240, 145, 220],
-        ["Got a controller? Plug it in and press its Home button for the Game Hub. 🎮", sw / 2, sh / 2, 0],
-        ["Play Ollie OS's games and apps to win trophies! 🏆 Find Trophies in the menu.", sw / 2, sh / 2, 0],
-        ["That's it! Open Ollie OS Welcome from the menu any time you need help. Have fun! 🎉", sw / 2, sh / 2, 0]
+        ["Hi" + (arg("name") ? " " + arg("name") : "") + ". I'm Ollie. Let me show you around.", sw / 2, sh / 2, 0],
+        ["This is the Ollie menu. Click the cube to find all your apps.", 26, sh - bar / 2, 46],
+        ["Type in this box to search the internet.", 250, sh - bar / 2, 200],
+        ["Your favourite apps: Firefox, Steam, your files and more. Click one to open it.", sw - 560, sh - bar / 2, 210],
+        ["The time, the Wi-Fi, the sound and the battery.", sw - 120, sh - bar / 2, 130],
+        ["A new fun fact up here every day. Press Another one for more.", sw - 240, 145, 220],
+        ["Got a controller? Plug it in and press its Home button for the Game Hub.", sw / 2, sh / 2, 0],
+        ["Play Ollie OS's games and apps to win trophies. Trophies is in the menu.", sw / 2, sh / 2, 0],
+        ["That's it. Ollie OS Welcome, in the menu, can help any time.", sw / 2, sh / 2, 0]
     ]
     property int at: 0
     readonly property var cur: steps[at]
@@ -54,7 +54,7 @@ Window {
         else if (w === "left" && at > 0) at--;
         else if (w === "skip") Qt.quit();
     }
-    onAtChanged: { canvas.requestPaint(); if (at === steps.length - 1) confetti.burst(); }
+    onAtChanged: canvas.requestPaint()
 
     // The screen, dim except for the light.
     Canvas {
@@ -80,7 +80,7 @@ Window {
                 c.ellipse(lx - lr, ly - lr * 0.55, lr * 2, lr * 1.1);
                 c.fill();
                 c.globalCompositeOperation = "source-over";
-                c.strokeStyle = "#facc15"; c.lineWidth = 5;
+                c.strokeStyle = "#F2D06B"; c.lineWidth = 4;
                 c.beginPath();
                 c.ellipse(lx - lr, ly - lr * 0.55, lr * 2, lr * 1.1);
                 c.stroke();
@@ -109,26 +109,26 @@ Window {
         Rectangle {
             x: 150; y: 0
             width: 490; height: 250
-            radius: 26
+            radius: 8
             color: "white"
-            border.color: "#0b4f4a"; border.width: 3
+            border.color: "#22252B"; border.width: 2
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 22
                 spacing: 10
                 Label {
                     text: win.cur[0]
-                    color: "#0b4f4a"; font.pixelSize: 22; font.bold: true
+                    color: "#22252B"; font.pixelSize: 21
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                 }
                 RowLayout {
-                    Label { text: (win.at + 1) + " / " + win.steps.length; color: "#64748b"; font.pixelSize: 15 }
+                    Label { text: (win.at + 1) + " / " + win.steps.length; color: "#6B6F78"; font.pixelSize: 15 }
                     Item { Layout.fillWidth: true }
                     Button { text: "Skip"; flat: true; visible: win.at < win.steps.length - 1; onClicked: win.go("skip") }
-                    Button { text: "Back"; visible: win.at > 0; onClicked: win.go("back") }
-                    Button { text: win.at === win.steps.length - 1 ? "Let's go!" : "Next"; highlighted: true; font.bold: true; onClicked: win.go("next") }
+                    Button { text: "← Back"; visible: win.at > 0; onClicked: win.go("back") }
+                    Button { text: win.at === win.steps.length - 1 ? "Done" : "Next →"; highlighted: true; font.bold: true; onClicked: win.go("next") }
                 }
             }
         }
@@ -155,5 +155,4 @@ Window {
             for (const [seq, w] of e) if (seq > win.lastSeq) { win.lastSeq = seq; win.go(w === "back" ? "back" : w); }
         }
     }
-    Confetti { id: confetti }
 }

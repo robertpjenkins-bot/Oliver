@@ -90,8 +90,8 @@ Window {
     Timer {
         interval: 45000; running: true; repeat: true
         onTriggered: {
-            const lines = win.mood === "hungry" ? ["I'm hungry! 🍎", "Feed me please!"] : win.mood === "sleepy" ? ["So sleepy..."] :
-                win.mood === "bored" ? ["Let's play! ⚽", "I'm bored..."] : win.mood === "asleep" ? ["Zzz..."] : ["Hi! 💖", "La la la 🎶", "I like it here!", "Wheee!"];
+            const lines = win.mood === "hungry" ? ["I'm hungry!", "Feed me please!"] : win.mood === "sleepy" ? ["So sleepy..."] :
+                win.mood === "bored" ? ["Let's play!", "I'm bored..."] : win.mood === "asleep" ? ["Zzz..."] : ["Hi!", "La la la", "I like it here!", "Wheee!"];
             text.text = lines[Math.floor(Math.random() * lines.length)];
             hush.restart();
         }

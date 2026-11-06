@@ -14,7 +14,7 @@ ApplicationWindow {
     height: 640
     visible: true
     title: "Couch Co-op"
-    color: "#111827"
+    color: "#1A1B1F" // a stage for the players
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -26,7 +26,7 @@ ApplicationWindow {
     function act(w) { console.log("OLLIE-ACTION " + w) }
     property var players: []
     property int lastCount: 0
-    readonly property var colours: ["#3b82f6", "#ef4444", "#22c55e", "#eab308"]
+    readonly property var colours: ["#336B9E", "#C8473D", "#4F8A45", "#D9A021"]
     readonly property var names: ["Player 1", "Player 2", "Player 3", "Player 4"]
 
     Timer {
@@ -51,7 +51,7 @@ ApplicationWindow {
                 spacing: 0
                 Label { text: "Couch Co-op"; color: "white"; font.pixelSize: 32; font.bold: true }
                 Label {
-                    color: "#9ca3af"; font.pixelSize: 15
+                    color: "#9A9CA3"; font.pixelSize: 15
                     text: win.players.length === 0 ? "Plug in controllers (or pair them with Bluetooth): up to 4 players."
                         : "Press a button: your card lights up. That's you!"
                 }
@@ -71,9 +71,9 @@ ApplicationWindow {
                     readonly property bool pressing: p !== null && p.held.length > 0
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: 22
-                    color: p === null ? "#1f2937" : pressing ? win.colours[index] : Qt.darker(win.colours[index], 2.4)
-                    border.color: p === null ? "#374151" : win.colours[index]
+                    radius: 6
+                    color: p === null ? "#232429" : pressing ? win.colours[index] : Qt.darker(win.colours[index], 2.2)
+                    border.color: p === null ? "#33353B" : win.colours[index]
                     border.width: 4
                     scale: pressing ? 1.04 : 1
                     Behavior on scale { NumberAnimation { duration: 80 } }
@@ -88,7 +88,7 @@ ApplicationWindow {
                         }
                         Label {
                             text: p === null ? "No controller yet" : p.name
-                            color: "#e5e7eb"; font.pixelSize: 14; wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
+                            color: "#E4E4E7"; font.pixelSize: 14; wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
                             Layout.fillWidth: true
                         }
                         Label {
@@ -100,7 +100,7 @@ ApplicationWindow {
                         Label {
                             visible: p !== null
                             text: p ? p.presses + " presses" : ""
-                            color: "#d1d5db"; font.pixelSize: 13; Layout.alignment: Qt.AlignHCenter
+                            color: "#C9CAD0"; font.pixelSize: 13; Layout.alignment: Qt.AlignHCenter
                         }
                     }
                 }
@@ -110,8 +110,8 @@ ApplicationWindow {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 120
-            radius: 18
-            color: "#1f2937"
+            radius: 6
+            color: "#232429"
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: 16
@@ -121,7 +121,7 @@ ApplicationWindow {
                     Label { text: "Play together!"; color: "white"; font.pixelSize: 20; font.bold: true }
                     Label {
                         text: "Steam's big screen shows games for playing on one screen (look for \"Shared/Split Screen\").\nSuperTuxKart is a free racing game for up to 4 players on one screen."
-                        color: "#9ca3af"; font.pixelSize: 14; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                        color: "#9A9CA3"; font.pixelSize: 14; wrapMode: Text.WordWrap; Layout.fillWidth: true
                     }
                 }
                 Button { text: "Steam big screen"; font.pixelSize: 16; onClicked: win.act("steam") }

@@ -13,7 +13,7 @@ ApplicationWindow {
     height: 640
     visible: true
     title: "Ollie OS Updates"
-    color: "#083c38"
+    color: palette.window
 
     function arg(name) {
         const a = Qt.application.arguments;
@@ -29,13 +29,6 @@ ApplicationWindow {
     property var installing: ({})
     readonly property int newCount: updates.filter(u => !u.installed).length
 
-    Rectangle {
-        anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0; color: "#0f766e" }
-            GradientStop { position: 1; color: "#083c38" }
-        }
-    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -44,13 +37,13 @@ ApplicationWindow {
 
         RowLayout {
             spacing: 14
-            Label { text: ""; font.pixelSize: 44 }
+            Image { source: "file:///usr/share/icons/hicolor/64x64/apps/ollie-update-checker.png"; sourceSize: Qt.size(48, 48) }
             ColumnLayout {
                 spacing: 2
                 Layout.fillWidth: true
-                Label { text: "Latest updates"; color: "white"; font.pixelSize: 30; font.bold: true }
+                Label { text: "Latest updates"; color: palette.text; font.pixelSize: 30; font.bold: true }
                 Label {
-                    color: "#ccfbf1"
+                    color: palette.placeholderText
                     font.pixelSize: 16
                     text: !win.reached ? "Could not check: is the internet connected?"
                         : win.updates.length === 0 ? "No updates yet."
@@ -81,9 +74,9 @@ ApplicationWindow {
                         required property int index
                         Layout.fillWidth: true
                         implicitHeight: card.implicitHeight + 28
-                        radius: 16
-                        color: modelData.installed ? "#115e59" : "#14b8a6"
-                        border.color: index === 0 && !modelData.installed ? "#ccfbf1" : "transparent"
+                        radius: 6
+                        color: palette.base
+                        border.color: !modelData.installed ? "#257A78" : palette.mid
                         border.width: 2
 
                         ColumnLayout {
@@ -98,7 +91,7 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 Label {
                                     text: (index === 0 ? "" : "") + modelData.title
-                                    color: modelData.installed ? "#ccfbf1" : "#042f2e"
+                                    color: palette.text
                                     font.pixelSize: 20
                                     font.bold: true
                                     elide: Text.ElideRight
@@ -106,13 +99,13 @@ ApplicationWindow {
                                 }
                                 Label {
                                     text: modelData.date
-                                    color: modelData.installed ? "#99f6e4" : "#064e48"
+                                    color: palette.placeholderText
                                     font.pixelSize: 13
                                 }
                             }
                             Label {
                                 text: modelData.body
-                                color: modelData.installed ? "#e6fffa" : "#042f2e"
+                                color: palette.text
                                 font.pixelSize: 15
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
@@ -120,7 +113,7 @@ ApplicationWindow {
                             Label {
                                 visible: modelData.files.length > 0
                                 text: "Files: " + modelData.files.join(", ")
-                                color: modelData.installed ? "#99f6e4" : "#064e48"
+                                color: palette.placeholderText
                                 font.pixelSize: 12
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
@@ -130,7 +123,7 @@ ApplicationWindow {
                                 Label {
                                     visible: modelData.installed || win.installing[modelData.tag] === true
                                     text: modelData.installed ? "✔ Installed" : "Installing… (its window shows how far it is)"
-                                    color: modelData.installed ? "#ccfbf1" : "#042f2e"
+                                    color: palette.text
                                     font.pixelSize: 15
                                     font.bold: true
                                 }
@@ -155,7 +148,7 @@ ApplicationWindow {
         RowLayout {
             Label {
                 text: "New updates also come as a notification by themselves (the Update Checker)."
-                color: "#99f6e4"
+                color: palette.placeholderText
                 font.pixelSize: 13
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap

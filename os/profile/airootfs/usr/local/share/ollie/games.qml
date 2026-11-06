@@ -12,7 +12,7 @@ ApplicationWindow {
     height: 760
     visible: true
     title: "Games"
-    color: "#0b1220"
+    color: "#17181C"
 
     function arg(name) {
         const a = Qt.application.arguments;
@@ -40,10 +40,7 @@ ApplicationWindow {
 
     Rectangle {
         anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0; color: "#1e1b4b" }
-            GradientStop { position: 1; color: "#0b1220" }
-        }
+        color: "#17181C"
     }
 
     ColumnLayout {
@@ -55,7 +52,7 @@ ApplicationWindow {
             spacing: 12
             Image { source: "file:///usr/share/icons/hicolor/64x64/apps/ollie-games.png"; sourceSize: Qt.size(48, 48) }
             Label { text: "Games"; color: "white"; font.pixelSize: 34; font.bold: true }
-            Label { text: win.games.length + (win.games.length === 1 ? " game" : " games"); color: "#a5b4fc"; font.pixelSize: 16; Layout.leftMargin: 6 }
+            Label { text: win.games.length + (win.games.length === 1 ? " game" : " games"); color: "#9A9CA3"; font.pixelSize: 16; Layout.leftMargin: 6 }
             Item { Layout.fillWidth: true }
             TextField {
                 placeholderText: "Find a game"
@@ -67,7 +64,7 @@ ApplicationWindow {
         RowLayout {
             spacing: 8
             Repeater {
-                model: [{ k: "all", t: "All" }, { k: "steam", t: "🎮 Steam" }, { k: "apps", t: "⛏️ Apps" }, { k: "files", t: "💿 My game files" }]
+                model: [{ k: "all", t: "All" }, { k: "steam", t: "Steam" }, { k: "apps", t: "Apps" }, { k: "files", t: "My game files" }]
                 delegate: Button {
                     required property var modelData
                     text: modelData.t
@@ -85,14 +82,14 @@ ApplicationWindow {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 64
-            radius: 14
-            color: drop.containsDrag ? "#4338ca" : "#1f2a4a"
-            border.color: "#818cf8"
+            radius: 6
+            color: drop.containsDrag ? "#33251B" : "#1F2024"
+            border.color: drop.containsDrag ? "#E07A2F" : "#3A3C42"
             border.width: 2
             Label {
                 anchors.centerIn: parent
                 text: drop.containsDrag ? "Let go to add them!"
-                    : "⬇️  Drag game files here: ROMs (NES, SNES, Game Boy, N64, DS...), ISOs (PlayStation, PSP, GameCube), Windows games (.exe)"
+                    : "Drag game files here: ROMs (NES, SNES, Game Boy, N64, DS...), ISOs (PlayStation, PSP, GameCube), Windows games (.exe)"
                 color: "white"
                 font.pixelSize: 15
                 elide: Text.ElideRight
@@ -117,9 +114,9 @@ ApplicationWindow {
                         required property var modelData
                         width: 160
                         height: 260
-                        radius: 14
-                        color: tile.containsMouse ? "#3730a3" : "#1e293b"
-                        border.color: tile.containsMouse ? "#c7d2fe" : "transparent"
+                        radius: 6
+                        color: "#25272D"
+                        border.color: tile.containsMouse ? "#E07A2F" : "transparent"
                         border.width: 2
                         scale: tile.pressed ? 0.96 : 1
 
@@ -131,7 +128,7 @@ ApplicationWindow {
                             anchors.margins: 8
                             height: 180
                             radius: 10
-                            color: modelData.kind === "steam" ? "#1b2838" : modelData.kind === "app" ? "#14532d" : "#4c1d95"
+                            color: modelData.kind === "steam" ? "#1B2838" : modelData.kind === "app" ? "#2F4A3B" : "#3A2E45"
                             clip: true
                             Image {
                                 anchors.fill: parent
@@ -166,7 +163,7 @@ ApplicationWindow {
                             anchors.left: parent.left
                             anchors.margins: 8
                             text: modelData.system
-                            color: "#a5b4fc"
+                            color: "#9A9CA3"
                             font.pixelSize: 12
                         }
                         MouseArea {
@@ -188,7 +185,7 @@ ApplicationWindow {
             visible: win.shown.length === 0
             Layout.alignment: Qt.AlignHCenter
             text: win.games.length === 0 ? "No games yet! Get some on Steam, or drag your game files here." : "No game with that name."
-            color: "#c7d2fe"
+            color: "#C9CAD0"
             font.pixelSize: 18
         }
     }

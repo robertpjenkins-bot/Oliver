@@ -11,7 +11,7 @@ ApplicationWindow {
     height: 680
     visible: true
     title: "Play Time"
-    color: "#0f172a"
+    color: "#FAFAF7" // a report on paper
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -27,7 +27,7 @@ ApplicationWindow {
         x.open("GET", "file://" + arg("data"), false);
         try { x.send(); const d = JSON.parse(x.responseText); days = d.days; total = d.total; } catch (e) {}
     }
-    readonly property var colours: ["#14b8a6", "#f59e0b", "#a855f7", "#3b82f6", "#ef4444", "#22c55e", "#ec4899", "#eab308"]
+    readonly property var colours: ["#257A78", "#E07A2F", "#6A4E9C", "#336B9E", "#C8473D", "#4F8A45", "#D0587E", "#D9A021"]
     // Every game this week, most played first: [name, minutes].
     readonly property var games: {
         const t = {};
@@ -44,12 +44,12 @@ ApplicationWindow {
         anchors.margins: 24
         spacing: 16
         RowLayout {
-            Label { text: "Play Time"; color: "white"; font.pixelSize: 32; font.bold: true }
+            Label { text: "Play Time"; color: "#22252B"; font.pixelSize: 32; font.bold: true }
             Item { Layout.fillWidth: true }
             ColumnLayout {
                 spacing: 0
-                Label { text: "This week: " + win.hm(win.week); color: "#5eead4"; font.pixelSize: 20; font.bold: true; Layout.alignment: Qt.AlignRight }
-                Label { text: "All time: " + win.hm(win.total); color: "#94a3b8"; font.pixelSize: 14; Layout.alignment: Qt.AlignRight }
+                Label { text: "This week: " + win.hm(win.week); color: "#257A78"; font.pixelSize: 20; font.bold: true; Layout.alignment: Qt.AlignRight }
+                Label { text: "All time: " + win.hm(win.total); color: "#6B6F78"; font.pixelSize: 14; Layout.alignment: Qt.AlignRight }
             }
         }
 
@@ -57,8 +57,9 @@ ApplicationWindow {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 300
-            radius: 18
-            color: "#16223b"
+            radius: 4
+            color: "white"
+            border.color: "#E2DED6"
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: 18
@@ -74,7 +75,7 @@ ApplicationWindow {
                         Layout.preferredWidth: 1
                         Layout.fillHeight: true
                         spacing: 6
-                        Label { text: day.mins ? win.hm(day.mins) : ""; color: "#cbd5e1"; font.pixelSize: 12; Layout.alignment: Qt.AlignHCenter }
+                        Label { text: day.mins ? win.hm(day.mins) : ""; color: "#44474F"; font.pixelSize: 12; Layout.alignment: Qt.AlignHCenter }
                         Item {
                             id: barArea
                             Layout.fillWidth: true
@@ -97,7 +98,7 @@ ApplicationWindow {
                         }
                         Label {
                             text: day.index === 6 ? "Today" : day.modelData.day
-                            color: day.index === 6 ? "#5eead4" : "#94a3b8"; font.pixelSize: 15; font.bold: day.index === 6
+                            color: day.index === 6 ? "#257A78" : "#6B6F78"; font.pixelSize: 15; font.bold: day.index === 6
                             Layout.alignment: Qt.AlignHCenter
                         }
                     }
@@ -106,7 +107,7 @@ ApplicationWindow {
         }
 
         // Game by game.
-        Label { text: "Games this week"; color: "white"; font.pixelSize: 20; font.bold: true }
+        Label { text: "Games this week"; color: "#22252B"; font.pixelSize: 20; font.bold: true }
         ListView {
             id: list
             Layout.fillWidth: true
@@ -119,19 +120,19 @@ ApplicationWindow {
                 width: list.width
                 spacing: 12
                 Rectangle { width: 16; height: 16; radius: 8; color: win.colourOf(modelData[0]) }
-                Label { text: modelData[0]; color: "white"; font.pixelSize: 17; Layout.preferredWidth: 260; elide: Text.ElideRight }
+                Label { text: modelData[0]; color: "#22252B"; font.pixelSize: 17; Layout.preferredWidth: 260; elide: Text.ElideRight }
                 Rectangle {
                     Layout.fillWidth: true
-                    height: 14; radius: 7; color: "#1e293b"
+                    height: 14; radius: 2; color: "#ECE8E1"
                     Rectangle { width: parent.width * modelData[1] / Math.max(1, win.games[0][1]); height: parent.height; radius: 7; color: win.colourOf(modelData[0]) }
                 }
-                Label { text: win.hm(modelData[1]); color: "#cbd5e1"; font.pixelSize: 15; Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight }
+                Label { text: win.hm(modelData[1]); color: "#44474F"; font.pixelSize: 15; Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight }
             }
             Label {
                 anchors.centerIn: parent
                 visible: win.games.length === 0
                 text: "No games played this week yet."
-                color: "#94a3b8"; font.pixelSize: 18
+                color: "#6B6F78"; font.pixelSize: 18
             }
         }
     }

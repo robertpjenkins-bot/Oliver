@@ -87,7 +87,7 @@ ApplicationWindow {
         trophy("max pet-stage " + stage);
         if (stage > saved.stageSeen) {
             saved.stageSeen = stage;
-            say(stage === 1 ? "🎉 I grew up! I'm a kid now!" : "🎉 I'm all grown up! Look, a crown! 👑");
+            say(stage === 1 ? "I grew up! I'm a kid now!" : "I'm all grown up! Look, a crown!");
             hearts(6);
         }
     }
@@ -104,7 +104,7 @@ ApplicationWindow {
     }
 
     function hello() {
-        return mood === "hungry" ? "I'm hungry! 🍎" : mood === "sleepy" ? "I'm so sleepy..." : mood === "bored" ? "Let's play! ⚽" : mood === "asleep" ? "Zzz..." : "Hi! I missed you!";
+        return mood === "hungry" ? "I'm hungry!" : mood === "sleepy" ? "I'm so sleepy..." : mood === "bored" ? "Let's play!" : mood === "asleep" ? "Zzz..." : "Hi! I missed you!";
     }
     property string saying: ""
     function say(t) { saying = t; bubbleTimer.restart(); }
@@ -113,7 +113,7 @@ ApplicationWindow {
 
     function feed() {
         if (saved.asleep) { say("Shh... I'm sleeping"); return; }
-        if (saved.full > 95) { say("I'm full! 😋"); return; }
+        if (saved.full > 95) { say("I'm full!"); return; }
         food.y = -60; food.x = pet.x + 40; food.visible = true; dropFood.start();
     }
     function play() {
@@ -127,7 +127,7 @@ ApplicationWindow {
     }
     function bed() {
         saved.asleep = !saved.asleep;
-        say(saved.asleep ? "Good night! 🌙" : saved.energy < 50 ? "Five more minutes..." : "Good morning! ☀️");
+        say(saved.asleep ? "Good night!" : saved.energy < 50 ? "Five more minutes..." : "Good morning!");
     }
     function reward(fun, full, text) {
         trophy("count pet-game");
@@ -141,12 +141,9 @@ ApplicationWindow {
     Rectangle {
         id: scene
         anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0; color: saved.asleep ? "#1e1b4b" : "#7dd3fc" }
-            GradientStop { position: 0.68; color: saved.asleep ? "#312e81" : "#bae6fd" }
-            GradientStop { position: 0.69; color: saved.asleep ? "#14532d" : "#4ade80" }
-            GradientStop { position: 1; color: saved.asleep ? "#052e16" : "#16a34a" }
-        }
+        // Flat sky and grass (night when the pet sleeps).
+        color: saved.asleep ? "#232448" : "#BFDDEB"
+        Rectangle { y: parent.height * 0.685; width: parent.width; height: parent.height * 0.315; color: saved.asleep ? "#24402C" : "#7DB35E" }
         Label { x: 40; y: 70; text: saved.asleep ? "🌙" : "☀️"; font.pixelSize: 54 }
         Label { x: parent.width - 170; y: 80; text: saved.asleep ? "✨  ⭐" : "☁️"; font.pixelSize: 44; opacity: 0.9 }
         Label { id: tree; x: parent.width - 90; y: parent.height * 0.62; text: "🌳"; font.pixelSize: 70 }
@@ -167,11 +164,11 @@ ApplicationWindow {
             cursorShape: Qt.PointingHandCursor
             enabled: !games.playing
             onClicked: {
-                if (saved.asleep) { win.say("Zzz... 💤"); return; }
+                if (saved.asleep) { win.say("Zzz..."); return; }
                 saved.fun = Math.min(100, saved.fun + 3);
                 win.hearts(3);
                 hop.start();
-                win.say(["I love you! 💖", "Hehe, that tickles!", "Yay!", "You're my best friend!", "Boop!"][Math.floor(Math.random() * 5)]);
+                win.say(["I love you!", "Hehe, that tickles!", "Yay!", "You're my best friend!", "Boop!"][Math.floor(Math.random() * 5)]);
             }
         }
     }
@@ -206,7 +203,7 @@ ApplicationWindow {
             food.visible = false;
             saved.full = Math.min(100, saved.full + 25); win.trophy("count pet-feed");
             win.hearts(2); hop.start();
-            win.say(["Yum! 😋", "Delicious!", "Munch munch!", "Thank you!"][Math.floor(Math.random() * 4)]);
+            win.say(["Yum!", "Delicious!", "Munch munch!", "Thank you!"][Math.floor(Math.random() * 4)]);
         } }
     }
     Label { id: ball; text: "⚽"; font.pixelSize: 40; visible: false; y: pet.y + 70 }
@@ -263,7 +260,7 @@ ApplicationWindow {
                 if (n % 25 === 0) { games.time--; if (games.time <= 0) {
                     games.stop();
                     if (games.score > saved.bestCatch) saved.bestCatch = games.score;
-                    win.reward(Math.min(30, games.score * 2), Math.min(30, games.score * 2), "I caught " + games.score + " apples! 🍎");
+                    win.reward(Math.min(30, games.score * 2), Math.min(30, games.score * 2), "I caught " + games.score + "apples!");
                     return; } }
                 const next = [];
                 for (const a of games.apples) {
@@ -275,11 +272,11 @@ ApplicationWindow {
             }
         }
         Keys.onLeftPressed: if (which === "catch") { pet.x = Math.max(0, pet.x - 26); pet.dir = -1; pet.stepping = !pet.stepping }
-            else if (which === "dance") dancePress("⬅️")
+            else if (which === "dance") dancePress("←")
         Keys.onRightPressed: if (which === "catch") { pet.x = Math.min(win.width - pet.width, pet.x + 26); pet.dir = 1; pet.stepping = !pet.stepping }
-            else if (which === "dance") dancePress("➡️")
-        Keys.onUpPressed: if (which === "dance") dancePress("⬆️")
-        Keys.onDownPressed: if (which === "dance") dancePress("⬇️")
+            else if (which === "dance") dancePress("→")
+        Keys.onUpPressed: if (which === "dance") dancePress("↑")
+        Keys.onDownPressed: if (which === "dance") dancePress("↓")
         Keys.onEscapePressed: stop()
         MouseArea {
             anchors.fill: parent
@@ -297,7 +294,7 @@ ApplicationWindow {
         property int round: 0
         property bool found: false
         function startHide() { which = "hide"; score = 0; round = 0; nextHide(); }
-        function nextHide() { round++; found = false; hideAt = Math.floor(Math.random() * 3); win.say("Round " + round + ": where am I hiding? 🙈"); }
+        function nextHide() { round++; found = false; hideAt = Math.floor(Math.random() * 3); win.say("Round " + round + ": where am I hiding?"); }
         Row {
             visible: games.which === "hide"
             anchors.horizontalCenter: parent.horizontalCenter
@@ -317,7 +314,7 @@ ApplicationWindow {
                         enabled: !games.found
                         onClicked: {
                             games.found = true;
-                            if (index === games.hideAt) { games.score++; win.say("You found me! 🎉"); }
+                            if (index === games.hideAt) { games.score++; win.say("You found me!"); }
                             else win.say("Nope! I was behind the " + ["tree", "box", "flowers"][games.hideAt] + "!");
                             hideNext.start();
                         }
@@ -326,7 +323,7 @@ ApplicationWindow {
             }
         }
         Timer { id: hideNext; interval: 1800; onTriggered: {
-            if (games.round >= 5) { const s = games.score; games.stop(); win.reward(s * 6, 0, "You found me " + s + " times out of 5! 🙈"); }
+            if (games.round >= 5) { const s = games.score; games.stop(); win.reward(s * 6, 0, "You found me " + s + "times out of 5!"); }
             else games.nextHide(); } }
 
         // Dance party: watch the arrows, then press them in the same order.
@@ -336,7 +333,7 @@ ApplicationWindow {
         property string shown: ""
         function startDance() { which = "dance"; score = 0; steps = []; forceActiveFocus(); danceMore(); }
         function danceMore() {
-            steps = steps.concat([["⬅️", "⬆️", "➡️", "⬇️"][Math.floor(Math.random() * 4)]]);
+            steps = steps.concat([["←", "↑", "→", "↓"][Math.floor(Math.random() * 4)]]);
             at = 0; showing = true; showStep.i = 0; showStep.start();
         }
         Timer {
@@ -344,19 +341,19 @@ ApplicationWindow {
             property int i: 0
             onTriggered: {
                 if (i < games.steps.length) { games.shown = games.steps[i]; hop.start(); i++; }
-                else { stop(); games.shown = ""; games.showing = false; win.say("Your turn! 💃"); }
+                else { stop(); games.shown = ""; games.showing = false; win.say("Your turn!"); }
             }
         }
         function dancePress(k) {
             if (showing) return;
             if (k === steps[at]) {
                 at++; hop.start(); shown = k;
-                if (at === steps.length) { score = steps.length; win.say("Yes! " + score + " moves! 🕺"); danceNext.start(); }
+                if (at === steps.length) { score = steps.length; win.say("Yes! " + score + "moves!"); danceNext.start(); }
             } else {
                 const s = steps.length - 1;
                 stop();
                 if (s > saved.bestDance) saved.bestDance = s;
-                win.reward(Math.min(30, s * 4), 0, "We danced " + s + " moves! 🎶");
+                win.reward(Math.min(30, s * 4), 0, "We danced " + s + "moves!");
             }
         }
         Timer { id: danceNext; interval: 900; onTriggered: games.danceMore() }
@@ -371,7 +368,7 @@ ApplicationWindow {
             anchors.bottom: parent.bottom; anchors.bottomMargin: 70
             spacing: 10
             Repeater {
-                model: ["⬅️", "⬆️", "⬇️", "➡️"]
+                model: ["←", "↑", "↓", "→"]
                 delegate: Button { required property string modelData; text: modelData; font.pixelSize: 26; onClicked: games.dancePress(modelData) }
             }
         }
@@ -387,14 +384,14 @@ ApplicationWindow {
                 anchors.centerIn: parent
                 font.pixelSize: 17; font.bold: true; color: "#0b4f4a"
                 text: games.which === "catch" ? "🍎 " + games.score + "    ⏱️ " + games.time + "    (best " + saved.bestCatch + ")"
-                    : games.which === "hide" ? "🙈 Round " + games.round + " of 5    Found: " + games.score
-                    : "💃 Moves: " + games.steps.length + "    (best " + saved.bestDance + ")"
+                    : games.which === "hide" ? "Round " + games.round + " of 5    Found: " + games.score
+                    : "Moves: " + games.steps.length + "    (best " + saved.bestDance + ")"
             }
         }
         Button {
             visible: games.playing
             anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 14
-            text: "✖ Stop"
+            text: "Stop"
             onClicked: games.stop()
         }
     }
@@ -415,7 +412,7 @@ ApplicationWindow {
             Label { text: (saved.name || "Ollie Pet") + "  ·  " + win.stageName + (win.ageDays > 0 ? ", " + win.ageDays + (win.ageDays === 1 ? " day old" : " days old") : ""); font.bold: true; font.pixelSize: 16; color: "#0b4f4a" }
             Item { Layout.fillWidth: true }
             Repeater {
-                model: [{ i: "🍎", v: saved.full }, { i: "⚽", v: saved.fun }, { i: "⚡", v: saved.energy }]
+                model: [{ i: "Food", v: saved.full }, { i: "Fun", v: saved.fun }, { i: "Energy", v: saved.energy }]
                 delegate: RowLayout {
                     required property var modelData
                     spacing: 4
@@ -423,7 +420,7 @@ ApplicationWindow {
                     Rectangle {
                         width: 64; height: 12; radius: 6; color: "#e5e7eb"
                         Rectangle { width: parent.width * modelData.v / 100; height: parent.height; radius: 6
-                            color: modelData.v < 25 ? "#ef4444" : modelData.v < 50 ? "#f59e0b" : "#22c55e" }
+                            color: modelData.v < 25 ? "#C8473D" : modelData.v < 50 ? "#E0A030" : "#4F8A45" }
                     }
                 }
             }
@@ -435,21 +432,21 @@ ApplicationWindow {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottomMargin: 14
         spacing: 8
-        Button { text: "🍎 Feed"; font.pixelSize: 16; onClicked: win.feed() }
-        Button { text: "⚽ Play"; font.pixelSize: 16; onClicked: win.play() }
-        Button { text: saved.asleep ? "☀️ Wake up" : "🌙 Bed"; font.pixelSize: 16; onClicked: win.bed() }
+        Button { text: "Feed"; font.pixelSize: 16; onClicked: win.feed() }
+        Button { text: "Play"; font.pixelSize: 16; onClicked: win.play() }
+        Button { text: saved.asleep ? "Wake up" : "Bed"; font.pixelSize: 16; onClicked: win.bed() }
         Button {
-            text: "🎮 Games"; font.pixelSize: 16
+            text: "Games"; font.pixelSize: 16
             onClicked: gameMenu.open()
             Menu {
                 id: gameMenu
-                MenuItem { text: "🍎 Catch apples"; onTriggered: saved.asleep ? win.say("Shh... I'm sleeping") : games.startCatch() }
-                MenuItem { text: "🙈 Hide and seek"; onTriggered: saved.asleep ? win.say("Shh... I'm sleeping") : games.startHide() }
-                MenuItem { text: "💃 Dance party"; onTriggered: saved.asleep ? win.say("Shh... I'm sleeping") : games.startDance() }
+                MenuItem { text: "Catch apples"; onTriggered: saved.asleep ? win.say("Shh... I'm sleeping") : games.startCatch() }
+                MenuItem { text: "Hide and seek"; onTriggered: saved.asleep ? win.say("Shh... I'm sleeping") : games.startHide() }
+                MenuItem { text: "Dance party"; onTriggered: saved.asleep ? win.say("Shh... I'm sleeping") : games.startDance() }
             }
         }
         Button {
-            text: win.desktopOn ? "🖥️ Desktop: on" : "🖥️ Desktop: off"; font.pixelSize: 16
+            text: win.desktopOn ? "On the desktop: on" : "On the desktop: off"; font.pixelSize: 16
             ToolTip.visible: hovered
             ToolTip.text: "Let your pet walk along the bottom of the screen"
             onClicked: { win.desktopOn = !win.desktopOn; win.act("desktop " + (win.desktopOn ? "on" : "off")); }
@@ -468,7 +465,7 @@ ApplicationWindow {
             ColumnLayout {
                 anchors.centerIn: parent
                 spacing: 12
-                Label { text: "🥚 A new pet!"; font.pixelSize: 30; font.bold: true; color: "#0b4f4a"; Layout.alignment: Qt.AlignHCenter }
+                Label { text: "A new pet"; font.pixelSize: 30; font.bold: true; color: "#0b4f4a"; Layout.alignment: Qt.AlignHCenter }
                 Label { text: "What will you call it?"; font.pixelSize: 17; color: "#0f766e"; Layout.alignment: Qt.AlignHCenter }
                 TextField { id: nameField; placeholderText: "Its name"; font.pixelSize: 20; Layout.preferredWidth: 260; Layout.alignment: Qt.AlignHCenter; maximumLength: 20
                     onAccepted: done.clicked() }
@@ -476,8 +473,8 @@ ApplicationWindow {
                     onClicked: {
                         saved.name = nameField.text.trim(); saved.born = Date.now(); saved.stageSeen = 0;
                         if (saved.name.toLowerCase() === "ollie") {   // a secret
-                            win.say("✨ A golden Ollie! You found a secret! ✨"); win.hearts(10);
-                        } else { win.say("Hi! I'm " + saved.name + "! 💖"); win.hearts(4); }
+                            win.say("A golden Ollie! You found a secret!"); win.hearts(10);
+                        } else { win.say("Hi! I'm " + saved.name + "!"); win.hearts(4); }
                         win.writeMood();
                     } }
             }
