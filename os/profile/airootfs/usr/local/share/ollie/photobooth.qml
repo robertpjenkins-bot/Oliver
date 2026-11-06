@@ -75,7 +75,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 12
-            Label { text: "📸 Photo Booth"; color: "white"; font.pixelSize: 30; font.bold: true }
+            Label { text: "Photo Booth"; color: "white"; font.pixelSize: 30; font.bold: true }
 
             // The picture: the camera, the effect, and the stickers on top.
             Item {
@@ -106,7 +106,7 @@ ApplicationWindow {
                 ColumnLayout {
                     visible: !win.hasCamera
                     anchors.centerIn: parent
-                    Label { text: "📷"; font.pixelSize: 80; Layout.alignment: Qt.AlignHCenter }
+                    Image { source: "file:///usr/share/icons/hicolor/128x128/apps/ollie-photobooth.png"; sourceSize: Qt.size(96, 96); Layout.alignment: Qt.AlignHCenter }
                     Label { text: "No camera found.\nPlug in a webcam, then open Photo Booth again."; color: "#d4d4d8"; font.pixelSize: 20; horizontalAlignment: Text.AlignHCenter; Layout.alignment: Qt.AlignHCenter }
                 }
                 Repeater {
@@ -140,9 +140,9 @@ ApplicationWindow {
             }
             RowLayout {
                 spacing: 10
-                Button { text: "📸 Take a photo!"; font.pixelSize: 20; font.bold: true; highlighted: true; enabled: win.hasCamera && win.count === 0; onClicked: win.snap() }
-                Button { text: win.mirror ? "🪞 Mirror: on" : "🪞 Mirror: off"; onClicked: win.mirror = !win.mirror }
-                Button { text: "🧹 Take the stickers off"; onClicked: win.stuck = [] }
+                Button { text: "Take a photo!"; font.pixelSize: 20; font.bold: true; highlighted: true; enabled: win.hasCamera && win.count === 0; onClicked: win.snap() }
+                Button { text: win.mirror ? "Mirror: on" : "Mirror: off"; onClicked: win.mirror = !win.mirror }
+                Button { text: "Take the stickers off"; onClicked: win.stuck = [] }
                 Label { text: "Drag stickers to move them · mouse wheel: bigger or smaller · double-click: take it off"; color: "#a1a1aa"; font.pixelSize: 13; wrapMode: Text.WordWrap; Layout.fillWidth: true }
             }
             // The last photos.

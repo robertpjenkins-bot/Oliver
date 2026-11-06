@@ -107,7 +107,7 @@ ApplicationWindow {
         const s = stars.slice(); s[level] = Math.max(s[level] || 0, got);
         saved.stars = JSON.stringify(s); stars = s;
         trophy("max codequest-level " + s.filter(x => x > 0).length);
-        message = "🎉 You did it with " + n + " blocks! " + "⭐".repeat(got) + (got < 3 ? "  (Can you do it with " + lv.par + "?)" : "");
+        message = "🎉 You did it with " + n + " blocks! " + "★".repeat(got) + (got < 3 ? "  (Can you do it with " + lv.par + "?)" : "");
         cheer.start();
     }
 
@@ -119,7 +119,7 @@ ApplicationWindow {
         ColumnLayout {
             spacing: 10
             RowLayout {
-                Label { text: "🧩 Coding Quest"; font.pixelSize: 28; font.bold: true; color: "#166534" }
+                Label { text: "Coding Quest"; font.pixelSize: 28; font.bold: true; color: "#166534" }
                 Item { Layout.fillWidth: true }
                 Label { text: "Level " + (win.level + 1) + ": " + win.lv.name; font.pixelSize: 18; font.bold: true; color: "#15803d" }
             }
@@ -136,7 +136,7 @@ ApplicationWindow {
                             readonly property string c: win.lv.rows[Math.floor(index / win.cols)][index % win.cols]
                             width: win.cell; height: win.cell
                             color: (index % win.cols + Math.floor(index / win.cols)) % 2 ? "#bbf7d0" : "#a7f3d0"
-                            Text { anchors.centerIn: parent; text: parent.c === "#" ? "🪨" : parent.c === "*" ? "⭐" : ""; font.pixelSize: 40 }
+                            Text { anchors.centerIn: parent; text: parent.c === "#" ? "" : parent.c === "*" ? "" : ""; font.pixelSize: 40 }
                         }
                     }
                 }
@@ -154,7 +154,7 @@ ApplicationWindow {
                         stepping: win.running && win.stepAt % 2 === 0
                     }
                     Text { // which way it faces
-                        text: ["▶", "▼", "◀", "▲"][win.dir]
+                        text: ["", "▼", "", "▲"][win.dir]
                         color: "#166534"; font.pixelSize: 22; font.bold: true
                         x: [win.cell - 18, win.cell / 2 - 8, -4, win.cell / 2 - 8][win.dir]
                         y: [win.cell / 2 - 14, win.cell - 22, win.cell / 2 - 14, -10][win.dir]
@@ -173,7 +173,7 @@ ApplicationWindow {
                     model: win.levels.length
                     delegate: Button {
                         required property int index
-                        text: (index + 1) + (win.starsOf(index) ? "\n" + "⭐".repeat(win.starsOf(index)) : index > win.unlocked ? "\n🔒" : "\n ")
+                        text: (index + 1) + (win.starsOf(index) ? "\n" + "★".repeat(win.starsOf(index)) : index > win.unlocked ? "\n" : "\n ")
                         enabled: index <= win.unlocked && !win.running
                         highlighted: index === win.level
                         font.pixelSize: 11
@@ -193,12 +193,12 @@ ApplicationWindow {
             Flow {
                 Layout.fillWidth: true
                 spacing: 8
-                Button { text: "⬆️ Forward"; font.pixelSize: 16; onClicked: win.addBlock("F") }
-                Button { text: "↩️ Turn left"; font.pixelSize: 16; onClicked: win.addBlock("L") }
-                Button { text: "↪️ Turn right"; font.pixelSize: 16; onClicked: win.addBlock("R") }
-                Button { text: "🔁 Repeat"; font.pixelSize: 16; visible: win.lv.repeat; onClicked: win.addBlock("P") }
+                Button { text: "Forward"; font.pixelSize: 16; onClicked: win.addBlock("F") }
+                Button { text: "Turn left"; font.pixelSize: 16; onClicked: win.addBlock("L") }
+                Button { text: "Turn right"; font.pixelSize: 16; onClicked: win.addBlock("R") }
+                Button { text: "Repeat"; font.pixelSize: 16; visible: win.lv.repeat; onClicked: win.addBlock("P") }
             }
-            Label { text: "Your program (click a block to take it out" + (win.lv.repeat ? "; click 🔁's number to change it" : "") + ")"; color: "#15803d"; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            Label { text: "Your program (click a block to take it out" + (win.lv.repeat ? "; click 's number to change it" : "") + ")"; color: "#15803d"; wrapMode: Text.WordWrap; Layout.fillWidth: true }
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -219,7 +219,7 @@ ApplicationWindow {
                             Text {
                                 id: blockText
                                 anchors.centerIn: parent
-                                text: modelData.k === "F" ? "⬆️ Forward" : modelData.k === "L" ? "↩️ Left" : modelData.k === "R" ? "↪️ Right" : "🔁 ×" + modelData.n
+                                text: modelData.k === "F" ? "Forward" : modelData.k === "L" ? "Left" : modelData.k === "R" ? "Right" : "×" + modelData.n
                                 font.pixelSize: 16; font.bold: true; color: "white"
                             }
                             MouseArea {
@@ -237,11 +237,11 @@ ApplicationWindow {
                     }
                 }
             }
-            Label { text: win.program.length + " blocks" + "   (3 stars: " + win.lv.par + " or fewer)"; color: "#166534" }
+            Label { text: win.program.length + " blocks" + " (3 stars: " + win.lv.par + " or fewer)"; color: "#166534" }
             RowLayout {
-                Button { text: "▶ Run"; font.pixelSize: 20; highlighted: true; enabled: !win.running && win.program.length > 0; onClicked: win.run() }
-                Button { text: "🔄 Start again"; enabled: !win.running; onClicked: { win.reset(); win.message = ""; } }
-                Button { text: "🗑️ Clear"; enabled: !win.running; onClicked: { win.program = []; win.reset(); } }
+                Button { text: "Run"; font.pixelSize: 20; highlighted: true; enabled: !win.running && win.program.length > 0; onClicked: win.run() }
+                Button { text: "Start again"; enabled: !win.running; onClicked: { win.reset(); win.message = ""; } }
+                Button { text: "Clear"; enabled: !win.running; onClicked: { win.program = []; win.reset(); } }
                 Item { Layout.fillWidth: true }
                 Button {
                     text: "Next level →"

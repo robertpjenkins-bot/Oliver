@@ -165,7 +165,7 @@ ApplicationWindow {
 
         RowLayout {
             spacing: 10
-            Label { text: "🎵 Music Maker"; color: "white"; font.pixelSize: 30; font.bold: true }
+            Label { text: "Music Maker"; color: "white"; font.pixelSize: 30; font.bold: true }
             Item { width: 12 }
             Repeater {
                 model: win.instruments
@@ -191,14 +191,14 @@ ApplicationWindow {
                 anchors.margins: 14
                 spacing: 8
                 RowLayout {
-                    Label { text: "🥁 Beat maker"; color: "white"; font.pixelSize: 18; font.bold: true }
-                    Button { text: win.beatOn ? "⏸ Stop the beat" : "▶ Play the beat"; onClicked: win.beatOn = !win.beatOn }
-                    Button { text: "🧹 Clear"; onClicked: win.beat = [[], [], [], []] }
-                    Button { text: "🎲 Surprise me"; onClicked: win.beat = [[0, 8], [4, 12], [0, 2, 4, 6, 8, 10, 12, 14], Math.random() < 0.5 ? [12] : [6, 14]] }
+                    Label { text: "Beat maker"; color: "white"; font.pixelSize: 18; font.bold: true }
+                    Button { text: win.beatOn ? "Stop the beat" : "Play the beat"; onClicked: win.beatOn = !win.beatOn }
+                    Button { text: "Clear"; onClicked: win.beat = [[], [], [], []] }
+                    Button { text: "Surprise me"; onClicked: win.beat = [[0, 8], [4, 12], [0, 2, 4, 6, 8, 10, 12, 14], Math.random() < 0.5 ? [12] : [6, 14]] }
                     Item { Layout.fillWidth: true }
-                    Label { text: "🐢"; font.pixelSize: 18 }
+                    Label { text: "Speed"; color: "#c7d2fe"; font.pixelSize: 15 }
                     Slider { from: 60; to: 180; stepSize: 5; value: win.tempo; onMoved: win.tempo = value; Layout.preferredWidth: 180 }
-                    Label { text: "🐇 " + win.tempo; color: "#c7d2fe"; font.pixelSize: 15 }
+                    Label { text: win.tempo; color: "#c7d2fe"; font.pixelSize: 15 }
                 }
                 Repeater {
                     model: win.drums
@@ -229,13 +229,13 @@ ApplicationWindow {
         // Recording and songs.
         RowLayout {
             spacing: 8
-            Button { text: win.recording ? "⏺ Recording..." : "⏺ Record"; highlighted: win.recording; onClicked: win.recording ? win.stop() : win.record() }
-            Button { text: "⏹ Stop"; onClicked: { win.stop(); win.beatOn = false; } }
-            Button { text: win.playing ? "🔊 Playing..." : "▶ Play my song"; onClicked: win.playBack() }
+            Button { text: win.recording ? "Recording..." : "Record"; highlighted: win.recording; onClicked: win.recording ? win.stop() : win.record() }
+            Button { text: "Stop"; onClicked: { win.stop(); win.beatOn = false; } }
+            Button { text: win.playing ? "Playing..." : "Play my song"; onClicked: win.playBack() }
             Item { width: 10 }
             TextField { id: nameField; placeholderText: "My song's name"; maximumLength: 40; Layout.preferredWidth: 190 }
-            Button { text: "💾 Keep it"; onClicked: win.save(false) }
-            Button { text: "🎵 Save as music file"; onClicked: win.save(true) }
+            Button { text: "Keep it"; onClicked: win.save(false) }
+            Button { text: "Save as music file"; onClicked: win.save(true) }
             Item { Layout.fillWidth: true }
             ComboBox {
                 visible: win.songs.length > 0

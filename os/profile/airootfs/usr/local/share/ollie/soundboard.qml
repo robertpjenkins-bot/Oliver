@@ -26,9 +26,9 @@ ApplicationWindow {
     function act(w) { console.log("OLLIE-ACTION " + w) }
 
     readonly property var builtIn: [
-        { emoji: "🔫", name: "Laser", file: "laser.ogg" }, { emoji: "🤸", name: "Boing", file: "boing.ogg" },
-        { emoji: "🥁", name: "Drum", file: "drum.ogg" }, { emoji: "🪙", name: "Coin", file: "coin.ogg" },
-        { emoji: "🚨", name: "Siren", file: "siren.ogg" }, { emoji: "🤪", name: "Silly", file: "silly.ogg" }
+        { emoji: "", name: "Laser", file: "laser.ogg" }, { emoji: "", name: "Boing", file: "boing.ogg" },
+        { emoji: "", name: "Drum", file: "drum.ogg" }, { emoji: "", name: "Coin", file: "coin.ogg" },
+        { emoji: "", name: "Siren", file: "siren.ogg" }, { emoji: "", name: "Silly", file: "silly.ogg" }
     ]
     Settings {
         id: saved
@@ -67,13 +67,13 @@ ApplicationWindow {
         anchors.margins: 20
         spacing: 14
         RowLayout {
-            Label { text: "🔊 Sound Board"; color: "white"; font.pixelSize: 32; font.bold: true }
+            Label { text: "Sound Board"; color: "white"; font.pixelSize: 32; font.bold: true }
             Item { Layout.fillWidth: true }
             Label {
-                text: win.recording >= 0 ? "🔴 Recording... " + (10 - win.recordTime) + " s left" : "Click a button to play it. ✏️ changes a button."
+                text: win.recording >= 0 ? "Recording... " + (10 - win.recordTime) + " s left" : "Click a button to play it. changes a button."
                 color: win.recording >= 0 ? "#fca5a5" : "#c7d2fe"; font.pixelSize: 16
             }
-            Button { visible: win.recording >= 0; text: "⏹ Stop"; onClicked: win.stopRecord() }
+            Button { visible: win.recording >= 0; text: "Stop"; onClicked: win.stopRecord() }
         }
         GridLayout {
             Layout.fillWidth: true
@@ -98,7 +98,7 @@ ApplicationWindow {
                     ColumnLayout {
                         anchors.centerIn: parent
                         spacing: 4
-                        Label { text: win.recording === index ? "🎙️" : modelData.emoji; font.pixelSize: 52; Layout.alignment: Qt.AlignHCenter }
+                        Label { text: win.recording === index ? "" : modelData.emoji; font.pixelSize: 52; Layout.alignment: Qt.AlignHCenter }
                         Label { text: modelData.name; color: "white"; font.pixelSize: 17; font.bold: true; Layout.alignment: Qt.AlignHCenter }
                     }
                     MouseArea {
@@ -114,7 +114,7 @@ ApplicationWindow {
                     }
                     Button {
                         anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 6
-                        text: "✏️"; flat: true
+                        text: ""; flat: true
                         onClicked: { win.editing = index; nameField.text = modelData.name; editBox.open(); }
                     }
                 }
@@ -142,9 +142,9 @@ ApplicationWindow {
                 }
             }
             RowLayout {
-                Button { text: "🎙️ Record a new sound"; onClicked: { editBox.close(); win.startRecord(win.editing); } }
+                Button { text: "Record a new sound"; onClicked: { editBox.close(); win.startRecord(win.editing); } }
                 Button {
-                    text: "🔄 Its first sound"
+                    text: "Its first sound"
                     visible: win.editing >= 0 && win.editing < 6
                     onClicked: { const b = win.builtIn[win.editing]; const p = win.pads.slice();
                         p[win.editing] = { emoji: b.emoji, name: b.name, file: win.arg("sounds") + "/" + b.file }; win.savePads(p); editBox.close(); }

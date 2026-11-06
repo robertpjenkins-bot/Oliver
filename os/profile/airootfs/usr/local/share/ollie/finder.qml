@@ -16,7 +16,7 @@ ApplicationWindow {
     height: 600
     visible: true
     title: "Ollie Finder"
-    color: "#0f172a"
+    color: palette.window // the system's own colours (Settings: light or dark)
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -43,18 +43,19 @@ ApplicationWindow {
         query.forceActiveFocus();
     }
 
-    function emoji(it) {
-        if (it.kind === "secret") return "🤫";
-        if (it.kind === "app") return "🟦";
-        if (it.kind === "folder") return "📁";
+    // A small tag saying what it is: [word, colour].
+    function tag(it) {
+        if (it.kind === "secret") return ["SECRET", "#D9A021"];
+        if (it.kind === "app") return ["APP", "#336B9E"];
+        if (it.kind === "folder") return ["FOLDER", "#7E5634"];
         const e = it.low.split(".").pop();
-        if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(e)) return "🖼️";
-        if (["mp3", "ogg", "wav", "flac", "m4a"].includes(e)) return "🎵";
-        if (["mp4", "mkv", "webm", "mov", "avi"].includes(e)) return "🎬";
-        if (["appimage", "exe", "msi", "sh"].includes(e)) return "⚙️";
-        if (["iso", "nes", "sfc", "gba", "gb", "n64", "z64", "nds"].includes(e)) return "🕹️";
-        if (["zip", "tar", "gz", "xz", "7z", "zst"].includes(e)) return "📦";
-        return "📄";
+        if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(e)) return ["PICTURE", "#6A4E9C"];
+        if (["mp3", "ogg", "wav", "flac", "m4a"].includes(e)) return ["MUSIC", "#8E4573"];
+        if (["mp4", "mkv", "webm", "mov", "avi"].includes(e)) return ["VIDEO", "#C8473D"];
+        if (["appimage", "exe", "msi", "sh"].includes(e)) return ["PROGRAM", "#4C5363"];
+        if (["iso", "nes", "sfc", "gba", "gb", "n64", "z64", "nds"].includes(e)) return ["GAME", "#4F8A45"];
+        if (["zip", "tar", "gz", "xz", "7z", "zst"].includes(e)) return ["ZIP", "#E07A2F"];
+        return ["FILE", "#6B6F78"];
     }
     function search(t) {
         t = t.trim().toLowerCase();
@@ -74,21 +75,21 @@ ApplicationWindow {
         results = found.slice(0, 60).map(f => f.it);
     }
     readonly property var secrets: ({
-        "ollie": { kind: "secret", name: "✨ Secret: the Ollie Gold colours!", path: "gold", low: "ollie" },
-        "party": { kind: "secret", name: "🎉 Secret: party time!", path: "party", low: "party" },
-        "biobro": { kind: "secret", name: "😎 Secret: who made Ollie OS?", path: "biobro", low: "biobro" }
+        "ollie": { kind: "secret", name: "Secret: the Ollie Gold colours!", path: "gold", low: "ollie" },
+        "party": { kind: "secret", name: "Secret: party time!", path: "party", low: "party" },
+        "biobro": { kind: "secret", name: "Secret: who made Ollie OS?", path: "biobro", low: "biobro" }
     })
     property string secretText: ""
     function open(it) {
         if (it.kind === "secret") {
-            confetti.burst();
+            if (it.path === "party") confetti.burst();
             if (it.path === "gold") {
-                secretText = "✨ You found Ollie Gold! Your colours are gold now (and in Settings).";
+                secretText = "You found Ollie Gold. Your colours are gold now (and in Settings).";
                 console.log("OLLIE-ACTION secret gold");
             } else if (it.path === "party") {
-                secretText = "🎉 Party time! 🎈🎂🎊";
+                secretText = "Party time.";
             } else {
-                secretText = "😎 Ollie OS was made by biobro. Hi from biobro!";
+                secretText = "Ollie OS was made by biobro. Hi from biobro.";
             }
             return;
         }
@@ -96,7 +97,7 @@ ApplicationWindow {
         Qt.quit();
     }
     function where(it) {
-        if (it.kind === "secret") return "Shh... a secret. Press Enter!";
+        if (it.kind === "secret") return "A secret. Press Enter.";
         if (it.kind === "app") return "App";
         const p = it.path.indexOf(home) === 0 ? "Home" + it.path.substring(home.length) : it.path;
         return p.substring(0, p.length - it.name.length - 1) || "Home";
@@ -107,12 +108,12 @@ ApplicationWindow {
         anchors.margins: 20
         spacing: 14
 
-        Label { text: "🔍 Ollie Finder"; color: "white"; font.pixelSize: 28; font.bold: true }
+        Label { text: "Ollie Finder"; font.pixelSize: 26; font.bold: true }
         TextField {
             id: query
             Layout.fillWidth: true
             font.pixelSize: 24
-            placeholderText: "Type to find apps and files..."
+            placeholderText: "Find apps and files"
             onTextChanged: { win.secretText = ""; win.search(text) }
             onAccepted: if (win.results.length) win.open(win.results[win.current])
             Keys.onDownPressed: win.current = Math.min(win.results.length - 1, win.current + 1)
@@ -120,7 +121,7 @@ ApplicationWindow {
             Keys.onEscapePressed: Qt.quit()
         }
         Label {
-            color: "#94a3b8"
+            opacity: 0.7
             font.pixelSize: 14
             text: win.secretText !== "" ? win.secretText
                 : query.text.trim() === "" ? "Looking in " + win.items.length + " apps, files and folders."
@@ -132,42 +133,46 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            spacing: 6
+            spacing: 2
             model: win.results
             currentIndex: win.current
             delegate: Rectangle {
                 required property var modelData
                 required property int index
                 width: list.width
-                height: 58
-                radius: 12
-                color: index === win.current ? "#1d4ed8" : (row.containsMouse ? "#1e293b" : "#111c33")
+                height: 54
+                radius: 4
+                color: index === win.current ? palette.highlight : (row.containsMouse ? palette.alternateBase : "transparent")
+                readonly property color ink: index === win.current ? palette.highlightedText : palette.text
                 RowLayout {
                     anchors.fill: parent
                     anchors.leftMargin: 14
                     anchors.rightMargin: 10
                     spacing: 12
-                    Label { text: win.emoji(modelData); font.pixelSize: 26 }
+                    Rectangle {
+                        Layout.preferredWidth: 72; Layout.preferredHeight: 22; radius: 3
+                        color: win.tag(modelData)[1]
+                        Label { anchors.centerIn: parent; text: win.tag(modelData)[0]; color: "white"; font.pixelSize: 11; font.bold: true; font.letterSpacing: 0.5 }
+                    }
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 0
-                        Label { text: modelData.name; color: "white"; font.pixelSize: 17; font.bold: true; elide: Text.ElideMiddle; Layout.fillWidth: true }
-                        Label { text: win.where(modelData); color: "#94a3b8"; font.pixelSize: 12; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                        Label { text: modelData.name; color: parent.parent.parent.ink; font.pixelSize: 16; font.bold: true; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                        Label { text: win.where(modelData); color: parent.parent.parent.ink; opacity: 0.7; font.pixelSize: 12; elide: Text.ElideMiddle; Layout.fillWidth: true }
                     }
                     Button {
                         visible: modelData.kind === "file" || modelData.kind === "folder"
-                        text: "📁"
-                        font.pixelSize: 18
-                        Layout.preferredWidth: 46
-                        ToolTip.visible: hovered
-                        ToolTip.text: "Show the folder it is in"
+                        text: "Show folder"
+                        icon.name: "folder-open"
+                        flat: true
+                        font.pixelSize: 13
                         onClicked: { console.log("OLLIE-ACTION show " + modelData.path); Qt.quit(); }
                     }
                 }
                 MouseArea {
                     id: row
                     anchors.fill: parent
-                    anchors.rightMargin: 56
+                    anchors.rightMargin: 120
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: win.open(modelData)

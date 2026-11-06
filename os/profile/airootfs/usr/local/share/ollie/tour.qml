@@ -127,8 +127,8 @@ Window {
                     Label { text: (win.at + 1) + " / " + win.steps.length; color: "#64748b"; font.pixelSize: 15 }
                     Item { Layout.fillWidth: true }
                     Button { text: "Skip"; flat: true; visible: win.at < win.steps.length - 1; onClicked: win.go("skip") }
-                    Button { text: "◀ Back"; visible: win.at > 0; onClicked: win.go("back") }
-                    Button { text: win.at === win.steps.length - 1 ? "Let's go! 🎉" : "Next ▶"; highlighted: true; font.bold: true; onClicked: win.go("next") }
+                    Button { text: "Back"; visible: win.at > 0; onClicked: win.go("back") }
+                    Button { text: win.at === win.steps.length - 1 ? "Let's go!" : "Next"; highlighted: true; font.bold: true; onClicked: win.go("next") }
                 }
             }
         }

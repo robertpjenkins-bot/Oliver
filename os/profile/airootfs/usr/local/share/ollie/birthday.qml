@@ -31,14 +31,14 @@ ApplicationWindow {
         anchors.centerIn: parent
         spacing: 14
         Label {
-            text: "🎂"; font.pixelSize: 130; Layout.alignment: Qt.AlignHCenter
+            text: ""; font.pixelSize: 130; Layout.alignment: Qt.AlignHCenter
             SequentialAnimation on scale { loops: Animation.Infinite
                 NumberAnimation { to: 1.12; duration: 500; easing.type: Easing.OutQuad }
                 NumberAnimation { to: 1.0; duration: 500; easing.type: Easing.InQuad } }
         }
         Label { text: "Happy birthday" + (win.arg("name") ? ", " + win.arg("name") : "") + "!"; color: "white"; font.pixelSize: 42; font.bold: true; Layout.alignment: Qt.AlignHCenter }
-        Label { text: "🎉 Have the best day ever! From Ollie and Ollie OS 🎈"; color: "#fce7f3"; font.pixelSize: 20; Layout.alignment: Qt.AlignHCenter }
-        Button { text: "Thank you! 💖"; font.pixelSize: 18; highlighted: true; Layout.alignment: Qt.AlignHCenter; onClicked: Qt.quit() }
+        Label { text: "Have the best day ever! From Ollie and Ollie OS"; color: "#fce7f3"; font.pixelSize: 20; Layout.alignment: Qt.AlignHCenter }
+        Button { text: "Thank you!"; font.pixelSize: 18; highlighted: true; Layout.alignment: Qt.AlignHCenter; onClicked: Qt.quit() }
     }
     Confetti { id: confetti }
     Timer { interval: 2500; running: true; repeat: true; triggeredOnStart: true; onTriggered: confetti.burst() }

@@ -53,12 +53,12 @@ ApplicationWindow {
 
         RowLayout {
             spacing: 12
-            Label { text: "🕹️"; font.pixelSize: 40 }
+            Image { source: "file:///usr/share/icons/hicolor/64x64/apps/ollie-games.png"; sourceSize: Qt.size(48, 48) }
             Label { text: "Games"; color: "white"; font.pixelSize: 34; font.bold: true }
             Label { text: win.games.length + (win.games.length === 1 ? " game" : " games"); color: "#a5b4fc"; font.pixelSize: 16; Layout.leftMargin: 6 }
             Item { Layout.fillWidth: true }
             TextField {
-                placeholderText: "🔍 Find a game"
+                placeholderText: "Find a game"
                 Layout.preferredWidth: 260
                 onTextChanged: win.search = text
             }
@@ -76,9 +76,9 @@ ApplicationWindow {
                 }
             }
             Item { Layout.fillWidth: true }
-            Button { text: "🖼️ Find covers"; onClicked: { win.act("covers"); Qt.quit(); } }
-            Button { text: "📁 My Games folder"; onClicked: win.act("folder") }
-            Button { text: "🔄 Refresh"; onClicked: { win.act("refresh"); Qt.quit(); } }
+            Button { text: "Find covers"; onClicked: { win.act("covers"); Qt.quit(); } }
+            Button { text: "My Games folder"; onClicked: win.act("folder") }
+            Button { text: "Refresh"; onClicked: { win.act("refresh"); Qt.quit(); } }
         }
 
         // The drop place.

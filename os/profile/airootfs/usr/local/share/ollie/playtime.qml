@@ -44,7 +44,7 @@ ApplicationWindow {
         anchors.margins: 24
         spacing: 16
         RowLayout {
-            Label { text: "⏱️ Play Time"; color: "white"; font.pixelSize: 32; font.bold: true }
+            Label { text: "Play Time"; color: "white"; font.pixelSize: 32; font.bold: true }
             Item { Layout.fillWidth: true }
             ColumnLayout {
                 spacing: 0
@@ -130,7 +130,7 @@ ApplicationWindow {
             Label {
                 anchors.centerIn: parent
                 visible: win.games.length === 0
-                text: "No games played this week yet. 🎮"
+                text: "No games played this week yet."
                 color: "#94a3b8"; font.pixelSize: 18
             }
         }

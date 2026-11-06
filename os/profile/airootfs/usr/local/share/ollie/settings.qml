@@ -64,7 +64,7 @@ ApplicationWindow {
             Item { height: 4 }
 
             GroupBox {
-                title: "🎮  Games"
+                title: "Games"
                 Layout.fillWidth: true
                 Layout.leftMargin: 18
                 Layout.rightMargin: 18
@@ -84,7 +84,7 @@ ApplicationWindow {
                             onActivated: i => win.act("overlay " + ["off", "fps", "full"][i])
                         }
                     }
-                    Label { text: "    (Right Shift + F12 hides and shows it in a game)"; opacity: 0.7 }
+                    Label { text: " (Right Shift + F12 hides and shows it in a game)"; opacity: 0.7 }
                     Switch {
                         text: "Speed Boost: full power while a game runs"
                         checked: win.arg("boost") !== "off"
@@ -106,18 +106,18 @@ ApplicationWindow {
                         onToggled: win.act("pad-mouse " + (checked ? "on" : "off"))
                     }
                     Button {
-                        text: "🎮  Choose the controller button that opens the Game Hub"
+                        text: "Choose the controller button that opens the Game Hub"
                         onClicked: win.act("pad-setup")
                     }
                     Button {
-                        text: "🛟  Recovery Mode: put a newer Ollie OS on from an ISO file"
+                        text: "Recovery Mode: put a newer Ollie OS on from an ISO file"
                         onClicked: win.act("recovery")
                     }
                 }
             }
 
             GroupBox {
-                title: "🎨  Colours"
+                title: "Colours"
                 Layout.fillWidth: true
                 Layout.leftMargin: 18
                 Layout.rightMargin: 18
@@ -126,12 +126,12 @@ ApplicationWindow {
                     spacing: 10
                     RowLayout {
                         Button {
-                            text: "🌙 Dark"
+                            text: "Dark"
                             highlighted: win.mode === "dark"
                             onClicked: { win.mode = "dark"; win.applyColours() }
                         }
                         Button {
-                            text: "☀️ Light"
+                            text: "Light"
                             highlighted: win.mode === "light"
                             onClicked: { win.mode = "light"; win.applyColours() }
                         }
@@ -140,7 +140,7 @@ ApplicationWindow {
                         spacing: 12
                         Repeater {
                             model: [{ name: "teal", label: "Teal", c: "#14b8a6" }, { name: "purple", label: "Purple", c: "#a855f7" }, { name: "red", label: "Red", c: "#f43f5e" }]
-                                .concat(win.arg("gold") === "on" ? [{ name: "gold", label: "✨ Gold", c: "#f59e0b" }] : [])
+                                .concat(win.arg("gold") === "on" ? [{ name: "gold", label: "Gold", c: "#f59e0b" }] : [])
                             delegate: ColumnLayout {
                                 required property var modelData
                                 Rectangle {
@@ -162,13 +162,13 @@ ApplicationWindow {
                     }
                     CheckBox { id: bgToo; text: "Change the background to match"; checked: true }
                     Switch {
-                        text: "🎃❄️🎂  Seasonal themes: Halloween, winter and your birthday"
+                        text: "Seasonal themes: Halloween, winter and your birthday"
                         checked: win.arg("seasons") !== "off"
                         onToggled: win.act("seasons " + (checked ? "on" : "off"))
                     }
                     RowLayout {
                         spacing: 8
-                        Label { text: "🎂 My birthday:" }
+                        Label { text: "My birthday:" }
                         ComboBox {
                             id: bMonth
                             model: ["Month", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
@@ -186,7 +186,7 @@ ApplicationWindow {
             }
 
             GroupBox {
-                title: "🌍  Language, reading and the screensaver"
+                title: "Language, reading and the screensaver"
                 Layout.fillWidth: true
                 Layout.leftMargin: 18
                 Layout.rightMargin: 18
@@ -194,7 +194,7 @@ ApplicationWindow {
                     anchors.fill: parent
                     spacing: 8
                     Switch {
-                        text: "📖  Easy reading: bigger text, an easy-to-read font and a bigger mouse pointer"
+                        text: "Easy reading: bigger text, an easy-to-read font and a bigger mouse pointer"
                         checked: win.arg("easyread") === "on"
                         onToggled: win.act("easyread " + (checked ? "on" : "off"))
                     }
@@ -207,12 +207,12 @@ ApplicationWindow {
                             currentIndex: Math.max(0, win.languages.findIndex(l => l[0] === (win.arg("language") || "en")))
                             onActivated: index => { win.act("language " + win.languages[index][0]); langNote.visible = true; }
                         }
-                        Label { id: langNote; visible: false; text: "✅ From the next time you log in."; opacity: 0.8 }
+                        Label { id: langNote; visible: false; text: "From the next time you log in."; opacity: 0.8 }
                     }
                     Label { text: "(The desktop, Firefox and most apps change; Ollie OS's own apps stay in English for now.)"; opacity: 0.7; font.pixelSize: 12 }
                     RowLayout {
                         spacing: 8
-                        Label { text: "🐾  Ollie screensaver:" }
+                        Label { text: "Ollie screensaver:" }
                         ComboBox {
                             Layout.preferredWidth: 220
                             model: ["After 3 minutes", "After 5 minutes", "After 10 minutes", "Off"]
@@ -224,7 +224,7 @@ ApplicationWindow {
             }
 
             GroupBox {
-                title: "👪  For grown-ups"
+                title: "For grown-ups"
                 Layout.fillWidth: true
                 Layout.leftMargin: 18
                 Layout.rightMargin: 18
@@ -288,7 +288,7 @@ ApplicationWindow {
                     ColumnLayout {
                         visible: win.pinSum !== "" && win.unlocked
                         spacing: 10
-                        Label { text: "⏰  Screen Time"; font.bold: true }
+                        Label { text: "Screen Time"; font.bold: true }
                         RowLayout {
                             ComboBox {
                                 id: limitBox
@@ -318,7 +318,7 @@ ApplicationWindow {
                             opacity: 0.8
                         }
 
-                        Label { text: "🌙  Bedtime"; font.bold: true; Layout.topMargin: 8 }
+                        Label { text: "Bedtime"; font.bold: true; Layout.topMargin: 8 }
                         GridLayout {
                             columns: 2
                             columnSpacing: 10
@@ -348,7 +348,7 @@ ApplicationWindow {
                             opacity: 0.8
                         }
 
-                        Label { text: "⌨️  Inappropriate Typing Scanner"; font.bold: true; Layout.topMargin: 8 }
+                        Label { text: "Inappropriate Typing Scanner"; font.bold: true; Layout.topMargin: 8 }
                         Switch {
                             text: "On: notes bad words that are typed"
                             checked: win.arg("scanner") === "on"
@@ -362,7 +362,7 @@ ApplicationWindow {
                         }
                         Button { text: "Open the notes"; onClicked: win.act("notes") }
 
-                        Label { text: "🦊  Firefox password"; font.bold: true; Layout.topMargin: 8 }
+                        Label { text: "Firefox password"; font.bold: true; Layout.topMargin: 8 }
                         Label {
                             text: win.firefox === "on" ? "Firefox opens only when its password is typed." : "Firefox has no password."
                             opacity: 0.8

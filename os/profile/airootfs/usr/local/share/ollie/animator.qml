@@ -85,7 +85,7 @@ ApplicationWindow {
         spacing: 10
 
         RowLayout {
-            Label { text: "🎬 Ollie Animator"; font.pixelSize: 28; font.bold: true; color: "#0e7490" }
+            Label { text: "Ollie Animator"; font.pixelSize: 28; font.bold: true; color: "#0e7490" }
             Item { Layout.fillWidth: true }
             Label { text: "Frame " + (win.cur + 1) + " of " + win.frames.length; font.pixelSize: 18; color: "#155e75" }
         }
@@ -139,7 +139,7 @@ ApplicationWindow {
                         model: ["#111827", "#ef4444", "#f97316", "#facc15", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#8b5a2b", "#ffffff"]
                         delegate: Rectangle { required property string modelData; width: 36; height: 36; radius: 18; color: modelData
                             border.width: win.ink === modelData ? 4 : 1; border.color: "#0e7490"
-                            Text { anchors.centerIn: parent; text: parent.modelData === "#ffffff" ? "🧽" : ""; font.pixelSize: 16 }
+                            Text { anchors.centerIn: parent; text: parent.modelData === "#ffffff" ? "" : ""; font.pixelSize: 16 }
                             MouseArea { anchors.fill: parent; onClicked: win.ink = parent.modelData } }
                     }
                 }
@@ -153,22 +153,22 @@ ApplicationWindow {
                     }
                 }
                 RowLayout {
-                    Button { text: "↩️ Undo"; onClicked: { const f = win.frames.slice(); f[win.cur] = f[win.cur].slice(0, -1); win.setFrames(f); } }
-                    Button { text: "🧽 Clear frame"; onClicked: { const f = win.frames.slice(); f[win.cur] = []; win.setFrames(f); } }
+                    Button { text: "Undo"; onClicked: { const f = win.frames.slice(); f[win.cur] = f[win.cur].slice(0, -1); win.setFrames(f); } }
+                    Button { text: "Clear frame"; onClicked: { const f = win.frames.slice(); f[win.cur] = []; win.setFrames(f); } }
                 }
                 CheckBox { text: "See the frame before (faintly)"; checked: win.onion; onToggled: { win.onion = checked; canvas.requestPaint(); } }
                 Label { text: "Speed: " + win.fps + " frames a second"; font.bold: true }
                 Slider { from: 2; to: 12; stepSize: 1; value: win.fps; onMoved: win.fps = value; Layout.fillWidth: true }
                 Item { Layout.fillHeight: true }
                 Button {
-                    text: win.playing ? "⏹ Stop" : "▶ Play"
+                    text: win.playing ? "Stop" : "Play"
                     font.pixelSize: 20
                     Layout.fillWidth: true
                     enabled: win.frames.length > 1
                     onClicked: { win.playing = !win.playing; if (!win.playing) { win.cur = 0; canvas.requestPaint(); } }
                 }
                 Button {
-                    text: "💾 Save as a GIF"
+                    text: "Save as a GIF"
                     highlighted: true
                     font.pixelSize: 18
                     Layout.fillWidth: true
@@ -183,9 +183,9 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
-            Button { text: "➕ New frame"; onClicked: win.newFrame(false) }
-            Button { text: "📄 Copy this frame"; onClicked: win.newFrame(true) }
-            Button { text: "🗑️ Delete frame"; onClicked: win.deleteFrame() }
+            Button { text: "New frame"; onClicked: win.newFrame(false) }
+            Button { text: "Copy this frame"; onClicked: win.newFrame(true) }
+            Button { text: "Delete frame"; onClicked: win.deleteFrame() }
             ScrollView {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 92

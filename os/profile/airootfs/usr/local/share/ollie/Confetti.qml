@@ -31,7 +31,7 @@ Item {
             required property bool star
             x: bx; y: -30
             Rectangle { visible: !bit.star; width: 10; height: 16; radius: 2; color: bit.c }
-            Text { visible: bit.star; text: "⭐"; font.pixelSize: 22 }
+            Text { visible: bit.star; text: ""; font.pixelSize: 22 }
             SequentialAnimation {
                 running: true
                 PauseAnimation { duration: bit.delay }

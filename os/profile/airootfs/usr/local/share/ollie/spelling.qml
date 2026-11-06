@@ -99,10 +99,10 @@ ApplicationWindow {
         anchors.centerIn: parent
         spacing: 18
         visible: win.level < 0 || win.state2 === "done"
-        Label { text: "🐝 Spelling Bee"; font.pixelSize: 44; font.bold: true; color: "#a16207"; Layout.alignment: Qt.AlignHCenter }
+        Label { text: "Spelling Bee"; font.pixelSize: 44; font.bold: true; color: "#a16207"; Layout.alignment: Qt.AlignHCenter }
         Label {
             visible: win.state2 === "done"
-            text: "You spelled " + win.right + " of 10 right! " + "⭐".repeat(win.right === 10 ? 3 : win.right >= 8 ? 2 : win.right >= 6 ? 1 : 0)
+            text: "You spelled " + win.right + " of 10 right! " + "★".repeat(win.right === 10 ? 3 : win.right >= 8 ? 2 : win.right >= 6 ? 1 : 0)
             font.pixelSize: 24; color: "#854d0e"; Layout.alignment: Qt.AlignHCenter
         }
         Label { text: "Look at the word, then spell it. Pick a level:"; font.pixelSize: 18; color: "#854d0e"; Layout.alignment: Qt.AlignHCenter }
@@ -117,7 +117,7 @@ ApplicationWindow {
                     Layout.preferredWidth: 150; Layout.preferredHeight: 80
                     enabled: index <= win.unlocked
                     font.pixelSize: 17
-                    text: "Level " + (index + 1) + "\n" + (index > win.unlocked ? "🔒" : (win.stars[index] ? "⭐".repeat(win.stars[index]) : "☆"))
+                    text: "Level " + (index + 1) + "\n" + (index > win.unlocked ? "" : (win.stars[index] ? "★".repeat(win.stars[index]) : "☆"))
                     onClicked: win.start(index)
                 }
             }
@@ -131,9 +131,9 @@ ApplicationWindow {
         spacing: 18
         visible: win.level >= 0 && win.state2 !== "done"
         RowLayout {
-            Label { text: "🐝 Level " + (win.level + 1); font.pixelSize: 24; font.bold: true; color: "#a16207" }
+            Label { text: "Level " + (win.level + 1); font.pixelSize: 24; font.bold: true; color: "#a16207" }
             Item { Layout.fillWidth: true }
-            Label { text: "Word " + Math.min(10, win.n + 1) + " of 10    ✅ " + win.right; font.pixelSize: 20; color: "#854d0e" }
+            Label { text: "Word " + Math.min(10, win.n + 1) + " of 10" + win.right; font.pixelSize: 20; color: "#854d0e" }
             Button { text: "✖"; onClicked: win.level = -1 }
         }
         Item { Layout.fillHeight: true }
@@ -191,11 +191,11 @@ ApplicationWindow {
             Layout.alignment: Qt.AlignHCenter
             font.pixelSize: 22; font.bold: true
             color: win.state2 === "right" ? "#15803d" : "#b91c1c"
-            text: win.state2 === "right" ? "✅ Correct!" : win.state2 === "wrong" ? "Oops! It's spelled " + win.word[0].toUpperCase() : ""
+            text: win.state2 === "right" ? "Correct!" : win.state2 === "wrong" ? "Oops! It's spelled " + win.word[0].toUpperCase() : ""
         }
         Button {
             Layout.alignment: Qt.AlignHCenter
-            text: win.state2 === "ask" ? "✔ Check" : win.n >= 9 ? "See my stars ⭐" : "Next word →"
+            text: win.state2 === "ask" ? "✔ Check" : win.n >= 9 ? "See my stars" : "Next word →"
             font.pixelSize: 20
             highlighted: true
             onClicked: win.state2 === "ask" ? win.check() : win.next()

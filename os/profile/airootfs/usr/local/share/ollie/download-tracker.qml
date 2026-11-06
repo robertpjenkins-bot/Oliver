@@ -145,7 +145,7 @@ ApplicationWindow {
                         RowLayout {
                             Layout.fillWidth: true
                             Label { text: modelData.name; font.pixelSize: 18; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight }
-                            Label { text: modelData.count + " downloads  ·  " + modelData.date; opacity: 0.75 }
+                            Label { text: modelData.count + " downloads · " + modelData.date; opacity: 0.75 }
                         }
                         Label { visible: modelData.files.length === 0; text: "No files in it."; opacity: 0.7 }
                         Repeater {

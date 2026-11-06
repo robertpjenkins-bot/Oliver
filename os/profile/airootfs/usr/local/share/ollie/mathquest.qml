@@ -15,7 +15,21 @@ ApplicationWindow {
     height: 700
     visible: true
     title: "Math Quest"
-    color: "#ecfeff"
+    color: "#2E4A3B" // a chalkboard
+    readonly property color chalk: "#F2F0E6"
+    readonly property color chalkSoft: "#B9C4B5"
+    readonly property color chalkYellow: "#F2D06B"
+    // Buttons drawn in chalk on the board.
+    component ChalkButton: Button {
+        id: cb
+        leftPadding: 16; rightPadding: 16; topPadding: 8; bottomPadding: 8
+        contentItem: Label { text: cb.text; font: cb.font; color: cb.enabled ? (cb.highlighted ? "#2E4A3B" : win.chalk) : "#7F907F"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+        background: Rectangle {
+            radius: 6
+            color: cb.highlighted ? win.chalkYellow : cb.down ? "#3C5C4A" : cb.hovered ? "#365645" : "transparent"
+            border.color: cb.enabled ? (cb.highlighted ? win.chalkYellow : win.chalkSoft) : "#566B59"; border.width: 2
+        }
+    }
 
     function arg(n) {
         const a = Qt.application.arguments;
@@ -28,14 +42,14 @@ ApplicationWindow {
     function rnd(a, b) { return a + Math.floor(Math.random() * (b - a + 1)) }
 
     readonly property var levels: [
-        { name: "Adding up to 10", emoji: "➕" },
-        { name: "Taking away from 10", emoji: "➖" },
-        { name: "Adding up to 20", emoji: "➕" },
-        { name: "Taking away from 20", emoji: "➖" },
-        { name: "Up to 100", emoji: "💯" },
-        { name: "Times 2, 5 and 10", emoji: "✖️" },
-        { name: "All the times tables", emoji: "✖️" },
-        { name: "Sharing", emoji: "➗" }
+        { name: "Adding up to 10" },
+        { name: "Taking away from 10" },
+        { name: "Adding up to 20" },
+        { name: "Taking away from 20" },
+        { name: "Up to 100" },
+        { name: "Times 2, 5 and 10" },
+        { name: "All the times tables" },
+        { name: "Sharing" }
     ]
     // One sum for a level: { a, op, b, answer }.
     function make(l) {
@@ -111,27 +125,27 @@ ApplicationWindow {
         anchors.centerIn: parent
         spacing: 18
         visible: win.level < 0 || win.state2 === "done"
-        Label { text: "🧮 Math Quest"; font.pixelSize: 44; font.bold: true; color: "#0e7490"; Layout.alignment: Qt.AlignHCenter }
+        Label { text: "Math Quest"; font.pixelSize: 44; font.bold: true; color: win.chalk; Layout.alignment: Qt.AlignHCenter }
         Label {
             visible: win.state2 === "done"
-            text: "You got " + win.right + " of 10 right! " + "⭐".repeat(win.right === 10 ? 3 : win.right >= 8 ? 2 : win.right >= 6 ? 1 : 0)
-            font.pixelSize: 24; color: "#155e75"; Layout.alignment: Qt.AlignHCenter
+            text: win.right + " of 10 right   " + "★".repeat(win.right === 10 ? 3 : win.right >= 8 ? 2 : win.right >= 6 ? 1 : 0)
+            font.pixelSize: 24; color: win.chalkYellow; Layout.alignment: Qt.AlignHCenter
         }
-        Label { text: "Pick a level:"; font.pixelSize: 18; color: "#155e75"; Layout.alignment: Qt.AlignHCenter }
+        Label { text: "Pick a level"; font.pixelSize: 18; color: win.chalkSoft; Layout.alignment: Qt.AlignHCenter }
         GridLayout {
             columns: 4
             columnSpacing: 12; rowSpacing: 12
             Layout.alignment: Qt.AlignHCenter
             Repeater {
                 model: win.levels
-                delegate: Button {
+                delegate: ChalkButton {
                     required property var modelData
                     required property int index
                     Layout.preferredWidth: 180; Layout.preferredHeight: 96
                     enabled: index <= win.unlocked
                     font.pixelSize: 15
-                    text: modelData.emoji + " Level " + (index + 1) + "\n" + modelData.name + "\n"
-                        + (index > win.unlocked ? "🔒" : (win.stars[index] ? "⭐".repeat(win.stars[index]) : "☆"))
+                    text: "Level " + (index + 1) + "\n" + modelData.name + "\n"
+                        + (index > win.unlocked ? "locked" : (win.stars[index] ? "★".repeat(win.stars[index]) + "☆".repeat(3 - win.stars[index]) : "☆☆☆"))
                     onClicked: win.start(index)
                 }
             }
@@ -154,32 +168,32 @@ ApplicationWindow {
             anchors.margins: 26
             spacing: 14
             RowLayout {
-                Label { text: "🧮 Level " + (win.level + 1) + ": " + (win.level >= 0 ? win.levels[win.level].name : ""); font.pixelSize: 22; font.bold: true; color: "#0e7490" }
+                Label { text: "Level " + (win.level + 1) + ": " + (win.level >= 0 ? win.levels[win.level].name : ""); font.pixelSize: 22; font.bold: true; color: win.chalk }
                 Item { Layout.fillWidth: true }
-                Label { text: "Sum " + Math.min(10, win.n + 1) + " of 10    ✅ " + win.right; font.pixelSize: 20; color: "#155e75" }
-                Button { text: "✖"; onClicked: win.level = -1 }
+                Label { text: "Sum " + Math.min(10, win.n + 1) + " of 10    Right: " + win.right; font.pixelSize: 20; color: win.chalkSoft }
+                ChalkButton { text: "Stop"; onClicked: win.level = -1 }
             }
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 18
-                Label { text: win.sum.a + " " + win.sum.op + " " + win.sum.b + " ="; font.pixelSize: 72; font.bold: true; color: "#164e63" }
+                Label { text: win.sum.a + " " + win.sum.op + " " + win.sum.b + " ="; font.pixelSize: 72; font.bold: true; color: win.chalk }
                 Rectangle {
-                    width: 190; height: 104; radius: 18
-                    color: win.state2 === "right" ? "#bbf7d0" : win.state2 === "wrong" ? "#fecaca" : "white"
-                    border.color: "#06b6d4"; border.width: 4
+                    width: 190; height: 104; radius: 8
+                    color: "transparent"
+                    border.color: win.state2 === "right" ? "#A8D8A0" : win.state2 === "wrong" ? "#F0A3A3" : win.chalkYellow; border.width: 3
                     Label {
                         anchors.centerIn: parent
                         text: win.state2 === "wrong" ? String(win.sum.answer) : (win.typed || "?")
                         font.pixelSize: 64; font.bold: true
-                        color: win.typed || win.state2 === "wrong" ? "#164e63" : "#a5f3fc"
+                        color: win.state2 === "wrong" ? "#F0A3A3" : win.typed ? win.chalk : "#6F8572"
                     }
                 }
             }
             Label {
                 Layout.alignment: Qt.AlignHCenter
                 font.pixelSize: 22; font.bold: true
-                color: win.state2 === "right" ? "#15803d" : "#b91c1c"
-                text: win.state2 === "right" ? "✅ Correct!" : win.state2 === "wrong" ? "Oops! " + win.sum.a + " " + win.sum.op + " " + win.sum.b + " = " + win.sum.answer : " "
+                color: win.state2 === "right" ? "#A8D8A0" : "#F0A3A3"
+                text: win.state2 === "right" ? "Right" : win.state2 === "wrong" ? "Not quite: " + win.sum.a + " " + win.sum.op + " " + win.sum.b + " = " + win.sum.answer : " "
             }
             // "Show me": dots for small sums, a tip for the rest.
             Row {
@@ -188,22 +202,25 @@ ApplicationWindow {
                 spacing: 6
                 Repeater {
                     model: win.sum.a
-                    delegate: Label {
+                    delegate: Rectangle { // a chalk dot (crossed out: taken away)
                         required property int index
-                        text: win.sum.op === "−" && index >= win.sum.a - win.sum.b ? "❌" : "🔵"
-                        font.pixelSize: 30
+                        readonly property bool gone: win.sum.op === "−" && index >= win.sum.a - win.sum.b
+                        width: 30; height: 30; radius: 15
+                        color: gone ? "transparent" : win.chalk
+                        border.color: win.chalk; border.width: 2
+                        Rectangle { visible: parent.gone; anchors.centerIn: parent; width: 38; height: 3; color: "#F0A3A3"; rotation: -45 }
                     }
                 }
-                Label { visible: win.sum.op === "+"; text: "  ➕  "; font.pixelSize: 30 }
+                Label { visible: win.sum.op === "+"; text: "  +  "; color: win.chalk; font.pixelSize: 30; font.bold: true }
                 Repeater {
                     model: win.sum.op === "+" ? win.sum.b : 0
-                    delegate: Label { text: "🟠"; font.pixelSize: 30 }
+                    delegate: Rectangle { width: 30; height: 30; radius: 15; color: win.chalkYellow }
                 }
             }
             Label {
                 visible: win.hint && win.level > 1
                 Layout.alignment: Qt.AlignHCenter
-                font.pixelSize: 18; color: "#155e75"; wrapMode: Text.WordWrap
+                font.pixelSize: 18; color: win.chalkSoft; wrapMode: Text.WordWrap
                 Layout.maximumWidth: 700; horizontalAlignment: Text.AlignHCenter
                 text: win.sum.op === "+" ? "Tip: start at " + Math.max(win.sum.a, win.sum.b) + " and count on " + Math.min(win.sum.a, win.sum.b) + "."
                     : win.sum.op === "−" ? "Tip: start at " + win.sum.b + " and count up to " + win.sum.a + ". How many steps?"
@@ -214,7 +231,7 @@ ApplicationWindow {
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 10
-                Button { text: "👀 Show me"; font.pixelSize: 16; onClicked: win.hint = true }
+                ChalkButton { text: "Show me"; font.pixelSize: 16; onClicked: win.hint = true }
             }
             GridLayout {
                 Layout.alignment: Qt.AlignHCenter
@@ -222,14 +239,14 @@ ApplicationWindow {
                 columnSpacing: 8; rowSpacing: 8
                 Repeater {
                     model: ["1", "2", "3", "4", "5", "del", "6", "7", "8", "9", "0", "ok"]
-                    delegate: Button {
+                    delegate: ChalkButton {
                         required property string modelData
                         Layout.preferredWidth: modelData === "ok" ? 150 : 80
                         Layout.preferredHeight: 64
                         font.pixelSize: 26
                         font.bold: true
                         highlighted: modelData === "ok"
-                        text: modelData === "del" ? "⌫" : modelData === "ok" ? (win.state2 === "ask" ? "✔ Check" : win.n >= 9 ? "⭐ Stars" : "Next →") : modelData
+                        text: modelData === "del" ? "⌫" : modelData === "ok" ? (win.state2 === "ask" ? "Check" : win.n >= 9 ? "Stars" : "Next →") : modelData
                         onClicked: { win.press(modelData); keys.forceActiveFocus(); }
                     }
                 }

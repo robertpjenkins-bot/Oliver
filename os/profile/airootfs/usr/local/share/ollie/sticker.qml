@@ -106,7 +106,7 @@ ApplicationWindow {
         // The sticker.
         ColumnLayout {
             spacing: 10
-            Label { text: "✨ Sticker Maker"; font.pixelSize: 30; font.bold: true; color: "#86198f" }
+            Label { text: "Sticker Maker"; font.pixelSize: 30; font.bold: true; color: "#86198f" }
             Rectangle {
                 width: 440; height: 440; radius: 20
                 color: "#f5f5f4"
@@ -183,9 +183,9 @@ ApplicationWindow {
             spacing: 12
             Label { text: "1. What is on it?"; font.bold: true; font.pixelSize: 17; color: "#701a75" }
             RowLayout {
-                Button { text: "😀 Emoji"; highlighted: win.source === "emoji"; onClicked: win.source = "emoji" }
-                Button { text: "📷 A picture"; highlighted: win.source === "picture"; onClicked: pick.open() }
-                Button { text: "✏️ Draw"; highlighted: win.source === "draw"; onClicked: win.source = "draw" }
+                Button { text: "Emoji"; highlighted: win.source === "emoji"; onClicked: win.source = "emoji" }
+                Button { text: "A picture"; highlighted: win.source === "picture"; onClicked: pick.open() }
+                Button { text: "Draw"; highlighted: win.source === "draw"; onClicked: win.source = "draw" }
             }
             Flow {
                 visible: win.source === "emoji"
@@ -204,8 +204,8 @@ ApplicationWindow {
                         border.width: win.ink === modelData ? 4 : 1; border.color: "#701a75"
                         MouseArea { anchors.fill: parent; onClicked: win.ink = parent.modelData } }
                 }
-                Button { text: "↩️ Undo"; onClicked: { win.strokes = win.strokes.slice(0, -1); win.repaint(); } }
-                Button { text: "🧽 Clear"; onClicked: { win.strokes = []; win.repaint(); } }
+                Button { text: "Undo"; onClicked: { win.strokes = win.strokes.slice(0, -1); win.repaint(); } }
+                Button { text: "Clear"; onClicked: { win.strokes = []; win.repaint(); } }
             }
             Label { text: "2. Shape"; font.bold: true; font.pixelSize: 17; color: "#701a75" }
             RowLayout {
@@ -226,11 +226,11 @@ ApplicationWindow {
             Item { Layout.fillHeight: true }
             RowLayout {
                 Button {
-                    text: "💾 Save the sticker"
+                    text: "Save the sticker"
                     onClicked: win.saveSticker(false)
                 }
                 Button {
-                    text: "🖥️ Put it on my desktop →"
+                    text: "Put it on my desktop →"
                     highlighted: true
                     font.pixelSize: 17
                     onClicked: win.saveSticker(true)
@@ -282,12 +282,12 @@ ApplicationWindow {
             Item { Layout.fillWidth: true }
             Button { text: "← Back"; onClicked: win.mode = "make" }
             Button {
-                text: "🧽 Take all stickers off"
+                text: "Take all stickers off"
                 visible: win.placedList.length > 0
                 onClicked: { saved.placed = "[]"; win.placedList = []; win.act("restore " + win.baseWall); }
             }
             Button {
-                text: "✅ Put it here"
+                text: "Put it here"
                 highlighted: true
                 font.pixelSize: 17
                 onClicked: {

@@ -194,7 +194,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 12
-            Label { text: "🌍 World Explorer"; color: "white"; font.pixelSize: 30; font.bold: true }
+            Label { text: "World Explorer"; color: "white"; font.pixelSize: 30; font.bold: true }
             Label { text: "Drag the globe to spin it. Click a country!"; color: "#93c5fd"; font.pixelSize: 15; visible: !win.quiz }
 
             // Find it!
@@ -206,9 +206,9 @@ ApplicationWindow {
                 ColumnLayout {
                     id: quizCol
                     anchors.fill: parent; anchors.margins: 12
-                    Label { text: "🎯 Find: " + (win.target >= 0 ? win.countries[win.target].n : ""); color: "white"; font.pixelSize: 24; font.bold: true; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    Label { text: "Find: " + (win.target >= 0 ? win.countries[win.target].n : ""); color: "white"; font.pixelSize: 24; font.bold: true; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                     Label { text: win.target >= 0 ? "Hint: it's in " + win.countries[win.target].c : ""; color: "#fed7aa"; font.pixelSize: 15 }
-                    Label { text: "Found: " + win.score + "     ⏱️ " + win.timeLeft + " s"; color: "white"; font.pixelSize: 18 }
+                    Label { text: "Found: " + win.score + "" + win.timeLeft + " s"; color: "white"; font.pixelSize: 18 }
                     RowLayout {
                         Button { text: "Skip"; onClicked: win.nextTarget() }
                         Button { text: "Stop"; onClicked: { win.quiz = false; win.quizNote = ""; } }
@@ -253,14 +253,14 @@ ApplicationWindow {
                     }
                     Label {
                         visible: text !== ""
-                        text: win.picked >= 0 && win.countries[win.picked].fun ? "🤩 " + win.countries[win.picked].fun : ""
+                        text: win.picked >= 0 && win.countries[win.picked].fun ? "" + win.countries[win.picked].fun : ""
                         color: "#fde68a"; font.pixelSize: 16; wrapMode: Text.WordWrap; Layout.fillWidth: true
                     }
                 }
             }
             Item { Layout.fillHeight: true }
             Button {
-                text: "🎯 Find it! (60 seconds)" + (saved.best ? "   Best: " + saved.best : "")
+                text: "Find it! (60 seconds)" + (saved.best ? " Best: " + saved.best : "")
                 font.pixelSize: 18
                 highlighted: true
                 visible: !win.quiz

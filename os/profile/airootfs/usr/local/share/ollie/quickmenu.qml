@@ -46,7 +46,7 @@ Window {
     property bool dnd: arg("dnd") === "on"
     property bool sure: false          // "Close the game?" asked once
     readonly property var fpsSteps: [0, 30, 45, 60, 90, 120]
-    readonly property var powers: [["power-saver", "🔋 Battery saver"], ["balanced", "⚖️ Balanced"], ["performance", "🚀 Turbo"]]
+    readonly property var powers: [["power-saver", "Battery saver"], ["balanced", "Balanced"], ["performance", "Turbo"]]
 
     // The rows: [id, shown]
     readonly property var items: [["vol"], ["bright"], ["fps"], ["power"], ["dnd"], ["shot"], ["close"], ["hub"], ["playtime"]]
@@ -93,9 +93,9 @@ Window {
         id: panel
         anchors.fill: parent
         anchors.margins: 14
-        radius: 26
-        color: "#ee0f172a"
-        border.color: "#14b8a6"; border.width: 2
+        radius: 8
+        color: "#F217181C"
+        border.color: "#2F3138"; border.width: 1
         focus: true
         Keys.onPressed: (k) => {
             const m = { [Qt.Key_Left]: "left", [Qt.Key_Right]: "right", [Qt.Key_Up]: "up", [Qt.Key_Down]: "down",
@@ -107,21 +107,21 @@ Window {
             anchors.margins: 22
             spacing: 12
             RowLayout {
-                Label { text: "⚡ Quick Menu"; color: "white"; font.pixelSize: 28; font.bold: true }
+                Label { text: "Quick Menu"; color: "white"; font.pixelSize: 28; font.bold: true }
                 Item { Layout.fillWidth: true }
-                Label { id: clock; color: "#cbd5e1"; font.pixelSize: 20
+                Label { id: clock; color: "#C9CAD0"; font.pixelSize: 20
                     Timer { interval: 1000; running: true; repeat: true; triggeredOnStart: true; onTriggered: clock.text = Qt.formatTime(new Date(), "h:mm AP") } }
             }
             Rectangle {
                 visible: win.game !== ""
                 Layout.fillWidth: true
                 Layout.preferredHeight: 70
-                radius: 16
-                color: "#16223b"
+                radius: 6
+                color: "#25272D"
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: 12; spacing: 0
-                    Label { text: "🎮 " + win.game; color: "white"; font.pixelSize: 18; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
-                    Label { text: "Played today: " + win.arg("today") + " min"; color: "#94a3b8"; font.pixelSize: 14 }
+                    Label { text: "" + win.game; color: "white"; font.pixelSize: 18; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
+                    Label { text: "Played today: " + win.arg("today") + " min"; color: "#9A9CA3"; font.pixelSize: 14 }
                 }
             }
             Repeater {
@@ -134,22 +134,22 @@ Window {
                     readonly property string what: modelData[0]
                     Layout.fillWidth: true
                     Layout.preferredHeight: 62
-                    radius: 16
-                    color: on ? "#134e4a" : "#16223b"
-                    border.color: on ? "#5eead4" : "transparent"; border.width: 2
+                    radius: 6
+                    color: on ? "#33251B" : "#25272D"
+                    border.color: on ? "#E07A2F" : "transparent"; border.width: 2
                     MouseArea { anchors.fill: parent; onClicked: { win.at = row.index; win.go("ok"); } }
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16; spacing: 12
                         Label {
                             color: "white"; font.pixelSize: 18
-                            text: ({ vol: "🔊 Volume", bright: "☀️ Brightness", fps: "🎯 FPS limit", power: "⚡ Power", dnd: "🔕 Do Not Disturb",
-                                     shot: "📸 Take a screenshot", close: win.sure && row.on ? "❗ Press again to close it" : "❌ Close the game",
-                                     hub: "🏠 Game Hub", playtime: "⏱️ Play Time" })[row.what]
+                            text: ({ vol: "Volume", bright: "Brightness", fps: "FPS limit", power: "Power", dnd: "Do Not Disturb",
+                                     shot: "Take a screenshot", close: win.sure && row.on ? "Press again to close it" : "Close the game",
+                                     hub: "Game Hub", playtime: "Play Time" })[row.what]
                         }
                         Item { Layout.fillWidth: true }
                         Label {
-                            color: "#5eead4"; font.pixelSize: 17; font.bold: true
-                            text: row.what === "vol" ? "◀ " + win.vol + "% ▶" : row.what === "bright" ? "◀ " + win.bright + "% ▶"
+                            color: "#F0A066"; font.pixelSize: 17; font.bold: true
+                            text: row.what === "vol" ? "" + win.vol + "%" : row.what === "bright" ? "" + win.bright + "%"
                                 : row.what === "fps" ? "◀ " + (win.fps ? win.fps : "No limit") + " ▶"
                                 : row.what === "power" ? "◀ " + (win.powers.find(p => p[0] === win.power) || ["", "?"])[1] + " ▶"
                                 : row.what === "dnd" ? (win.dnd ? "On" : "Off") : ""
@@ -158,7 +158,7 @@ Window {
                 }
             }
             Item { Layout.fillHeight: true }
-            Label { text: "Ⓐ choose   ◀ ▶ change   Ⓑ close"; color: "#94a3b8"; font.pixelSize: 16; Layout.alignment: Qt.AlignHCenter }
+            Label { text: "A: choose   ←→: change   B: close"; color: "#9A9CA3"; font.pixelSize: 16; Layout.alignment: Qt.AlignHCenter }
         }
     }
 }

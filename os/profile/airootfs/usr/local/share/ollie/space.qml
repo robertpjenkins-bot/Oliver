@@ -84,7 +84,7 @@ ApplicationWindow {
 
         // The strip.
         RowLayout {
-            Label { text: "🚀 Space Explorer"; color: "white"; font.pixelSize: 28; font.bold: true }
+            Label { text: "Space Explorer"; color: "white"; font.pixelSize: 28; font.bold: true }
             Item { Layout.fillWidth: true }
             Repeater {
                 model: win.bodies
@@ -217,13 +217,13 @@ ApplicationWindow {
                     implicitHeight: wowText.implicitHeight + 24
                     radius: 14
                     color: "#4c1d95"
-                    Label { id: wowText; anchors.fill: parent; anchors.margins: 12; text: "🤩 " + win.b.wow; color: "white"; font.pixelSize: 17; wrapMode: Text.WordWrap }
+                    Label { id: wowText; anchors.fill: parent; anchors.margins: 12; text: "" + win.b.wow; color: "white"; font.pixelSize: 17; wrapMode: Text.WordWrap }
                 }
                 Item { Layout.fillHeight: true }
                 RowLayout {
                     Button { text: "← Back"; enabled: win.at > 0; onClicked: win.at-- }
                     Item { Layout.fillWidth: true }
-                    Button { text: "Fly to the next one 🚀"; highlighted: true; enabled: win.at < win.bodies.length - 1; onClicked: win.at++ }
+                    Button { text: "Fly to the next one"; highlighted: true; enabled: win.at < win.bodies.length - 1; onClicked: win.at++ }
                 }
             }
         }

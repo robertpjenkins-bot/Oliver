@@ -45,9 +45,9 @@ ApplicationWindow {
     ColumnLayout {
         anchors.centerIn: parent
         spacing: 18
-        Label { text: "🌙"; font.pixelSize: 110; Layout.alignment: Qt.AlignHCenter }
+        Label { text: ""; font.pixelSize: 110; Layout.alignment: Qt.AlignHCenter }
         Label { text: win.arg("mode") === "bedtime" ? "Goodnight! It's bedtime" : "Screen time is over for today"; color: "white"; font.pixelSize: 44; font.bold: true; Layout.alignment: Qt.AlignHCenter }
-        Label { text: win.arg("mode") === "bedtime" ? "Sleep tight! See you in the morning. ⭐" : "Great playing! Come back tomorrow."; color: "#c7d2fe"; font.pixelSize: 24; Layout.alignment: Qt.AlignHCenter }
+        Label { text: win.arg("mode") === "bedtime" ? "Sleep tight! See you in the morning." : "Great playing! Come back tomorrow."; color: "#c7d2fe"; font.pixelSize: 24; Layout.alignment: Qt.AlignHCenter }
 
         ColumnLayout {
             Layout.alignment: Qt.AlignHCenter

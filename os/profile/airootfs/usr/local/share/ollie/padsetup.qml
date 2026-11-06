@@ -15,7 +15,7 @@ ApplicationWindow {
     height: 560
     visible: true
     title: "A controller!"
-    color: "#0f172a"
+    color: "#17181C"
     flags: Qt.Window | Qt.WindowStaysOnTopHint
 
     function arg(n) {
@@ -55,14 +55,14 @@ ApplicationWindow {
         anchors.fill: parent
         anchors.margins: 30
         spacing: 16
-        Label { text: "🎮"; font.pixelSize: 80; Layout.alignment: Qt.AlignHCenter }
-        Label { text: win.chosen ? "All set! 🎉" : "A controller! Hi!"; color: "white"; font.pixelSize: 34; font.bold: true; Layout.alignment: Qt.AlignHCenter }
+        Image { source: "file:///usr/share/icons/hicolor/128x128/apps/ollie-coop.png"; sourceSize: Qt.size(96, 96); Layout.alignment: Qt.AlignHCenter }
+        Label { text: win.chosen ? "All set" : "A controller is plugged in"; color: "white"; font.pixelSize: 34; font.bold: true; Layout.alignment: Qt.AlignHCenter }
         Label {
             Layout.alignment: Qt.AlignHCenter
             Layout.maximumWidth: 640
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
-            color: "#cbd5e1"; font.pixelSize: 20
+            color: "#C9CAD0"; font.pixelSize: 20
             text: win.chosen ? "Press " + win.name + " any time to open the Game Hub. In a game, it opens the Quick Menu."
                 : win.code === 0 ? "Which button should open the Game Hub?\nPress it on your controller now.\n(The Home button, in the middle, is a good one.)"
                 : "You pressed: " + win.name + "\nPress it again to choose it, or press a different one."
@@ -71,8 +71,8 @@ ApplicationWindow {
             visible: win.code !== 0
             Layout.alignment: Qt.AlignHCenter
             width: label.width + 60; height: 70; radius: 35
-            color: win.chosen ? "#16a34a" : "#facc15"
-            Label { id: label; anchors.centerIn: parent; text: win.name; font.pixelSize: 26; font.bold: true; color: win.chosen ? "white" : "#422006" }
+            color: win.chosen ? "#4F8A45" : "#E07A2F"
+            Label { id: label; anchors.centerIn: parent; text: win.name; font.pixelSize: 26; font.bold: true; color: "white" }
         }
         Item { Layout.fillHeight: true }
         CheckBox {
@@ -88,7 +88,7 @@ ApplicationWindow {
             visible: !win.chosen
             Layout.alignment: Qt.AlignHCenter
             spacing: 12
-            Button { text: "✅ Use " + (win.name || "this button"); enabled: win.code !== 0; highlighted: true; font.pixelSize: 16; onClicked: win.choose() }
+            Button { text: "Use " + (win.name || "this button"); enabled: win.code !== 0; highlighted: true; font.pixelSize: 16; onClicked: win.choose() }
             Button { text: "Later"; font.pixelSize: 16; onClicked: Qt.quit() }
         }
     }

@@ -14,7 +14,7 @@ ApplicationWindow {
     height: 640
     visible: true
     title: "Welcome to Ollie OS"
-    color: "#083c38"
+    color: "#F4EFE6"
 
     function arg(name) {
         const a = Qt.application.arguments;
@@ -24,19 +24,21 @@ ApplicationWindow {
         return "";
     }
     function act(what) { console.log("OLLIE-ACTION " + what) }
+    // An app's icon: its picture (hicolor PNG), or its drawing (SVG).
+    function iconOf(n) { return n.indexOf("/") === 0 ? "file://" + n : "file:///usr/share/icons/hicolor/128x128/apps/" + n + ".png" }
 
     readonly property var buttons: [
-        { icon: "📺", label: "Game Hub", hint: "Big screen, play with a controller", act: "gamehub" },
-        { icon: "🕹️", label: "Games", hint: "All your games, drop in ROMs", act: "library" },
-        { icon: "🎮", label: "Install games", hint: "The Steam store", act: "games" },
-        { icon: "🛍️", label: "App Center", hint: "Free games, one click", act: "appcenter" },
-        { icon: "⛏️", label: "Minecraft", hint: "The Minecraft Launcher", act: "minecraft" },
-        { icon: "🖼️", label: "Change background", hint: "Your name, or draw one", act: "background" },
-        { icon: "🎨", label: "Colours & settings", hint: "Dark mode, colours, Screen Time", act: "settings" },
-        { icon: "🔧", label: "Fix a problem", hint: "The Ollie OS Fixer", act: "fixer" },
-        { icon: "⬆️", label: "Update Ollie OS", hint: "One click: everything new", act: "update" },
-        { icon: "🔔", label: "New from biobro", hint: "Updates to install", act: "updates" }
-    ].concat(arg("store") === "on" ? [{ icon: "🛍️", label: "App store", hint: "More apps (Discover)", act: "store" }] : [])
+        { icon: "ollie-gamehub", label: "Game Hub", hint: "Big screen, for a controller", act: "gamehub" },
+        { icon: "ollie-games", label: "Games", hint: "All your games in one place", act: "library" },
+        { icon: "/usr/share/icons/hicolor/256x256/apps/steam.png", label: "Install games", hint: "The Steam store", act: "games" },
+        { icon: "ollie-appcenter", label: "App Center", hint: "Free games and apps", act: "appcenter" },
+        { icon: "/usr/share/icons/hicolor/scalable/apps/ollie-minecraft.svg", label: "Minecraft", hint: "The Minecraft Launcher", act: "minecraft" },
+        { icon: "ollie-wallpaper-maker", label: "Change background", hint: "Your name, or draw one", act: "background" },
+        { icon: "ollie-settings", label: "Settings", hint: "Colours, dark mode, Screen Time", act: "settings" },
+        { icon: "ollie-fixer", label: "Fix a problem", hint: "The Ollie OS Fixer", act: "fixer" },
+        { icon: "ollie-os-update", label: "Update Ollie OS", hint: "Get everything new", act: "update" },
+        { icon: "ollie-update-checker", label: "New from biobro", hint: "Updates to install", act: "updates" }
+    ].concat(arg("store") === "on" ? [{ icon: "/usr/share/icons/hicolor/scalable/apps/plasmadiscover.svg", label: "App store", hint: "More apps (Discover)", act: "store" }] : [])
 
     // The secret code.
     readonly property var code: [Qt.Key_Up, Qt.Key_Up, Qt.Key_Down, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right, Qt.Key_Left, Qt.Key_Right, Qt.Key_B, Qt.Key_A]
@@ -51,36 +53,35 @@ ApplicationWindow {
     }
     Item { id: keys; focus: true; Keys.onPressed: (e) => win.key(e.key) }
 
-    Rectangle {
-        anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0; color: win.rainbow ? "#ef4444" : "#0f766e" }
-            GradientStop { position: 0.25; color: win.rainbow ? "#f59e0b" : "#0d6b64" }
-            GradientStop { position: 0.5; color: win.rainbow ? "#22c55e" : "#0b5e57" }
-            GradientStop { position: 0.75; color: win.rainbow ? "#3b82f6" : "#0a4f49" }
-            GradientStop { position: 1; color: win.rainbow ? "#a855f7" : "#083c38" }
+    // The secret's rainbow: a band of flat stripes along the top.
+    Row {
+        visible: win.rainbow
+        anchors.top: parent.top
+        Repeater {
+            model: ["#C8473D", "#E07A2F", "#D9A021", "#4F8A45", "#336B9E", "#6A4E9C"]
+            Rectangle { required property string modelData; width: win.width / 6; height: 10; color: modelData }
         }
     }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 28
-        spacing: 18
+        anchors.margins: 32
+        spacing: 20
 
         RowLayout {
-            spacing: 16
+            spacing: 18
             Image {
                 source: "file:///usr/share/icons/hicolor/scalable/apps/ollie-os.svg"
-                sourceSize.width: 72
-                sourceSize.height: 72
+                sourceSize.width: 64
+                sourceSize.height: 64
             }
             ColumnLayout {
                 spacing: 2
-                Label { text: "Welcome to Ollie OS!"; color: "white"; font.pixelSize: 34; font.bold: true }
+                Label { text: "Welcome to Ollie OS"; color: "#22252B"; font.family: "Noto Serif"; font.pixelSize: 34; font.bold: true }
                 Label {
-                    text: win.rainbow ? "🌈 You found the secret code! Ollie Gold is in Settings now. ✨"
-                        : (({ halloween: "🎃 Happy Halloween! ", winter: "❄️ Happy winter! ", birthday: "🎂 Happy birthday! " })[win.arg("season")] || "") + "What do you want to do first?"
-                    color: "#ccfbf1"; font.pixelSize: 18
+                    text: win.rainbow ? "You found the secret code. Ollie Gold is in Settings now."
+                        : (({ halloween: "Happy Halloween. ", winter: "Happy winter. ", birthday: "Happy birthday. " })[win.arg("season")] || "") + "What do you want to do first?"
+                    color: "#5B5F68"; font.pixelSize: 17
                 }
             }
         }
@@ -89,25 +90,36 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             columns: 4
-            rowSpacing: 14
-            columnSpacing: 14
+            rowSpacing: 12
+            columnSpacing: 12
             Repeater {
                 model: win.buttons
                 delegate: Rectangle {
                     required property var modelData
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    Layout.minimumHeight: 120
-                    radius: 18
-                    color: area.pressed ? "#5eead4" : (area.containsMouse ? "#2dd4bf" : "#14b8a6")
-                    border.color: "#ccfbf1"
-                    border.width: area.activeFocus ? 3 : 0
-                    Column {
-                        anchors.centerIn: parent
-                        spacing: 4
-                        Label { text: modelData.icon; font.pixelSize: 40; anchors.horizontalCenter: parent.horizontalCenter }
-                        Label { text: modelData.label; color: "#042f2e"; font.pixelSize: 19; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
-                        Label { text: modelData.hint; color: "#064e48"; font.pixelSize: 13; anchors.horizontalCenter: parent.horizontalCenter }
+                    Layout.minimumHeight: 110
+                    radius: 10
+                    color: area.pressed ? "#EAE3D6" : "white"
+                    border.color: area.containsMouse ? "#257A78" : "#DDD5C7"
+                    border.width: area.containsMouse ? 2 : 1
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 14
+                        Image {
+                            source: win.iconOf(modelData.icon)
+                            // (One that isn't there: the App Center's.)
+                            onStatusChanged: if (status === Image.Error) source = win.iconOf("ollie-appcenter")
+                            sourceSize: Qt.size(56, 56)
+                            Layout.preferredWidth: 56; Layout.preferredHeight: 56
+                        }
+                        ColumnLayout {
+                            spacing: 2
+                            Layout.fillWidth: true
+                            Label { text: modelData.label; color: "#22252B"; font.pixelSize: 18; font.bold: true; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                            Label { text: modelData.hint; color: "#6B6F78"; font.pixelSize: 13; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        }
                     }
                     MouseArea {
                         id: area
@@ -126,10 +138,10 @@ ApplicationWindow {
                 checked: win.arg("atstart") === "on"
                 onToggled: win.act("at-start " + (checked ? "on" : "off"))
                 text: "Show this when Ollie OS starts"
-                palette.windowText: "white"
+                palette.windowText: "#22252B"
             }
             Item { Layout.fillWidth: true }
-            Label { text: (win.arg("version") ? "Ollie OS " + win.arg("version") + "   ·   " : "") + "Find it again in the apps menu: Ollie OS Welcome"; color: "#99f6e4"; font.pixelSize: 13 }
+            Label { text: (win.arg("version") ? "Ollie OS " + win.arg("version") + "  ·  " : "") + "It's in the apps menu too: Ollie OS Welcome"; color: "#6B6F78"; font.pixelSize: 13 }
             Button { text: "Close"; onClicked: Qt.quit() }
         }
     }

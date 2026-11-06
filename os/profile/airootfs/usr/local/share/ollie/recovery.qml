@@ -105,7 +105,7 @@ ApplicationWindow {
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
             spacing: 12
-            Label { text: "🛟"; font.pixelSize: 44 }
+            Image { source: "file:///usr/share/icons/hicolor/64x64/apps/ollie-recovery.png"; sourceSize: Qt.size(48, 48) }
             Label { text: "Recovery Mode"; color: "white"; font.pixelSize: 34; font.bold: true }
         }
         Item { Layout.fillHeight: true }
@@ -115,9 +115,9 @@ ApplicationWindow {
             visible: win.page === "pick"
             spacing: 14
             Words { text: "Put a newer Ollie OS over this one: pick its .iso file, then press Write." }
-            Big { text: "📂 Choose an ISO file..."; onClicked: picker.open() }
-            Words { visible: win.iso !== ""; text: "💿 " + win.isoName; font.bold: true; color: "#5eead4" }
-            Big { text: "✍️ Write"; highlighted: true; enabled: win.iso !== ""; onClicked: win.page = "ask" }
+            Big { text: "Choose an ISO file..."; onClicked: picker.open() }
+            Words { visible: win.iso !== ""; text: win.isoName; font.bold: true; color: "#5eead4" }
+            Big { text: "Write"; highlighted: true; enabled: win.iso !== ""; onClicked: win.page = "ask" }
         }
 
         // --- Is it Ollie OS? ---
@@ -127,8 +127,8 @@ ApplicationWindow {
             Words { text: "Is " + win.isoName + " an Ollie OS version?"; font.pixelSize: 22; font.bold: true }
             RowLayout {
                 spacing: 14
-                Big { text: "✅ Yes, it's Ollie OS"; highlighted: true; onClicked: win.page = "keep" }
-                Big { text: "❌ No"; onClicked: win.page = "erase" }
+                Big { text: "Yes, it's Ollie OS"; highlighted: true; onClicked: win.page = "keep" }
+                Big { text: "No"; onClicked: win.page = "erase" }
             }
             Button { text: "← Back"; Layout.alignment: Qt.AlignHCenter; onClicked: win.page = "pick" }
         }
@@ -139,8 +139,8 @@ ApplicationWindow {
             spacing: 14
             Words { text: "Keep your files, username and password, Wi-Fi passwords and website logins?"; font.pixelSize: 21; font.bold: true }
             Words { text: "Yes takes everything with you to the new version: only Ollie OS itself is new. Your games, pictures, settings and apps stay."; font.pixelSize: 15; color: "#94a3b8" }
-            Big { text: "💾 Yes, keep everything"; highlighted: true; onClicked: win.start("keep") }
-            Big { text: "🧹 No, start fresh (your files are erased)"; onClicked: win.start("fresh") }
+            Big { text: "Yes, keep everything"; highlighted: true; onClicked: win.start("keep") }
+            Big { text: "No, start fresh (your files are erased)"; onClicked: win.start("fresh") }
             Button { text: "← Back"; Layout.alignment: Qt.AlignHCenter; onClicked: win.page = "ask" }
         }
 
@@ -148,9 +148,9 @@ ApplicationWindow {
         ColumnLayout {
             visible: win.page === "erase"
             spacing: 14
-            Words { text: "⚠️ This ERASES the whole drive: Ollie OS and all your files!"; font.pixelSize: 22; font.bold: true; color: "#fca5a5" }
+            Words { text: "This ERASES the whole drive: Ollie OS and all your files!"; font.pixelSize: 22; font.bold: true; color: "#fca5a5" }
             Words { text: win.isoName + " is written over the drive, then the computer starts from it. Only ISOs that can start from a USB stick (Linux) work this way."; font.pixelSize: 15; color: "#94a3b8" }
-            Big { text: "💥 Erase and write"; onClicked: win.start("erase") }
+            Big { text: "Erase and write"; onClicked: win.start("erase") }
             Button { text: "← Back"; Layout.alignment: Qt.AlignHCenter; onClicked: win.page = "ask" }
         }
 
@@ -177,20 +177,20 @@ ApplicationWindow {
             spacing: 14
             Words { text: win.step; font.pixelSize: 19 }
             ProgressBar { Layout.fillWidth: true; from: 0; to: 100; value: win.percent }
-            Words { text: win.percent + "%   Don't turn the computer off!"; color: "#94a3b8"; font.pixelSize: 15 }
+            Words { text: win.percent + "% Don't turn the computer off!"; color: "#94a3b8"; font.pixelSize: 15 }
         }
 
         // --- Done ---
         ColumnLayout {
             visible: win.page === "done"
             spacing: 14
-            Words { text: "🎉 " + (win.newVersion ? "Ollie OS " + win.newVersion : "The new Ollie OS") + " is ready!"; font.pixelSize: 24; font.bold: true; color: "#5eead4" }
+            Words { text: (win.newVersion ? "Ollie OS " + win.newVersion : "The new Ollie OS") + " is ready"; font.pixelSize: 24; font.bold: true; color: "#5eead4" }
             Words {
                 text: win.mode === "keep" ? "Restart to start it. Everything of yours comes along. (If something is wrong with it, pick \"Ollie OS (before the update)\" on the start-up menu in the first 10 minutes.)"
                     : "Restart to start it. It asks you to make a username and password, like the first time."
                 font.pixelSize: 15; color: "#94a3b8"
             }
-            Big { text: "🔄 Restart now"; highlighted: true; onClicked: win.act("restart") }
+            Big { text: "Restart now"; highlighted: true; onClicked: win.act("restart") }
         }
 
         // --- Problems ---
@@ -198,7 +198,7 @@ ApplicationWindow {
             visible: win.page === "error" || win.page === "isollie" || win.page === "notollie"
             spacing: 14
             Words {
-                text: win.page === "isollie" ? "😮 Wait: " + win.isoName + " IS Ollie OS! Pick Yes, and you can keep all your files."
+                text: win.page === "isollie" ? "Wait: " + win.isoName + " IS Ollie OS! Pick Yes, and you can keep all your files."
                     : win.page === "notollie" ? "🤔 " + win.isoName + " is not Ollie OS, so your files can't be brought along."
                     : "😕 " + win.problem
                 font.pixelSize: 19
@@ -206,9 +206,9 @@ ApplicationWindow {
             Words { visible: win.page === "error"; text: "Nothing was changed: this Ollie OS is just as it was."; font.pixelSize: 15; color: "#94a3b8" }
             RowLayout {
                 spacing: 14
-                Big { visible: win.page === "isollie"; text: "✅ Yes, it's Ollie OS"; highlighted: true; onClicked: win.page = "keep" }
-                Big { visible: win.page === "isollie"; text: "💥 Erase anyway"; onClicked: win.page = "erase" }
-                Big { visible: win.page === "notollie"; text: "💥 Erase and write it"; onClicked: win.page = "erase" }
+                Big { visible: win.page === "isollie"; text: "Yes, it's Ollie OS"; highlighted: true; onClicked: win.page = "keep" }
+                Big { visible: win.page === "isollie"; text: "Erase anyway"; onClicked: win.page = "erase" }
+                Big { visible: win.page === "notollie"; text: "Erase and write it"; onClicked: win.page = "erase" }
                 Big { text: "← Start again"; onClicked: { win.page = "pick"; win.problem = ""; } }
             }
         }

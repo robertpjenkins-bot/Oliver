@@ -34,39 +34,39 @@ ApplicationWindow {
     }
 
     readonly property var ollieGames: [
-        { name: "Typing Game", emoji: "⌨️", icon: "typing", run: "ollie-typing" },
-        { name: "Ollie Pet", emoji: "🐾", icon: "pet", run: "ollie-pet" },
-        { name: "Couch Co-op", emoji: "🎮", icon: "coop", run: "ollie-coop" },
-        { name: "Coding Quest", emoji: "🤖", icon: "codequest", run: "ollie-codequest" },
-        { name: "Math Quest", emoji: "🧮", icon: "mathquest", run: "ollie-mathquest" },
-        { name: "Spelling Bee", emoji: "🐝", icon: "spelling", run: "ollie-spelling", store: true },
-        { name: "World Explorer", emoji: "🌍", icon: "world", run: "ollie-world", store: true },
-        { name: "Space Explorer", emoji: "🪐", icon: "space", run: "ollie-space", store: true }
+        { name: "Typing Game", emoji: "", icon: "typing", run: "ollie-typing" },
+        { name: "Ollie Pet", emoji: "", icon: "pet", run: "ollie-pet" },
+        { name: "Couch Co-op", emoji: "", icon: "coop", run: "ollie-coop" },
+        { name: "Coding Quest", emoji: "", icon: "codequest", run: "ollie-codequest" },
+        { name: "Math Quest", emoji: "", icon: "mathquest", run: "ollie-mathquest" },
+        { name: "Spelling Bee", emoji: "", icon: "spelling", run: "ollie-spelling", store: true },
+        { name: "World Explorer", emoji: "", icon: "world", run: "ollie-world", store: true },
+        { name: "Space Explorer", emoji: "", icon: "space", run: "ollie-space", store: true }
     ].filter(g => !g.store || arg("store").split(",").includes(g.run))  // App Center ones: only once installed
     readonly property var more: [
-        { name: "App Center", emoji: "🛍️", icon: "appcenter", run: "ollie-appcenter", note: "Free games, one click" },
-        { name: "Epic & GOG games", emoji: "🎁", icon: "", run: "heroic", note: "Free games every week (Heroic)" },
-        { name: "Steam Store", emoji: "🛒", icon: "", run: "steam-store", note: "Buy and get games" },
-        { name: "Minecraft", emoji: "⛏️", icon: "", run: "ollie-minecraft", note: "Play Minecraft" },
-        { name: "Play Time", emoji: "⏱️", icon: "playtime", run: "ollie-playtime", note: "How long you played" },
-        { name: "Trophies", emoji: "🏆", icon: "trophies", run: "ollie-trophies", note: "Your trophies" }
+        { name: "App Center", emoji: "", icon: "appcenter", run: "ollie-appcenter", note: "Free games, one click" },
+        { name: "Epic & GOG games", emoji: "", icon: "", run: "heroic", note: "Free games every week (Heroic)" },
+        { name: "Steam Store", emoji: "", icon: "", run: "steam-store", note: "Buy and get games" },
+        { name: "Minecraft", emoji: "", icon: "", run: "ollie-minecraft", note: "Play Minecraft" },
+        { name: "Play Time", emoji: "", icon: "playtime", run: "ollie-playtime", note: "How long you played" },
+        { name: "Trophies", emoji: "", icon: "trophies", run: "ollie-trophies", note: "Your trophies" }
     ]
     property var games: []
     Component.onCompleted: {
         try { games = JSON.parse(read(arg("list"))).games.filter(g => !(g.key || "").includes("/ollie-")); } catch (e) { games = []; }
         try { const e = JSON.parse(read(arg("events"))).events; lastSeq = e.length ? e[e.length - 1][0] : 0; } catch (e) {}
-        say.text = "Hi" + (arg("name") ? " " + arg("name") : "") + "! What do you want to play?";
+        say.text = arg("name") ? "Hi, " + arg("name") : "";
     }
     // [title, items]; each item: {name, emoji, cover, key | run, sub}
     readonly property var rows: {
         const r = [], all = games.map(g => ({ name: g.name, emoji: g.emoji, cover: g.cover, key: g.key, sub: g.system }));
-        if (all.length) r.push(["🌟 All my games", all]);
+        if (all.length) r.push(["All my games", all]);
         const steam = all.filter(g => g.sub === "Steam");
-        if (steam.length) r.push(["🚂 Steam", steam]);
+        if (steam.length) r.push(["Steam", steam]);
         const retro = all.filter(g => g.key.indexOf("file:") === 0);
-        if (retro.length) r.push(["👾 Retro and my game files", retro]);
-        r.push(["🧊 Ollie OS games", ollieGames.map(g => ({ name: g.name, emoji: g.emoji, cover: "file:///usr/share/icons/hicolor/256x256/apps/ollie-" + g.icon + ".png", run: g.run, sub: "Ollie OS" }))]);
-        r.push(["➕ Get more and more", more.map(g => ({ name: g.name, emoji: g.emoji, cover: g.icon ? "file:///usr/share/icons/hicolor/256x256/apps/ollie-" + g.icon + ".png" : "", run: g.run, sub: g.note }))]);
+        if (retro.length) r.push(["Retro and my game files", retro]);
+        r.push(["Ollie OS games", ollieGames.map(g => ({ name: g.name, emoji: g.emoji, cover: "file:///usr/share/icons/hicolor/256x256/apps/ollie-" + g.icon + ".png", run: g.run, sub: "Ollie OS" }))]);
+        r.push(["More", more.map(g => ({ name: g.name, emoji: g.emoji, cover: g.icon ? "file:///usr/share/icons/hicolor/256x256/apps/ollie-" + g.icon + ".png" : "", run: g.run, sub: g.note }))]);
         return r;
     }
     property int row: 0
@@ -112,20 +112,14 @@ ApplicationWindow {
         }
     }
 
-    Rectangle {
-        anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0; color: "#0b3b37" }
-            GradientStop { position: 0.55; color: "#0b1220" }
-            GradientStop { position: 1; color: "#1e1b4b" }
-        }
-    }
+    Rectangle { anchors.fill: parent; color: "#17181C" }
     // The chosen game's cover, big and soft behind everything.
     Image {
         anchors.fill: parent
-        source: win.chosen && win.chosen.cover ? (win.chosen.cover.indexOf("file:") === 0 ? win.chosen.cover : "file://" + win.chosen.cover) : ""
+        // (A real cover only, not an app's icon.)
+        source: win.chosen && win.chosen.cover && win.chosen.cover.indexOf("/icons/") < 0 ? (win.chosen.cover.indexOf("file:") === 0 ? win.chosen.cover : "file://" + win.chosen.cover) : ""
         fillMode: Image.PreserveAspectCrop
-        opacity: 0.12
+        opacity: 0.08
     }
 
     ColumnLayout {
@@ -136,7 +130,7 @@ ApplicationWindow {
             spacing: 16
             Image { source: "file:///usr/share/icons/hicolor/scalable/apps/ollie-os.svg"; sourceSize.width: 56; sourceSize.height: 56 }
             Label { text: "Game Hub"; color: "white"; font.pixelSize: 40; font.bold: true }
-            Label { id: say; color: "#99f6e4"; font.pixelSize: 22; leftPadding: 20 }
+            Label { id: say; color: "#9A9CA3"; font.pixelSize: 22; leftPadding: 20 }
             Item { Layout.fillWidth: true }
             Label { id: clock; color: "white"; font.pixelSize: 30; font.bold: true
                 Timer { interval: 1000; running: true; repeat: true; triggeredOnStart: true; onTriggered: clock.text = Qt.formatTime(new Date(), "h:mm AP") } }
@@ -147,7 +141,7 @@ ApplicationWindow {
             Layout.topMargin: 10
             spacing: 2
             Label { text: win.chosen ? win.chosen.name : ""; color: "white"; font.pixelSize: 52; font.bold: true; elide: Text.ElideRight; Layout.maximumWidth: win.width - 100 }
-            Label { text: win.chosen ? win.chosen.sub : ""; color: "#94a3b8"; font.pixelSize: 22 }
+            Label { text: win.chosen ? win.chosen.sub : ""; color: "#9A9CA3"; font.pixelSize: 22 }
         }
 
         ListView {
@@ -169,7 +163,7 @@ ApplicationWindow {
                 width: rowsView.width
                 height: 330
                 spacing: 6
-                Label { text: rowItem.modelData[0]; color: rowItem.index === win.row ? "white" : "#64748b"; font.pixelSize: 24; font.bold: true }
+                Label { text: rowItem.modelData[0]; color: rowItem.index === win.row ? "white" : "#6E7078"; font.pixelSize: 22; font.bold: true }
                 ListView {
                     id: tiles
                     Layout.fillWidth: true
@@ -193,32 +187,35 @@ ApplicationWindow {
                         Rectangle {
                             anchors.centerIn: parent
                             width: 170; height: 240
-                            scale: tile.on ? 1.12 : 0.95
-                            Behavior on scale { NumberAnimation { duration: 150 } }
-                            radius: 18
-                            color: "#1e293b"
-                            border.color: tile.on ? "#facc15" : "#334155"
-                            border.width: tile.on ? 5 : 1
+                            scale: tile.on ? 1.08 : 0.96
+                            Behavior on scale { NumberAnimation { duration: 120 } }
+                            radius: 6
+                            color: "#25272D"
+                            border.color: tile.on ? "#E07A2F" : "#2F3138"
+                            border.width: tile.on ? 4 : 1
                             clip: true
                             Image {
                                 id: cover
+                                readonly property bool icon: !!tile.modelData.cover && tile.modelData.cover.indexOf("/icons/") > 0
                                 anchors.fill: parent
-                                anchors.margins: tile.modelData.cover && tile.modelData.cover.indexOf("/icons/") > 0 ? 28 : 0
+                                anchors.margins: icon ? 30 : 0
+                                anchors.bottomMargin: icon ? 74 : 0
                                 source: tile.modelData.cover ? (tile.modelData.cover.indexOf("file:") === 0 ? tile.modelData.cover : "file://" + tile.modelData.cover) : ""
-                                fillMode: Image.PreserveAspectCrop
+                                fillMode: icon ? Image.PreserveAspectFit : Image.PreserveAspectCrop
                                 asynchronous: true
                             }
-                            Label {
+                            Label { // no cover: its first letter, big
                                 visible: cover.status !== Image.Ready
                                 anchors.centerIn: parent
-                                text: tile.modelData.emoji || "🎮"
-                                font.pixelSize: 72
+                                anchors.verticalCenterOffset: -20
+                                text: (tile.modelData.name || "?")[0]
+                                color: "#6E7078"; font.pixelSize: 90; font.bold: true
                             }
                             Rectangle {
                                 visible: cover.status !== Image.Ready || tile.modelData.cover.indexOf("/icons/") > 0
                                 anchors.bottom: parent.bottom
                                 width: parent.width; height: 54
-                                color: "#cc0f172a"
+                                color: "#E617181C"
                                 Label {
                                     anchors.fill: parent; anchors.margins: 6
                                     text: tile.modelData.name; color: "white"; font.pixelSize: 15; font.bold: true
@@ -242,16 +239,20 @@ ApplicationWindow {
         RowLayout {
             spacing: 26
             Repeater {
-                model: [["Ⓐ", "#22c55e", "Play"], ["Ⓑ", "#ef4444", "Close"], ["Ⓧ", "#3b82f6", "Play Time"], ["Ⓨ", "#eab308", "Trophies"], ["☰", "#94a3b8", "Quick Menu"]]
-                delegate: RowLayout {
+                model: [["A", "Play"], ["B", "Close"], ["X", "Play Time"], ["Y", "Trophies"], ["≡", "Quick Menu"]]
+                delegate: RowLayout { // a button drawn as a ring with its letter
                     required property var modelData
                     spacing: 8
-                    Label { text: modelData[0]; color: modelData[1]; font.pixelSize: 30; font.bold: true }
-                    Label { text: modelData[2]; color: "#cbd5e1"; font.pixelSize: 19 }
+                    Rectangle {
+                        width: 30; height: 30; radius: 15
+                        color: "transparent"; border.color: "#C9CAD0"; border.width: 2
+                        Label { anchors.centerIn: parent; text: modelData[0]; color: "#C9CAD0"; font.pixelSize: 15; font.bold: true }
+                    }
+                    Label { text: modelData[1]; color: "#C9CAD0"; font.pixelSize: 18 }
                 }
             }
             Item { Layout.fillWidth: true }
-            Label { text: win.games.length + " games"; color: "#64748b"; font.pixelSize: 17 }
+            Label { text: win.games.length + " games"; color: "#6E7078"; font.pixelSize: 17 }
         }
     }
 }

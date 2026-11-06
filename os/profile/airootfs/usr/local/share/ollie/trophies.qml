@@ -54,12 +54,12 @@ ApplicationWindow {
                 spacing: 20
                 Rectangle {
                     width: 86; height: 86; radius: 43; color: "white"
-                    Label { anchors.centerIn: parent; text: "🏆"; font.pixelSize: 50 }
+                    Label { anchors.centerIn: parent; text: ""; font.pixelSize: 50 }
                 }
                 ColumnLayout {
                     spacing: 2
                     Label { text: win.arg("name") || "You"; color: "white"; font.pixelSize: 32; font.bold: true }
-                    Label { text: win.rank + (win.arg("pet") ? "   ·   🐾 " + win.arg("pet") : ""); color: "#fce7f3"; font.pixelSize: 18 }
+                    Label { text: win.rank + (win.arg("pet") ? " ·" + win.arg("pet") : ""); color: "#fce7f3"; font.pixelSize: 18 }
                 }
                 Item { Layout.fillWidth: true }
                 ColumnLayout {
@@ -127,7 +127,7 @@ ApplicationWindow {
                             Layout.alignment: Qt.AlignHCenter
                             font.pixelSize: 12
                             color: parent.parent.parent.have ? "#fde047" : "#a5b4fc"
-                            text: parent.parent.parent.have ? "🏆 Got it! " + modelData.earned
+                            text: parent.parent.parent.have ? "Got it! " + modelData.earned
                                 : modelData.target > 1 ? Math.min(modelData.now, modelData.target) + " / " + modelData.target : "🔒 Not yet"
                         }
                     }

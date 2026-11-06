@@ -44,7 +44,7 @@ ApplicationWindow {
 
         RowLayout {
             spacing: 14
-            Label { text: "🔔"; font.pixelSize: 44 }
+            Label { text: ""; font.pixelSize: 44 }
             ColumnLayout {
                 spacing: 2
                 Layout.fillWidth: true
@@ -97,7 +97,7 @@ ApplicationWindow {
                             RowLayout {
                                 Layout.fillWidth: true
                                 Label {
-                                    text: (index === 0 ? "⭐ " : "") + modelData.title
+                                    text: (index === 0 ? "" : "") + modelData.title
                                     color: modelData.installed ? "#ccfbf1" : "#042f2e"
                                     font.pixelSize: 20
                                     font.bold: true

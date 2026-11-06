@@ -46,7 +46,7 @@ ApplicationWindow {
         spacing: 16
 
         RowLayout {
-            Label { text: "🎮"; font.pixelSize: 40 }
+            Image { source: "file:///usr/share/icons/hicolor/64x64/apps/ollie-coop.png"; sourceSize: Qt.size(48, 48) }
             ColumnLayout {
                 spacing: 0
                 Label { text: "Couch Co-op"; color: "white"; font.pixelSize: 32; font.bold: true }
@@ -83,7 +83,7 @@ ApplicationWindow {
                         spacing: 10
                         Label { text: win.names[index]; color: "white"; font.pixelSize: 24; font.bold: true; Layout.alignment: Qt.AlignHCenter }
                         Label {
-                            text: p === null ? "🔌" : pressing ? "🤩" : "🎮"
+                            text: p === null ? "" : pressing ? "" : ""
                             font.pixelSize: 90; Layout.alignment: Qt.AlignHCenter
                         }
                         Label {
@@ -124,8 +124,8 @@ ApplicationWindow {
                         color: "#9ca3af"; font.pixelSize: 14; wrapMode: Text.WordWrap; Layout.fillWidth: true
                     }
                 }
-                Button { text: "🎮 Steam big screen"; font.pixelSize: 16; onClicked: win.act("steam") }
-                Button { text: "🏎️ SuperTuxKart"; font.pixelSize: 16; onClicked: win.act("supertuxkart") }
+                Button { text: "Steam big screen"; font.pixelSize: 16; onClicked: win.act("steam") }
+                Button { text: "SuperTuxKart"; font.pixelSize: 16; onClicked: win.act("supertuxkart") }
             }
         }
     }

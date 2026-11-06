@@ -66,7 +66,7 @@ ApplicationWindow {
             Layout.maximumWidth: 310
             Layout.fillHeight: true
             spacing: 8
-            Label { text: "💥 Comic Maker"; font.pixelSize: 28; font.bold: true; color: "#b45309" }
+            Label { text: "Comic Maker"; font.pixelSize: 28; font.bold: true; color: "#b45309" }
             Label { text: "Panels"; font.bold: true }
             RowLayout {
                 Repeater {
@@ -95,8 +95,8 @@ ApplicationWindow {
                 }
             }
             RowLayout {
-                Button { text: "💬 Speech"; onClicked: win.add("say", "Hello!") }
-                Button { text: "💭 Thought"; onClicked: win.add("think", "Hmm...") }
+                Button { text: "Speech"; onClicked: win.add("say", "Hello!") }
+                Button { text: "Thought"; onClicked: win.add("think", "Hmm...") }
             }
             Flow {
                 Layout.preferredWidth: 310
@@ -127,16 +127,16 @@ ApplicationWindow {
                         onTextEdited: win.change(win.selected, t => t.text = text)
                     }
                     RowLayout {
-                        Button { text: "➖"; onClicked: win.change(win.selected, t => t.size = Math.max(0.5, t.size - 0.2)) }
-                        Button { text: "➕"; onClicked: win.change(win.selected, t => t.size = Math.min(3, t.size + 0.2)) }
-                        Button { text: "↔️"; onClicked: win.change(win.selected, t => t.flip = !t.flip) }
-                        Button { text: "🗑️"; onClicked: win.remove(win.selected) }
+                        Button { text: "Smaller"; onClicked: win.change(win.selected, t => t.size = Math.max(0.5, t.size - 0.2)) }
+                        Button { text: "Bigger"; onClicked: win.change(win.selected, t => t.size = Math.min(3, t.size + 0.2)) }
+                        Button { text: "Flip"; onClicked: win.change(win.selected, t => t.flip = !t.flip) }
+                        Button { text: "Delete"; onClicked: win.remove(win.selected) }
                     }
                 }
             }
             Item { Layout.fillHeight: true }
             Button {
-                text: "💾 Save my comic"
+                text: "Save my comic"
                 highlighted: true
                 font.pixelSize: 18
                 Layout.fillWidth: true
