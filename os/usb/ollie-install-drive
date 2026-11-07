@@ -522,6 +522,8 @@ cat <<EOF
   Secure Boot on? The first time, a blue screen says "Verification failed":
     press Enter, then any key quickly, then pick Enroll key from disk,
     OLLIE_BOOT, OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once.
+  A computer with Windows? Write down its BitLocker recovery key first
+    (aka.ms/myrecoverykey): Windows may ask for it after starting from a USB.
 EOF
 if [[ -n ${unpacked_later:-} ]]; then
     echo "  Its first start unpacks Ollie OS onto the drive: 5 to 15 minutes, once. Do that"

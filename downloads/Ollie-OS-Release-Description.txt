@@ -24,6 +24,8 @@ Made by biobro (age 8). A gaming computer built on Arch Linux, with Steam, Minec
 
 If your Mac won't open the installer, go to System Settings → Privacy & Security and press **Open Anyway**.
 
+**Computer with Windows?** Write down its BitLocker recovery key first (aka.ms/myrecoverykey). Windows may ask for it after starting from a USB. With this version you don't need to turn Secure Boot off.
+
 ### Already have Ollie OS?
 Download **Ollie-OS-Latest-Updater-x86_64.AppImage** and open it. It brings everything above. If the Update Checker is on, you'll also get a notification.
 

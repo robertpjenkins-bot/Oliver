@@ -10,3 +10,6 @@ Ollie OS Installer for Mac
 5. PCs with Secure Boot on: the first time, a blue screen says "Verification
    failed". Press Enter, then any key quickly, then pick Enroll key from disk,
    OLLIE_OS, OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once on each computer.
+6. A PC with Windows: write down its BitLocker recovery key first
+   (aka.ms/myrecoverykey). Windows may ask for it after starting from a USB.
+   Don't turn Secure Boot off: that makes Windows ask for it for sure.

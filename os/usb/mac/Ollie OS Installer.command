@@ -81,6 +81,8 @@ cat <<'MSG'
   Secure Boot on (most PCs)? The first time, a blue screen says "Verification
   failed": press Enter, then any key quickly, then pick Enroll key from disk,
   OLLIE_OS, OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once on each computer.
+  A PC with Windows? Write down its BitLocker recovery key first
+  (aka.ms/myrecoverykey): Windows may ask for it after starting from a USB.
 
 Press Enter to close.
 MSG

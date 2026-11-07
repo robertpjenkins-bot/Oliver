@@ -378,6 +378,10 @@ func toUSB(iso string) error {
 	fmt.Println("  Secure Boot on? The first time, a blue screen says \"Verification failed\":")
 	fmt.Println("  press Enter, then any key quickly, then pick Enroll key from disk, OLLIE_OS,")
 	fmt.Println("  OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once on each computer.")
+	fmt.Println()
+	fmt.Println("  A computer with Windows? Write down its BitLocker recovery key first")
+	fmt.Println("  (aka.ms/myrecoverykey): Windows may ask for it after starting from a USB.")
+	fmt.Println("  Don't turn Secure Boot off: that makes Windows ask for it for sure.")
 	return nil
 }
 
